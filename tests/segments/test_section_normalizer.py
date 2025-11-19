@@ -41,3 +41,10 @@ def test_summary_tracks_raw_labels():
     assert "measurement_end" in summary
     assert summary["measurement_end"] == {"Messung Ende"}
     assert summary["unknown"] == {"unknown block"}
+
+
+def test_sections_config_exposes_groups():
+    normalizer = build_normalizer()
+    assert "default" in normalizer.config.groups
+    template = normalizer.config.groups["default"]
+    assert template.required_sections

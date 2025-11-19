@@ -23,12 +23,22 @@ class SectionDefinition:
 
 
 @dataclass(slots=True)
+class SectionGroup:
+    """Subset template describing required sections for a cohort/group."""
+
+    name: str
+    label: str
+    required_sections: tuple[str, ...]
+
+
+@dataclass(slots=True)
 class SectionsConfig:
     """Container with loaded section definitions."""
 
     version: int
     canonical_order: tuple[str, ...]
     sections: Mapping[str, SectionDefinition]
+    groups: Mapping[str, SectionGroup]
 
     def iter_definitions(self) -> Iterable[SectionDefinition]:
         """Yield section definitions in canonical order."""
@@ -63,6 +73,7 @@ def load_sections_config(
             version=1,
             canonical_order=(),
             sections={},
+            groups={},
         )
 
     data = yaml.safe_load(source.read_text(encoding="utf-8"))
@@ -95,12 +106,25 @@ def load_sections_config(
             continue
         _register_section(str(name), node, group="group")
 
+    groups: dict[str, SectionGroup] = {}
+    for name, node in (data.get("groups") or {}).items():
+        if not isinstance(node, Mapping):
+            continue
+        required_sections = tuple(str(item) for item in node.get("required_sections", ()))
+        label = str(node.get("label") or str(name).replace("_", " ").title())
+        groups[str(name)] = SectionGroup(
+            name=str(name),
+            label=label,
+            required_sections=required_sections,
+        )
+
     version = int(data.get("version", 1))
     return SectionsConfig(
         version=version,
         canonical_order=canonical_order,
         sections=sections,
+        groups=groups,
     )
 
 
-__all__ = ["SectionDefinition", "SectionsConfig", "load_sections_config"]
+__all__ = ["SectionDefinition", "SectionGroup", "SectionsConfig", "load_sections_config"]

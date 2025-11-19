@@ -91,3 +91,26 @@ group_sections:
   #       - "block[ _-]?1"
   # Users can populate this via the GUI once group protocols are finalised.
   {}
+
+# Cohort templates describing which canonical sections must exist.
+groups:
+  default:
+    label: "Default protocol"
+    required_sections:
+      - rest_pre_start
+      - rest_pre_end
+      - measurement_start
+      - measurement_end
+      - rest_post_start
+      - rest_post_end
+  long_form:
+    label: "Extended + pause"
+    required_sections:
+      - rest_pre_start
+      - rest_pre_end
+      - measurement_start
+      - pause_start
+      - pause_end
+      - measurement_end
+      - rest_post_start
+      - rest_post_end
