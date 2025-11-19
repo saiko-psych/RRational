@@ -2,30 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import flet as ft
 
-ASCII_ART = r"""
-._____.___. _______ .___._____. _______ ._______
-: .___:   |: ____  |:   |: __  |:   _  \:_ ____/
-| :   |.  ||    :  ||   || : | ||   |   ||   _/ 
-|     ||  ||   |___||   ||   _/ | . |   ||   |  
-|_. ___||__||___|    |___||__.   | :.|   |:_. | 
-  :/             ____/       :/  |___|___| :/   
-  :             :/            :            :    
-                                                 
-._______.______._____._______._____._________    
-: ..___.: __   |: ____: ..___.: .___:   _   _\   
-| :   || :.\  ||    \ | :   || :   ||  |/  /    
-|     || :::\ ||  .  \|     ||     ||     <     
-|_. __||_;:_\_||__:__/|_. __||_. __||__|\__\    
-  :/                     :/      :/        :    
-  :                      :       :              
-"""
+ASCII_DIR = Path(__file__).resolve().parents[3] / "docs" / "ascii"
 
-MOBIUS_ART = r"""
-▀█▀ █▀█ █▀▄▀█ █ █ ▀█▀  █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▄░█
-░█░ █▄█ █░▀░█ █▄█ ░█░  █░▀░█ ██▄ ░█░ ██▄ █░▀█
-"""
+
+def load_ascii_art(name: str) -> str:
+    """Read ASCII art from docs/ascii."""
+
+    path = ASCII_DIR / f"{name}.txt"
+    return path.read_text(encoding="utf-8") if path.exists() else name
 
 NEON_GRADIENT = ft.LinearGradient(
     begin=ft.alignment.top_left,
@@ -44,66 +32,41 @@ def main(page: ft.Page) -> None:
     page.padding = 40
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 
+    main_ascii = load_ascii_art("mobius_main").strip("\n")
     hero_card = ft.Container(
-        width=900,
-        padding=20,
+        width=980,
+        padding=30,
         border_radius=30,
         gradient=NEON_GRADIENT,
         shadow=ft.BoxShadow(
-            blur_radius=45,
-            spread_radius=5,
-            color=ft.colors.with_opacity(0.35, "#ff4dff"),
+            blur_radius=65,
+            spread_radius=8,
+            color=ft.colors.with_opacity(0.45, "#ff4dff"),
         ),
         content=ft.Column(
             [
                 ft.Text(
-                    "MUSIC HRV TOOLKIT",
-                    size=40,
-                    weight=ft.FontWeight.BOLD,
+                    main_ascii,
+                    font_family="RobotoMono",
+                    size=20,
+                    weight=ft.FontWeight.W_700,
                     color="#04010d",
                     text_align=ft.TextAlign.CENTER,
+                    no_wrap=True,
                 ),
                 ft.Text(
-                    "Segment RR intervals, prep NeuroKit2 metrics, stay in sync.",
+                    (
+                        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
+                        "Vestibulum consectetur lorem at ipsum ultricies, non rutrum "
+                        "odio imperdiet. Cras vitae mi a libero dignissim tempus. "
+                        "Fusce sed justo vitae ipsum dapibus varius."
+                    ),
                     size=16,
                     color="#04010d",
                     text_align=ft.TextAlign.CENTER,
                 ),
             ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=4,
-        ),
-    )
-
-    ascii_banner = ft.Container(
-        margin=ft.margin.only(top=30),
-        padding=20,
-        bgcolor="#07001b",
-        border_radius=20,
-        content=ft.Column(
-            [
-                ft.Text(
-                    ASCII_ART.strip("\n"),
-                    font_family="RobotoMono",
-                    size=12,
-                    weight=ft.FontWeight.W_600,
-                    color="#f6f5ff",
-                    text_align=ft.TextAlign.CENTER,
-                    no_wrap=True,
-                    height=1.0,
-                ),
-                ft.Text(
-                    MOBIUS_ART.strip("\n"),
-                    font_family="RobotoMono",
-                    size=16,
-                    weight=ft.FontWeight.BOLD,
-                    color="#7b5bff",
-                    text_align=ft.TextAlign.CENTER,
-                    no_wrap=True,
-                ),
-            ],
-            spacing=12,
+            spacing=20,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         ),
     )
@@ -167,7 +130,6 @@ def main(page: ft.Page) -> None:
 
     page.add(
         hero_card,
-        ascii_banner,
         ft.Container(
             content=ft.Column(
                 [
