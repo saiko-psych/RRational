@@ -94,10 +94,11 @@ def main(page: ft.Page) -> None:
             for span_text, color in line
         ]
         ascii_controls.append(
-            ft.RichText(
+            ft.Text(
                 spans=spans,
                 text_align=ft.TextAlign.CENTER,
                 width=940,
+                selectable=True,
             )
         )
 
