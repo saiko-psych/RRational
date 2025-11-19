@@ -70,7 +70,7 @@ def main(page: ft.Page) -> None:
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = "#04010d"
     page.scroll = "adaptive"
-    page.padding = 20
+    page.padding = 10
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 
     raw_art = load_ascii_art("mobius_main")
@@ -97,7 +97,7 @@ def main(page: ft.Page) -> None:
             ft.Text(
                 spans=spans,
                 text_align=ft.TextAlign.CENTER,
-                width=1400,
+                width=2000,
                 selectable=True,
             )
         )
