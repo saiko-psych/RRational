@@ -5,23 +5,26 @@ from __future__ import annotations
 import flet as ft
 
 ASCII_ART = r"""
-.___.__  .______  .___          ._______  ._______
-:   |  \ : __   \ |   |___      : .___  \ :_ ____/
-|   :   ||  \____||   |   |     | :   |  ||   _/  
-|   .   ||   :  \ |   :   |     |     :  ||   |   
-|___|   ||   |___\ \      |      \_. ___/ |_. |   
-    |___||___|      \____/         :/       :/    
-                                   :        :     
-                                                  
-                                                  
-.______  .____     .___    ._______  .________    
-:      \ |    |___ |   |   : .___  \ |    ___/    
-|   .   ||    |   ||   |   | :   |  ||___    \    
-|   :   ||    :   ||   |/\ |     :  ||       /    
-|___|   ||        ||   /  \ \_. ___/ |__:___/     
-    |___||. _____/ |______/   :/        :         
-          :/                  :                   
-          :
+._____.___. _______ .___._____. _______ ._______
+: .___:   |: ____  |:   |: __  |:   _  \:_ ____/
+| :   |.  ||    :  ||   || : | ||   |   ||   _/ 
+|     ||  ||   |___||   ||   _/ | . |   ||   |  
+|_. ___||__||___|    |___||__.   | :.|   |:_. | 
+  :/             ____/       :/  |___|___| :/   
+  :             :/            :            :    
+                                                 
+._______.______._____._______._____._________    
+: ..___.: __   |: ____: ..___.: .___:   _   _\   
+| :   || :.\  ||    \ | :   || :   ||  |/  /    
+|     || :::\ ||  .  \|     ||     ||     <     
+|_. __||_;:_\_||__:__/|_. __||_. __||__|\__\    
+  :/                     :/      :/        :    
+  :                      :       :              
+"""
+
+MOBIUS_ART = r"""
+▀█▀ █▀█ █▀▄▀█ █ █ ▀█▀  █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▄░█
+░█░ █▄█ █░▀░█ █▄█ ░█░  █░▀░█ ██▄ ░█░ ██▄ █░▀█
 """
 
 NEON_GRADIENT = ft.LinearGradient(
@@ -78,14 +81,30 @@ def main(page: ft.Page) -> None:
         padding=20,
         bgcolor="#07001b",
         border_radius=20,
-        content=ft.Text(
-            ASCII_ART.strip("\n"),
-            font_family="RobotoMono",
-            size=13,
-            weight=ft.FontWeight.W_500,
-            color="#f6f5ff",
-            text_align=ft.TextAlign.CENTER,
-            no_wrap=True,
+        content=ft.Column(
+            [
+                ft.Text(
+                    ASCII_ART.strip("\n"),
+                    font_family="RobotoMono",
+                    size=12,
+                    weight=ft.FontWeight.W_600,
+                    color="#f6f5ff",
+                    text_align=ft.TextAlign.CENTER,
+                    no_wrap=True,
+                    height=1.0,
+                ),
+                ft.Text(
+                    MOBIUS_ART.strip("\n"),
+                    font_family="RobotoMono",
+                    size=16,
+                    weight=ft.FontWeight.BOLD,
+                    color="#7b5bff",
+                    text_align=ft.TextAlign.CENTER,
+                    no_wrap=True,
+                ),
+            ],
+            spacing=12,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         ),
     )
 
