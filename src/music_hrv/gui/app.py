@@ -99,6 +99,7 @@ def main(page: ft.Page) -> None:
                 text_align=ft.TextAlign.CENTER,
                 width=2000,
                 selectable=True,
+                style=ft.TextStyle(size=12),
             )
         )
 
