@@ -39,6 +39,7 @@ UI_SIZES = {
     "input_height": 56,
     "heading_size": 16,
     "label_size": 13,
+    "raw_width": 480,
 }
 
 
@@ -320,6 +321,18 @@ class DataPrepController:
     def _normalize_synonym(self, value: str) -> str:
         return re.sub(r"\s+", " ", value.strip().lower())
 
+    def update_custom_section(
+        self, slug: str, *, label: str | None = None, synonyms: list[str] | None = None
+    ) -> None:
+        section = self.custom_sections.get(slug)
+        if not section:
+            return
+        if label:
+            section.label = label.strip() or section.label
+        if synonyms is not None:
+            section.synonyms = {self._normalize_synonym(item) for item in synonyms if item.strip()}
+        self.reconcile_custom_sections()
+
     def match_custom_section(self, raw_label: str) -> str | None:
         normalized = self._normalize_synonym(raw_label)
         slug = self._slugify_custom(raw_label)
@@ -394,6 +407,11 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
             "Select a participant to inspect events.",
             color=ft.colors.GREY_500,
         ),
+        padding=10,
+        bgcolor=ft.colors.with_opacity(0.03, ft.colors.WHITE),
+        border_radius=8,
+    )
+    custom_section_panel = ft.Container(
         padding=10,
         bgcolor=ft.colors.with_opacity(0.03, ft.colors.WHITE),
         border_radius=8,
@@ -638,6 +656,68 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
         if group_editor_panel.page:
             group_editor_panel.update()
 
+    def rebuild_custom_sections() -> None:
+        rows: list[ft.Control] = []
+        if not controller.custom_sections:
+            rows.append(ft.Text("No custom sections defined yet.", color=ft.colors.GREY_500))
+        else:
+            for slug, section in sorted(controller.custom_sections.items()):
+                label_field = ft.TextField(
+                    value=section.label,
+                    label="Section name",
+                    width=260,
+                    height=UI_SIZES["input_height"],
+                )
+                synonyms_field = ft.TextField(
+                    value=", ".join(sorted(section.synonyms)),
+                    label="Accepted raw labels",
+                    width=400,
+                    multiline=True,
+                    min_lines=1,
+                    max_lines=3,
+                )
+
+                def save_section(_=None, section_slug=slug, name_field=label_field, syn_field=synonyms_field):
+                    syns = [v.strip() for v in syn_field.value.split(",") if v.strip()]
+                    controller.update_custom_section(section_slug, label=name_field.value, synonyms=syns)
+                    rebuild_table()
+                    refresh_event_panel()
+                    rebuild_group_editor()
+                    rebuild_custom_sections()
+
+                rows.append(
+                    ft.Container(
+                        padding=UI_SIZES["cell_padding"],
+                        bgcolor=ft.colors.with_opacity(0.04, ft.colors.WHITE),
+                        border_radius=6,
+                        content=ft.Row(
+                            [
+                                ft.Text(section.slug, width=140),
+                                label_field,
+                                synonyms_field,
+                                ft.ElevatedButton("Save", icon=ft.icons.SAVE, height=UI_SIZES["input_height"], on_click=save_section),
+                            ],
+                            spacing=10,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                    )
+                )
+
+        custom_section_panel.content = ft.Column(
+            [
+                ft.Text("Custom sections", size=16, weight=ft.FontWeight.W_600),
+                ft.Text(
+                    "Edit names and accepted raw labels for custom sections. Assigning a new raw label to a custom section also adds it here.",
+                    size=12,
+                    color=ft.colors.GREY_500,
+                ),
+                ft.Column(rows, spacing=8),
+            ],
+            spacing=8,
+        )
+        if custom_section_panel.page:
+            custom_section_panel.update()
+
     def select_group_for_edit(new_key: str | None) -> None:
         nonlocal selected_group_key
         if new_key and new_key in controller.group_lookup():
@@ -699,21 +779,36 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
             rebuild_table()
             refresh_event_panel()
 
-        event_rows = []
         dropdown_options = canonical_dropdown_options()
+        event_rows_controls: list[ft.Control] = []
+
+        header_row = ft.Row(
+            [
+                ft.Container(ft.Text("#", weight=ft.FontWeight.W_600), width=30),
+                ft.Container(ft.Text("Raw label", weight=ft.FontWeight.W_600), width=UI_SIZES["raw_width"]),
+                ft.Container(ft.Text("Canonical", weight=ft.FontWeight.W_600)),
+            ],
+            spacing=UI_SIZES["cell_gap"],
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+        event_rows_controls.append(header_row)
+
         for idx, event in enumerate(summary.events):
-            desired_width = min(760, max(320, len(event.raw_label) * 8))
-            event_rows.append(
-                ft.DataRow(
-                    cells=[
-                        ft.DataCell(ft.Text(str(idx + 1))),
-                        ft.DataCell(
+            desired_width = min(UI_SIZES["raw_width"], max(320, len(event.raw_label) * 8))
+            event_rows_controls.append(
+                ft.Container(
+                    padding=UI_SIZES["cell_padding"],
+                    bgcolor=ft.colors.with_opacity(0.05, ft.colors.WHITE),
+                    border_radius=6,
+                    height=UI_SIZES["row_height"] + 8,
+                    content=ft.Row(
+                        [
+                            ft.Container(ft.Text(str(idx + 1)), width=30),
                             ft.Container(
-                                width=desired_width + 12,
-                                content=ft.TextField(
+                                ft.TextField(
                                     value=event.raw_label,
                                     width=desired_width,
-                                    height=54,
+                                    height=UI_SIZES["input_height"],
                                     multiline=len(event.raw_label) > 25,
                                     border_radius=6,
                                     text_size=13,
@@ -723,33 +818,26 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                                         p, i, e.control.value  # type: ignore[arg-type]
                                     ),
                                 ),
-                            )
-                        ),
-                        ft.DataCell(
-                            ft.Dropdown(
-                                value=event.canonical or NONE_OPTION_KEY,
-                                width=420,
-                                height=52,
-                                options=dropdown_options,
-                                on_change=lambda e, p=pid, i=idx: handle_event_canonical(
-                                    p, i, e.data
+                                width=desired_width + 12,
+                            ),
+                            ft.Container(
+                                ft.Dropdown(
+                                    value=event.canonical or NONE_OPTION_KEY,
+                                    width=UI_SIZES["canonical_width"],
+                                    height=UI_SIZES["input_height"],
+                                    options=dropdown_options,
+                                    on_change=lambda e, p=pid, i=idx: handle_event_canonical(
+                                        p, i, e.data
+                                    ),
                                 ),
-                            )
-                        ),
-                    ]
+                                expand=1,
+                            ),
+                        ],
+                        spacing=UI_SIZES["cell_gap"],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
                 )
             )
-
-        events_table = ft.DataTable(
-            columns=[
-                ft.DataColumn(ft.Text("#")),
-                ft.DataColumn(ft.Text("Raw label")),
-                ft.DataColumn(ft.Text("Canonical")),
-            ],
-            rows=event_rows,
-            column_spacing=16,
-            data_row_min_height=40,
-        )
 
         event_panel.content = ft.Column(
             [
@@ -764,7 +852,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                     size=12,
                     color=ft.colors.GREY_500,
                 ),
-                events_table,
+                ft.Column(event_rows_controls, spacing=6),
             ],
             spacing=10,
         )
