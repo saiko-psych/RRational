@@ -346,20 +346,6 @@ class DataPrepController:
         options.extend((value, label) for value, label in self.available_section_labels())
         return options
 
-    def _slugify_custom(self, label: str) -> str:
-        slug = re.sub(r"[^a-z0-9]+", "-", label.strip().lower())
-        slug = slug.strip("-")
-        return slug or f"section-{len(self.custom_sections) + 1}"
-
-    def add_custom_section(self, label: str) -> str:
-        slug = self._slugify_custom(label)
-        suffix = 2
-        while slug in self.custom_sections:
-            slug = f"{slug}-{suffix}"
-            suffix += 1
-        self.custom_sections[slug] = label.strip() or slug.title()
-        return slug
-
 
 
 def build_data_prep_panel(page: ft.Page) -> ft.Column:
@@ -376,6 +362,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
         value=str(controller.current_dir or DATA_HRV_LOGGER_DIR),
         label="Folder path",
         width=520,
+        height=56,
         filled=True,
     )
     table_heading = ft.Text(
@@ -401,7 +388,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
         ],
         rows=[],
         column_spacing=24,
-        data_row_min_height=72,
+        data_row_min_height=84,
     )
     event_panel = ft.Container(
         content=ft.Text(
@@ -446,6 +433,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                     content=ft.Dropdown(
                         value=value,
                         width=520,
+                        height=56,
                         options=group_options,
                         on_change=lambda e, participant=participant: handle_group_change(
                             participant, e.data
@@ -715,10 +703,11 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                         ),
                         ft.DataCell(
                             ft.Container(
-                                width=520,
+                                width=540,
                                 content=ft.Dropdown(
                                     value=event.canonical or NONE_OPTION_KEY,
-                                    width=500,
+                                    width=520,
+                                    height=56,
                                     options=dropdown_options,
                                     on_change=lambda e, p=pid, i=idx: handle_event_canonical(
                                         p, i, e.data
@@ -820,11 +809,13 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
     choose_button = ft.FilledTonalButton(
         "Choose folder",
         icon=ft.icons.FOLDER_OPEN,
+        height=56,
         on_click=launch_directory_picker,
     )
     manual_button = ft.ElevatedButton(
         "Scan folder",
         icon=ft.icons.SEARCH,
+        height=56,
         on_click=apply_manual_folder,
     )
     refresh_button = ft.IconButton(
