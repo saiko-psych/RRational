@@ -375,7 +375,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
     folder_input = ft.TextField(
         value=str(controller.current_dir or DATA_HRV_LOGGER_DIR),
         label="Folder path",
-        width=400,
+        width=460,
         filled=True,
     )
     table_heading = ft.Text(
@@ -400,7 +400,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
             ft.DataColumn(ft.Text("Group")),
         ],
         rows=[],
-        column_spacing=18,
+        column_spacing=24,
         data_row_min_height=60,
     )
     event_panel = ft.Container(
@@ -442,10 +442,10 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
 
             def _make_group_dropdown(participant: str, value: str) -> ft.Dropdown:
                 return ft.Container(
-                    width=380,
+                    width=440,
                     content=ft.Dropdown(
                         value=value,
-                        width=360,
+                        width=420,
                         options=group_options,
                         on_change=lambda e, participant=participant: handle_group_change(
                             participant, e.data
@@ -716,7 +716,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                         ft.DataCell(
                             ft.Dropdown(
                                 value=event.canonical or NONE_OPTION_KEY,
-                                width=360,
+                                width=420,
                                 options=dropdown_options,
                                 on_change=lambda e, p=pid, i=idx: handle_event_canonical(
                                     p, i, e.data
@@ -807,10 +807,6 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
     rebuild_group_editor()
 
     def launch_directory_picker(_: ft.ControlEvent | None = None) -> None:
-        if page.web:
-            status_text.value = "Folder picker not available in browser — paste a path and click Scan."
-            page.update()
-            return
         initial = controller.current_dir or DATA_HRV_LOGGER_DIR
         try:
             directory_picker.get_directory_path(initial_directory=str(initial))
