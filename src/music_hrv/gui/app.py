@@ -877,7 +877,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
             table_heading,
             table_description,
             ft.Container(
-                content=table,
+                content=participant_rows,
                 bgcolor=ft.colors.with_opacity(0.05, ft.colors.WHITE),
                 border_radius=8,
                 padding=10,
