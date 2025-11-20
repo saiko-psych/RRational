@@ -361,8 +361,8 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
     folder_input = ft.TextField(
         value=str(controller.current_dir or DATA_HRV_LOGGER_DIR),
         label="Folder path",
-        width=520,
-        height=56,
+        width=640,
+        height=64,
         filled=True,
     )
     table_heading = ft.Text(
@@ -387,8 +387,8 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
             ft.DataColumn(ft.Text("Group")),
         ],
         rows=[],
-        column_spacing=24,
-        data_row_min_height=84,
+        column_spacing=28,
+        data_row_min_height=96,
     )
     event_panel = ft.Container(
         content=ft.Text(
@@ -429,11 +429,11 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
 
             def _make_group_dropdown(participant: str, value: str) -> ft.Dropdown:
                 return ft.Container(
-                    width=540,
+                    width=680,
                     content=ft.Dropdown(
                         value=value,
-                        width=520,
-                        height=56,
+                        width=660,
+                        height=64,
                         options=group_options,
                         on_change=lambda e, participant=participant: handle_group_change(
                             participant, e.data
@@ -678,7 +678,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
         event_rows = []
         dropdown_options = canonical_dropdown_options()
         for idx, event in enumerate(summary.events):
-            desired_width = min(720, max(320, len(event.raw_label) * 9))
+            desired_width = min(840, max(360, len(event.raw_label) * 10))
             event_rows.append(
                 ft.DataRow(
                     cells=[
@@ -689,12 +689,12 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                                 content=ft.TextField(
                                     value=event.raw_label,
                                     width=desired_width,
-                                    height=52,
-                                    multiline=len(event.raw_label) > 50,
-                                    border_radius=6,
-                                    text_size=13,
-                                    content_padding=ft.padding.symmetric(vertical=8, horizontal=12),
-                                    border_color=ft.colors.with_opacity(0.2, ft.colors.WHITE),
+                                    height=64,
+                                    multiline=len(event.raw_label) > 40,
+                                    border_radius=8,
+                                    text_size=14,
+                                    content_padding=ft.padding.symmetric(vertical=10, horizontal=14),
+                                    border_color=ft.colors.with_opacity(0.25, ft.colors.WHITE),
                                     on_change=lambda e, p=pid, i=idx: handle_event_edit(
                                         p, i, e.control.value  # type: ignore[arg-type]
                                     ),
@@ -703,11 +703,11 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                         ),
                         ft.DataCell(
                             ft.Container(
-                                width=540,
+                                width=680,
                                 content=ft.Dropdown(
                                     value=event.canonical or NONE_OPTION_KEY,
-                                    width=520,
-                                    height=56,
+                                    width=660,
+                                    height=64,
                                     options=dropdown_options,
                                     on_change=lambda e, p=pid, i=idx: handle_event_canonical(
                                         p, i, e.data
