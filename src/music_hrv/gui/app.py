@@ -361,10 +361,10 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
     folder_input = ft.TextField(
         value=str(controller.current_dir or DATA_HRV_LOGGER_DIR),
         label="Folder path",
-        width=640,
-        height=60,
+        width=500,
+        height=54,
         filled=True,
-        content_padding=ft.padding.symmetric(horizontal=12, vertical=12),
+        content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
     )
     table_heading = ft.Text(
         "Participant metrics",
@@ -388,9 +388,11 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
             ft.DataColumn(ft.Text("Group")),
         ],
         rows=[],
-        column_spacing=20,
-        heading_row_height=64,
-        data_row_min_height=88,
+        column_spacing=16,
+        heading_row_height=52,
+        data_row_min_height=72,
+        horizontal_margin=8,
+        divider_thickness=0.6,
     )
     event_panel = ft.Container(
         content=ft.Text(
@@ -430,16 +432,13 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
             group_value = controller.group_assignments.get(pid, controller.default_group_key)
 
             def _make_group_dropdown(participant: str, value: str) -> ft.Dropdown:
-                return ft.Container(
-                    width=680,
-                    content=ft.Dropdown(
-                        value=value,
-                        width=660,
-                        height=60,
-                        options=group_options,
-                        on_change=lambda e, participant=participant: handle_group_change(
-                            participant, e.data
-                        ),
+                return ft.Dropdown(
+                    value=value,
+                    width=420,
+                    height=52,
+                    options=group_options,
+                    on_change=lambda e, participant=participant: handle_group_change(
+                        participant, e.data
                     ),
                 )
 
@@ -680,23 +679,23 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
         event_rows = []
         dropdown_options = canonical_dropdown_options()
         for idx, event in enumerate(summary.events):
-            desired_width = min(880, max(380, len(event.raw_label) * 10))
+            desired_width = min(760, max(320, len(event.raw_label) * 8))
             event_rows.append(
                 ft.DataRow(
                     cells=[
                         ft.DataCell(ft.Text(str(idx + 1))),
                         ft.DataCell(
                             ft.Container(
-                                width=desired_width + 20,
+                                width=desired_width + 12,
                                 content=ft.TextField(
                                     value=event.raw_label,
                                     width=desired_width,
-                                    height=64,
-                                    multiline=len(event.raw_label) > 35,
-                                    border_radius=8,
-                                    text_size=14,
-                                    content_padding=ft.padding.symmetric(vertical=10, horizontal=14),
-                                    border_color=ft.colors.with_opacity(0.25, ft.colors.WHITE),
+                                    height=54,
+                                    multiline=len(event.raw_label) > 25,
+                                    border_radius=6,
+                                    text_size=13,
+                                    content_padding=ft.padding.symmetric(vertical=8, horizontal=12),
+                                    border_color=ft.colors.with_opacity(0.2, ft.colors.WHITE),
                                     on_change=lambda e, p=pid, i=idx: handle_event_edit(
                                         p, i, e.control.value  # type: ignore[arg-type]
                                     ),
@@ -704,16 +703,13 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                             )
                         ),
                         ft.DataCell(
-                            ft.Container(
-                                width=680,
-                                content=ft.Dropdown(
-                                    value=event.canonical or NONE_OPTION_KEY,
-                                    width=660,
-                                    height=60,
-                                    options=dropdown_options,
-                                    on_change=lambda e, p=pid, i=idx: handle_event_canonical(
-                                        p, i, e.data
-                                    ),
+                            ft.Dropdown(
+                                value=event.canonical or NONE_OPTION_KEY,
+                                width=420,
+                                height=52,
+                                options=dropdown_options,
+                                on_change=lambda e, p=pid, i=idx: handle_event_canonical(
+                                    p, i, e.data
                                 ),
                             )
                         ),
