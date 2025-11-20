@@ -40,6 +40,7 @@ UI_SIZES = {
     "heading_size": 16,
     "label_size": 13,
     "raw_width": 480,
+    "col_scroll_height": 320,
 }
 
 
@@ -455,8 +456,10 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                     ft.Container(ft.Text("Beats (clean)", weight=ft.FontWeight.W_600), width=110),
                     ft.Container(ft.Text("Artifacts", weight=ft.FontWeight.W_600), width=90),
                     ft.Container(ft.Text("Duration", weight=ft.FontWeight.W_600), width=110),
-                    ft.Container(ft.Text("Events", weight=ft.FontWeight.W_600), width=80),
+                    ft.Container(ft.Text("Events", weight=ft.FontWeight.W_600), width=150),
                     ft.Container(ft.Text("Missing", weight=ft.FontWeight.W_600), width=90),
+                    ft.Container(ft.Text("Start"), width=150),
+                    ft.Container(ft.Text("End"), width=150),
                     ft.Container(ft.Text("Group", weight=ft.FontWeight.W_600)),
                 ],
                 spacing=UI_SIZES["cell_gap"],
@@ -497,7 +500,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                                     str(summary.events_detected)
                                     + (f" (+{summary.duplicate_events} dup)" if summary.duplicate_events else "")
                                 ),
-                                width=110,
+                                width=150,
                             ),
                             ft.Container(
                                 ft.Text(
@@ -505,6 +508,22 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                                     color=ft.colors.GREEN_400 if not missing else ft.colors.AMBER_400,
                                 ),
                                 width=90,
+                            ),
+                            ft.Container(
+                                ft.Text(
+                                    summary.first_timestamp.strftime("%Y-%m-%d %H:%M")
+                                    if summary.first_timestamp
+                                    else "n/a"
+                                ),
+                                width=150,
+                            ),
+                            ft.Container(
+                                ft.Text(
+                                    summary.last_timestamp.strftime("%Y-%m-%d %H:%M")
+                                    if summary.last_timestamp
+                                    else "n/a"
+                                ),
+                                width=150,
                             ),
                             ft.Container(_make_group_dropdown(pid, group_value), expand=1),
                         ],

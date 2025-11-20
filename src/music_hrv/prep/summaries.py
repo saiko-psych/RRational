@@ -25,6 +25,8 @@ class PreparationSummary:
     """Aggregate metrics for a cleaned recording."""
 
     participant_id: str
+    first_timestamp: datetime | None
+    last_timestamp: datetime | None
     total_beats: int
     retained_beats: int
     removed_beats: int
@@ -78,8 +80,13 @@ def summarize_recording(
             present_sections.add(canonical)
     event_statuses = list(by_label.values())
     duplicate_events = max(0, len(recording.events) - len(event_statuses))
+    timestamps = [rr.timestamp for rr in recording.rr_intervals if rr.timestamp]
+    first_ts = min(timestamps) if timestamps else None
+    last_ts = max(timestamps) if timestamps else None
     return PreparationSummary(
         participant_id=recording.participant_id,
+        first_timestamp=first_ts,
+        last_timestamp=last_ts,
         total_beats=stats.total_samples,
         retained_beats=stats.retained_samples,
         removed_beats=stats.removed_samples,
