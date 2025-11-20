@@ -388,7 +388,9 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
         ],
         rows=[],
         column_spacing=28,
+        heading_row_height=72,
         data_row_min_height=96,
+        data_row_height=96,
     )
     event_panel = ft.Container(
         content=ft.Text(
@@ -811,6 +813,8 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
         icon=ft.icons.FOLDER_OPEN,
         height=56,
         on_click=launch_directory_picker,
+        disabled=page.web,
+        tooltip="Use Scan folder with a path in browser mode" if page.web else None,
     )
     manual_button = ft.ElevatedButton(
         "Scan folder",
@@ -846,6 +850,11 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                 alignment=ft.MainAxisAlignment.START,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=10,
+            ),
+            ft.Text(
+                "Tip: in browser mode, paste a path and click Scan folder (native picker is unavailable).",
+                size=11,
+                color=ft.colors.GREY_500,
             ),
             status_text,
             table_heading,
