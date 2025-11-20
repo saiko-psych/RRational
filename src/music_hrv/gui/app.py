@@ -375,7 +375,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
     folder_input = ft.TextField(
         value=str(controller.current_dir or DATA_HRV_LOGGER_DIR),
         label="Folder path",
-        width=460,
+        width=520,
         filled=True,
     )
     table_heading = ft.Text(
@@ -401,7 +401,7 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
         ],
         rows=[],
         column_spacing=24,
-        data_row_min_height=60,
+        data_row_min_height=72,
     )
     event_panel = ft.Container(
         content=ft.Text(
@@ -442,10 +442,10 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
 
             def _make_group_dropdown(participant: str, value: str) -> ft.Dropdown:
                 return ft.Container(
-                    width=440,
+                    width=540,
                     content=ft.Dropdown(
                         value=value,
-                        width=420,
+                        width=520,
                         options=group_options,
                         on_change=lambda e, participant=participant: handle_group_change(
                             participant, e.data
@@ -714,12 +714,15 @@ def build_data_prep_panel(page: ft.Page) -> ft.Column:
                             )
                         ),
                         ft.DataCell(
-                            ft.Dropdown(
-                                value=event.canonical or NONE_OPTION_KEY,
-                                width=420,
-                                options=dropdown_options,
-                                on_change=lambda e, p=pid, i=idx: handle_event_canonical(
-                                    p, i, e.data
+                            ft.Container(
+                                width=520,
+                                content=ft.Dropdown(
+                                    value=event.canonical or NONE_OPTION_KEY,
+                                    width=500,
+                                    options=dropdown_options,
+                                    on_change=lambda e, p=pid, i=idx: handle_event_canonical(
+                                        p, i, e.data
+                                    ),
                                 ),
                             )
                         ),
