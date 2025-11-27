@@ -4,6 +4,102 @@ This file contains detailed session notes and implementation history. For quick 
 
 ---
 
+## Session 2025-11-27 (Evening): Interactive Plotly & Multi-File Support
+
+### Version Tags Created:
+- `v0.2.0-plotly-viz` - Interactive Plotly visualization
+- `v0.2.1-sorting-fix` - Timezone handling and event sorting
+- `v0.2.2-multi-files` - Multiple files per participant support
+
+### Major Features Implemented:
+
+#### 1. Interactive Plotly RR Visualization
+- Replaced matplotlib with Plotly for interactive plots
+- Real datetime timestamps from RR interval data
+- Automatic gap detection where measurements are missing
+- Interactive zoom/pan capabilities
+- Click-to-add events functionality
+- Event markers as vertical dashed lines with color coding
+
+**Technical Solution**: Used `add_shape()` instead of `add_vline()` to avoid Plotly datetime handling bug.
+
+#### 2. Multiple Files Per Participant
+- **Problem**: Sometimes participants have multiple RR/Events files due to measurement restarts (Bluetooth errors, technical issues)
+- **Solution**: `RecordingBundle` now stores `rr_paths: list[Path]` and `events_paths: list[Path]`
+- `load_recording()` merges all files, sorted by timestamp
+- GUI shows "Files" column with ⚠️ indicator for multiple files
+- Format: "2RR/2Ev" shows file counts
+
+#### 3. Config Moved to Data Import Section
+- Moved ID pattern and cleaning thresholds from sidebar to Tab 1
+- Settings now in collapsible "⚙️ Import Settings" expander
+- Sidebar simplified to just show app title and auto-save status
+
+#### 4. Timezone Handling Fixes
+- Click-to-add events now creates timezone-aware timestamps (UTC)
+- Sort function handles mixed timezone-aware/naive datetimes
+- Helper `get_sort_key()` normalizes timestamps for comparison
+
+#### 5. Event Sorting with Visible Updates
+- Changed from `on_click` callbacks to button return values
+- Added `st.rerun()` after sort/move actions
+- Events now visibly reorder in the table immediately
+
+### Files Modified:
+- `src/music_hrv/gui/app.py` - Plotly integration, config reorganization
+- `src/music_hrv/io/hrv_logger.py` - Multi-file support in RecordingBundle
+- `src/music_hrv/prep/summaries.py` - File count tracking
+- `.gitignore` - Added HRV data file patterns
+
+### Key Code Changes:
+
+**RecordingBundle (io/hrv_logger.py)**:
+```python
+@dataclass(slots=True)
+class RecordingBundle:
+    participant_id: str
+    rr_paths: list[Path]  # All RR files
+    events_paths: list[Path]  # All Events files
+
+    @property
+    def has_multiple_files(self) -> bool:
+        return len(self.rr_paths) > 1 or len(self.events_paths) > 1
+```
+
+**Plotly Event Lines (app.py)**:
+```python
+# Using add_shape() instead of add_vline() for datetime compatibility
+fig.add_shape(
+    type="line",
+    x0=event_time, x1=event_time,
+    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+    line=dict(color=color, width=2, dash='dash'),
+)
+```
+
+**Sort with Visible Update (app.py)**:
+```python
+if st.button("🔄 Auto-Sort by Timestamp", key=f"auto_sort_{participant}"):
+    all_events_copy.sort(key=get_sort_key)
+    st.session_state.participant_events[participant]['events'] = all_events_copy
+    st.rerun()  # Triggers visible update
+```
+
+### Testing Results:
+- ✅ All 13 tests passing
+- ✅ No linting errors
+- ✅ Plotly plot renders correctly
+- ✅ Click-to-add events works
+- ✅ Sort/move buttons update visibly
+
+### User Feedback:
+- "this looks kinda nice!"
+- Requested timezone-aware timestamp handling
+- Wanted sorting to update visibly (not just toast message)
+- Needed multiple file support for measurement restarts
+
+---
+
 ## Session 2025-11-26 (Afternoon): Bug Fixes & UI Improvements
 
 ### User-Reported Issues (All Fixed):
