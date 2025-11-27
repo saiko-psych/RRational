@@ -459,8 +459,11 @@ def main():
                     recording_dt_str = summary.recording_datetime.strftime("%Y-%m-%d %H:%M")
 
                 # Show file counts (highlight if multiple files)
-                files_str = f"{summary.rr_file_count}RR/{summary.events_file_count}Ev"
-                if summary.has_multiple_files:
+                # Handle old cached summaries that don't have file count fields
+                rr_count = getattr(summary, 'rr_file_count', 1)
+                ev_count = getattr(summary, 'events_file_count', 1 if summary.events_detected > 0 else 0)
+                files_str = f"{rr_count}RR/{ev_count}Ev"
+                if rr_count > 1 or ev_count > 1:
                     files_str = f"⚠️ {files_str}"
 
                 participants_data.append({
