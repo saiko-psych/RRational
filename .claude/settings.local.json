@@ -18,7 +18,9 @@
       "Bash(uv pip install:*)",
       "Bash(findstr:*)",
       "Bash(del:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git tag:*)"
     ],
     "deny": [],
     "ask": []

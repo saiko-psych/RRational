@@ -820,9 +820,12 @@ def main():
                             if selected_points and len(selected_points) > 0:
                                 clicked_point = selected_points[0]
                                 if 'x' in clicked_point:
-                                    # Convert x value back to timestamp
-                                    from datetime import datetime
+                                    # Convert x value back to timestamp (make timezone-aware like original data)
+                                    from datetime import datetime, timezone
                                     clicked_timestamp = pd.to_datetime(clicked_point['x'])
+                                    # Make timezone-aware (UTC) to match original event timestamps
+                                    if clicked_timestamp.tzinfo is None:
+                                        clicked_timestamp = clicked_timestamp.tz_localize('UTC')
 
                                     # Show form to add event
                                     with st.form(key=f"add_event_from_plot_{selected_participant}"):
@@ -1072,39 +1075,28 @@ def main():
                     st.markdown("### 🔄 Event Order")
                     st.caption("Use ↑↓ buttons to reorder events - changes reflect immediately in all sections")
 
-                    # Auto-sort button
-                    def auto_sort_by_timestamp():
-                        """Sort events by timestamp."""
+                    # Helper to normalize timestamps for comparison (handle timezone-aware vs naive)
+                    def get_sort_key(event):
+                        ts = event.first_timestamp
+                        if ts is None:
+                            return pd.Timestamp.max.tz_localize('UTC')
+                        # Ensure all timestamps are timezone-aware for comparison
+                        if hasattr(ts, 'tzinfo') and ts.tzinfo is None:
+                            ts = pd.Timestamp(ts).tz_localize('UTC')
+                        return ts
+
+                    # Auto-sort button - use return value instead of on_click for proper rerun
+                    if st.button("🔄 Auto-Sort by Timestamp", key=f"auto_sort_{selected_participant}"):
                         all_events_copy = (st.session_state.participant_events[selected_participant]['events'] +
                                           st.session_state.participant_events[selected_participant]['manual'])
-                        # Sort events by timestamp
-                        all_events_copy.sort(key=lambda x: x.first_timestamp if x.first_timestamp else pd.Timestamp.max)
-                        # Update persistent storage
+                        all_events_copy.sort(key=get_sort_key)
                         st.session_state.participant_events[selected_participant]['events'] = all_events_copy
                         st.session_state.participant_events[selected_participant]['manual'] = []
-                        show_toast("Events sorted by timestamp", icon="success")
-
-                    st.button(
-                        "🔄 Auto-Sort by Timestamp",
-                        key=f"auto_sort_{selected_participant}",
-                        on_click=auto_sort_by_timestamp,
-                    )
+                        st.rerun()
 
                     if all_events:
-                        # Move functions with callbacks
-                        def move_up(idx):
-                            all_evts = st.session_state.participant_events[selected_participant]['events'] + \
-                                      st.session_state.participant_events[selected_participant]['manual']
-                            all_evts[idx], all_evts[idx-1] = all_evts[idx-1], all_evts[idx]
-                            st.session_state.participant_events[selected_participant]['events'] = all_evts
-                            st.session_state.participant_events[selected_participant]['manual'] = []
-
-                        def move_down(idx):
-                            all_evts = st.session_state.participant_events[selected_participant]['events'] + \
-                                      st.session_state.participant_events[selected_participant]['manual']
-                            all_evts[idx], all_evts[idx+1] = all_evts[idx+1], all_evts[idx]
-                            st.session_state.participant_events[selected_participant]['events'] = all_evts
-                            st.session_state.participant_events[selected_participant]['manual'] = []
+                        # Check for pending move actions first
+                        move_action = None
 
                         # Display compact event list
                         for idx, event in enumerate(all_events):
@@ -1133,10 +1125,25 @@ def main():
                                 m1, m2 = st.columns(2)
                                 with m1:
                                     if idx > 0:
-                                        st.button("↑", key=f"up_{selected_participant}_{idx}", on_click=move_up, args=(idx,))
+                                        if st.button("↑", key=f"up_{selected_participant}_{idx}"):
+                                            move_action = ('up', idx)
                                 with m2:
                                     if idx < len(all_events) - 1:
-                                        st.button("↓", key=f"dn_{selected_participant}_{idx}", on_click=move_down, args=(idx,))
+                                        if st.button("↓", key=f"dn_{selected_participant}_{idx}"):
+                                            move_action = ('down', idx)
+
+                        # Process move action after rendering all buttons
+                        if move_action:
+                            direction, idx = move_action
+                            all_evts = st.session_state.participant_events[selected_participant]['events'] + \
+                                      st.session_state.participant_events[selected_participant]['manual']
+                            if direction == 'up' and idx > 0:
+                                all_evts[idx], all_evts[idx-1] = all_evts[idx-1], all_evts[idx]
+                            elif direction == 'down' and idx < len(all_evts) - 1:
+                                all_evts[idx], all_evts[idx+1] = all_evts[idx+1], all_evts[idx]
+                            st.session_state.participant_events[selected_participant]['events'] = all_evts
+                            st.session_state.participant_events[selected_participant]['manual'] = []
+                            st.rerun()
                     else:
                         st.info("No events to reorder.")
 
