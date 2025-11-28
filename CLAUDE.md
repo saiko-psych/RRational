@@ -10,25 +10,27 @@ Quick reference for Claude Code working in this repository. **For detailed sessi
 4. **Be proactive**: Describe what user will see differently in GUI.
 5. **Update MEMORY.md**: Add detailed notes to MEMORY.md, keep this file slim.
 6. **ALWAYS TEST**: Run `uv run pytest` and test imports before delivering code changes!
+7. **OPTIMIZE FOR SPEED**: Always consider performance. Profile before optimizing!
 
-## Current Status (2025-11-27)
+## Current Status (2025-11-28)
 
-**Version**: `v0.3.0`
+**Version**: `v0.3.1`
 
 **GUI**: 5-tab Streamlit app with persistent storage
-- Tab 1: Data & Groups (import, interactive WebGL plot, quality detection, music events)
+- Tab 1: Data & Groups (import, WebGL plot, quality detection, music events, batch processing)
 - Tab 2: Event Mapping (define events, synonyms auto-lowercase, timing validation)
 - Tab 3: Group Management (groups + playlist/randomization groups)
 - Tab 4: Sections (define time ranges between events)
 - Tab 5: Analysis (NeuroKit2 HRV analysis, plots, metrics)
 
-**Key Features (v0.3.0)**:
-- WebGL-accelerated Plotly plots (Scattergl)
-- Auto-create gap events (15s threshold) and variability events (CV threshold)
+**Key Features (v0.3.1)**:
+- Performance optimized (downsampling, lazy loading, caching)
+- Batch processing for all participants
+- Help text in all tabs
+- Smart status summary (only shows issues when they exist)
+- WebGL-accelerated Plotly plots with 5000-point downsampling
+- Auto-create gap/variability events
 - Music section events (separate category, playlist groups R1-R6)
-- Plot toggles: show/hide variability, gaps, music sections, music events
-- Timing validation in Event Mapping Status section
-- Multiple RR/Events files per participant (auto-merge)
 
 **Storage**: `~/.music_hrv/*.yml` (groups, events, sections, playlist_groups)
 
@@ -47,38 +49,39 @@ uv run pytest
 uv run ruff check src/ tests/ --fix
 ```
 
-## Project Overview
+## Performance Guidelines (IMPORTANT!)
 
-Music HRV Toolkit analyzes heart rate variability from HRV Logger exports. Pipeline: ingest CSV → clean RR intervals → normalize events → compute HRV metrics (neurokit2) → export results.
+**ALWAYS optimize for speed. Profile before making changes.**
+
+### Caching Functions (in app.py)
+- `cached_discover_recordings()` - Directory scanning
+- `cached_load_recording()` - File loading per participant
+- `cached_clean_rr_intervals()` - RR cleaning results
+- `cached_quality_analysis()` - Changepoint detection (SLOW - 1.2s)
+- `cached_get_plot_data()` - Downsampled plot data
+
+### Performance Rules
+1. **NEVER use Plotly JSON serialization** - It's extremely slow (1.5s for large figures)
+2. **Downsample large datasets** - 5000 points max for plots
+3. **Lazy load expensive operations** - Only compute when user requests
+4. **Cache data, not objects** - Cache raw data, build objects on demand
+5. **Profile with timer context managers** before optimizing
+
+### Current Performance
+- First participant load: ~500ms
+- Toggling plot options: Near-instant
+- Switching participants: ~200ms (cached)
 
 ## Architecture Essentials
 
-**Data Flow**: CSVs → `discover_recordings()` → `RecordingBundle` (multi-file) → `load_recording()` → merge & sort → `PreparationSummary` → Streamlit session_state
+**Data Flow**: CSVs → `discover_recordings()` → `RecordingBundle` → `load_recording()` → cache → plot
 
 **Key Files**:
-- `src/music_hrv/gui/app.py` - Main Streamlit app (~2200 lines)
+- `src/music_hrv/gui/app.py` - Main Streamlit app (~2500 lines)
 - `src/music_hrv/gui/persistence.py` - YAML storage helpers
-- `src/music_hrv/io/hrv_logger.py` - CSV loading, multi-file support, ID patterns
-- `src/music_hrv/cleaning/rr.py` - RR interval cleaning
-- `src/music_hrv/prep/summaries.py` - Data summaries with file counts
-
-**Predefined ID Patterns** (in `hrv_logger.py`):
-- `\d{4}[A-Z]{4}` - 4 digits + 4 uppercase (default, e.g., 0123ABCD)
-- `\d{4}[A-Za-z]{4}` - 4 digits + 4 letters (case insensitive)
-- `[A-Za-z0-9]+` - Any alphanumeric
-- `\d+` - Digits only
-- `[A-Za-z]+\d+` - Letters + digits (e.g., P001)
-- `[A-Za-z]+_\d+` - Underscore separated (e.g., sub_001)
+- `src/music_hrv/io/hrv_logger.py` - CSV loading, multi-file support
 
 ## Important Patterns
-
-**Multi-File Support**:
-```python
-# RecordingBundle stores all files for a participant
-bundle.rr_paths: list[Path]  # All RR files
-bundle.events_paths: list[Path]  # All Events files
-bundle.has_multiple_files  # True if >1 file of either type
-```
 
 **Plotly Event Lines** (use `add_shape()` not `add_vline()` for datetime):
 ```python
@@ -87,14 +90,14 @@ fig.add_shape(type="line", x0=event_time, x1=event_time, ...)
 
 **Timezone Handling**:
 ```python
-# Make timestamps UTC-aware for comparison
 if ts.tzinfo is None:
     ts = pd.Timestamp(ts).tz_localize('UTC')
 ```
 
 ## Version Tags
 
-- `v0.3.0` - Music events, quality detection, timing validation, WebGL plots
+- `v0.3.1` - Performance optimization, batch processing, help text
+- `v0.3.0` - Music events, quality detection, timing validation
 - `v0.2.3-patterns` - Predefined ID patterns, multi-file detection fix
 - `v0.2.2-multi-files` - Multiple files per participant
 - `v0.2.1-sorting-fix` - Timezone handling and visible sorting
@@ -103,15 +106,14 @@ if ts.tzinfo is None:
 ## Next Session TODOs
 
 ### High Priority
-- [ ] Better explanations/help text in GUI (tooltips, info boxes)
-- [ ] Performance: faster app, background processing, reduce loading spinners
-- [ ] Batch processing: apply settings to all participants automatically
-- [ ] Only prompt user when issues detected
+- [x] ~~Better explanations/help text in GUI~~ (DONE v0.3.1)
+- [x] ~~Performance optimization~~ (DONE v0.3.1)
+- [x] ~~Batch processing~~ (DONE v0.3.1)
+- [x] ~~Smart status summary~~ (DONE v0.3.1)
 
 ### Medium Priority
 - [ ] Improve UI layout (spacing, element sizing, visual polish)
 - [ ] Plot customization (RR line color, titles, etc.) - LOW PRIORITY
-- [ ] Evaluate alternative to Plotly if performance still slow
 
 ### Known Limitations
 - [ ] Section-based HRV analysis (currently analyzes whole recording)
@@ -120,10 +122,9 @@ if ts.tzinfo is None:
 ## References
 
 - **MEMORY.md** - Detailed session history, implementation notes
-- **SESSION_NOTES.md** - Technical documentation for v0.2.0
 - **QUICKSTART.md** - User quick start guide
 - `docs/HRV_project_spec.md` - Full specification
 
 ---
 
-*Last updated: 2025-11-27 | Keep this file concise - add details to MEMORY.md*
+*Last updated: 2025-11-28 | Keep this file concise - add details to MEMORY.md*

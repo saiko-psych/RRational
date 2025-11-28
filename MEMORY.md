@@ -4,6 +4,72 @@ This file contains detailed session notes and implementation history. For quick 
 
 ---
 
+## Session 2025-11-28: Performance Optimization & Batch Processing
+
+### Version Tag: `v0.3.1`
+
+### Major Improvements:
+
+#### 1. Performance Optimization (CRITICAL)
+Profiled the app and found major bottlenecks:
+
+| Bottleneck | Before | After | Fix |
+|------------|--------|-------|-----|
+| JSON Deserialize | 1496ms | 0ms | Removed (was making things SLOWER) |
+| Changepoint Analysis | 1186ms | 0ms (lazy) | Only runs when variability view enabled |
+| Plotly Scattergl | 125ms | 13ms | Downsample to 5000 points |
+
+**Key Learnings:**
+- Plotly JSON serialization/deserialization is VERY slow - avoid it!
+- Always profile before optimizing - my first caching approach made things worse
+- Lazy loading expensive operations saves significant time
+
+**Performance Results:**
+- First participant load: ~500ms (was ~3s)
+- Toggling plot options: Near-instant
+- Switching participants: ~200ms (cached data)
+
+#### 2. Caching Functions Added
+- `cached_discover_recordings()` - Cache directory scanning
+- `cached_load_recording()` - Cache file loading per participant
+- `cached_clean_rr_intervals()` - Cache RR cleaning results
+- `cached_quality_analysis()` - Cache changepoint detection
+- `cached_get_plot_data()` - Cache downsampled plot data
+
+#### 3. Batch Processing
+New "Batch Processing" expander in Tab 1:
+- **Auto-Generate Music Events**: For all participants in a playlist group
+- **Auto-Create Quality Events**: Detect gaps/variability for all participants
+- Progress bars and status updates during processing
+
+#### 4. Help Text Added
+- Tab 1: "Quick Help - Getting Started" with workflow overview
+- Tab 2: "Help - Event Mapping" explaining synonyms and regex
+- Tab 3: "Help - Groups & Playlists" explaining study groups
+- Tab 5: "Help - HRV Analysis" explaining HRV metrics
+
+#### 5. Smart Status Summary
+- Shows issue count at top of participant table
+- Only displays warnings when issues exist
+- Shows success message when all participants look good
+
+### Files Modified:
+- `src/music_hrv/gui/app.py` - Performance optimizations, batch processing, help text
+
+### Testing Results:
+- All 13 tests passing
+- No linting errors
+- Performance verified via profiling script
+
+### Important Notes for Future Development:
+- **ALWAYS profile before optimizing** - use timer context managers
+- **Avoid Plotly JSON serialization** - it's extremely slow for large figures
+- **Downsample large datasets** - 5000 points is visually sufficient
+- **Lazy load expensive operations** - only compute when user requests it
+- **Cache at the right level** - cache data, not serialized objects
+
+---
+
 ## Session 2025-11-27 (Late Evening): Music Events, Quality Detection & Timing Validation
 
 ### Version Tag: `v0.3.0`
