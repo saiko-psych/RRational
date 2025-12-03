@@ -414,6 +414,7 @@ def render_data_tab():
                                         config_dict=config_dict,
                                         gui_events_dict=st.session_state.all_events,
                                     )
+                                    app_name = "VNS Analyse"
                                 else:
                                     # Default to HRV Logger format
                                     summaries = cached_load_hrv_logger_preview(
@@ -422,6 +423,12 @@ def render_data_tab():
                                         config_dict=config_dict,
                                         gui_events_dict=st.session_state.all_events,
                                     )
+                                    app_name = "HRV Logger"
+
+                                # Ensure source_app is set (handles old cached data)
+                                for s in summaries:
+                                    if not hasattr(s, 'source_app') or s.source_app == "Unknown":
+                                        object.__setattr__(s, 'source_app', app_name)
 
                                 st.write(f"   Found {len(summaries)} participant(s)")
                                 all_summaries.extend(summaries)

@@ -2,9 +2,11 @@
 
 VNS Analyse exports a single .txt file per participant containing:
 - Header sections with parameter names and values (tab-separated)
-- RR intervals section with:
-  - RR values in SECONDS (not milliseconds!)
-  - Each line: RR_value<tab> or RR_value<tab>Notiz: <note text>
+- Two RR intervals sections:
+  - "RR-Intervalle - Rohwerte (Nicht aktiv)" = Raw/Uncorrected values
+  - "RR-Intervalle - Korrigierte Werte (Aktiv)" = Corrected values
+- RR values are in SECONDS (not milliseconds!)
+- Each line: RR_value<tab> or RR_value<tab>Notiz: <note text>
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 from music_hrv.io.hrv_logger import (
     DEFAULT_ID_PATTERN,
@@ -19,6 +22,10 @@ from music_hrv.io.hrv_logger import (
     RRInterval,
     extract_participant_id,
 )
+
+# VNS section identifiers
+VNS_RAW_SECTION = "RR-Intervalle - Rohwerte"
+VNS_CORRECTED_SECTION = "RR-Intervalle - Korrigierte Werte"
 
 
 @dataclass(slots=True)
@@ -69,13 +76,22 @@ def discover_vns_recordings(
     return bundles
 
 
-def load_vns_recording(bundle: VNSRecordingBundle) -> VNSRecording:
+def load_vns_recording(
+    bundle: VNSRecordingBundle,
+    *,
+    use_corrected: bool = False,
+) -> VNSRecording:
     """Load a VNS Analyse file and return parsed data.
 
     VNS format:
     - Header sections with tab-separated key-value pairs
+    - Two RR sections: Raw (Rohwerte) and Corrected (Korrigierte Werte)
     - RR interval lines: "0.719<tab>" or "0.863<tab>Notiz: Ende Ruhe"
     - RR values are in SECONDS (converted to ms internally)
+
+    Args:
+        bundle: VNS recording bundle with file path
+        use_corrected: If True, use corrected RR values. Default False (raw values).
     """
     path = bundle.file_path
     text = path.read_text(encoding="utf-8", errors="ignore")
@@ -88,8 +104,10 @@ def load_vns_recording(bundle: VNSRecordingBundle) -> VNSRecording:
     # Track cumulative time for timestamps
     cumulative_ms = 0
     base_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    in_rr_section = False
-    beat_index = 0
+
+    # Track which section we're in
+    current_section: str | None = None
+    target_section = VNS_CORRECTED_SECTION if use_corrected else VNS_RAW_SECTION
 
     for line in lines:
         line = line.strip()
@@ -97,14 +115,30 @@ def load_vns_recording(bundle: VNSRecordingBundle) -> VNSRecording:
             continue
 
         # Check for section headers
-        if line.startswith("RR-Intervalle"):
-            in_rr_section = True
+        if VNS_RAW_SECTION in line:
+            current_section = VNS_RAW_SECTION
+            continue
+        elif VNS_CORRECTED_SECTION in line:
+            current_section = VNS_CORRECTED_SECTION
+            continue
+        elif line.startswith("RR-Intervalle"):
+            # Some other RR section we don't recognize
+            current_section = None
             continue
 
         # Check for other section headers (end RR section)
-        if in_rr_section and not line[0].isdigit():
+        if current_section and not line[0].isdigit():
             # New section starting, stop reading RR
-            in_rr_section = False
+            current_section = None
+            continue
+
+        # Only parse RR values from the target section
+        if current_section != target_section:
+            # Try to parse as header line
+            if "\t" in line:
+                key_val = line.split("\t", 1)
+                if len(key_val) == 2:
+                    header_info[key_val[0].strip()] = key_val[1].strip()
             continue
 
         # Try to parse as RR interval line
@@ -141,15 +175,9 @@ def load_vns_recording(bundle: VNSRecordingBundle) -> VNSRecording:
                                 ))
 
                     cumulative_ms += rr_ms
-                    beat_index += 1
 
             except ValueError:
-                # Not a valid RR line, might be header
-                if "\t" in line and not in_rr_section:
-                    # Could be a header line
-                    key_val = line.split("\t", 1)
-                    if len(key_val) == 2:
-                        header_info[key_val[0].strip()] = key_val[1].strip()
+                pass  # Not a valid RR line
 
     return VNSRecording(
         participant_id=bundle.participant_id,
