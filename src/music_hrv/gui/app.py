@@ -26,12 +26,32 @@ from music_hrv.gui.persistence import (
     load_playlist_groups,
 )
 
-try:
-    import neurokit2 as nk
-    import matplotlib.pyplot as plt
-    NEUROKIT_AVAILABLE = True
-except ImportError:
-    NEUROKIT_AVAILABLE = False
+# Lazy import for neurokit2 and matplotlib (saves ~0.9s on startup)
+NEUROKIT_AVAILABLE = True
+_nk = None
+_plt = None
+
+
+def get_neurokit():
+    """Lazily import neurokit2 to speed up app startup."""
+    global _nk, NEUROKIT_AVAILABLE
+    if _nk is None:
+        try:
+            import neurokit2 as nk
+            _nk = nk
+        except ImportError:
+            NEUROKIT_AVAILABLE = False
+            _nk = None
+    return _nk
+
+
+def get_matplotlib():
+    """Lazily import matplotlib to speed up app startup."""
+    global _plt
+    if _plt is None:
+        import matplotlib.pyplot as plt
+        _plt = plt
+    return _plt
 
 try:
     import plotly.graph_objects as go
@@ -419,6 +439,7 @@ def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") 
         rr_array = np.array(rr_values, dtype=float)
 
         # Detect changepoints in variance (most useful for quality issues)
+        nk = get_neurokit()
         changepoints = nk.signal_changepoints(rr_array, change=change_type, show=False)
 
         # Calculate segment statistics
@@ -608,6 +629,7 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
         peak_indices = np.insert(peak_indices, 0, 0)  # Add starting point
 
         # Use signal_fixpeaks with Kubios method
+        nk = get_neurokit()
         info, corrected_peaks = nk.signal_fixpeaks(
             peak_indices,
             sampling_rate=sampling_rate,
@@ -3588,6 +3610,7 @@ def main():
                                                 combined_rr.extend(rr_ms)
 
                                                 # Calculate HRV metrics
+                                                nk = get_neurokit()
                                                 peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
                                                 hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
                                                 hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
@@ -3607,6 +3630,7 @@ def main():
                                     if len(selected_sections) > 1 and combined_rr:
                                         progress.progress(80)
                                         st.write("📊 Computing combined analysis...")
+                                        nk = get_neurokit()
                                         peaks = nk.intervals_to_peaks(combined_rr, sampling_rate=1000)
                                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
                                         hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
@@ -3695,6 +3719,7 @@ def main():
 
                                     # RR interval plot for this section
                                     st.markdown("**RR Interval Plot:**")
+                                    plt = get_matplotlib()
                                     fig, ax = plt.subplots(figsize=(12, 4))
                                     ax.plot(rr_intervals, marker='o', markersize=2, linestyle='-', linewidth=0.5)
                                     ax.set_xlabel("Beat Index")
@@ -3777,6 +3802,7 @@ def main():
                                                         rr_ms = [rr.rr_ms for rr in cleaned_rr]
                                                         combined_rr.extend(rr_ms)
 
+                                                        nk = get_neurokit()
                                                         peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
                                                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
                                                         hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
@@ -3790,6 +3816,7 @@ def main():
 
                                             # Combined analysis
                                             if len(selected_sections) > 1 and combined_rr:
+                                                nk = get_neurokit()
                                                 peaks = nk.intervals_to_peaks(combined_rr, sampling_rate=1000)
                                                 hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
                                                 hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
