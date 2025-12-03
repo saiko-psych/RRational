@@ -366,6 +366,233 @@ def validate_regex_pattern(pattern):
         return str(e)
 
 
+@st.fragment
+def render_rr_plot_fragment(participant_id: str):
+    """Render the RR interval plot as a fragment to prevent full page reruns.
+
+    This fragment reads from session state:
+    - plot_data_{participant_id}: Downsampled plot data
+    - participant_events[participant_id]: Events to display
+    - gaps_{participant_id}: Gap detection results (optional)
+
+    When plot options change, only this fragment reruns, not the entire page.
+    """
+    plot_data_key = f"plot_data_{participant_id}"
+    if plot_data_key not in st.session_state:
+        st.warning("Plot data not loaded yet.")
+        return
+
+    plot_data = st.session_state[plot_data_key]
+    stored_data = st.session_state.participant_events.get(participant_id, {})
+
+    # Plot display options
+    st.markdown("**Plot Options:**")
+    col_opt1, col_opt2, col_opt3 = st.columns(3)
+    with col_opt1:
+        show_variability = st.checkbox("Show variability segments", value=False,
+                                       key=f"frag_show_var_{participant_id}",
+                                       help="Variability analysis is computationally intensive.")
+        show_music_sections = st.checkbox("Show music sections", value=True,
+                                          key=f"frag_show_music_sec_{participant_id}")
+    with col_opt2:
+        show_gaps = st.checkbox("Show time gaps", value=True,
+                                key=f"frag_show_gaps_{participant_id}")
+        show_music_events = st.checkbox("Show music events", value=False,
+                                        key=f"frag_show_music_evt_{participant_id}")
+    with col_opt3:
+        gap_threshold = st.number_input(
+            "Gap threshold (s)",
+            min_value=1.0, max_value=60.0, value=15.0, step=1.0,
+            key=f"frag_gap_thresh_{participant_id}",
+            help="Threshold for detecting gaps in data"
+        )
+
+    # Show downsampling info
+    if plot_data['n_displayed'] < plot_data['n_original']:
+        st.caption(f"Showing {plot_data['n_displayed']:,} of {plot_data['n_original']:,} points")
+
+    # Build figure
+    fig = go.Figure()
+    fig.add_trace(go.Scattergl(
+        x=plot_data['timestamps'],
+        y=plot_data['rr_values'],
+        mode='markers+lines',
+        name='RR Intervals',
+        marker=dict(size=3, color='blue'),
+        line=dict(width=1, color='blue'),
+        hovertemplate='Time: %{x}<br>RR: %{y} ms<extra></extra>'
+    ))
+
+    y_min, y_max = plot_data['y_min'], plot_data['y_max']
+    y_range = plot_data['y_range']
+
+    fig.update_layout(
+        title=f"RR Intervals - {participant_id}",
+        xaxis=dict(title="Time", tickformat='%H:%M:%S'),
+        yaxis=dict(title="RR Interval (ms)"),
+        hovermode='closest',
+        height=600,
+        showlegend=True,
+        legend=dict(x=1.02, y=1, xanchor='left', yanchor='top')
+    )
+
+    # Add event markers
+    events_list = stored_data.get('events', [])
+    manual_list = stored_data.get('manual', [])
+    if not isinstance(events_list, list):
+        events_list = []
+    if not isinstance(manual_list, list):
+        manual_list = []
+    current_events = events_list + manual_list
+
+    distinct_colors = ['#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b',
+                       '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    event_by_canonical = {}
+
+    for evt_status in current_events:
+        if hasattr(evt_status, 'canonical'):
+            canonical = evt_status.canonical
+            timestamp = evt_status.first_timestamp
+        else:
+            canonical = st.session_state.normalizer.normalize(evt_status.label) if hasattr(evt_status, 'label') else None
+            timestamp = evt_status.timestamp if hasattr(evt_status, 'timestamp') else None
+
+        if canonical and canonical != "unmatched" and timestamp:
+            if canonical not in event_by_canonical:
+                event_by_canonical[canonical] = []
+            event_by_canonical[canonical].append(timestamp)
+
+    for idx, (event_name, event_times) in enumerate(event_by_canonical.items()):
+        color = distinct_colors[idx % len(distinct_colors)]
+        for event_time in event_times:
+            fig.add_shape(
+                type="line", x0=event_time, x1=event_time,
+                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                line=dict(color=color, width=2, dash='dash'), opacity=0.7
+            )
+            fig.add_annotation(
+                x=event_time, y=y_max + 0.08 * y_range,
+                text=event_name, showarrow=False, textangle=-90,
+                font=dict(color=color, size=10)
+            )
+
+    # Gap detection (fast)
+    timestamps_list = list(plot_data['timestamps'])
+    rr_list = list(plot_data['rr_values'])
+    gap_result = detect_time_gaps(timestamps_list, rr_values=rr_list, gap_threshold_s=gap_threshold)
+    st.session_state[f"gaps_{participant_id}"] = gap_result
+
+    # Variability analysis (slow - only if enabled)
+    if show_variability:
+        changepoint_result = cached_quality_analysis(tuple(rr_list), tuple(timestamps_list))
+        st.session_state[f"changepoints_{participant_id}"] = changepoint_result
+
+        if changepoint_result and changepoint_result.get("changepoint_indices"):
+            n_ts = len(timestamps_list)
+            for seg_stats in changepoint_result["segment_stats"]:
+                start_idx = seg_stats["start_idx"]
+                end_idx = min(seg_stats["end_idx"], n_ts - 1)
+                if start_idx < n_ts and end_idx < n_ts:
+                    cv = seg_stats.get("cv", 0)
+                    if cv > 0.15:
+                        fill_color = 'rgba(255, 0, 0, 0.1)'
+                    elif cv > 0.10:
+                        fill_color = 'rgba(255, 165, 0, 0.1)'
+                    else:
+                        fill_color = 'rgba(0, 255, 0, 0.05)'
+                    fig.add_shape(
+                        type="rect", x0=timestamps_list[start_idx], x1=timestamps_list[end_idx],
+                        y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                        fillcolor=fill_color, line=dict(width=0), layer="below"
+                    )
+
+    # Visualize gaps
+    if show_gaps and gap_result.get("gaps"):
+        for gap in gap_result["gaps"]:
+            fig.add_shape(
+                type="rect", x0=gap["start_time"], x1=gap["end_time"],
+                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                fillcolor='rgba(128, 128, 128, 0.3)',
+                line=dict(color='rgba(128, 128, 128, 0.8)', width=2, dash='dot'),
+                layer="below"
+            )
+            mid_time = gap["start_time"] + (gap["end_time"] - gap["start_time"]) / 2
+            fig.add_annotation(
+                x=mid_time, y=y_min - 0.1 * y_range,
+                text=f"GAP: {gap['duration_s']:.1f}s",
+                showarrow=False, font=dict(color='red', size=9),
+                bgcolor='rgba(255,255,255,0.8)'
+            )
+
+    # Music sections
+    music_events = stored_data.get('music_events', [])
+    if show_music_sections and music_events:
+        music_colors = {
+            'music_1': 'rgba(65, 105, 225, 0.15)',
+            'music_2': 'rgba(50, 205, 50, 0.15)',
+            'music_3': 'rgba(255, 140, 0, 0.15)',
+        }
+        music_sections = {}
+        for evt in music_events:
+            label = evt.raw_label if hasattr(evt, 'raw_label') else str(evt)
+            timestamp = evt.first_timestamp if hasattr(evt, 'first_timestamp') else None
+            if not timestamp:
+                continue
+            if label.endswith('_start'):
+                music_type = label.replace('_start', '')
+                if music_type not in music_sections:
+                    music_sections[music_type] = []
+                music_sections[music_type].append({'start': timestamp, 'end': None})
+            elif label.endswith('_end'):
+                music_type = label.replace('_end', '')
+                if music_type in music_sections:
+                    for sec in reversed(music_sections[music_type]):
+                        if sec['end'] is None:
+                            sec['end'] = timestamp
+                            break
+
+        for music_type, sections in music_sections.items():
+            color = music_colors.get(music_type, 'rgba(128, 128, 128, 0.1)')
+            for sec in sections:
+                if sec['start'] and sec['end']:
+                    fig.add_shape(
+                        type="rect", x0=sec['start'], x1=sec['end'],
+                        y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                        fillcolor=color, line=dict(width=0), layer="below"
+                    )
+                    mid_time = sec['start'] + (sec['end'] - sec['start']) / 2
+                    fig.add_annotation(
+                        x=mid_time, y=y_max + 0.08 * y_range,
+                        text=music_type.replace('_', ' ').title(),
+                        showarrow=False, font=dict(size=8, color='gray')
+                    )
+
+    # Music event lines
+    if show_music_events and music_events:
+        music_line_colors = {
+            'music_1': '#4169E1', 'music_2': '#32CD32', 'music_3': '#FF8C00',
+        }
+        for evt in music_events:
+            label = evt.raw_label if hasattr(evt, 'raw_label') else str(evt)
+            timestamp = evt.first_timestamp if hasattr(evt, 'first_timestamp') else None
+            if timestamp:
+                music_type = label.replace('_start', '').replace('_end', '')
+                color = music_line_colors.get(music_type, '#808080')
+                fig.add_shape(
+                    type="line", x0=timestamp, x1=timestamp,
+                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                    line=dict(color=color, width=1, dash='dot'), opacity=0.5
+                )
+
+    # Display interactive plot
+    st.info("💡 Click on the plot to add a new event at that timestamp")
+    selected_points = plotly_events(fig, click_event=True, hover_event=False, select_event=False, override_height=600)
+
+    # Store click result for parent to handle
+    if selected_points and len(selected_points) > 0:
+        st.session_state[f"plot_click_{participant_id}"] = selected_points[0]
+
+
 def extract_section_rr_intervals(recording, section_def, normalizer):
     """Extract RR intervals for a specific section based on start/end events.
 
@@ -1468,289 +1695,38 @@ def main():
                     )
 
                     if rr_with_timestamps and PLOTLY_AVAILABLE:
-                        # Unpack cached data (list of (timestamp, rr_ms) tuples)
+                        # Unpack cached data
                         timestamps, rr_values = zip(*rr_with_timestamps)
 
-                        # Plot display options - use st.columns for compact layout
-                        st.markdown("**Plot Options:**")
-                        col_opt1, col_opt2, col_opt3 = st.columns(3)
-                        with col_opt1:
-                            show_variability = st.checkbox("Show variability segments", value=False, key=f"show_var_{selected_participant}",
-                                                          help="Variability analysis is computationally intensive. Enable only when needed.")
-                            show_music_sections = st.checkbox("Show music sections", value=True, key=f"show_music_sec_{selected_participant}")
-                        with col_opt2:
-                            show_gaps = st.checkbox("Show time gaps", value=True, key=f"show_gaps_{selected_participant}")
-                            show_music_events = st.checkbox("Show music events", value=False, key=f"show_music_evt_{selected_participant}")
-                        with col_opt3:
-                            gap_threshold = st.number_input(
-                                "Gap threshold (s)",
-                                min_value=1.0,
-                                max_value=60.0,
-                                value=15.0,
-                                step=1.0,
-                                key=f"gap_thresh_{selected_participant}",
-                                help="HRV Logger timestamps are per-packet (~1s). 15s threshold ignores normal packet delays but catches real data loss."
-                            )
-
-                        # Get CACHED plot data (downsampled if needed)
+                        # Get CACHED plot data and store in session state for fragment
                         plot_data = cached_get_plot_data(
                             tuple(timestamps),
                             tuple(rr_values),
                             selected_participant
                         )
+                        st.session_state[f"plot_data_{selected_participant}"] = plot_data
 
-                        # Show downsampling info if applicable
-                        if plot_data['n_displayed'] < plot_data['n_original']:
-                            st.caption(f"Showing {plot_data['n_displayed']:,} of {plot_data['n_original']:,} points for faster rendering")
+                        # Render plot using fragment (prevents full page reruns when toggling options)
+                        render_rr_plot_fragment(selected_participant)
 
-                        # Build figure directly (faster than JSON serialization)
-                        fig = go.Figure()
-                        fig.add_trace(go.Scattergl(
-                            x=plot_data['timestamps'],
-                            y=plot_data['rr_values'],
-                            mode='markers+lines',
-                            name='RR Intervals',
-                            marker=dict(size=3, color='blue'),
-                            line=dict(width=1, color='blue'),
-                            hovertemplate='Time: %{x}<br>RR: %{y} ms<extra></extra>'
-                        ))
+                        # Handle click events from fragment
+                        click_key = f"plot_click_{selected_participant}"
+                        if click_key in st.session_state:
+                            clicked_point = st.session_state[click_key]
+                            del st.session_state[click_key]  # Clear to prevent repeated triggers
 
-                        y_min = plot_data['y_min']
-                        y_max = plot_data['y_max']
-                        y_range = plot_data['y_range']
-
-                        # Set layout
-                        fig.update_layout(
-                            title=f"RR Intervals - {selected_participant}",
-                            xaxis=dict(title="Time", tickformat='%H:%M:%S', hoverformat='%H:%M:%S'),
-                            yaxis=dict(title="RR Interval (ms)"),
-                            hovermode='closest',
-                            height=600,
-                            showlegend=True,
-                            legend=dict(x=1.02, y=1, xanchor='left', yanchor='top')
-                        )
-
-                        # Get events from session state
-                        stored_data = st.session_state.participant_events[selected_participant]
-                        events_list = stored_data.get('events', [])
-                        manual_list = stored_data.get('manual', [])
-                        # Ensure both are lists before concatenating
-                        if not isinstance(events_list, list):
-                            events_list = []
-                        if not isinstance(manual_list, list):
-                            manual_list = []
-                        current_events = events_list + manual_list
-
-                        # Add event markers as vertical lines (fast - just shapes)
-                        distinct_colors = ['#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b',
-                                         '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-                        event_by_canonical = {}
-
-                        for evt_status in current_events:
-                            if hasattr(evt_status, 'canonical'):
-                                canonical = evt_status.canonical
-                                timestamp = evt_status.first_timestamp
-                            else:
-                                canonical = st.session_state.normalizer.normalize(evt_status.label) if hasattr(evt_status, 'label') else None
-                                timestamp = evt_status.timestamp if hasattr(evt_status, 'timestamp') else None
-
-                            if canonical and canonical != "unmatched" and timestamp:
-                                if canonical not in event_by_canonical:
-                                    event_by_canonical[canonical] = []
-                                event_by_canonical[canonical].append(timestamp)
-
-                        # Draw event lines using shapes (fast operation)
-                        for idx, (event_name, event_times) in enumerate(event_by_canonical.items()):
-                            color = distinct_colors[idx % len(distinct_colors)]
-                            for event_time in event_times:
-                                # Add vertical line as a shape
-                                fig.add_shape(
-                                    type="line",
-                                    x0=event_time, x1=event_time,
-                                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                                    line=dict(color=color, width=2, dash='dash'),
-                                    opacity=0.7
-                                )
-                                # Add annotation at the top
-                                fig.add_annotation(
-                                    x=event_time,
-                                    y=y_max + 0.08 * y_range,
-                                    text=event_name,
-                                    showarrow=False,
-                                    textangle=-90,
-                                    font=dict(color=color, size=10)
-                                )
-
-                        # Prepare data for quality analyses (only run if needed)
-                        rr_list = list(rr_values)
-                        timestamps_list = list(timestamps)
-                        n_ts = len(timestamps_list)
-
-                        # Gap detection is fast - always run for visualization
-                        gap_result = detect_time_gaps(timestamps_list, rr_values=rr_list, gap_threshold_s=gap_threshold)
-
-                        # Changepoint analysis is SLOW (~1s) - only run if variability view is enabled
-                        changepoint_result = None
-                        if show_variability:
-                            changepoint_result = cached_quality_analysis(tuple(rr_values), tuple(timestamps))
-
-                        # Visualize variability segments if enabled
-                        if show_variability and changepoint_result and changepoint_result["changepoint_indices"]:
-                            for seg_stats in changepoint_result["segment_stats"]:
-                                start_idx = seg_stats["start_idx"]
-                                end_idx = min(seg_stats["end_idx"], n_ts - 1)
-
-                                if start_idx < n_ts and end_idx < n_ts:
-                                    cv = seg_stats.get("cv", 0)
-                                    if cv > 0.15:
-                                        fill_color = 'rgba(255, 0, 0, 0.1)'
-                                    elif cv > 0.10:
-                                        fill_color = 'rgba(255, 165, 0, 0.1)'
-                                    else:
-                                        fill_color = 'rgba(0, 255, 0, 0.05)'
-
-                                    fig.add_shape(
-                                        type="rect",
-                                        x0=timestamps_list[start_idx],
-                                        x1=timestamps_list[end_idx],
-                                        y0=y_min - 0.05 * y_range,
-                                        y1=y_max + 0.05 * y_range,
-                                        fillcolor=fill_color,
-                                        line=dict(width=0),
-                                        layer="below"
-                                    )
-
-                        # Visualize gaps if enabled
-                        if show_gaps and gap_result["gaps"]:
-                            for gap in gap_result["gaps"]:
-                                fig.add_shape(
-                                    type="rect",
-                                    x0=gap["start_time"],
-                                    x1=gap["end_time"],
-                                    y0=y_min - 0.05 * y_range,
-                                    y1=y_max + 0.05 * y_range,
-                                    fillcolor='rgba(128, 128, 128, 0.3)',
-                                    line=dict(color='rgba(128, 128, 128, 0.8)', width=2, dash='dot'),
-                                    layer="below"
-                                )
-                                mid_time = gap["start_time"] + (gap["end_time"] - gap["start_time"]) / 2
-                                fig.add_annotation(
-                                    x=mid_time,
-                                    y=y_min - 0.1 * y_range,
-                                    text=f"GAP: {gap['duration_s']:.1f}s",
-                                    showarrow=False,
-                                    font=dict(color='red', size=9),
-                                    bgcolor='rgba(255,255,255,0.8)'
-                                )
-
-                        # Store analyses for info panel (only if computed)
-                        if changepoint_result:
-                            st.session_state[f"changepoints_{selected_participant}"] = changepoint_result
-                        st.session_state[f"gaps_{selected_participant}"] = gap_result
-
-                        # Visualize music sections if enabled
-                        music_events = stored_data.get('music_events', [])
-                        if show_music_sections and music_events:
-                            # Group music events by music type (pair start/end)
-                            music_colors = {
-                                'music_1': 'rgba(65, 105, 225, 0.15)',  # Royal blue
-                                'music_2': 'rgba(50, 205, 50, 0.15)',   # Lime green
-                                'music_3': 'rgba(255, 140, 0, 0.15)',   # Dark orange
-                            }
-                            music_sections = {}  # {music_type: [(start, end), ...]}
-
-                            for evt in music_events:
-                                label = evt.raw_label if hasattr(evt, 'raw_label') else str(evt)
-                                timestamp = evt.first_timestamp if hasattr(evt, 'first_timestamp') else None
-                                if not timestamp:
-                                    continue
-
-                                if label.endswith('_start'):
-                                    music_type = label.replace('_start', '')
-                                    if music_type not in music_sections:
-                                        music_sections[music_type] = []
-                                    music_sections[music_type].append({'start': timestamp, 'end': None})
-                                elif label.endswith('_end'):
-                                    music_type = label.replace('_end', '')
-                                    if music_type in music_sections and music_sections[music_type]:
-                                        # Find the last section without an end
-                                        for sec in reversed(music_sections[music_type]):
-                                            if sec['end'] is None:
-                                                sec['end'] = timestamp
-                                                break
-
-                            # Draw music sections as shaded regions
-                            for music_type, sections in music_sections.items():
-                                color = music_colors.get(music_type, 'rgba(128, 128, 128, 0.1)')
-                                for sec in sections:
-                                    if sec['start'] and sec['end']:
-                                        fig.add_shape(
-                                            type="rect",
-                                            x0=sec['start'],
-                                            x1=sec['end'],
-                                            y0=y_min - 0.05 * y_range,
-                                            y1=y_max + 0.05 * y_range,
-                                            fillcolor=color,
-                                            line=dict(width=0),
-                                            layer="below"
-                                        )
-                                        # Add label at bottom
-                                        mid_time = sec['start'] + (sec['end'] - sec['start']) / 2
-                                        fig.add_annotation(
-                                            x=mid_time,
-                                            y=y_max + 0.08 * y_range,
-                                            text=music_type.replace('_', ' ').title(),
-                                            showarrow=False,
-                                            font=dict(size=8, color='gray'),
-                                        )
-
-                        # Show music event lines if enabled
-                        if show_music_events and music_events:
-                            music_line_colors = {
-                                'music_1': '#4169E1',  # Royal blue
-                                'music_2': '#32CD32',  # Lime green
-                                'music_3': '#FF8C00',  # Dark orange
-                            }
-                            for evt in music_events:
-                                label = evt.raw_label if hasattr(evt, 'raw_label') else str(evt)
-                                timestamp = evt.first_timestamp if hasattr(evt, 'first_timestamp') else None
-                                if not timestamp:
-                                    continue
-
-                                music_type = label.replace('_start', '').replace('_end', '')
-                                color = music_line_colors.get(music_type, '#808080')
-
-                                fig.add_shape(
-                                    type="line",
-                                    x0=timestamp, x1=timestamp,
-                                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                                    line=dict(color=color, width=1, dash='dot'),
-                                    opacity=0.5
-                                )
-
-                        # Display interactive plot with click events (layout already set in cached base plot)
-                        st.info("💡 Click on the plot to add a new event at that timestamp")
-                        selected_points = plotly_events(fig, click_event=True, hover_event=False, select_event=False, override_height=600)
-
-                        # Handle click events to add new event markers
-                        if selected_points and len(selected_points) > 0:
-                            clicked_point = selected_points[0]
                             if 'x' in clicked_point:
-                                # Convert x value back to timestamp (make timezone-aware like original data)
                                 from datetime import datetime
                                 clicked_timestamp = pd.to_datetime(clicked_point['x'])
-                                # Make timezone-aware (UTC) to match original event timestamps
                                 if clicked_timestamp.tzinfo is None:
                                     clicked_timestamp = clicked_timestamp.tz_localize('UTC')
 
-                                # Show form to add event
                                 with st.form(key=f"add_event_from_plot_{selected_participant}"):
                                     st.write(f"Add event at: {clicked_timestamp.strftime('%H:%M:%S')}")
                                     new_event_label = st.text_input("Event label:")
                                     submitted = st.form_submit_button("Add Event")
 
                                     if submitted and new_event_label:
-                                        # Add to manual events
                                         from music_hrv.prep.summaries import EventStatus
                                         new_event = EventStatus(
                                             raw_label=new_event_label,
@@ -1763,7 +1739,7 @@ def main():
                                             st.session_state.participant_events[selected_participant] = {'events': [], 'manual': []}
 
                                         st.session_state.participant_events[selected_participant]['manual'].append(new_event)
-                                        show_toast(f"✅ Added event '{new_event_label}' at {clicked_timestamp.strftime('%H:%M:%S')}", icon="success")
+                                        show_toast(f"Added event '{new_event_label}' at {clicked_timestamp.strftime('%H:%M:%S')}", icon="success")
                                         st.rerun()
 
                 except Exception as e:
