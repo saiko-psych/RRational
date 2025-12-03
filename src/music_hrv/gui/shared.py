@@ -216,6 +216,7 @@ def update_normalizer():
     """Update the normalizer when events are added/removed in GUI."""
     st.session_state.normalizer = create_gui_normalizer(st.session_state.all_events)
     cached_load_hrv_logger_preview.clear()
+    cached_load_vns_preview.clear()
 
 
 def show_toast(message, icon="success"):
