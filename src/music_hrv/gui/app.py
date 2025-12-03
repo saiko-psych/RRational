@@ -689,20 +689,20 @@ def main():
             st.markdown("**💾 Auto-save enabled**")
 
         st.markdown("---")
-        st.caption("Configure data import settings in the **Data & Groups** tab.")
+        st.caption("Configure settings in the tabs below.")
 
-    # Main content tabs with Analysis tab
+    # Main content tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📁 Data & Groups",
-        "🎭 Event Mapping",
-        "👥 Group Management",
-        "📐 Sections",
-        "📊 Analysis"
+        "Data",
+        "Events",
+        "Groups",
+        "Sections",
+        "Analysis"
     ])
 
-    # ================== TAB 1: Data & Groups ==================
+    # ================== TAB: DATA ==================
     with tab1:
-        st.header("Data Import & Participants")
+        st.header("Data Import")
 
         # Quick help section
         with st.expander("❓ Quick Help - Getting Started", expanded=False):
@@ -2695,9 +2695,9 @@ def main():
                     else:
                         st.caption("⚠️ Not yet saved")
 
-    # ================== TAB 2: Event Mapping ==================
+    # ================== TAB: EVENTS ==================
     with tab2:
-        st.header("🎭 Event Mapping")
+        st.header("Event Mapping")
 
         with st.expander("❓ Help - Event Mapping", expanded=False):
             st.markdown("""
@@ -2949,9 +2949,9 @@ def main():
         else:
             st.info("No events defined yet. Create events above.")
 
-    # ================== TAB 3: Group Management ==================
+    # ================== TAB: GROUPS ==================
     with tab3:
-        st.header("👥 Group Management")
+        st.header("Group Management")
 
         with st.expander("❓ Help - Groups & Playlists", expanded=False):
             st.markdown("""
@@ -3309,9 +3309,9 @@ def main():
         st.markdown("---")
         st.info("💡 **All changes save automatically** when you modify group settings, select events, or assign participants.")
 
-    # ================== TAB 4: Sections ==================
+    # ================== TAB: SECTIONS ==================
     with tab4:
-        st.header("📐 Sections")
+        st.header("Sections")
         st.markdown("Define time ranges (sections) between events for analysis. Each section has a start and end event.")
 
         # Initialize sections if not present
@@ -3461,9 +3461,9 @@ def main():
         else:
             st.info("No sections defined yet. Create sections above.")
 
-    # ================== TAB 5: Analysis ==================
+    # ================== TAB: ANALYSIS ==================
     with tab5:
-        st.header("📊 HRV Analysis with NeuroKit2")
+        st.header("HRV Analysis")
 
         with st.expander("❓ Help - HRV Analysis", expanded=False):
             st.markdown("""
