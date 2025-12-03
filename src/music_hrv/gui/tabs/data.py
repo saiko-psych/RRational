@@ -696,7 +696,13 @@ def _render_participants_table():
 
     with col_import:
         # CSV import for group/playlist matching
-        with st.expander("📥 Import Group/Playlist from CSV", expanded=False):
+        # Track expander state in session state to prevent collapse on rerun
+        if "csv_import_expanded" not in st.session_state:
+            st.session_state.csv_import_expanded = False
+        # Keep expanded if file is uploaded (check before expander renders)
+        if st.session_state.get("group_playlist_csv_upload") is not None:
+            st.session_state.csv_import_expanded = True
+        with st.expander("📥 Import Group/Playlist from CSV", expanded=st.session_state.csv_import_expanded):
             st.markdown("""
             Upload a CSV file to automatically assign groups and playlists.
             1. First define labels for your group/playlist values below
@@ -728,6 +734,7 @@ def _render_participants_table():
                     if st.button("Add", key="add_group_label"):
                         if new_group_val and new_group_label:
                             st.session_state.csv_group_labels[new_group_val] = new_group_label
+                            st.session_state.csv_import_expanded = True
                             st.rerun()
 
                 # Show existing group labels
@@ -739,6 +746,7 @@ def _render_participants_table():
                         with gcol2:
                             if st.button("✕", key=f"del_g_{gval}"):
                                 del st.session_state.csv_group_labels[gval]
+                                st.session_state.csv_import_expanded = True
                                 st.rerun()
                 else:
                     st.caption("No group labels defined yet")
@@ -756,6 +764,7 @@ def _render_participants_table():
                     if st.button("Add", key="add_playlist_label"):
                         if new_playlist_val and new_playlist_label:
                             st.session_state.csv_playlist_labels[new_playlist_val] = new_playlist_label
+                            st.session_state.csv_import_expanded = True
                             st.rerun()
 
                 # Show existing playlist labels
@@ -767,6 +776,7 @@ def _render_participants_table():
                         with pcol2:
                             if st.button("✕", key=f"del_p_{pval}"):
                                 del st.session_state.csv_playlist_labels[pval]
+                                st.session_state.csv_import_expanded = True
                                 st.rerun()
                 else:
                     st.caption("No playlist labels defined yet")
@@ -806,6 +816,10 @@ def _render_participants_table():
                 help="Upload your CSV file with participant assignments"
             )
 
+            # Keep expander open when file is uploaded
+            if uploaded_file is not None:
+                st.session_state.csv_import_expanded = True
+
             if uploaded_file is not None:
                 try:
                     import_df = pd.read_csv(uploaded_file)
@@ -813,8 +827,17 @@ def _render_participants_table():
 
                     st.success(f"Found {len(import_df)} rows, {len(csv_columns)} columns")
 
-                    # Preview the data
-                    st.dataframe(import_df.head(5), use_container_width=True)
+                    # Reorder columns: selected columns first, then others
+                    priority_cols = []
+                    for col in [participant_col, group_col, playlist_col]:
+                        if col and col in csv_columns:
+                            priority_cols.append(col)
+                    other_cols = [c for c in csv_columns if c not in priority_cols]
+                    reordered_cols = priority_cols + other_cols
+                    preview_df = import_df[reordered_cols]
+
+                    # Preview the data (scrollable with max height)
+                    st.dataframe(preview_df, use_container_width=True, height=200)
 
                     # Validate participant column exists
                     if participant_col not in csv_columns:
