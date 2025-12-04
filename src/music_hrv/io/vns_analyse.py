@@ -14,7 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Literal
 
 from music_hrv.io.hrv_logger import (
     DEFAULT_ID_PATTERN,
@@ -151,30 +150,29 @@ def load_vns_recording(
                 # Convert to milliseconds
                 rr_ms = int(rr_seconds * 1000)
 
-                # Validate RR range (200ms to 3000ms)
-                if 200 <= rr_ms <= 3000:
-                    # Calculate timestamp
-                    timestamp = base_time + timedelta(milliseconds=cumulative_ms)
+                # Load ALL intervals - filtering happens at display/analysis time
+                # Calculate timestamp based on cumulative RR values
+                timestamp = base_time + timedelta(milliseconds=cumulative_ms)
 
-                    rr_intervals.append(RRInterval(
-                        timestamp=timestamp,
-                        rr_ms=rr_ms,
-                        elapsed_ms=cumulative_ms,
-                    ))
+                rr_intervals.append(RRInterval(
+                    timestamp=timestamp,
+                    rr_ms=rr_ms,
+                    elapsed_ms=cumulative_ms,
+                ))
 
-                    # Check for note (Notiz:)
-                    if len(parts) > 1:
-                        note_text = parts[1].strip()
-                        if note_text.startswith("Notiz:"):
-                            note_label = note_text[6:].strip()  # Remove "Notiz:" prefix
-                            if note_label:
-                                events.append(EventMarker(
-                                    label=note_label,
-                                    timestamp=timestamp,
-                                    offset_s=cumulative_ms / 1000.0,
-                                ))
+                # Check for note (Notiz:)
+                if len(parts) > 1:
+                    note_text = parts[1].strip()
+                    if note_text.startswith("Notiz:"):
+                        note_label = note_text[6:].strip()  # Remove "Notiz:" prefix
+                        if note_label:
+                            events.append(EventMarker(
+                                label=note_label,
+                                timestamp=timestamp,
+                                offset_s=cumulative_ms / 1000.0,
+                            ))
 
-                    cumulative_ms += rr_ms
+                cumulative_ms += rr_ms
 
             except ValueError:
                 pass  # Not a valid RR line

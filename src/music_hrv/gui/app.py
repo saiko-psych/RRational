@@ -28,6 +28,12 @@ from music_hrv.gui.persistence import (
 )
 from music_hrv.gui.tabs.setup import render_setup_tab
 from music_hrv.gui.tabs.data import render_data_tab
+from music_hrv.gui.help_text import (
+    ARTIFACT_CORRECTION_HELP,
+    VNS_DATA_HELP,
+    SECTIONS_HELP,
+    ANALYSIS_HELP,
+)
 
 # Lazy import for neurokit2 and matplotlib (saves ~0.9s on startup)
 NEUROKIT_AVAILABLE = True
@@ -354,10 +360,36 @@ def cached_load_recording(rr_paths_tuple, events_paths_tuple, participant_id: st
     }
 
 
+@st.cache_data(show_spinner=False, ttl=600)
+def cached_load_vns_recording(vns_path_str: str, participant_id: str, use_corrected: bool = False):
+    """Cache loaded VNS recording data for instant access."""
+    from music_hrv.io.vns_analyse import VNSRecordingBundle, load_vns_recording
+    bundle = VNSRecordingBundle(
+        participant_id=participant_id,
+        file_path=Path(vns_path_str),
+    )
+    recording = load_vns_recording(bundle, use_corrected=use_corrected)
+    return {
+        'rr_intervals': [(rr.timestamp, rr.rr_ms, rr.elapsed_ms) for rr in recording.rr_intervals],
+        'events': [(e.label, e.timestamp) for e in recording.events],
+        'raw_events': [],  # VNS doesn't have duplicate tracking
+    }
+
+
 @st.cache_data(show_spinner=False, ttl=300)
-def cached_clean_rr_intervals(rr_data_tuple, config_dict):
-    """Cache cleaned RR intervals to avoid recomputation."""
-    from music_hrv.cleaning.rr import clean_rr_intervals, RRInterval
+def cached_clean_rr_intervals(rr_data_tuple, config_dict, is_vns_data: bool = False):
+    """Cache cleaned RR intervals to avoid recomputation.
+
+    For VNS data, returns ALL intervals with flag status (for display).
+    Flagged intervals are shown in RED but timestamps are preserved.
+
+    Returns:
+        tuple: (rr_data, stats, extra_info)
+        - For HRV Logger: rr_data = [(timestamp, rr_ms), ...], cleaned data
+        - For VNS: rr_data = [(timestamp, rr_ms, is_flagged), ...], ALL data with flags
+    """
+    from music_hrv.cleaning.rr import clean_rr_intervals, clean_rr_intervals_with_flags, RRInterval
+
     # Reconstruct RR intervals from cached data
     rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
                     for ts, rr, elapsed in rr_data_tuple]
@@ -366,9 +398,19 @@ def cached_clean_rr_intervals(rr_data_tuple, config_dict):
         rr_max_ms=config_dict["rr_max_ms"],
         sudden_change_pct=config_dict["sudden_change_pct"]
     )
-    cleaned, stats = clean_rr_intervals(rr_intervals, config)
-    # Return as serializable tuples
-    return [(rr.timestamp, rr.rr_ms) for rr in cleaned if rr.timestamp], stats
+
+    if is_vns_data:
+        # For VNS data, keep ALL intervals with flag status (original timestamps preserved)
+        # Timestamps are synthesized from cumulative RR, so we can't remove any
+        flagged_intervals, stats = clean_rr_intervals_with_flags(rr_intervals, config)
+        # Return as tuples: (timestamp, rr_ms, is_flagged)
+        result = [(fi.interval.timestamp, fi.interval.rr_ms, fi.is_flagged)
+                  for fi in flagged_intervals if fi.interval.timestamp]
+        return result, stats, {}
+    else:
+        # For HRV Logger, apply cleaning (real timestamps are independent of RR values)
+        cleaned, stats = clean_rr_intervals(rr_intervals, config)
+        return [(rr.timestamp, rr.rr_ms) for rr in cleaned if rr.timestamp], stats, {}
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -385,6 +427,70 @@ def cached_quality_analysis(rr_values_tuple, timestamps_tuple):
         seg_stats["start_time"] = timestamps_list[start_idx] if start_idx < n_ts else None
         seg_stats["end_time"] = timestamps_list[end_idx] if end_idx < n_ts else None
     return result
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def cached_artifact_detection(rr_values_tuple, timestamps_tuple):
+    """Cache NeuroKit2 artifact detection results with indices.
+
+    Returns dict with artifact indices mapped to timestamps for plotting.
+    """
+    if not NEUROKIT_AVAILABLE:
+        return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
+                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {}}
+
+    rr_list = list(rr_values_tuple)
+    timestamps_list = list(timestamps_tuple)
+
+    if len(rr_list) < 10:
+        return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
+                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {}}
+
+    try:
+        import numpy as np
+        nk = get_neurokit()
+
+        rr_array = np.array(rr_list, dtype=float)
+        peak_indices = np.cumsum(rr_array).astype(int)
+        peak_indices = np.insert(peak_indices, 0, 0)
+
+        info, _ = nk.signal_fixpeaks(
+            peak_indices,
+            sampling_rate=1000,
+            iterative=True,
+            method="Kubios",
+            show=False,
+        )
+
+        # Collect all artifact indices
+        artifact_indices = set()
+        by_type = {}
+
+        for artifact_type in ["ectopic", "missed", "extra", "longshort"]:
+            indices = info.get(artifact_type, [])
+            if isinstance(indices, np.ndarray):
+                indices = indices.tolist()
+            elif not isinstance(indices, list):
+                indices = []
+            by_type[artifact_type] = len(indices)
+            artifact_indices.update(indices)
+
+        # Filter to valid range and get timestamps/values
+        valid_indices = sorted([i for i in artifact_indices if 0 <= i < len(timestamps_list)])
+        artifact_timestamps = [timestamps_list[i] for i in valid_indices]
+        artifact_rr = [rr_list[i] for i in valid_indices]
+
+        return {
+            "artifact_indices": valid_indices,
+            "artifact_timestamps": artifact_timestamps,
+            "artifact_rr": artifact_rr,
+            "total_artifacts": len(valid_indices),
+            "artifact_ratio": len(valid_indices) / len(rr_list) if rr_list else 0.0,
+            "by_type": by_type,
+        }
+    except Exception:
+        return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
+                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {}}
 
 
 @st.cache_data(show_spinner=False, ttl=600)
@@ -540,14 +646,18 @@ def get_summary_dict():
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str, downsample_threshold: int = 5000):
+def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str, downsample_threshold: int = 5000, flags_tuple=None):
     """Cache processed plot data (NOT the figure - that's slow to serialize).
 
     Downsamples data if too many points for faster rendering.
     Returns the data needed to build the plot quickly.
+
+    Args:
+        flags_tuple: Optional tuple of booleans indicating flagged (problematic) intervals (VNS only)
     """
     timestamps = list(timestamps_tuple)
     rr_values = list(rr_values_tuple)
+    flags = list(flags_tuple) if flags_tuple else None
 
     # Downsample if too many points (keeps every Nth point)
     n_points = len(timestamps)
@@ -555,12 +665,14 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
         step = n_points // downsample_threshold
         timestamps = timestamps[::step]
         rr_values = rr_values[::step]
+        if flags:
+            flags = flags[::step]
 
     y_min = min(rr_values)
     y_max = max(rr_values)
     y_range = y_max - y_min
 
-    return {
+    result = {
         'timestamps': timestamps,
         'rr_values': rr_values,
         'y_min': y_min,
@@ -570,6 +682,9 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
         'n_displayed': len(timestamps),
         'participant_id': participant_id
     }
+    if flags:
+        result['flags'] = flags
+    return result
 
 
 @st.fragment
@@ -1026,27 +1141,53 @@ def render_rr_plot_fragment(participant_id: str):
     plot_data = st.session_state[plot_data_key]
     stored_data = st.session_state.participant_events.get(participant_id, {})
 
+    # Determine source_app (check plot_data first, then fall back to summary)
+    source_app = plot_data.get('source_app')
+    if not source_app:
+        # Fall back to checking the summary
+        summary = get_summary_dict().get(participant_id)
+        source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
+    is_vns_data = (source_app == "VNS Analyse")
+
+    # Show source info and clear any old gap data for VNS
+    if is_vns_data:
+        st.info(f"**Data source: {source_app}** - Gap detection disabled (timestamps synthesized from RR intervals)")
+        # Force clear any old gap data for VNS participants
+        st.session_state[f"gaps_{participant_id}"] = {
+            "gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": True
+        }
+
     # Plot display options
     st.markdown("**Plot Options:**")
     col_opt1, col_opt2, col_opt3 = st.columns(3)
     with col_opt1:
+        show_artifacts = st.checkbox("Show artifacts (NeuroKit2)", value=False,
+                                     key=f"frag_show_artifacts_{participant_id}",
+                                     help="Detect ectopic, missed, extra beats using Kubios algorithm")
         show_variability = st.checkbox("Show variability segments", value=False,
                                        key=f"frag_show_var_{participant_id}",
-                                       help="Variability analysis is computationally intensive.")
+                                       help="Detect variance changepoints")
+    with col_opt2:
         show_music_sections = st.checkbox("Show music sections", value=True,
                                           key=f"frag_show_music_sec_{participant_id}")
-    with col_opt2:
-        show_gaps = st.checkbox("Show time gaps", value=True,
-                                key=f"frag_show_gaps_{participant_id}")
         show_music_events = st.checkbox("Show music events", value=False,
                                         key=f"frag_show_music_evt_{participant_id}")
     with col_opt3:
+        show_gaps = st.checkbox("Show time gaps", value=True,
+                                key=f"frag_show_gaps_{participant_id}",
+                                disabled=is_vns_data)
         gap_threshold = st.number_input(
             "Gap threshold (s)",
             min_value=1.0, max_value=60.0, value=15.0, step=1.0,
             key=f"frag_gap_thresh_{participant_id}",
-            help="Threshold for detecting gaps in data"
+            help="Threshold for detecting gaps in data",
+            disabled=is_vns_data
         )
+        with st.popover("ℹ️ Help"):
+            if is_vns_data:
+                st.markdown(VNS_DATA_HELP)
+            else:
+                st.markdown(ARTIFACT_CORRECTION_HELP)
 
     # Show downsampling info
     if plot_data['n_displayed'] < plot_data['n_original']:
@@ -1054,15 +1195,67 @@ def render_rr_plot_fragment(participant_id: str):
 
     # Build figure
     fig = go.Figure()
-    fig.add_trace(go.Scattergl(
-        x=plot_data['timestamps'],
-        y=plot_data['rr_values'],
-        mode='markers+lines',
-        name='RR Intervals',
-        marker=dict(size=3, color='blue'),
-        line=dict(width=1, color='blue'),
-        hovertemplate='Time: %{x}<br>RR: %{y} ms<extra></extra>'
-    ))
+
+    # Check if we have flags (VNS data with flagged intervals)
+    flags = plot_data.get('flags')
+    if flags:
+        # VNS data: Split into valid (blue) and flagged (red) intervals
+        timestamps = plot_data['timestamps']
+        rr_values = plot_data['rr_values']
+
+        good_ts, good_rr = [], []
+        flagged_ts, flagged_rr = [], []
+
+        for ts, rr, f in zip(timestamps, rr_values, flags):
+            if f:
+                flagged_ts.append(ts)
+                flagged_rr.append(rr)
+            else:
+                good_ts.append(ts)
+                good_rr.append(rr)
+
+        # Count flagged intervals for info display
+        n_flagged = len(flagged_ts)
+        n_total = len(timestamps)
+        if n_flagged > 0:
+            flagged_time_ms = sum(flagged_rr)
+            st.warning(f"⚠️ **{n_flagged} intervals flagged** ({n_flagged/n_total*100:.1f}%) - "
+                      f"shown in RED, excluded from HRV analysis. "
+                      f"Total flagged time: {flagged_time_ms/1000:.1f}s")
+
+        # Valid intervals in blue (connected with lines)
+        if good_ts:
+            fig.add_trace(go.Scattergl(
+                x=good_ts,
+                y=good_rr,
+                mode='markers+lines',
+                name='RR Intervals (valid)',
+                marker=dict(size=3, color='blue'),
+                line=dict(width=1, color='blue'),
+                hovertemplate='Time: %{x}<br>RR: %{y} ms<extra></extra>'
+            ))
+
+        # Flagged intervals in red (markers only, no lines to show discontinuity)
+        if flagged_ts:
+            fig.add_trace(go.Scattergl(
+                x=flagged_ts,
+                y=flagged_rr,
+                mode='markers',
+                name='RR Intervals (flagged)',
+                marker=dict(size=5, color='red', symbol='x'),
+                hovertemplate='Time: %{x}<br>RR: %{y} ms (FLAGGED)<extra></extra>'
+            ))
+    else:
+        # HRV Logger: Already cleaned, show all in blue
+        fig.add_trace(go.Scattergl(
+            x=plot_data['timestamps'],
+            y=plot_data['rr_values'],
+            mode='markers+lines',
+            name='RR Intervals',
+            marker=dict(size=3, color='blue'),
+            line=dict(width=1, color='blue'),
+            hovertemplate='Time: %{x}<br>RR: %{y} ms<extra></extra>'
+        ))
 
     y_min, y_max = plot_data['y_min'], plot_data['y_max']
     y_range = plot_data['y_range']
@@ -1117,13 +1310,43 @@ def render_rr_plot_fragment(participant_id: str):
                 font=dict(color=color, size=10)
             )
 
-    # Gap detection (fast)
+    # Gap detection (fast) - skip for VNS data (synthesized timestamps)
     timestamps_list = list(plot_data['timestamps'])
     rr_list = list(plot_data['rr_values'])
-    gap_result = detect_time_gaps(timestamps_list, rr_values=rr_list, gap_threshold_s=gap_threshold)
+    if is_vns_data:
+        # VNS timestamps are synthesized from RR intervals, so gaps are meaningless
+        gap_result = {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": True}
+    else:
+        gap_result = detect_time_gaps(timestamps_list, rr_values=rr_list, gap_threshold_s=gap_threshold)
     st.session_state[f"gaps_{participant_id}"] = gap_result
 
     # Variability analysis (slow - only if enabled)
+    # Artifact detection using NeuroKit2 (Kubios algorithm)
+    if show_artifacts:
+        artifact_result = cached_artifact_detection(tuple(rr_list), tuple(timestamps_list))
+        st.session_state[f"artifacts_{participant_id}"] = artifact_result
+
+        if artifact_result and artifact_result["total_artifacts"] > 0:
+            # Show artifact summary
+            by_type = artifact_result["by_type"]
+            st.info(f"🔍 **{artifact_result['total_artifacts']} artifacts detected** "
+                   f"({artifact_result['artifact_ratio']*100:.1f}%) - "
+                   f"Ectopic: {by_type.get('ectopic', 0)}, "
+                   f"Missed: {by_type.get('missed', 0)}, "
+                   f"Extra: {by_type.get('extra', 0)}, "
+                   f"Long/Short: {by_type.get('longshort', 0)}")
+
+            # Add artifact markers to plot (orange X markers)
+            if artifact_result["artifact_timestamps"]:
+                fig.add_trace(go.Scattergl(
+                    x=artifact_result["artifact_timestamps"],
+                    y=artifact_result["artifact_rr"],
+                    mode='markers',
+                    name='Artifacts (NeuroKit2)',
+                    marker=dict(size=8, color='orange', symbol='x', line=dict(width=2)),
+                    hovertemplate='Time: %{x}<br>RR: %{y} ms (ARTIFACT)<extra></extra>'
+                ))
+
     if show_variability:
         changepoint_result = cached_quality_analysis(tuple(rr_list), tuple(timestamps_list))
         st.session_state[f"changepoints_{participant_id}"] = changepoint_result
@@ -1147,8 +1370,8 @@ def render_rr_plot_fragment(participant_id: str):
                         fillcolor=fill_color, line=dict(width=0), layer="below"
                     )
 
-    # Visualize gaps
-    if show_gaps and gap_result.get("gaps"):
+    # Visualize gaps (skip for VNS data - timestamps are synthesized)
+    if show_gaps and gap_result.get("gaps") and not is_vns_data:
         for gap in gap_result["gaps"]:
             fig.add_shape(
                 type="rect", x0=gap["start_time"], x1=gap["end_time"],
@@ -1654,6 +1877,7 @@ def main():
                     selected = st.session_state.participant_selector
                     if selected in participant_list:
                         st.session_state.current_participant_idx = participant_list.index(selected)
+                        st.session_state.scroll_to_top_trigger = True
 
                 st.selectbox(
                     "Select participant",
@@ -1671,6 +1895,7 @@ def main():
                         # Sync selectbox key with new index
                         new_participant = participant_list[st.session_state.current_participant_idx]
                         st.session_state.participant_selector = new_participant
+                        st.session_state.scroll_to_top_trigger = True
 
                 st.button(
                     "Previous",
@@ -1687,6 +1912,7 @@ def main():
                         # Sync selectbox key with new index
                         new_participant = participant_list[st.session_state.current_participant_idx]
                         st.session_state.participant_selector = new_participant
+                        st.session_state.scroll_to_top_trigger = True
 
                 st.button(
                     "Next",
@@ -1695,6 +1921,17 @@ def main():
                     use_container_width=True,
                     on_click=go_next
                 )
+
+            # Scroll to top when navigating between participants
+            if st.session_state.get("scroll_to_top_trigger", False):
+                st.session_state.scroll_to_top_trigger = False
+                st.components.v1.html("""
+                    <script>
+                        var streamlitDoc = window.parent.document;
+                        var appContainer = streamlitDoc.querySelector('[data-testid="stAppViewContainer"]');
+                        if (appContainer) appContainer.scrollTop = 0;
+                    </script>
+                """, height=0)
 
             # Update selected_participant from current index
             selected_participant = participant_list[st.session_state.current_participant_idx] if participant_list else None
@@ -1773,16 +2010,33 @@ def main():
                 st.subheader("RR Interval Visualization")
 
                 try:
-                    # Load the recording using CACHED functions for instant access
-                    bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-                    bundle = next(b for b in bundles if b.participant_id == selected_participant)
+                    # Load recording data based on source app (HRV Logger or VNS)
+                    source_app = getattr(summary, 'source_app', 'HRV Logger')
 
-                    # Get cached recording data (uses tuples for hashability)
-                    recording_data = cached_load_recording(
-                        tuple(str(p) for p in bundle.rr_paths),
-                        tuple(str(p) for p in bundle.events_paths),
-                        selected_participant
-                    )
+                    if source_app == "VNS Analyse" and getattr(summary, 'vns_path', None):
+                        # Load VNS recording using stored path
+                        recording_data = cached_load_vns_recording(
+                            str(summary.vns_path),
+                            selected_participant,
+                            use_corrected=st.session_state.get("vns_use_corrected", False),
+                        )
+                    elif getattr(summary, 'rr_paths', None):
+                        # Load HRV Logger recording using stored paths
+                        events_paths = getattr(summary, 'events_paths', []) or []
+                        recording_data = cached_load_recording(
+                            tuple(str(p) for p in summary.rr_paths),
+                            tuple(str(p) for p in events_paths),
+                            selected_participant
+                        )
+                    else:
+                        # Fallback: re-discover recordings (for old cached summaries)
+                        bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
+                        bundle = next(b for b in bundles if b.participant_id == selected_participant)
+                        recording_data = cached_load_recording(
+                            tuple(str(p) for p in bundle.rr_paths),
+                            tuple(str(p) for p in bundle.events_paths),
+                            selected_participant
+                        )
 
                     # Initialize session state for event management (needed for plot)
                     if "participant_events" not in st.session_state:
@@ -1801,21 +2055,31 @@ def main():
                         "rr_max_ms": st.session_state.cleaning_config.rr_max_ms,
                         "sudden_change_pct": st.session_state.cleaning_config.sudden_change_pct
                     }
-                    rr_with_timestamps, stats = cached_clean_rr_intervals(
+                    is_vns = (source_app == "VNS Analyse")
+                    rr_with_timestamps, stats, _ = cached_clean_rr_intervals(
                         tuple(recording_data['rr_intervals']),
-                        config_dict
+                        config_dict,
+                        is_vns_data=is_vns
                     )
 
                     if rr_with_timestamps and PLOTLY_AVAILABLE:
-                        # Unpack cached data
-                        timestamps, rr_values = zip(*rr_with_timestamps)
+                        # Unpack cached data - VNS has 3 elements (with flag), HRV Logger has 2
+                        if is_vns:
+                            timestamps, rr_values, flags = zip(*rr_with_timestamps)
+                        else:
+                            timestamps, rr_values = zip(*rr_with_timestamps)
+                            flags = None
 
                         # Get CACHED plot data and store in session state for fragment
                         plot_data = cached_get_plot_data(
                             tuple(timestamps),
                             tuple(rr_values),
-                            selected_participant
+                            selected_participant,
+                            flags_tuple=tuple(flags) if flags else None
                         )
+                        # Add source_app for gap detection logic
+                        plot_data = dict(plot_data)  # Make mutable copy
+                        plot_data['source_app'] = source_app
                         st.session_state[f"plot_data_{selected_participant}"] = plot_data
 
                         # Render plot using fragment (prevents full page reruns when toggling options)
@@ -1888,16 +2152,24 @@ def main():
                             gap_info = st.session_state[gap_key]
                             st.markdown("##### ⏱️ Time Gap Analysis (Missing Data)")
 
-                            col_g1, col_g2, col_g3 = st.columns(3)
-                            with col_g1:
-                                gap_badge = "🟢" if gap_info['total_gaps'] == 0 else ("🟡" if gap_info['total_gaps'] <= 2 else "🔴")
-                                st.metric("Gaps Detected", f"{gap_badge} {gap_info['total_gaps']}")
-                            with col_g2:
-                                st.metric("Total Gap Time", f"{gap_info['total_gap_duration_s']:.1f}s")
-                            with col_g3:
-                                st.metric("Gap Ratio", f"{gap_info['gap_ratio']*100:.2f}%")
+                            # Check if VNS data (gap detection not applicable)
+                            if gap_info.get('vns_note'):
+                                st.info(
+                                    "**Gap detection not applicable for VNS data.** "
+                                    "VNS files only contain RR intervals without real timestamps. "
+                                    "Timestamps are synthesized from cumulative RR values, so time gaps cannot be detected."
+                                )
+                            else:
+                                col_g1, col_g2, col_g3 = st.columns(3)
+                                with col_g1:
+                                    gap_badge = "🟢" if gap_info['total_gaps'] == 0 else ("🟡" if gap_info['total_gaps'] <= 2 else "🔴")
+                                    st.metric("Gaps Detected", f"{gap_badge} {gap_info['total_gaps']}")
+                                with col_g2:
+                                    st.metric("Total Gap Time", f"{gap_info['total_gap_duration_s']:.1f}s")
+                                with col_g3:
+                                    st.metric("Gap Ratio", f"{gap_info['gap_ratio']*100:.2f}%")
 
-                            if gap_info['gaps']:
+                            if gap_info['gaps'] and not gap_info.get('vns_note'):
                                 st.markdown("**Gap Details:**")
                                 gap_data = []
                                 for i, gap in enumerate(gap_info['gaps']):
@@ -2827,36 +3099,8 @@ def main():
     elif selected_page == "Analysis":
         st.header("HRV Analysis")
 
-        with st.expander("❓ Help - HRV Analysis", expanded=False):
-            st.markdown("""
-            ### What is HRV Analysis?
-
-            Heart Rate Variability (HRV) analysis quantifies the variation in time between heartbeats.
-            Higher HRV generally indicates better cardiovascular health and autonomic function.
-
-            ### Key Metrics
-
-            **Time Domain:**
-            - **RMSSD**: Root Mean Square of Successive Differences - sensitive to parasympathetic activity
-            - **SDNN**: Standard Deviation of NN intervals - overall HRV
-            - **pNN50**: Percentage of successive differences > 50ms
-
-            **Frequency Domain:**
-            - **HF (High Frequency)**: 0.15-0.4 Hz - parasympathetic activity
-            - **LF (Low Frequency)**: 0.04-0.15 Hz - mixed sympathetic/parasympathetic
-            - **LF/HF Ratio**: Sympathetic/parasympathetic balance
-
-            ### Analysis Modes
-
-            - **Single Participant**: Analyze one participant at a time, compare different sections
-            - **Group Analysis**: Compare HRV across all participants in a group
-
-            ### Best Practices
-
-            - Ensure clean data (check for gaps and artifacts first)
-            - Use sections of at least 5 minutes for frequency domain analysis
-            - Compare equivalent sections across participants (e.g., all rest_pre periods)
-            """)
+        with st.expander("📖 Help - HRV Analysis & Scientific Best Practices", expanded=False):
+            st.markdown(ANALYSIS_HELP)
 
         if not NEUROKIT_AVAILABLE:
             st.error("❌ NeuroKit2 is not installed. Please install it to use HRV analysis features.")
@@ -2925,14 +3169,29 @@ def main():
                                 try:
                                     st.write("📂 Loading recording data...")
                                     progress = st.progress(0)
-                                    # Load the recording using CACHED functions
-                                    bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-                                    bundle = next(b for b in bundles if b.participant_id == selected_participant)
-                                    recording_data = cached_load_recording(
-                                        tuple(str(p) for p in bundle.rr_paths),
-                                        tuple(str(p) for p in bundle.events_paths),
-                                        selected_participant
-                                    )
+
+                                    # Check source type from summary
+                                    summary = get_summary_dict().get(selected_participant)
+                                    source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
+                                    is_vns = (source_app == "VNS Analyse")
+
+                                    if is_vns and getattr(summary, 'vns_path', None):
+                                        # Load VNS recording
+                                        recording_data = cached_load_vns_recording(
+                                            str(summary.vns_path),
+                                            selected_participant,
+                                            use_corrected=st.session_state.get("vns_use_corrected", False),
+                                        )
+                                    else:
+                                        # Load HRV Logger recording
+                                        bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
+                                        bundle = next(b for b in bundles if b.participant_id == selected_participant)
+                                        recording_data = cached_load_recording(
+                                            tuple(str(p) for p in bundle.rr_paths),
+                                            tuple(str(p) for p in bundle.events_paths),
+                                            selected_participant
+                                        )
+
                                     # Reconstruct recording object from cached data
                                     from music_hrv.io.hrv_logger import HRVLoggerRecording, EventMarker
                                     from music_hrv.cleaning.rr import RRInterval

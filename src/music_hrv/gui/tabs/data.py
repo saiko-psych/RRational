@@ -9,6 +9,7 @@ import streamlit as st
 
 from music_hrv.cleaning.rr import CleaningConfig
 from music_hrv.io import DEFAULT_ID_PATTERN, PREDEFINED_PATTERNS
+from music_hrv.gui.help_text import CLEANING_THRESHOLDS_HELP, DATA_CORRECTION_WORKFLOW
 from music_hrv.gui.shared import (
     cached_load_hrv_logger_preview,
     cached_load_vns_preview,
@@ -196,6 +197,10 @@ def render_data_tab():
         - **Gap**: Period where data is missing (>15s between timestamps by default)
         """)
 
+    # Data correction workflow help
+    with st.expander("📖 Data Correction Workflow & Best Practices", expanded=False):
+        st.markdown(DATA_CORRECTION_WORKFLOW)
+
     # Import Settings section
     with st.expander("Import Settings", expanded=False):
         col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
@@ -237,10 +242,12 @@ def render_data_tab():
 
             def update_cleaning_config():
                 """Callback to update cleaning config and clear cache."""
+                # Convert percentage (0-100) back to decimal (0.0-1.0)
+                sudden_pct = st.session_state.get("sudden_change_input_pct", 100) / 100.0
                 st.session_state.cleaning_config = CleaningConfig(
                     rr_min_ms=st.session_state.rr_min_input,
                     rr_max_ms=st.session_state.rr_max_input,
-                    sudden_change_pct=st.session_state.sudden_change_input,
+                    sudden_change_pct=sudden_pct,
                 )
                 cached_load_hrv_logger_preview.clear()
 
@@ -266,15 +273,17 @@ def render_data_tab():
                     on_change=update_cleaning_config,
                 )
             st.slider(
-                "Sudden change threshold",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.cleaning_config.sudden_change_pct,
-                step=0.05,
-                format="%.2f",
-                key="sudden_change_input",
+                "Sudden change threshold (%)",
+                min_value=0,
+                max_value=100,
+                value=int(st.session_state.cleaning_config.sudden_change_pct * 100),
+                step=5,
+                key="sudden_change_input_pct",
                 on_change=update_cleaning_config,
+                help="100% = disabled. Use NeuroKit2 artifact correction instead."
             )
+            with st.popover("ℹ️ About thresholds"):
+                st.markdown(CLEANING_THRESHOLDS_HELP)
 
         with col_cfg3:
             st.markdown("**Device Settings**")
@@ -387,6 +396,23 @@ def render_data_tab():
                         "It will be skipped during loading."
                     )
 
+                # Show VNS-specific option if VNS source is selected
+                has_vns = any(src['name'] == "VNS Analyse" for src in selected_sources)
+                if has_vns:
+                    def on_vns_corrected_change():
+                        # Clear VNS cache when setting changes
+                        cached_load_vns_preview.clear()
+
+                    vns_use_corrected = st.checkbox(
+                        "Use corrected RR values (VNS only)",
+                        value=st.session_state.get("vns_use_corrected", False),
+                        key="vns_corrected_checkbox_main",
+                        on_change=on_vns_corrected_change,
+                        help="VNS files contain both raw and corrected RR values. "
+                             "Enable to use the corrected (artifact-cleaned) values."
+                    )
+                    st.session_state.vns_use_corrected = vns_use_corrected
+
                 # Load button
                 if st.button("Load Selected Sources", type="primary", use_container_width=True):
                     with st.status("Loading recordings...", expanded=True) as status:
@@ -413,6 +439,7 @@ def render_data_tab():
                                         pattern=id_pattern,
                                         config_dict=config_dict,
                                         gui_events_dict=st.session_state.all_events,
+                                        use_corrected=st.session_state.get("vns_use_corrected", False),
                                     )
                                     app_name = "VNS Analyse"
                                 else:

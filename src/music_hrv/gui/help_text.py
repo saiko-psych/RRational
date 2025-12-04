@@ -1,0 +1,380 @@
+"""Help text and documentation for the Music HRV GUI.
+
+This module contains markdown text for help sections displayed in the UI.
+
+References:
+- Quigley et al. (2024) Publication guidelines for HR/HRV studies in psychophysiology
+- Khandoker et al. (2020) HRV Analysis: How Much Artifact Can We Remove?
+- German Journal Sports Medicine (2024) HRV Methods and Analysis
+"""
+
+DATA_CORRECTION_WORKFLOW = """
+## Data Correction Workflow
+
+### Overview
+
+The Music HRV app processes RR interval data through three stages:
+**Import → Display → Analysis**. Each stage handles data differently depending
+on the source (HRV Logger vs VNS Analyse).
+
+---
+
+### 1. Import Stage
+
+#### HRV Logger (CSV files)
+- **What's loaded**: All RR intervals with their original timestamps
+- **Duplicates**: Automatically detected and removed (shown in summary)
+- **No filtering**: All intervals preserved, even physiologically impossible ones
+- **Timestamps**: Real measurement times from the device
+
+#### VNS Analyse (TXT files)
+- **Section selection**: Choose between Raw or Corrected RR values (Import Settings)
+- **No filtering**: All intervals loaded regardless of value
+- **Timestamps**: **Synthesized** from cumulative RR intervals (not real times)
+- **Events**: "Notiz:" annotations converted to event markers
+
+> **Important**: VNS timestamps are calculated as `base_time + sum(RR intervals)`.
+> This means the "time" shown is physiological duration, not wall-clock time.
+
+---
+
+### 2. Display Stage
+
+#### Data Tab (Participant Overview)
+- Shows summary statistics for each participant
+- **Quality badge**: Based on artifact ratio and duplicate count
+- **No cleaning applied** - shows raw data characteristics
+
+#### Participant View (Plot)
+
+**HRV Logger Data:**
+- All intervals shown in **blue**
+- Gap detection enabled (finds recording interruptions >15s)
+- Intervals already filtered by Import Settings thresholds
+
+**VNS Data:**
+- All intervals shown, with **flagged intervals in RED**
+- Flagged = outside Min/Max RR thresholds (Import Settings)
+- Gap detection **disabled** (timestamps are synthetic)
+- Warning shows count and total time of flagged intervals
+
+#### Plot Options
+- **Show artifacts (NeuroKit2)**: Detect ectopic/missed/extra beats using Kubios algorithm
+- **Show variability segments**: Detect high-variance regions (potential movement artifacts)
+- **Show time gaps**: Highlight recording interruptions (HRV Logger only)
+- **Show music sections**: Display defined section boundaries
+- **Show music events**: Display individual event markers
+
+---
+
+### 3. Analysis Stage
+
+When you click "Analyze HRV", the following steps occur:
+
+1. **Section Extraction**
+   - Finds start/end events for the selected section
+   - Extracts only RR intervals within that time range
+
+2. **Threshold Filtering** (Import Settings)
+   - Removes intervals outside Min/Max RR range (default: 200-2000ms)
+   - Sudden change filter (default: disabled at 100%)
+
+3. **Artifact Correction** (Optional)
+   - Enable "Apply artifact correction" checkbox
+   - Uses NeuroKit2's Kubios algorithm to detect and correct:
+     - **Ectopic beats**: Premature/delayed contractions
+     - **Missed beats**: Undetected R-peaks
+     - **Extra beats**: False positive detections
+     - **Long/short intervals**: Physiologically implausible
+
+4. **HRV Metrics Computation**
+   - Time domain: RMSSD, SDNN, pNN50, etc.
+   - Frequency domain: HF power, LF power, LF/HF ratio
+
+---
+
+### Recommended Workflow
+
+#### For VNS Data:
+1. **Import**: Use "Raw" values (unless you trust VNS's correction)
+2. **Review**: Check participant plot - RED intervals are flagged
+3. **Adjust thresholds**: If too many flagged, adjust Min/Max RR in Import Settings
+4. **Enable artifact detection**: Check "Show artifacts (NeuroKit2)" to see Kubios results
+5. **Analyze**: Enable "Apply artifact correction" for HRV analysis
+
+#### For HRV Logger Data:
+1. **Import**: Data loaded as-is
+2. **Review**: Check for gaps (gray shaded regions) - may indicate Bluetooth issues
+3. **Enable artifact detection**: Check "Show artifacts (NeuroKit2)"
+4. **Define sections**: Avoid sections that span gaps
+5. **Analyze**: Enable "Apply artifact correction" if artifacts detected
+
+---
+
+### Determining Segment Validity
+
+A segment may be **invalid** or **questionable** if:
+
+1. **High artifact count** (>5% flagged intervals)
+   - Check with "Show artifacts (NeuroKit2)" option
+   - Consider excluding segment or using artifact correction
+
+2. **Contains gaps** (HRV Logger only)
+   - Gray shaded regions indicate recording interruptions
+   - Define sections to exclude gap periods
+
+3. **High variability segments** (red/orange shading)
+   - May indicate movement or electrode issues
+   - Consider excluding or noting in analysis
+
+4. **Too few beats** (<100 beats for time domain, <300 for frequency)
+   - NeuroKit2 requires minimum data for reliable metrics
+
+#### Exclusion Strategy:
+- **Don't select** problematic sections for analysis
+- **Define custom sections** that avoid problem periods
+- **Use artifact correction** to salvage borderline segments
+
+---
+
+### Scientific Best Practices (2024 Guidelines)
+
+Based on current research and guidelines:
+
+#### Artifact Thresholds by Metric Type
+
+| Metric Type | Max Artifact % | Notes |
+|-------------|---------------|-------|
+| **RMSSD, SDNN** | ~36% | Most robust to artifacts |
+| **pNN50** | ~4% | Sensitive to beat timing shifts |
+| **HF, LF, LF/HF** | ~2% | Most sensitive - use with caution |
+
+> **Recommendation**: For frequency domain analysis (HF, LF), ensure artifact
+> rate is below 2%. For time domain only (RMSSD, SDNN), up to 5-10% is acceptable.
+
+#### Minimum Data Requirements
+
+| Analysis Type | Minimum Beats | Minimum Duration |
+|---------------|--------------|------------------|
+| Time domain | ~100 beats | ~2 minutes |
+| Frequency domain | ~300 beats | ~5 minutes |
+| Ultra-short | 60 beats | 1 minute (RMSSD only) |
+
+#### Recommended Workflow (Scientific Standard)
+
+1. **Visual inspection** of RR plot before analysis
+2. **Report artifact rates** in any publication
+3. **Use artifact correction** for rates 2-10%
+4. **Exclude segments** with >10% artifacts
+5. **Prefer time domain** metrics if artifact rates uncertain
+
+#### References
+- [Quigley et al. (2024) Publication guidelines](https://pubmed.ncbi.nlm.nih.gov/38873876/)
+- [Khandoker et al. (2020) Artifact tolerance study](https://pmc.ncbi.nlm.nih.gov/articles/PMC7538246/)
+- [German J Sports Med (2024) HRV methods](https://www.germanjournalsportsmedicine.com/archive/archive-2024/issue-3/)
+
+---
+
+### Current Implementation Status
+
+This app follows scientific best practices:
+
+✅ **Implemented:**
+- NeuroKit2 Kubios algorithm for artifact detection/correction
+- Threshold-based filtering (min/max RR)
+- Visual display of flagged/artifact intervals
+- Artifact correction optional at analysis time
+- Time and frequency domain HRV metrics
+
+⚠️ **User Responsibility:**
+- Visual inspection of plots before analysis
+- Checking artifact rates displayed in UI
+- Deciding whether to correct or exclude segments
+- Ensuring sufficient beat count for analysis type
+
+📋 **Reported in Results:**
+- Artifact counts (when correction enabled)
+- Number of beats used
+- Section boundaries
+"""
+
+CLEANING_THRESHOLDS_HELP = """
+### Cleaning Thresholds
+
+These thresholds filter RR intervals before analysis:
+
+| Threshold | Default | Purpose |
+|-----------|---------|---------|
+| **Min RR** | 200ms | Removes impossibly fast beats (>300 BPM) |
+| **Max RR** | 2000ms | Removes impossibly slow beats (<30 BPM) |
+| **Sudden Change** | 100% (disabled) | Would flag beats that change >X% from previous |
+
+> **Note**: Sudden change is disabled by default because normal heart rate
+> variability can exceed 20% between beats. Use NeuroKit2 artifact correction
+> instead for proper artifact detection.
+
+For **VNS data**: Thresholds flag intervals (shown in RED) but keep them for
+correct timestamp display. Flagged intervals are excluded from HRV analysis.
+
+For **HRV Logger data**: Thresholds remove intervals entirely (timestamps
+are independent of RR values, so removal doesn't affect timing).
+"""
+
+ARTIFACT_CORRECTION_HELP = """
+### NeuroKit2 Artifact Correction (Kubios Algorithm)
+
+The artifact correction uses NeuroKit2's `signal_fixpeaks()` function with
+the Kubios algorithm to detect and correct:
+
+| Artifact Type | Description | Correction |
+|--------------|-------------|------------|
+| **Ectopic** | Premature/delayed beat | Interpolates from neighbors |
+| **Missed** | Undetected R-peak | Splits long interval |
+| **Extra** | False positive detection | Removes extra beat |
+| **Long/Short** | Physiologically impossible | Interpolates |
+
+#### When to Use:
+- ✅ Data has known quality issues
+- ✅ High artifact count shown in plot
+- ✅ Important to salvage borderline segments
+
+#### When to Skip:
+- ❌ Clean data with <1% artifacts
+- ❌ You want to report uncorrected metrics
+- ❌ Segments are clearly invalid (exclude instead)
+
+#### Viewing Artifacts:
+1. In Participant view, check **"Show artifacts (NeuroKit2)"**
+2. Orange X markers show detected artifact locations
+3. Info bar shows breakdown by artifact type
+
+#### Applying Correction:
+1. In Analysis tab, check **"Apply artifact correction"**
+2. Corrected RR intervals used for HRV computation
+3. Results show artifact counts and correction applied
+"""
+
+VNS_DATA_HELP = """
+### VNS Analyse Data Specifics
+
+VNS Analyse exports RR intervals differently from HRV Logger:
+
+#### Key Differences:
+| Aspect | HRV Logger | VNS Analyse |
+|--------|------------|-------------|
+| **Timestamps** | Real measurement times | Synthesized from RR sum |
+| **RR Format** | Milliseconds | Seconds (converted to ms) |
+| **Sections** | Single data stream | Raw + Corrected sections |
+| **Events** | Separate Events.csv | "Notiz:" annotations in file |
+
+#### Timestamp Implications:
+- VNS timestamps = `base_time + cumulative_RR`
+- If intervals are removed, timestamps shift
+- That's why VNS shows flagged intervals instead of removing them
+- Gap detection is disabled (gaps would be artifacts of filtering)
+
+#### Raw vs Corrected:
+- **Raw**: Original RR intervals as measured
+- **Corrected**: VNS software's artifact correction applied
+- Select in Import Settings → VNS Analyse Settings
+- Recommendation: Start with Raw, apply NeuroKit2 correction if needed
+
+#### Why Flagging Instead of Filtering:
+For VNS data, removing intervals would compress the timeline incorrectly.
+Instead:
+1. All intervals shown with correct (synthesized) timestamps
+2. Problematic intervals flagged in RED
+3. Flagged intervals excluded only at analysis time
+4. Total recording duration remains accurate
+"""
+
+SECTIONS_HELP = """
+### Sections and Events
+
+#### How Sections Work:
+1. **Events** mark time points (e.g., "music_start", "music_end")
+2. **Sections** define time ranges between events
+3. **Analysis** processes RR intervals within section boundaries
+
+#### Defining Sections (Sections Tab):
+1. Select **Start Event** (e.g., "measurement_start")
+2. Select **End Event** (e.g., "measurement_end")
+3. Give section a **Name** and optional **Label**
+4. Repeat for each segment of interest
+
+#### Event Mapping (Events Tab):
+- Define canonical event names
+- Add synonyms for fuzzy matching
+- Example: "music_start" matches "Musik Start", "music starts", etc.
+
+#### Analyzing Sections:
+1. Go to **Analysis** tab
+2. Select participant
+3. Select one or more sections
+4. Click **Analyze HRV**
+5. Results shown per section + combined if multiple selected
+
+#### Section Validity Tips:
+- Ensure start event occurs before end event
+- Check that events are correctly detected (Events tab preview)
+- Avoid sections that span recording gaps
+- Minimum ~100 beats for reliable time-domain metrics
+- Minimum ~300 beats for frequency-domain metrics
+"""
+
+ANALYSIS_HELP = """
+### What is HRV Analysis?
+
+Heart Rate Variability (HRV) analysis quantifies the variation in time between heartbeats.
+Higher HRV generally indicates better cardiovascular health and autonomic function.
+
+### Key Metrics
+
+**Time Domain:**
+- **RMSSD**: Root Mean Square of Successive Differences - sensitive to parasympathetic activity
+- **SDNN**: Standard Deviation of NN intervals - overall HRV
+- **pNN50**: Percentage of successive differences > 50ms
+
+**Frequency Domain:**
+- **HF (High Frequency)**: 0.15-0.4 Hz - parasympathetic activity
+- **LF (Low Frequency)**: 0.04-0.15 Hz - mixed sympathetic/parasympathetic
+- **LF/HF Ratio**: Sympathetic/parasympathetic balance
+
+---
+
+### Scientific Best Practices (2024 Guidelines)
+
+Based on current research and guidelines:
+
+#### Artifact Thresholds by Metric Type
+
+| Metric Type | Max Artifact % | Notes |
+|-------------|---------------|-------|
+| **RMSSD, SDNN** | ~36% | Most robust to artifacts |
+| **pNN50** | ~4% | Sensitive to beat timing shifts |
+| **HF, LF, LF/HF** | ~2% | Most sensitive - use with caution |
+
+> **Recommendation**: For frequency domain analysis (HF, LF), ensure artifact
+> rate is below 2%. For time domain only (RMSSD, SDNN), up to 5-10% is acceptable.
+
+#### Minimum Data Requirements
+
+| Analysis Type | Minimum Beats | Minimum Duration |
+|---------------|--------------|------------------|
+| Time domain | ~100 beats | ~2 minutes |
+| Frequency domain | ~300 beats | ~5 minutes |
+| Ultra-short | 60 beats | 1 minute (RMSSD only) |
+
+#### Recommended Workflow (Scientific Standard)
+
+1. **Visual inspection** of RR plot before analysis
+2. **Report artifact rates** in any publication
+3. **Use artifact correction** for rates 2-10%
+4. **Exclude segments** with >10% artifacts
+5. **Prefer time domain** metrics if artifact rates uncertain
+
+#### References
+- [Quigley et al. (2024) Publication guidelines](https://pubmed.ncbi.nlm.nih.gov/38873876/)
+- [Khandoker et al. (2020) Artifact tolerance study](https://pmc.ncbi.nlm.nih.gov/articles/PMC7538246/)
+- [German J Sports Med (2024) HRV methods](https://www.germanjournalsportsmedicine.com/archive/archive-2024/issue-3/)
+"""

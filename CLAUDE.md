@@ -28,6 +28,20 @@ Quick reference for Claude Code. **Detailed history: MEMORY.md**
 5. **ALWAYS TEST**: `uv run pytest` before delivering!
 6. **OPTIMIZE FOR SPEED**: Profile before optimizing
 
+## Scientific Best Practices (CRITICAL)
+
+This is a **scientific research tool**. ALL implementations MUST follow current HRV guidelines:
+
+1. **Artifact handling**: Follow 2024 Quigley guidelines - artifact rates dictate valid metrics
+2. **Data requirements**: Min 100 beats (time domain), 300 beats (frequency domain)
+3. **Transparency**: Always report artifact rates, beat counts, section boundaries
+4. **Correction**: Use NeuroKit2 Kubios algorithm for artifact correction (2-10% artifacts)
+5. **Exclusion**: Exclude segments with >10% artifacts
+
+**References** (see `help_text.py` for full documentation):
+- Quigley et al. (2024) - Publication guidelines for HRV studies
+- Khandoker et al. (2020) - Artifact tolerance thresholds
+
 ## Quick Commands
 
 ```bash
@@ -38,7 +52,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## Current Status
 
-**Version**: `v0.4.2` | **Tests**: 13/13 passing
+**Version**: `v0.5.2` | **Tests**: 14/14 passing
 
 **GUI**: 5-tab Streamlit app
 - Tab 1: Data & Groups (import, plot, quality detection, batch processing, CSV import)
@@ -50,7 +64,10 @@ uv run ruff check src/ tests/ --fix            # Lint
 **Storage**: `~/.music_hrv/*.yml`
 
 **Data Sources**: HRV Logger (CSV) and VNS Analyse (TXT) supported
-- VNS loader: Only imports one RR section (raw by default, use_corrected option available)
+- VNS loader: Only imports one RR section (raw by default, `use_corrected` option in Import Settings)
+- VNS display: ALL intervals shown (no filtering) - cleaning only at analysis time
+- Participant view works for both HRV Logger and VNS data
+- Scroll-to-top when navigating participants
 
 ## Performance Rules (CRITICAL)
 
@@ -69,11 +86,10 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## TODOs
 
-- [ ] Add `use_corrected` option in UI for VNS data (raw vs corrected RR)
-- [ ] Participant section should work for VNS data too
-- [ ] Scroll to top when clicking Next/Previous buttons or switching sections
-- [ ] Improve UI layout (spacing, sizing)
 - [ ] Section-based HRV analysis (currently whole recording)
+- [x] ~~Add `use_corrected` option in UI for VNS data~~ (DONE v0.5.0)
+- [x] ~~Participant section works for VNS data~~ (DONE v0.5.0)
+- [x] ~~Scroll to top on navigation~~ (DONE v0.5.0)
 - [x] ~~VNS loader fix: only imports one section~~ (DONE v0.4.2)
 - [x] ~~App column shows recording source~~ (DONE v0.4.2)
 - [x] ~~CSV import for groups/playlists~~ (DONE v0.3.4)

@@ -11,11 +11,15 @@ from music_hrv.io.hrv_logger import RRInterval
 
 @dataclass(slots=True)
 class CleaningConfig:
-    """Thresholds used for RR filtering."""
+    """Thresholds used for RR filtering.
 
-    rr_min_ms: int = 300
-    rr_max_ms: int = 2200
-    sudden_change_pct: float = 0.2
+    Note: sudden_change_pct=1.0 (100%) effectively disables sudden change detection.
+    Use NeuroKit2's artifact correction for proper artifact detection instead.
+    """
+
+    rr_min_ms: int = 200
+    rr_max_ms: int = 2000
+    sudden_change_pct: float = 1.0  # Disabled by default - use NeuroKit2 artifact correction
 
 
 @dataclass(slots=True)
@@ -37,6 +41,14 @@ def _artifact_ratio(total: int, removed: int) -> float:
     if total <= 0:
         return 0.0
     return removed / total
+
+
+@dataclass(slots=True)
+class FlaggedRRInterval:
+    """An RR interval with its flag status."""
+    interval: RRInterval
+    is_flagged: bool
+    flag_reason: str | None = None  # "out_of_range" or "sudden_change"
 
 
 def clean_rr_intervals(
@@ -79,6 +91,67 @@ def clean_rr_intervals(
     return cleaned, stats
 
 
+def clean_rr_intervals_with_flags(
+    samples: Sequence[RRInterval] | Iterable[RRInterval],
+    config: CleaningConfig | None = None,
+) -> tuple[list[FlaggedRRInterval], CleaningStats]:
+    """Flag implausible beats and sudden jumps but keep all intervals.
+
+    Unlike clean_rr_intervals, this function keeps ALL intervals but marks
+    problematic ones with a flag. Useful for VNS data where we want to:
+    - Show all intervals with correct timestamps
+    - Display flagged intervals in a different color
+    - Exclude flagged intervals from analysis
+    """
+    cfg = config or CleaningConfig()
+    if not isinstance(samples, Sequence):
+        samples = list(samples)
+
+    result: list[FlaggedRRInterval] = []
+    reasons = {"out_of_range": 0, "sudden_change": 0}
+
+    previous_rr: int | None = None
+    retained = 0
+
+    for sample in samples:
+        rr = sample.rr_ms
+        flag_reason = None
+
+        # Check out of range
+        if rr < cfg.rr_min_ms or rr > cfg.rr_max_ms:
+            flag_reason = "out_of_range"
+            reasons["out_of_range"] += 1
+        # Check sudden change (only if not already flagged and have previous)
+        elif previous_rr is not None and previous_rr > 0:
+            delta = abs(rr - previous_rr) / previous_rr
+            if delta > cfg.sudden_change_pct:
+                flag_reason = "sudden_change"
+                reasons["sudden_change"] += 1
+
+        is_flagged = flag_reason is not None
+        result.append(FlaggedRRInterval(
+            interval=sample,
+            is_flagged=is_flagged,
+            flag_reason=flag_reason
+        ))
+
+        # Only update previous_rr for non-flagged intervals
+        # (so sudden change detection works correctly)
+        if not is_flagged:
+            previous_rr = rr
+            retained += 1
+
+    total = len(samples)
+    stats = CleaningStats(
+        total_samples=total,
+        retained_samples=retained,
+        removed_samples=sum(reasons.values()),
+        artifact_ratio=_artifact_ratio(total, sum(reasons.values())),
+        reasons=reasons,
+    )
+    return result, stats
+
+
 def rr_summary(samples: Sequence[RRInterval]) -> dict[str, float]:
     """Compute descriptive stats for a RR series.
 
@@ -110,4 +183,4 @@ def rr_summary(samples: Sequence[RRInterval]) -> dict[str, float]:
     }
 
 
-__all__ = ["CleaningConfig", "CleaningStats", "clean_rr_intervals", "rr_summary"]
+__all__ = ["CleaningConfig", "CleaningStats", "FlaggedRRInterval", "clean_rr_intervals", "clean_rr_intervals_with_flags", "rr_summary"]
