@@ -195,7 +195,11 @@ def save_participant_events(participant_id: str, events_data: dict[str, Any]) ->
                 ...
             ],
             "manual": [...],
-            "music_events": [...]
+            "music_events": [...],
+            "exclusion_zones": [
+                {"start": "ISO8601", "end": "ISO8601", "reason": "...", "exclude_from_duration": true},
+                ...
+            ]
         }
     }
     """
@@ -208,7 +212,7 @@ def save_participant_events(participant_id: str, events_data: dict[str, Any]) ->
             all_events = yaml.safe_load(f) or {}
 
     # Convert EventStatus objects to serializable dicts
-    serialized = {"events": [], "manual": [], "music_events": []}
+    serialized = {"events": [], "manual": [], "music_events": [], "exclusion_zones": []}
 
     for key in ["events", "manual", "music_events"]:
         for evt in events_data.get(key, []):
@@ -224,6 +228,21 @@ def save_participant_events(participant_id: str, events_data: dict[str, Any]) ->
             if evt_dict["last_timestamp"]:
                 evt_dict["last_timestamp"] = evt_dict["last_timestamp"].isoformat()
             serialized[key].append(evt_dict)
+
+    # Handle exclusion zones (already dicts with serializable data)
+    for zone in events_data.get("exclusion_zones", []):
+        zone_dict = {
+            "start": zone.get("start"),
+            "end": zone.get("end"),
+            "reason": zone.get("reason", ""),
+            "exclude_from_duration": zone.get("exclude_from_duration", True),
+        }
+        # Convert datetime to ISO string if needed
+        if zone_dict["start"] and hasattr(zone_dict["start"], "isoformat"):
+            zone_dict["start"] = zone_dict["start"].isoformat()
+        if zone_dict["end"] and hasattr(zone_dict["end"], "isoformat"):
+            zone_dict["end"] = zone_dict["end"].isoformat()
+        serialized["exclusion_zones"].append(zone_dict)
 
     all_events[participant_id] = serialized
 

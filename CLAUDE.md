@@ -52,7 +52,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## Current Status
 
-**Version**: `v0.6.1` | **Tests**: 18/18 passing
+**Version**: `v0.6.2` | **Tests**: 18/18 passing
 
 **GUI**: 5-tab Streamlit app
 - Tab 1: Data & Groups (import, plot, quality detection, batch processing, CSV import)
@@ -67,7 +67,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 - VNS loader: Only imports one RR section (raw by default, `use_corrected` option in Import Settings)
 - VNS display: ALL intervals shown (no filtering) - cleaning only at analysis time
 - Participant view works for both HRV Logger and VNS data
-- Scroll-to-top when navigating participants
+- Exclusion zones: Editable, vertical labels, auto-applied in analysis
 
 ## Performance Rules (CRITICAL)
 
@@ -78,25 +78,24 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 **Current timings**: Startup ~0.7s, participant switch ~200ms
 
-## Key Files
+## Key Files & Code Organization
 
-- `src/music_hrv/gui/app.py` - Main Streamlit app
+- `src/music_hrv/gui/app.py` - Main app + Participants tab (~3700 lines)
+- `src/music_hrv/gui/tabs/` - Tab modules (data.py, setup.py, analysis.py)
+- `src/music_hrv/gui/shared.py` - Shared utilities, caching, helpers
 - `src/music_hrv/gui/persistence.py` - YAML storage
-- `src/music_hrv/io/hrv_logger.py` - CSV loading
+
+**IMPORTANT**: Keep `app.py` lean! Add new features to appropriate tab modules, not app.py.
 
 ## TODOs
 
 - [ ] Playlist group comparison (compare music types across playlists)
+- [x] ~~Editable exclusion zones~~ (DONE v0.6.2)
+- [x] ~~Vertical exclusion labels (like events)~~ (DONE v0.6.2)
+- [x] ~~Exclusion zones affect timing validation~~ (DONE v0.6.2)
 - [x] ~~Auto-fill boundary events~~ (DONE v0.6.1)
 - [x] ~~Custom events from plot click~~ (DONE v0.6.1)
 - [x] ~~Music Section Analysis mode~~ (DONE v0.6.0)
-- [x] ~~Section-based HRV analysis~~ (DONE v0.6.0)
-- [x] ~~Add `use_corrected` option in UI for VNS data~~ (DONE v0.5.0)
-- [x] ~~Participant section works for VNS data~~ (DONE v0.5.0)
-- [x] ~~Scroll to top on navigation~~ (DONE v0.5.0)
-- [x] ~~VNS loader fix: only imports one section~~ (DONE v0.4.2)
-- [x] ~~App column shows recording source~~ (DONE v0.4.2)
-- [x] ~~CSV import for groups/playlists~~ (DONE v0.3.4)
 
 ## References
 

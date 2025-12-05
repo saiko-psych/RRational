@@ -149,9 +149,6 @@ def extract_music_sections(
         analysis.warnings.append("Missing measurement_start event")
         return analysis
 
-    # Calculate expected and actual durations
-    section_duration = timedelta(minutes=protocol.section_length_min)
-
     # Pre-pause sections
     pre_pause_start = measurement_start
     pre_pause_end = pause_start or (measurement_start + timedelta(minutes=protocol.expected_pre_pause_min))

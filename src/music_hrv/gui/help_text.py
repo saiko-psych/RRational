@@ -75,11 +75,16 @@ When you click "Analyze HRV", the following steps occur:
    - Finds start/end events for the selected section
    - Extracts only RR intervals within that time range
 
-2. **Threshold Filtering** (Import Settings)
+2. **Exclusion Zone Filtering** (NEW)
+   - Removes all RR intervals falling within user-defined exclusion zones
+   - Exclusion zones are set in the Participants tab under "Add Exclusions" mode
+   - See "Exclusion Zones" section below for details
+
+3. **Threshold Filtering** (Import Settings)
    - Removes intervals outside Min/Max RR range (default: 200-2000ms)
    - Sudden change filter (default: disabled at 100%)
 
-3. **Artifact Correction** (Optional)
+4. **Artifact Correction** (Optional)
    - Enable "Apply artifact correction" checkbox
    - Uses NeuroKit2's Kubios algorithm to detect and correct:
      - **Ectopic beats**: Premature/delayed contractions
@@ -87,7 +92,7 @@ When you click "Analyze HRV", the following steps occur:
      - **Extra beats**: False positive detections
      - **Long/short intervals**: Physiologically implausible
 
-4. **HRV Metrics Computation**
+5. **HRV Metrics Computation**
    - Time domain: RMSSD, SDNN, pNN50, etc.
    - Frequency domain: HF power, LF power, LF/HF ratio
 
@@ -254,6 +259,72 @@ the Kubios algorithm to detect and correct:
 3. Results show artifact counts and correction applied
 """
 
+EXCLUSION_ZONES_HELP = """
+### Exclusion Zones
+
+Exclusion zones allow you to **exclude specific time periods** from HRV analysis.
+This is useful for removing known artifacts, bathroom breaks, or other disruptions.
+
+#### Creating Exclusion Zones (Participants Tab):
+
+1. Select a participant and switch to **"Add Exclusions"** mode
+2. **Click two points** on the plot to define start and end
+3. After clicking both points, you'll see:
+   - Red markers showing START and END boundaries
+   - Shaded red region highlighting the excluded area
+   - Confirmation form to add reason and confirm
+4. Fill in the optional **Reason** (e.g., "Bathroom break")
+5. Check **"Exclude from duration"** if this time should not count toward timing validation
+6. Click **"Confirm"** to add the exclusion zone
+
+#### Viewing Exclusion Zones:
+
+- Exclusion zones appear as **red shaded rectangles** on the plot
+- **Vertical label** shows the reason (truncated) at the zone start
+- "[excl]" suffix indicates zone is excluded from duration calculations
+- Toggle visibility with **"Show exclusions"** checkbox
+
+#### Effect on Analysis:
+
+When you run HRV analysis:
+1. All RR intervals **within exclusion zones are automatically removed**
+2. Analysis reports how many intervals were excluded (e.g., "Excluded 45 intervals from 2 zones")
+3. Remaining intervals are then cleaned and analyzed
+4. Timing validation excludes marked time (if "Exclude from duration" enabled)
+
+#### Editing Exclusion Zones:
+
+- Click the **✏️ edit button** next to any zone to modify it
+- Edit start/end times in HH:MM:SS format
+- Change the reason or "Exclude from duration" setting
+- Click **"Save"** to apply changes
+
+#### Managing Exclusion Zones:
+
+- View existing zones in the **"Current Exclusion Zones"** list
+- Edit zones with the ✏️ button
+- Delete zones with the 🗑️ button
+- Click **"Save"** to persist zones to disk
+- Zones are restored when you reload the participant
+
+#### Manual Entry:
+
+If you know exact times, use **"Add manually"** instead:
+1. Enter Start time (HH:MM:SS)
+2. Enter End time (HH:MM:SS)
+3. Add optional reason
+4. Click "Add Zone"
+
+#### Best Practices:
+
+- ✅ Exclude known disruptions (bathroom, phone, talking)
+- ✅ Exclude movement artifacts visible in the plot
+- ✅ Add reasons for documentation and reproducibility
+- ✅ Use "Exclude from duration" for timing validation accuracy
+- ❌ Don't exclude data just because HRV values look unexpected
+- ❌ Don't exclude too much data (reduces statistical power)
+"""
+
 VNS_DATA_HELP = """
 ### VNS Analyse Data Specifics
 
@@ -339,6 +410,26 @@ Higher HRV generally indicates better cardiovascular health and autonomic functi
 - **HF (High Frequency)**: 0.15-0.4 Hz - parasympathetic activity
 - **LF (Low Frequency)**: 0.04-0.15 Hz - mixed sympathetic/parasympathetic
 - **LF/HF Ratio**: Sympathetic/parasympathetic balance
+
+---
+
+### How Time Gaps Are Handled
+
+**Important**: HRV analysis uses the **sum of RR intervals**, not wall-clock time:
+
+| Aspect | How It Works |
+|--------|--------------|
+| **Section extraction** | Selects RR intervals by timestamp between events |
+| **Gap handling** | Gaps (missing data) are simply not present |
+| **Duration basis** | Sum of RR intervals = physiological time |
+| **Beat sequence** | All intervals treated as consecutive beats |
+
+**Example**: A 5-minute section with a 30-second gap will analyze ~4.5 minutes of actual RR data.
+
+**What this means**:
+- Check the **beat count** to verify sufficient data (expect ~350 beats for 5 min at 70 BPM)
+- Significantly fewer beats indicates data loss or gaps
+- Missing data is NOT interpolated - this is scientifically correct
 
 ---
 

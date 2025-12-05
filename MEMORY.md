@@ -4,6 +4,65 @@ This file contains detailed session notes and implementation history. For quick 
 
 ---
 
+## Session 2025-12-05: Exclusion Zone UI Improvements & Documentation
+
+### Version Tag: `v0.6.2`
+
+### Changes Made:
+
+#### 1. Exclusion Zone Labels (Vertical, No Emojis)
+- Changed from horizontal to vertical labels (`textangle=-90`)
+- Removed emojis, now shows reason + "[excl]" suffix if excluded from duration
+- Labels positioned at zone start, like event markers
+
+#### 2. Editable Exclusion Zones
+- Added ✏️ edit button next to each zone in the list
+- Expandable edit form with:
+  - Start/End time inputs (HH:MM:SS format)
+  - Reason text field
+  - "Exclude from duration" checkbox
+  - Save/Cancel buttons
+- Changes saved immediately on confirm
+
+#### 3. Timing Validation with Exclusion Zones
+- Added `calc_excluded_time_in_range()` helper function
+- Timing validation now subtracts excluded time from durations
+- Shows "(excl: X.X min)" when exclusion zones affect timing
+
+#### 4. Removed Box Selection Mode
+- Box selection was unreliable, removed entirely
+- Now only "Click two points on plot" method available
+- Simplified code, removed ~100 lines of box selection handling
+- Changed from `go.Scatter` back to `go.Scattergl` (performance)
+
+#### 5. Fixed Clear Selection Button
+- Bug: Clear Selection wasn't clearing the start point
+- Root cause: Deleting `last_click_key` allowed same click to be re-added
+- Fix: Keep `last_click_key` when clearing (prevents re-processing)
+
+#### 6. Documentation Updates
+- Updated EXCLUSION_ZONES_HELP: Removed box selection references
+- Clarified that HRV analysis uses sum of RR intervals (not wall-clock time)
+- Documented automatic exclusion zone filtering in analysis
+
+### Analysis Behavior Clarification:
+- **Time gaps**: Analysis treats all RR intervals as consecutive
+- **Duration**: Based on sum of RR intervals, not section boundaries
+- **Exclusion zones**: Automatically filtered before HRV computation
+- **Reported**: Beat count, excluded intervals count, section info
+
+### Files Modified:
+- `src/music_hrv/gui/app.py` - Exclusion zone UI, removed box selection
+- `src/music_hrv/gui/help_text.py` - Updated EXCLUSION_ZONES_HELP
+- `MEMORY.md` - Session notes
+- `CLAUDE.md` - Version update
+
+### Testing Results:
+- ✅ All 18 tests passing
+- ✅ No linting errors
+
+---
+
 ## Session 2025-12-04: Music Section Analysis & Event UI Improvements
 
 ### Version Tags: `v0.6.0`, `v0.6.1`

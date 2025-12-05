@@ -645,7 +645,7 @@ wheels = [
 
 [[package]]
 name = "music-hrv"
-version = "0.6.1"
+version = "0.6.2"
 source = { editable = "." }
 dependencies = [
     { name = "neurokit2" },

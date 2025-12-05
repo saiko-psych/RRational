@@ -41,11 +41,14 @@ __all__ = [
     "auto_save_config",
     "validate_regex_pattern",
     "extract_section_rr_intervals",
+    "filter_exclusion_zones",
     "detect_quality_changepoints",
     "get_quality_badge",
     "detect_time_gaps",
     "detect_artifacts_fixpeaks",
     "scroll_to_top",
+    "get_participant_list",
+    "get_summary_dict",
     # Cached functions
     "cached_load_hrv_logger_preview",
     "cached_load_vns_preview",
@@ -277,6 +280,98 @@ def extract_section_rr_intervals(recording, section_def, normalizer):
             section_rr.append(rr)
 
     return section_rr if section_rr else None
+
+
+def filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[list, dict]:
+    """Filter RR intervals to exclude specified time zones.
+
+    Args:
+        rr_intervals: List of RRInterval objects (with .timestamp and .rr_ms attributes)
+        exclusion_zones: List of dicts with 'start' and 'end' datetime keys
+
+    Returns:
+        Tuple of (filtered_rr_intervals, stats_dict)
+        stats_dict contains: n_original, n_excluded, n_remaining, excluded_duration_ms
+    """
+    import pandas as pd
+
+    if not exclusion_zones or not rr_intervals:
+        return rr_intervals, {
+            "n_original": len(rr_intervals) if rr_intervals else 0,
+            "n_excluded": 0,
+            "n_remaining": len(rr_intervals) if rr_intervals else 0,
+            "excluded_duration_ms": 0,
+            "zones_applied": 0
+        }
+
+    # Parse exclusion zone timestamps
+    parsed_zones = []
+    for zone in exclusion_zones:
+        try:
+            start = zone.get('start')
+            end = zone.get('end')
+
+            # Convert string to datetime if needed
+            if isinstance(start, str):
+                start = pd.to_datetime(start)
+            if isinstance(end, str):
+                end = pd.to_datetime(end)
+
+            if start and end:
+                parsed_zones.append((start, end))
+        except Exception:
+            continue
+
+    if not parsed_zones:
+        return rr_intervals, {
+            "n_original": len(rr_intervals),
+            "n_excluded": 0,
+            "n_remaining": len(rr_intervals),
+            "excluded_duration_ms": 0,
+            "zones_applied": 0
+        }
+
+    # Filter RR intervals
+    filtered = []
+    excluded_duration_ms = 0
+    n_excluded = 0
+
+    for rr in rr_intervals:
+        ts = rr.timestamp
+        if ts is None:
+            filtered.append(rr)
+            continue
+
+        # Make timezone-aware comparison safe
+        if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
+            ts_naive = ts.replace(tzinfo=None)
+        else:
+            ts_naive = ts
+
+        is_excluded = False
+        for zone_start, zone_end in parsed_zones:
+            # Make zone timestamps naive for comparison
+            if hasattr(zone_start, 'tzinfo') and zone_start.tzinfo is not None:
+                zone_start = zone_start.replace(tzinfo=None)
+            if hasattr(zone_end, 'tzinfo') and zone_end.tzinfo is not None:
+                zone_end = zone_end.replace(tzinfo=None)
+
+            if zone_start <= ts_naive <= zone_end:
+                is_excluded = True
+                excluded_duration_ms += rr.rr_ms
+                n_excluded += 1
+                break
+
+        if not is_excluded:
+            filtered.append(rr)
+
+    return filtered, {
+        "n_original": len(rr_intervals),
+        "n_excluded": n_excluded,
+        "n_remaining": len(filtered),
+        "excluded_duration_ms": excluded_duration_ms,
+        "zones_applied": len(parsed_zones)
+    }
 
 
 def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") -> dict:
@@ -609,3 +704,28 @@ def scroll_to_top():
     </script>
     """
     st.components.v1.html(js, height=0)
+
+
+def get_participant_list():
+    """Get cached list of participant IDs (O(1) after first call per summaries change)."""
+    if not st.session_state.summaries:
+        return []
+    # Use a simple cache key based on number of summaries and first/last IDs
+    summaries = st.session_state.summaries
+    cache_key = f"{len(summaries)}:{summaries[0].participant_id if summaries else ''}:{summaries[-1].participant_id if summaries else ''}"
+    if st.session_state.get("_participant_list_cache_key") != cache_key:
+        st.session_state._participant_list = [s.participant_id for s in summaries]
+        st.session_state._participant_list_cache_key = cache_key
+    return st.session_state._participant_list
+
+
+def get_summary_dict():
+    """Get cached dict mapping participant_id to summary (O(1) lookup after first call)."""
+    if not st.session_state.summaries:
+        return {}
+    summaries = st.session_state.summaries
+    cache_key = f"{len(summaries)}:{summaries[0].participant_id if summaries else ''}:{summaries[-1].participant_id if summaries else ''}"
+    if st.session_state.get("_summary_dict_cache_key") != cache_key:
+        st.session_state._summary_dict = {s.participant_id: s for s in summaries}
+        st.session_state._summary_dict_cache_key = cache_key
+    return st.session_state._summary_dict

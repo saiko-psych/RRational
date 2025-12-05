@@ -28,11 +28,10 @@ from music_hrv.gui.persistence import (
 )
 from music_hrv.gui.tabs.setup import render_setup_tab
 from music_hrv.gui.tabs.data import render_data_tab
+from music_hrv.gui.tabs.analysis import render_analysis_tab
 from music_hrv.gui.help_text import (
     ARTIFACT_CORRECTION_HELP,
     VNS_DATA_HELP,
-    SECTIONS_HELP,
-    ANALYSIS_HELP,
 )
 
 # Lazy import for neurokit2 and matplotlib (saves ~0.9s on startup)
@@ -687,380 +686,6 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
     return result
 
 
-def _render_music_section_analysis():
-    """Render the Music Section Analysis UI.
-
-    Protocol-based analysis of 5-minute music sections with validation.
-    """
-    from music_hrv.analysis.music_sections import (
-        ProtocolConfig,
-        DurationMismatchStrategy,
-        extract_music_sections,
-        get_sections_by_music_type,
-    )
-    from music_hrv.gui.persistence import load_protocol, save_protocol
-
-    st.markdown("""
-    Analyze HRV metrics for each **5-minute music section** based on your protocol.
-    This mode automatically extracts sections using measurement events and validates data quality.
-    """)
-
-    # Protocol Settings
-    with st.expander("⚙️ Protocol Settings", expanded=False):
-        protocol_data = load_protocol()
-
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            expected_duration = st.number_input(
-                "Expected total duration (min)",
-                min_value=30.0, max_value=180.0,
-                value=float(protocol_data.get("expected_duration_min", 90.0)),
-                step=5.0,
-                key="protocol_expected_duration",
-                help="Total expected duration of the measurement session"
-            )
-            section_length = st.number_input(
-                "Section length (min)",
-                min_value=1.0, max_value=15.0,
-                value=float(protocol_data.get("section_length_min", 5.0)),
-                step=1.0,
-                key="protocol_section_length",
-                help="Duration of each music section"
-            )
-            pre_pause_sections = st.number_input(
-                "Pre-pause sections",
-                min_value=1, max_value=20,
-                value=int(protocol_data.get("pre_pause_sections", 9)),
-                step=1,
-                key="protocol_pre_pause",
-                help="Number of music sections before the pause"
-            )
-
-        with col_p2:
-            post_pause_sections = st.number_input(
-                "Post-pause sections",
-                min_value=1, max_value=20,
-                value=int(protocol_data.get("post_pause_sections", 9)),
-                step=1,
-                key="protocol_post_pause",
-                help="Number of music sections after the pause"
-            )
-            min_section_duration = st.number_input(
-                "Minimum valid section duration (min)",
-                min_value=1.0, max_value=10.0,
-                value=float(protocol_data.get("min_section_duration_min", 4.0)),
-                step=0.5,
-                key="protocol_min_duration",
-                help="Sections shorter than this are flagged as incomplete"
-            )
-            min_section_beats = st.number_input(
-                "Minimum beats per section",
-                min_value=50, max_value=500,
-                value=int(protocol_data.get("min_section_beats", 100)),
-                step=10,
-                key="protocol_min_beats",
-                help="Sections with fewer beats are flagged as incomplete"
-            )
-
-        # Duration mismatch handling
-        mismatch_options = {
-            "Flag only (include all, mark incomplete)": DurationMismatchStrategy.FLAG_ONLY,
-            "Strict (exclude incomplete sections)": DurationMismatchStrategy.STRICT,
-            "Proportional (scale sections to fit)": DurationMismatchStrategy.PROPORTIONAL,
-        }
-        current_strategy = protocol_data.get("mismatch_strategy", DurationMismatchStrategy.FLAG_ONLY)
-        current_label = next(
-            (k for k, v in mismatch_options.items() if v == current_strategy),
-            "Flag only (include all, mark incomplete)"
-        )
-        mismatch_strategy = st.radio(
-            "Duration mismatch handling",
-            options=list(mismatch_options.keys()),
-            index=list(mismatch_options.keys()).index(current_label),
-            key="protocol_mismatch_strategy",
-            horizontal=True,
-            help="How to handle recordings that don't match expected duration"
-        )
-
-        if st.button("💾 Save Protocol Settings", key="save_protocol_btn"):
-            new_protocol = {
-                "expected_duration_min": expected_duration,
-                "section_length_min": section_length,
-                "pre_pause_sections": pre_pause_sections,
-                "post_pause_sections": post_pause_sections,
-                "min_section_duration_min": min_section_duration,
-                "min_section_beats": min_section_beats,
-                "mismatch_strategy": mismatch_options[mismatch_strategy],
-            }
-            save_protocol(new_protocol)
-            st.success("Protocol settings saved!")
-
-    # Build protocol config from current values
-    protocol = ProtocolConfig(
-        expected_duration_min=st.session_state.get("protocol_expected_duration", 90.0),
-        section_length_min=st.session_state.get("protocol_section_length", 5.0),
-        pre_pause_sections=st.session_state.get("protocol_pre_pause", 9),
-        post_pause_sections=st.session_state.get("protocol_post_pause", 9),
-        min_section_duration_min=st.session_state.get("protocol_min_duration", 4.0),
-        min_section_beats=st.session_state.get("protocol_min_beats", 100),
-    )
-
-    st.markdown("---")
-
-    # Participant/Playlist selection
-    col_sel1, col_sel2 = st.columns(2)
-
-    with col_sel1:
-        participant_list = get_participant_list()
-        selected_participant = st.selectbox(
-            "Select Participant",
-            options=participant_list,
-            key="music_analysis_participant"
-        )
-
-    with col_sel2:
-        # Get participant's playlist
-        participant_playlist = st.session_state.get("participant_playlists", {}).get(selected_participant, "")
-        playlist_groups = st.session_state.get("playlist_groups", {})
-
-        if participant_playlist and participant_playlist in playlist_groups:
-            playlist_data = playlist_groups[participant_playlist]
-            music_order = playlist_data.get("music_order", ["music_1", "music_2", "music_3"])
-            playlist_label = playlist_data.get("label", participant_playlist)
-            st.info(f"**Playlist:** {playlist_label}")
-            st.caption(f"Music order: {' → '.join(music_order)}")
-        else:
-            st.warning("No playlist assigned. Using default music order.")
-            music_order = ["music_1", "music_2", "music_3"]
-
-    # Artifact correction option
-    apply_correction = st.checkbox(
-        "Apply artifact correction (NeuroKit2 Kubios)",
-        value=False,
-        key="music_analysis_correction",
-        help="Recommended for data with quality issues"
-    )
-
-    # Analyze button
-    if st.button("🎵 Analyze Music Sections", key="analyze_music_btn", type="primary"):
-        with st.status("Extracting music sections...", expanded=True) as status:
-            try:
-                st.write("📂 Loading recording data...")
-
-                # Get participant's recording data
-                summary = get_summary_dict().get(selected_participant)
-                if not summary:
-                    st.error(f"No data found for participant {selected_participant}")
-                    return
-
-                source_app = getattr(summary, 'source_app', 'HRV Logger')
-                is_vns = (source_app == "VNS Analyse")
-
-                # Load recording
-                if is_vns and getattr(summary, 'vns_path', None):
-                    recording_data = cached_load_vns_recording(
-                        str(summary.vns_path),
-                        selected_participant,
-                        use_corrected=st.session_state.get("vns_use_corrected", False),
-                    )
-                else:
-                    bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-                    bundle = next((b for b in bundles if b.participant_id == selected_participant), None)
-                    if not bundle:
-                        st.error(f"No recording bundle found for {selected_participant}")
-                        return
-                    recording_data = cached_load_recording(
-                        tuple(str(p) for p in bundle.rr_paths),
-                        tuple(str(p) for p in bundle.events_paths),
-                        selected_participant
-                    )
-
-                # Build RR intervals and events dict
-                from music_hrv.io.hrv_logger import RRInterval
-                rr_intervals = [
-                    RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                    for ts, rr, elapsed in recording_data['rr_intervals']
-                ]
-
-                # Build events dictionary (canonical -> timestamp)
-                events_dict = {}
-                stored_events = st.session_state.participant_events.get(selected_participant, {})
-                all_events = stored_events.get('events', []) + stored_events.get('manual', [])
-
-                for evt in all_events:
-                    canonical = evt.canonical if hasattr(evt, 'canonical') else None
-                    if canonical and evt.first_timestamp:
-                        events_dict[canonical] = evt.first_timestamp
-
-                st.write(f"📊 Found {len(rr_intervals)} RR intervals")
-                st.write(f"📌 Events: {', '.join(events_dict.keys()) or 'None'}")
-
-                # Extract music sections
-                st.write("🎵 Extracting music sections...")
-                mismatch_strategy_value = mismatch_options.get(
-                    st.session_state.get("protocol_mismatch_strategy", "Flag only (include all, mark incomplete)"),
-                    DurationMismatchStrategy.FLAG_ONLY
-                )
-
-                analysis = extract_music_sections(
-                    rr_intervals=rr_intervals,
-                    events=events_dict,
-                    music_order=music_order,
-                    protocol=protocol,
-                    mismatch_strategy=mismatch_strategy_value,
-                )
-
-                # Show warnings
-                if analysis.warnings:
-                    for warning in analysis.warnings:
-                        st.warning(f"⚠️ {warning}")
-
-                st.write(f"✅ Extracted {len(analysis.sections)} sections "
-                        f"({analysis.valid_sections} valid, {analysis.incomplete_sections} incomplete)")
-
-                status.update(label="Section extraction complete", state="complete")
-
-                # Display results
-                st.markdown("---")
-                st.subheader("📊 Music Section Analysis Results")
-
-                # Duration overview
-                col_dur1, col_dur2, col_dur3 = st.columns(3)
-                with col_dur1:
-                    st.metric(
-                        "Expected Duration",
-                        f"{protocol.expected_duration_min:.0f} min"
-                    )
-                with col_dur2:
-                    st.metric(
-                        "Actual Duration",
-                        f"{analysis.actual_total_duration_s/60:.1f} min",
-                        delta=f"{-analysis.duration_mismatch_s/60:.1f} min" if analysis.duration_mismatch_s > 60 else None,
-                        delta_color="inverse"
-                    )
-                with col_dur3:
-                    st.metric(
-                        "Valid Sections",
-                        f"{analysis.valid_sections}/{len(analysis.sections)}"
-                    )
-
-                # Section details table
-                st.markdown("### Section Details")
-
-                section_data = []
-                for section in analysis.sections:
-                    status_icon = "✅" if section.is_valid else "⚠️"
-                    section_data.append({
-                        "Status": status_icon,
-                        "Section": section.label,
-                        "Music": section.music_type,
-                        "Phase": section.phase.replace("_", " ").title(),
-                        "Duration (min)": f"{section.actual_duration_s/60:.1f}",
-                        "Beats": section.beat_count,
-                        "Duration %": f"{section.duration_ratio*100:.0f}%",
-                        "Warnings": "; ".join(section.validation_warnings) if section.validation_warnings else "-",
-                    })
-
-                import pandas as pd
-                df_sections = pd.DataFrame(section_data)
-                st.dataframe(df_sections, use_container_width=True, hide_index=True)
-
-                # HRV Analysis for valid sections
-                st.markdown("### HRV Metrics by Section")
-
-                nk = get_neurokit()
-                if nk is None:
-                    st.error("NeuroKit2 not available for HRV computation")
-                    return
-
-                hrv_results = []
-                for section in analysis.sections:
-                    if not section.is_valid or section.beat_count < 50:
-                        continue
-
-                    rr_values = [rr.rr_ms for rr in section.rr_intervals]
-
-                    # Apply artifact correction if requested
-                    if apply_correction:
-                        try:
-                            peaks_corrected, info = nk.signal_fixpeaks(
-                                {"ECG_R_Peaks": list(range(len(rr_values)))},
-                                sampling_rate=1000,
-                                iterative=True,
-                                method="kubios"
-                            )
-                            # Reconstruct RR from corrected peaks
-                            rr_values = [rr_values[i] for i in range(len(rr_values))
-                                        if i not in info.get("artifacts", [])]
-                        except Exception:
-                            pass  # Use original if correction fails
-
-                    try:
-                        # Convert RR intervals to peaks for NeuroKit2
-                        # NeuroKit expects peak indices, not RR values directly
-                        peaks = nk.intervals_to_peaks(rr_values, sampling_rate=1000)
-
-                        # Compute HRV metrics using peaks
-                        hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-
-                        hrv_results.append({
-                            "Section": section.label,
-                            "Music": section.music_type,
-                            "Phase": section.phase.replace("_", " ").title(),
-                            "Beats": section.beat_count,
-                            "RMSSD": f"{hrv_time['HRV_RMSSD'].values[0]:.1f}",
-                            "SDNN": f"{hrv_time['HRV_SDNN'].values[0]:.1f}",
-                            "pNN50": f"{hrv_time['HRV_pNN50'].values[0]:.1f}",
-                            "HF (ms²)": f"{hrv_freq['HRV_HF'].values[0]:.1f}",
-                            "LF (ms²)": f"{hrv_freq['HRV_LF'].values[0]:.1f}",
-                            "LF/HF": f"{hrv_freq['HRV_LFHF'].values[0]:.2f}",
-                        })
-                    except Exception as e:
-                        st.warning(f"Could not compute HRV for {section.label}: {e}")
-
-                if hrv_results:
-                    df_hrv = pd.DataFrame(hrv_results)
-                    st.dataframe(df_hrv, use_container_width=True, hide_index=True)
-
-                    # Download button
-                    csv_hrv = df_hrv.to_csv(index=False)
-                    st.download_button(
-                        "📥 Download HRV Results (CSV)",
-                        data=csv_hrv,
-                        file_name=f"music_sections_hrv_{selected_participant}.csv",
-                        mime="text/csv"
-                    )
-
-                    # Summary by music type
-                    st.markdown("### Summary by Music Type")
-                    sections_by_type = get_sections_by_music_type(analysis, valid_only=True)
-
-                    for music_type, sections in sections_by_type.items():
-                        with st.expander(f"🎵 {music_type} ({len(sections)} sections)", expanded=False):
-                            type_results = [r for r in hrv_results if r["Music"] == music_type]
-                            if type_results:
-                                df_type = pd.DataFrame(type_results)
-                                st.dataframe(df_type, use_container_width=True, hide_index=True)
-
-                                # Compute averages
-                                try:
-                                    avg_rmssd = sum(float(r["RMSSD"]) for r in type_results) / len(type_results)
-                                    avg_sdnn = sum(float(r["SDNN"]) for r in type_results) / len(type_results)
-                                    st.markdown(f"**Averages:** RMSSD={avg_rmssd:.1f} ms, SDNN={avg_sdnn:.1f} ms")
-                                except (ValueError, ZeroDivisionError):
-                                    pass
-
-                else:
-                    st.warning("No valid sections for HRV analysis")
-
-            except Exception as e:
-                status.update(label="Error during analysis", state="error")
-                st.error(f"Error: {e}")
-                import traceback
-                st.code(traceback.format_exc())
-
-
 @st.fragment
 def render_participant_table_fragment():
     """Fragment for participant table - prevents re-render when expanders change.
@@ -1515,6 +1140,9 @@ def render_rr_plot_fragment(participant_id: str):
     plot_data = st.session_state[plot_data_key]
     stored_data = st.session_state.participant_events.get(participant_id, {})
 
+    # Always use Scattergl for performance
+    ScatterType = go.Scattergl
+
     # Determine source_app (check plot_data first, then fall back to summary)
     source_app = plot_data.get('source_app')
     if not source_app:
@@ -1533,20 +1161,27 @@ def render_rr_plot_fragment(participant_id: str):
 
     # Plot display options
     st.markdown("**Plot Options:**")
-    col_opt1, col_opt2, col_opt3 = st.columns(3)
+    col_opt1, col_opt2, col_opt3, col_opt4 = st.columns(4)
     with col_opt1:
-        show_artifacts = st.checkbox("Show artifacts (NeuroKit2)", value=False,
-                                     key=f"frag_show_artifacts_{participant_id}",
-                                     help="Detect ectopic, missed, extra beats using Kubios algorithm")
-        show_variability = st.checkbox("Show variability segments", value=False,
-                                       key=f"frag_show_var_{participant_id}",
-                                       help="Detect variance changepoints")
+        show_events = st.checkbox("Show events", value=True,
+                                  key=f"frag_show_events_{participant_id}",
+                                  help="Show boundary events on plot")
+        show_exclusions = st.checkbox("Show exclusions", value=True,
+                                      key=f"frag_show_exclusions_{participant_id}",
+                                      help="Show exclusion zones as red rectangles")
     with col_opt2:
         show_music_sections = st.checkbox("Show music sections", value=True,
                                           key=f"frag_show_music_sec_{participant_id}")
         show_music_events = st.checkbox("Show music events", value=False,
                                         key=f"frag_show_music_evt_{participant_id}")
     with col_opt3:
+        show_artifacts = st.checkbox("Show artifacts (NeuroKit2)", value=False,
+                                     key=f"frag_show_artifacts_{participant_id}",
+                                     help="Detect ectopic, missed, extra beats using Kubios algorithm")
+        show_variability = st.checkbox("Show variability segments", value=False,
+                                       key=f"frag_show_var_{participant_id}",
+                                       help="Detect variance changepoints")
+    with col_opt4:
         show_gaps = st.checkbox("Show time gaps", value=True,
                                 key=f"frag_show_gaps_{participant_id}",
                                 disabled=is_vns_data)
@@ -1599,7 +1234,7 @@ def render_rr_plot_fragment(participant_id: str):
 
         # Valid intervals in blue (connected with lines)
         if good_ts:
-            fig.add_trace(go.Scattergl(
+            fig.add_trace(ScatterType(
                 x=good_ts,
                 y=good_rr,
                 mode='markers+lines',
@@ -1611,7 +1246,7 @@ def render_rr_plot_fragment(participant_id: str):
 
         # Flagged intervals in red (markers only, no lines to show discontinuity)
         if flagged_ts:
-            fig.add_trace(go.Scattergl(
+            fig.add_trace(ScatterType(
                 x=flagged_ts,
                 y=flagged_rr,
                 mode='markers',
@@ -1621,7 +1256,7 @@ def render_rr_plot_fragment(participant_id: str):
             ))
     else:
         # HRV Logger: Already cleaned, show all in blue
-        fig.add_trace(go.Scattergl(
+        fig.add_trace(ScatterType(
             x=plot_data['timestamps'],
             y=plot_data['rr_values'],
             mode='markers+lines',
@@ -1641,48 +1276,50 @@ def render_rr_plot_fragment(participant_id: str):
         hovermode='closest',
         height=600,
         showlegend=True,
-        legend=dict(x=1.02, y=1, xanchor='left', yanchor='top')
+        legend=dict(x=1.02, y=1, xanchor='left', yanchor='top'),
+        uirevision=participant_id  # Preserve zoom/pan state across updates
     )
 
-    # Add event markers
-    events_list = stored_data.get('events', [])
-    manual_list = stored_data.get('manual', [])
-    if not isinstance(events_list, list):
-        events_list = []
-    if not isinstance(manual_list, list):
-        manual_list = []
-    current_events = events_list + manual_list
+    # Add event markers (conditional on show_events)
+    if show_events:
+        events_list = stored_data.get('events', [])
+        manual_list = stored_data.get('manual', [])
+        if not isinstance(events_list, list):
+            events_list = []
+        if not isinstance(manual_list, list):
+            manual_list = []
+        current_events = events_list + manual_list
 
-    distinct_colors = ['#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b',
-                       '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-    event_by_canonical = {}
+        distinct_colors = ['#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b',
+                           '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        event_by_canonical = {}
 
-    for evt_status in current_events:
-        if hasattr(evt_status, 'canonical'):
-            canonical = evt_status.canonical
-            timestamp = evt_status.first_timestamp
-        else:
-            canonical = st.session_state.normalizer.normalize(evt_status.label) if hasattr(evt_status, 'label') else None
-            timestamp = evt_status.timestamp if hasattr(evt_status, 'timestamp') else None
+        for evt_status in current_events:
+            if hasattr(evt_status, 'canonical'):
+                canonical = evt_status.canonical
+                timestamp = evt_status.first_timestamp
+            else:
+                canonical = st.session_state.normalizer.normalize(evt_status.label) if hasattr(evt_status, 'label') else None
+                timestamp = evt_status.timestamp if hasattr(evt_status, 'timestamp') else None
 
-        if canonical and canonical != "unmatched" and timestamp:
-            if canonical not in event_by_canonical:
-                event_by_canonical[canonical] = []
-            event_by_canonical[canonical].append(timestamp)
+            if canonical and canonical != "unmatched" and timestamp:
+                if canonical not in event_by_canonical:
+                    event_by_canonical[canonical] = []
+                event_by_canonical[canonical].append(timestamp)
 
-    for idx, (event_name, event_times) in enumerate(event_by_canonical.items()):
-        color = distinct_colors[idx % len(distinct_colors)]
-        for event_time in event_times:
-            fig.add_shape(
-                type="line", x0=event_time, x1=event_time,
-                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                line=dict(color=color, width=2, dash='dash'), opacity=0.7
-            )
-            fig.add_annotation(
-                x=event_time, y=y_max + 0.08 * y_range,
-                text=event_name, showarrow=False, textangle=-90,
-                font=dict(color=color, size=10)
-            )
+        for idx, (event_name, event_times) in enumerate(event_by_canonical.items()):
+            color = distinct_colors[idx % len(distinct_colors)]
+            for event_time in event_times:
+                fig.add_shape(
+                    type="line", x0=event_time, x1=event_time,
+                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                    line=dict(color=color, width=2, dash='dash'), opacity=0.7
+                )
+                fig.add_annotation(
+                    x=event_time, y=y_max + 0.08 * y_range,
+                    text=event_name, showarrow=False, textangle=-90,
+                    font=dict(color=color, size=10)
+                )
 
     # Gap detection (fast) - skip for VNS data (synthesized timestamps)
     timestamps_list = list(plot_data['timestamps'])
@@ -1712,7 +1349,7 @@ def render_rr_plot_fragment(participant_id: str):
 
             # Add artifact markers to plot (orange X markers)
             if artifact_result["artifact_timestamps"]:
-                fig.add_trace(go.Scattergl(
+                fig.add_trace(ScatterType(
                     x=artifact_result["artifact_timestamps"],
                     y=artifact_result["artifact_rr"],
                     mode='markers',
@@ -1822,19 +1459,183 @@ def render_rr_plot_fragment(participant_id: str):
                     line=dict(color=color, width=1, dash='dot'), opacity=0.5
                 )
 
-    # Display interactive plot with click detection
-    st.info("💡 Click on the plot to add a new event at that timestamp")
-    selected_points = plotly_events(fig, click_event=True, hover_event=False, select_event=False, override_height=600)
+    # Exclusion zones (red semi-transparent rectangles) - conditional on show_exclusions
+    exclusion_zones = stored_data.get('exclusion_zones', [])
+    if show_exclusions and exclusion_zones:
+        for zone in exclusion_zones:
+            zone_start = zone.get('start')
+            zone_end = zone.get('end')
+            if zone_start and zone_end:
+                # Convert ISO strings back to datetime if needed
+                if isinstance(zone_start, str):
+                    zone_start = pd.to_datetime(zone_start)
+                if isinstance(zone_end, str):
+                    zone_end = pd.to_datetime(zone_end)
 
-    # Handle click immediately with quick add form
+                # Draw exclusion zone as red rectangle
+                fig.add_shape(
+                    type="rect",
+                    x0=zone_start, x1=zone_end,
+                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                    fillcolor='rgba(255, 0, 0, 0.2)',
+                    line=dict(color='rgba(255, 0, 0, 0.8)', width=2),
+                    layer="below"
+                )
+                # Add vertical label at start of exclusion zone (like event labels)
+                reason = zone.get('reason', '')[:15]  # Truncate long reasons
+                exclude_dur = zone.get('exclude_from_duration', True)
+                label_text = reason if reason else "Excluded"
+                if exclude_dur:
+                    label_text += " [excl]"
+                fig.add_annotation(
+                    x=zone_start, y=y_max + 0.08 * y_range,  # Position at start
+                    text=label_text,
+                    showarrow=False, textangle=-90,  # Vertical like events
+                    font=dict(color='darkred', size=10)
+                )
+
+    # Show pending exclusion click points on the plot
+    exclusion_click_key = f"exclusion_clicks_{participant_id}"
+    pending_clicks = st.session_state.get(exclusion_click_key, [])
+    if pending_clicks:
+        # Draw markers for pending exclusion points
+        click_times = []
+        click_y_values = []
+        for click_ts in pending_clicks:
+            click_times.append(click_ts)
+            # Find closest RR value for y-position
+            click_y_values.append(y_max + 0.02 * y_range)
+
+        fig.add_trace(ScatterType(
+            x=click_times,
+            y=click_y_values,
+            mode='markers',
+            name='Exclusion Points',
+            marker=dict(size=15, color='red', symbol='diamond'),
+            hovertemplate='Exclusion point: %{x}<extra></extra>'
+        ))
+
+        # Draw vertical lines and labels
+        if len(pending_clicks) == 1:
+            # One point - show START label
+            fig.add_shape(
+                type="line",
+                x0=pending_clicks[0], x1=pending_clicks[0],
+                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                line=dict(color='red', width=2, dash='dash'),
+                opacity=0.7
+            )
+            fig.add_annotation(
+                x=pending_clicks[0], y=y_max + 0.12 * y_range,
+                text="START",
+                showarrow=False, font=dict(color='red', size=10, weight='bold'),
+                bgcolor='rgba(255,255,255,0.9)'
+            )
+        elif len(pending_clicks) >= 2:
+            # Two points - show START and END labels with shaded region
+            sorted_clicks = sorted(pending_clicks[:2])
+            for ts, label in zip(sorted_clicks, ["START", "END"]):
+                fig.add_shape(
+                    type="line",
+                    x0=ts, x1=ts,
+                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                    line=dict(color='red', width=2, dash='dash'),
+                    opacity=0.7
+                )
+                fig.add_annotation(
+                    x=ts, y=y_max + 0.12 * y_range,
+                    text=label,
+                    showarrow=False, font=dict(color='red', size=10, weight='bold'),
+                    bgcolor='rgba(255,255,255,0.9)'
+                )
+            # Draw shaded region
+            fig.add_shape(
+                type="rect",
+                x0=sorted_clicks[0], x1=sorted_clicks[1],
+                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                fillcolor="red",
+                opacity=0.1,
+                line=dict(width=0)
+            )
+
+    # Check if in click-two-points exclusion mode
+    exclusion_method_key = f"exclusion_method_{participant_id}"
+    is_exclusion_click_mode_check = (
+        exclusion_method_key in st.session_state and
+        st.session_state[exclusion_method_key] == "Click two points on plot"
+    )
+
+    # Display interactive plot with click detection
+    col_mode_info, col_refresh = st.columns([5, 1])
+    with col_mode_info:
+        if is_exclusion_click_mode_check:
+            st.info("📍 **Click two points** on the plot to define an exclusion zone (start → end)")
+        else:
+            st.info("💡 Click on the plot to add a new event at that timestamp")
+    with col_refresh:
+        if st.button("🔄 Refresh", key=f"refresh_plot_{participant_id}", help="Refresh plot to show new markers (resets zoom)"):
+            st.rerun()
+
+    # Use a stable key to help preserve component state
+    selected_points = plotly_events(
+        fig,
+        click_event=True,
+        hover_event=False,
+        select_event=False,
+        override_height=600,
+        key=f"plotly_events_{participant_id}"
+    )
+
+    # Handle click - check if we're in exclusion click mode
+    exclusion_click_key = f"exclusion_clicks_{participant_id}"
+    is_exclusion_click_mode = (
+        exclusion_method_key in st.session_state and
+        st.session_state[exclusion_method_key] == "Click two points on plot"
+    )
+
+    # Handle click immediately
+    # Track the last processed click to avoid reprocessing on rerun
+    last_click_key = f"last_click_{participant_id}"
+
     if selected_points and len(selected_points) > 0:
         clicked_point = selected_points[0]
         if 'x' in clicked_point:
             clicked_ts = pd.to_datetime(clicked_point['x'])
-            clicked_time_str = clicked_ts.strftime("%H:%M:%S")
+            clicked_time_str = clicked_ts.strftime("%H:%M:%S.%f")  # Include microseconds for uniqueness
+
+            # Check if this is a new click (not a re-processed one)
+            last_click = st.session_state.get(last_click_key)
+            is_new_click = (last_click != clicked_time_str)
+
+            # Check if we're in exclusion click mode
+            if is_exclusion_click_mode:
+                # Initialize clicks list if needed
+                if exclusion_click_key not in st.session_state:
+                    st.session_state[exclusion_click_key] = []
+
+                current_clicks = st.session_state[exclusion_click_key]
+
+                # Only add if this is a genuinely new click AND we have less than 2 points
+                if is_new_click and len(current_clicks) < 2:
+                    # Store this as the last processed click
+                    st.session_state[last_click_key] = clicked_time_str
+
+                    # Add this click to the list
+                    st.session_state[exclusion_click_key].append(clicked_ts)
+                    display_time = clicked_ts.strftime("%H:%M:%S")
+                    st.toast(f"📍 Exclusion point {len(st.session_state[exclusion_click_key])}: {display_time}")
+
+                    # Only rerun for second point (to show confirmation form)
+                    # First point: don't rerun to avoid zoom reset - marker shows on next interaction
+                    if len(st.session_state[exclusion_click_key]) >= 2:
+                        st.rerun()
+
+                # Always return early in exclusion mode (don't show event form)
+                return
 
             # Show quick add form right here in the fragment
-            st.success(f"📍 **Clicked at {clicked_time_str}** - Add event below:")
+            display_time = clicked_ts.strftime("%H:%M:%S")
+            st.success(f"📍 **Clicked at {display_time}** - Add event below:")
 
             col_evt, col_custom, col_add = st.columns([2, 2, 1])
             with col_evt:
@@ -1883,8 +1684,7 @@ def render_rr_plot_fragment(participant_id: str):
                         if participant_id not in st.session_state.participant_events:
                             st.session_state.participant_events[participant_id] = {'events': [], 'manual': []}
                         st.session_state.participant_events[participant_id]['manual'].append(new_event)
-                        st.toast(f"✅ Added '{event_label}' at {clicked_time_str}")
-                        st.rerun()
+                        st.toast(f"✅ Added '{event_label}' at {clicked_time_str} - click 'Refresh Plot' or interact with plot to see marker")
 
 
 def extract_section_rr_intervals(recording, section_def, normalizer):
@@ -2496,16 +2296,29 @@ def main():
                                     last_timestamp=last_ts,
                                 )
 
+                            # Also load exclusion zones with datetime conversion
+                            exclusion_zones = []
+                            for zone in saved_events.get('exclusion_zones', []):
+                                zone_copy = dict(zone)
+                                # Convert ISO strings back to datetime
+                                if zone_copy.get('start') and isinstance(zone_copy['start'], str):
+                                    zone_copy['start'] = datetime.fromisoformat(zone_copy['start'])
+                                if zone_copy.get('end') and isinstance(zone_copy['end'], str):
+                                    zone_copy['end'] = datetime.fromisoformat(zone_copy['end'])
+                                exclusion_zones.append(zone_copy)
+
                             st.session_state.participant_events[selected_participant] = {
                                 'events': [dict_to_event(e) for e in saved_events.get('events', [])],
                                 'manual': [dict_to_event(e) for e in saved_events.get('manual', [])],
                                 'music_events': [dict_to_event(e) for e in saved_events.get('music_events', [])],
+                                'exclusion_zones': exclusion_zones,
                             }
                         else:
                             # Load from original recording
                             st.session_state.participant_events[selected_participant] = {
                                 'events': list(summary.events),
-                                'manual': st.session_state.manual_events.get(selected_participant, []).copy()
+                                'manual': st.session_state.manual_events.get(selected_participant, []).copy(),
+                                'exclusion_zones': [],
                             }
 
                     # Get cleaned RR intervals using CACHED function
@@ -2541,42 +2354,354 @@ def main():
                         plot_data['source_app'] = source_app
                         st.session_state[f"plot_data_{selected_participant}"] = plot_data
 
+                        # Mode selector for plot interaction (Events vs Exclusions)
+                        st.markdown("---")
+                        col_mode1, col_mode2 = st.columns([1, 3])
+                        with col_mode1:
+                            interaction_mode = st.radio(
+                                "Plot interaction",
+                                ["📋 Add Events", "🚫 Add Exclusions"],
+                                key=f"plot_mode_{selected_participant}",
+                                horizontal=True,
+                                label_visibility="collapsed"
+                            )
+                        with col_mode2:
+                            if interaction_mode != "🚫 Add Exclusions":
+                                # Clear exclusion method when not in exclusion mode
+                                if f"exclusion_method_{selected_participant}" in st.session_state:
+                                    del st.session_state[f"exclusion_method_{selected_participant}"]
+
                         # Render plot using fragment (click handling is inside the fragment)
                         render_rr_plot_fragment(selected_participant)
 
                 except Exception as e:
                     st.warning(f"Could not generate RR plot: {e}")
 
-                # Show quality analysis info if available
-                changepoint_key = f"changepoints_{selected_participant}"
-                gap_key = f"gaps_{selected_participant}"
+                # ================== EXCLUSION ZONES (shown when in exclusion mode) ==================
+                if interaction_mode == "🚫 Add Exclusions":
+                    col_excl_title, col_excl_help = st.columns([4, 1])
+                    with col_excl_title:
+                        st.markdown("### 🚫 Exclusion Zones")
+                    with col_excl_help:
+                        with st.popover("ℹ️ Help"):
+                            from music_hrv.gui.help_text import EXCLUSION_ZONES_HELP
+                            st.markdown(EXCLUSION_ZONES_HELP)
 
-                if changepoint_key in st.session_state or gap_key in st.session_state:
-                    with st.expander("📊 Signal Quality Analysis", expanded=False):
-                        # Documentation section
-                        st.markdown("""
-                        #### How Quality is Assessed
+                    # Set exclusion method (click two points only)
+                    st.session_state[f"exclusion_method_{selected_participant}"] = "Click two points on plot"
 
-                        **1. Variability Analysis (signal_changepoints)**
-                        Uses NeuroKit2's `signal_changepoints()` with the PELT algorithm to detect where
-                        signal variance changes significantly. High variance segments may indicate:
-                        - Movement artifacts
-                        - Electrode contact issues
-                        - Physiological changes (stress, exercise)
+                    # Clear selection button - always visible when there are pending clicks
+                    click_key = f"exclusion_clicks_{selected_participant}"
+                    pending_clicks = st.session_state.get(click_key, [])
 
-                        **2. Gap Detection (Missing Data)**
-                        Identifies time gaps >2 seconds between consecutive beats, which indicate:
-                        - Recording interruptions
-                        - Bluetooth disconnections
-                        - Device errors
+                    col_info, col_clear = st.columns([4, 1])
+                    with col_info:
+                        if len(pending_clicks) == 0:
+                            st.caption("Click on the plot to set the **start point** of an exclusion zone.")
+                        elif len(pending_clicks) == 1:
+                            st.caption(f"Start: **{pending_clicks[0].strftime('%H:%M:%S')}** — Click to set **end point**.")
+                    with col_clear:
+                        if pending_clicks:
+                            if st.button("🗑️ Clear", key=f"clear_selection_{selected_participant}", type="secondary"):
+                                # Clear the pending clicks list, but keep last_click_key
+                                # so the same click won't be re-added on rerun
+                                st.session_state[click_key] = []
+                                st.toast("Selection cleared")
+                                st.rerun()
 
-                        ---
-                        """)
+                    # Initialize exclusion zones in session state if needed
+                    if 'exclusion_zones' not in st.session_state.participant_events.get(selected_participant, {}):
+                        if selected_participant not in st.session_state.participant_events:
+                            st.session_state.participant_events[selected_participant] = {'events': [], 'manual': [], 'exclusion_zones': []}
+                        else:
+                            st.session_state.participant_events[selected_participant]['exclusion_zones'] = []
 
-                        # Gap Detection Results
-                        if gap_key in st.session_state:
-                            gap_info = st.session_state[gap_key]
-                            st.markdown("##### ⏱️ Time Gap Analysis (Missing Data)")
+                    exclusion_zones = st.session_state.participant_events[selected_participant].get('exclusion_zones', [])
+
+                    # Check for pending click points (from click-two-points mode)
+                    click_key = f"exclusion_clicks_{selected_participant}"
+                    if click_key in st.session_state and len(st.session_state[click_key]) >= 2:
+                        clicks = st.session_state[click_key]
+                        start_click, end_click = sorted(clicks[:2])
+                        st.success("Selected zone - adjust times below if needed:")
+
+                        # Editable time inputs for the selected zone (HH:MM:SS format)
+                        col_start, col_end = st.columns(2)
+                        with col_start:
+                            edited_start_str = st.text_input(
+                                "Start time (HH:MM:SS)",
+                                value=start_click.strftime("%H:%M:%S"),
+                                key=f"excl_start_time_{selected_participant}",
+                                help="Edit the start time in HH:MM:SS format"
+                            )
+                        with col_end:
+                            edited_end_str = st.text_input(
+                                "End time (HH:MM:SS)",
+                                value=end_click.strftime("%H:%M:%S"),
+                                key=f"excl_end_time_{selected_participant}",
+                                help="Edit the end time in HH:MM:SS format"
+                            )
+
+                        # Parse edited times and combine with original date
+                        import datetime
+                        try:
+                            edited_start_time = datetime.datetime.strptime(edited_start_str, "%H:%M:%S").time()
+                        except ValueError:
+                            st.error("Invalid start time format. Use HH:MM:SS")
+                            edited_start_time = start_click.time()
+                        try:
+                            edited_end_time = datetime.datetime.strptime(edited_end_str, "%H:%M:%S").time()
+                        except ValueError:
+                            st.error("Invalid end time format. Use HH:MM:SS")
+                            edited_end_time = end_click.time()
+
+                        final_start = datetime.datetime.combine(start_click.date(), edited_start_time)
+                        final_end = datetime.datetime.combine(end_click.date(), edited_end_time)
+                        if final_start.tzinfo is None and start_click.tzinfo is not None:
+                            final_start = final_start.replace(tzinfo=start_click.tzinfo)
+                        if final_end.tzinfo is None and end_click.tzinfo is not None:
+                            final_end = final_end.replace(tzinfo=end_click.tzinfo)
+
+                        col_form1, col_form2 = st.columns(2)
+                        with col_form1:
+                            reason_click = st.text_input(
+                                "Reason (optional)",
+                                key=f"excl_reason_click_{selected_participant}",
+                                placeholder="e.g., Bathroom break"
+                            )
+                        with col_form2:
+                            exclude_dur_click = st.checkbox(
+                                "Exclude from duration",
+                                value=True,
+                                key=f"excl_dur_click_{selected_participant}"
+                            )
+
+                        col_confirm, col_cancel = st.columns(2)
+                        last_click_key = f"last_click_{selected_participant}"
+                        with col_confirm:
+                            if st.button("✅ Add Exclusion Zone", key=f"confirm_excl_{selected_participant}", type="primary"):
+                                new_zone = {
+                                    'start': final_start,
+                                    'end': final_end,
+                                    'reason': reason_click,
+                                    'exclude_from_duration': exclude_dur_click
+                                }
+                                st.session_state.participant_events[selected_participant]['exclusion_zones'].append(new_zone)
+                                st.session_state[click_key] = []
+                                # Clear last click to allow new selections
+                                if last_click_key in st.session_state:
+                                    del st.session_state[last_click_key]
+                                show_toast("✅ Exclusion zone added", icon="success")
+                                st.rerun()
+                        with col_cancel:
+                            if st.button("❌ Cancel", key=f"cancel_excl_{selected_participant}"):
+                                st.session_state[click_key] = []
+                                # Clear last click to allow new selections
+                                if last_click_key in st.session_state:
+                                    del st.session_state[last_click_key]
+                                st.rerun()
+                    elif click_key in st.session_state and len(st.session_state[click_key]) == 1:
+                        st.warning(f"📍 Start point set: **{st.session_state[click_key][0].strftime('%H:%M:%S')}** - Now click on plot to set **end point**")
+                        if st.button("Cancel", key=f"cancel_click1_{selected_participant}"):
+                            st.session_state[click_key] = []
+                            last_click_key = f"last_click_{selected_participant}"
+                            if last_click_key in st.session_state:
+                                del st.session_state[last_click_key]
+                            st.rerun()
+
+                    # Display existing exclusion zones
+                    if exclusion_zones:
+                        col_zones_header, col_save = st.columns([3, 1])
+                        with col_zones_header:
+                            st.markdown("**Current Exclusion Zones:**")
+                        with col_save:
+                            if st.button("💾 Save", key=f"save_exclusions_{selected_participant}", type="primary", help="Save exclusion zones to disk"):
+                                from music_hrv.gui.persistence import save_participant_events
+                                save_participant_events(selected_participant, st.session_state.participant_events[selected_participant])
+                                show_toast("💾 Exclusion zones saved", icon="success")
+
+                        for idx, zone in enumerate(exclusion_zones):
+                            zone_start = zone.get('start', 'N/A')
+                            zone_end = zone.get('end', 'N/A')
+                            zone_reason = zone.get('reason', '')
+                            exclude_duration = zone.get('exclude_from_duration', True)
+
+                            # Format timestamps for display
+                            if hasattr(zone_start, 'strftime'):
+                                start_str = zone_start.strftime('%H:%M:%S')
+                            elif isinstance(zone_start, str):
+                                start_str = zone_start[:19]
+                            else:
+                                start_str = 'N/A'
+
+                            if hasattr(zone_end, 'strftime'):
+                                end_str = zone_end.strftime('%H:%M:%S')
+                            elif isinstance(zone_end, str):
+                                end_str = zone_end[:19]
+                            else:
+                                end_str = 'N/A'
+
+                            col_zone, col_edit, col_del = st.columns([4, 1, 1])
+                            with col_zone:
+                                duration_icon = "[excl]" if exclude_duration else ""
+                                reason_text = f" - {zone_reason}" if zone_reason else ""
+                                st.write(f"{idx+1}. **{start_str}** → **{end_str}** {duration_icon}{reason_text}")
+                            with col_edit:
+                                edit_key = f"edit_zone_{selected_participant}_{idx}"
+                                if st.button("✏️", key=f"btn_{edit_key}"):
+                                    st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+                                    st.rerun()
+                            with col_del:
+                                if st.button("🗑️", key=f"del_zone_{selected_participant}_{idx}"):
+                                    exclusion_zones.pop(idx)
+                                    st.rerun()
+
+                            # Editable form for this zone
+                            edit_key = f"edit_zone_{selected_participant}_{idx}"
+                            if st.session_state.get(edit_key, False):
+                                with st.container():
+                                    st.markdown("---")
+                                    import datetime
+                                    col_e1, col_e2 = st.columns(2)
+                                    with col_e1:
+                                        new_start = st.text_input(
+                                            "Start (HH:MM:SS)",
+                                            value=start_str,
+                                            key=f"edit_start_{selected_participant}_{idx}"
+                                        )
+                                    with col_e2:
+                                        new_end = st.text_input(
+                                            "End (HH:MM:SS)",
+                                            value=end_str,
+                                            key=f"edit_end_{selected_participant}_{idx}"
+                                        )
+                                    col_e3, col_e4 = st.columns(2)
+                                    with col_e3:
+                                        new_reason = st.text_input(
+                                            "Reason",
+                                            value=zone_reason,
+                                            key=f"edit_reason_{selected_participant}_{idx}"
+                                        )
+                                    with col_e4:
+                                        new_exclude_dur = st.checkbox(
+                                            "Exclude from duration",
+                                            value=exclude_duration,
+                                            key=f"edit_excl_dur_{selected_participant}_{idx}"
+                                        )
+                                    col_save_edit, col_cancel_edit = st.columns(2)
+                                    with col_save_edit:
+                                        if st.button("💾 Save Changes", key=f"save_edit_{selected_participant}_{idx}"):
+                                            try:
+                                                # Parse new times
+                                                new_start_time = datetime.datetime.strptime(new_start, "%H:%M:%S").time()
+                                                new_end_time = datetime.datetime.strptime(new_end, "%H:%M:%S").time()
+                                                # Use original date
+                                                orig_date = zone_start.date() if hasattr(zone_start, 'date') else datetime.date.today()
+                                                new_start_dt = datetime.datetime.combine(orig_date, new_start_time)
+                                                new_end_dt = datetime.datetime.combine(orig_date, new_end_time)
+                                                # Preserve timezone if present
+                                                if hasattr(zone_start, 'tzinfo') and zone_start.tzinfo:
+                                                    new_start_dt = new_start_dt.replace(tzinfo=zone_start.tzinfo)
+                                                    new_end_dt = new_end_dt.replace(tzinfo=zone_start.tzinfo)
+                                                # Update zone
+                                                zone['start'] = new_start_dt
+                                                zone['end'] = new_end_dt
+                                                zone['reason'] = new_reason
+                                                zone['exclude_from_duration'] = new_exclude_dur
+                                                st.session_state[edit_key] = False
+                                                st.toast("✅ Zone updated")
+                                                st.rerun()
+                                            except ValueError:
+                                                st.error("Invalid time format. Use HH:MM:SS")
+                                    with col_cancel_edit:
+                                        if st.button("Cancel", key=f"cancel_edit_{selected_participant}_{idx}"):
+                                            st.session_state[edit_key] = False
+                                            st.rerun()
+                                    st.markdown("---")
+                    else:
+                        st.info("No exclusion zones defined yet.")
+
+                    st.markdown("---")
+                    with st.expander("Manual Entry", expanded=False):
+                        # Get first RR timestamp as reference
+                        first_rr_time = None
+                        if 'rr_intervals' in recording_data and recording_data['rr_intervals']:
+                            first_rr_time = recording_data['rr_intervals'][0][0]
+
+                        col_start, col_end = st.columns(2)
+                        with col_start:
+                            manual_start = st.text_input(
+                                "Start time (HH:MM:SS)",
+                                value=first_rr_time.strftime("%H:%M:%S") if first_rr_time and hasattr(first_rr_time, 'strftime') else "10:00:00",
+                                key=f"manual_excl_start_{selected_participant}",
+                                placeholder="HH:MM:SS"
+                            )
+                        with col_end:
+                            manual_end = st.text_input(
+                                "End time (HH:MM:SS)",
+                                value="",
+                                key=f"manual_excl_end_{selected_participant}",
+                                placeholder="HH:MM:SS"
+                            )
+
+                        col_r, col_d = st.columns(2)
+                        with col_r:
+                            manual_reason = st.text_input(
+                                "Reason (optional)",
+                                key=f"manual_excl_reason_{selected_participant}",
+                                placeholder="e.g., Extra break"
+                            )
+                        with col_d:
+                            manual_exclude_dur = st.checkbox(
+                                "Exclude from duration",
+                                value=True,
+                                key=f"manual_excl_dur_{selected_participant}"
+                            )
+
+                        def add_manual_exclusion():
+                            import datetime as dt
+                            try:
+                                parts = manual_start.strip().split(":")
+                                start_time = dt.time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+                                parts = manual_end.strip().split(":")
+                                end_time = dt.time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+
+                                if first_rr_time:
+                                    start_dt = first_rr_time.replace(hour=start_time.hour, minute=start_time.minute, second=start_time.second)
+                                    end_dt = first_rr_time.replace(hour=end_time.hour, minute=end_time.minute, second=end_time.second)
+                                    new_zone = {
+                                        'start': start_dt,
+                                        'end': end_dt,
+                                        'reason': manual_reason,
+                                        'exclude_from_duration': manual_exclude_dur
+                                    }
+                                    st.session_state.participant_events[selected_participant]['exclusion_zones'].append(new_zone)
+                                    st.toast("✅ Exclusion zone added")
+                            except (ValueError, IndexError):
+                                st.error("Invalid time format. Use HH:MM:SS")
+
+                        st.button("➕ Add Exclusion Zone", key=f"add_manual_excl_{selected_participant}", on_click=add_manual_exclusion)
+
+                # ================== SIGNAL QUALITY & EVENTS (only in events mode) ==================
+                if interaction_mode != "🚫 Add Exclusions":
+                    # Show quality analysis info if available
+                    changepoint_key = f"changepoints_{selected_participant}"
+                    gap_key = f"gaps_{selected_participant}"
+
+                    # Time Gap Analysis Expander
+                    if gap_key in st.session_state:
+                        gap_info = st.session_state[gap_key]
+                        # Determine badge for expander title
+                        if gap_info.get('vns_note'):
+                            gap_title = "⏱️ Time Gap Analysis (N/A for VNS data)"
+                        elif gap_info['total_gaps'] == 0:
+                            gap_title = "⏱️ Time Gap Analysis (✅ No gaps)"
+                        else:
+                            gap_badge = "🟡" if gap_info['total_gaps'] <= 2 else "🔴"
+                            gap_title = f"⏱️ Time Gap Analysis ({gap_badge} {gap_info['total_gaps']} gaps)"
+
+                        with st.expander(gap_title, expanded=False):
+                            st.caption("Identifies time gaps >2 seconds between consecutive beats (recording interruptions, Bluetooth disconnections, device errors)")
 
                             # Check if VNS data (gap detection not applicable)
                             if gap_info.get('vns_note'):
@@ -2595,81 +2720,87 @@ def main():
                                 with col_g3:
                                     st.metric("Gap Ratio", f"{gap_info['gap_ratio']*100:.2f}%")
 
-                            if gap_info['gaps'] and not gap_info.get('vns_note'):
-                                st.markdown("**Gap Details:**")
-                                gap_data = []
-                                for i, gap in enumerate(gap_info['gaps']):
-                                    start_str = gap['start_time'].strftime('%H:%M:%S') if gap.get('start_time') else "?"
-                                    end_str = gap['end_time'].strftime('%H:%M:%S') if gap.get('end_time') else "?"
-                                    gap_data.append({
-                                        "Gap #": i + 1,
-                                        "Start Time": start_str,
-                                        "End Time": end_str,
-                                        "Duration (s)": f"{gap['duration_s']:.1f}",
-                                        "Beat Index": f"{gap['start_idx']} → {gap['end_idx']}"
-                                    })
-                                st.dataframe(pd.DataFrame(gap_data), use_container_width=True, hide_index=True)
+                                if gap_info['gaps']:
+                                    st.markdown("**Gap Details:**")
+                                    gap_data = []
+                                    for i, gap in enumerate(gap_info['gaps']):
+                                        start_str = gap['start_time'].strftime('%H:%M:%S') if gap.get('start_time') else "?"
+                                        end_str = gap['end_time'].strftime('%H:%M:%S') if gap.get('end_time') else "?"
+                                        gap_data.append({
+                                            "Gap #": i + 1,
+                                            "Start Time": start_str,
+                                            "End Time": end_str,
+                                            "Duration (s)": f"{gap['duration_s']:.1f}",
+                                            "Beat Index": f"{gap['start_idx']} → {gap['end_idx']}"
+                                        })
+                                    st.dataframe(pd.DataFrame(gap_data), use_container_width=True, hide_index=True)
 
-                                # Recommendations for gaps
-                                st.markdown("##### 💡 Recommendations for Gaps:")
-                                st.markdown("""
-                                **What gaps mean:**
-                                - Recording was interrupted (Bluetooth disconnect, device error, or intentional pause)
-                                - Data during the gap is lost and cannot be recovered
+                                    # Recommendations for gaps
+                                    st.markdown("##### 💡 Recommendations for Gaps:")
+                                    st.markdown("""
+                                    **What gaps mean:**
+                                    - Recording was interrupted (Bluetooth disconnect, device error, or intentional pause)
+                                    - Data during the gap is lost and cannot be recovered
 
-                                **What to do:**
-                                1. **Add boundary events** - Click on the plot at the gap start/end times to mark `gap_start` and `gap_end` events
-                                2. **Define sections around gaps** - In the Sections tab, create sections that exclude gap periods
-                                3. **In Analysis** - Select only valid sections for HRV computation (gaps will be automatically excluded if you use section boundaries)
+                                    **What to do:**
+                                    1. **Add boundary events** - Click on the plot at the gap start/end times to mark `gap_start` and `gap_end` events
+                                    2. **Define sections around gaps** - In the Sections tab, create sections that exclude gap periods
+                                    3. **In Analysis** - Select only valid sections for HRV computation (gaps will be automatically excluded if you use section boundaries)
 
-                                **When to exclude entire recording:**
-                                - If gaps occur during critical measurement periods (e.g., during music listening)
-                                - If total gap time exceeds 10% of recording duration
-                                """)
+                                    **When to exclude entire recording:**
+                                    - If gaps occur during critical measurement periods (e.g., during music listening)
+                                    - If total gap time exceeds 10% of recording duration
+                                    """)
 
-                                # Auto-create gap events button
-                                st.markdown("##### 🤖 Auto-Create Gap Events")
-                                col_gap_btn1, col_gap_btn2 = st.columns([1, 2])
-                                with col_gap_btn1:
-                                    if st.button("Create Gap Events", key=f"auto_gap_{selected_participant}"):
-                                        from music_hrv.prep.summaries import EventStatus
-                                        events_added = 0
-                                        for gap in gap_info['gaps']:
-                                            # Create gap_start event
-                                            if gap.get('start_time'):
-                                                gap_start_event = EventStatus(
-                                                    raw_label="gap_start",
-                                                    canonical="gap_start",
-                                                    first_timestamp=gap['start_time'],
-                                                    last_timestamp=gap['start_time']
-                                                )
-                                                st.session_state.participant_events[selected_participant]['manual'].append(gap_start_event)
-                                                events_added += 1
+                                    # Auto-create gap events button
+                                    st.markdown("##### 🤖 Auto-Create Gap Events")
+                                    col_gap_btn1, col_gap_btn2 = st.columns([1, 2])
+                                    with col_gap_btn1:
+                                        if st.button("Create Gap Events", key=f"auto_gap_{selected_participant}"):
+                                            from music_hrv.prep.summaries import EventStatus
+                                            events_added = 0
+                                            for gap in gap_info['gaps']:
+                                                # Create gap_start event
+                                                if gap.get('start_time'):
+                                                    gap_start_event = EventStatus(
+                                                        raw_label="gap_start",
+                                                        canonical="gap_start",
+                                                        first_timestamp=gap['start_time'],
+                                                        last_timestamp=gap['start_time']
+                                                    )
+                                                    st.session_state.participant_events[selected_participant]['manual'].append(gap_start_event)
+                                                    events_added += 1
 
-                                            # Create gap_end event
-                                            if gap.get('end_time'):
-                                                gap_end_event = EventStatus(
-                                                    raw_label="gap_end",
-                                                    canonical="gap_end",
-                                                    first_timestamp=gap['end_time'],
-                                                    last_timestamp=gap['end_time']
-                                                )
-                                                st.session_state.participant_events[selected_participant]['manual'].append(gap_end_event)
-                                                events_added += 1
+                                                # Create gap_end event
+                                                if gap.get('end_time'):
+                                                    gap_end_event = EventStatus(
+                                                        raw_label="gap_end",
+                                                        canonical="gap_end",
+                                                        first_timestamp=gap['end_time'],
+                                                        last_timestamp=gap['end_time']
+                                                    )
+                                                    st.session_state.participant_events[selected_participant]['manual'].append(gap_end_event)
+                                                    events_added += 1
 
-                                        show_toast(f"✅ Created {events_added} gap boundary events", icon="success")
-                                        st.rerun()
-                                with col_gap_btn2:
-                                    st.caption("Creates `gap_start` and `gap_end` events for each detected gap. Use these to exclude gap periods from analysis.")
-                            else:
-                                st.success("✅ No time gaps detected - recording appears continuous")
+                                            show_toast(f"✅ Created {events_added} gap boundary events", icon="success")
+                                            st.rerun()
+                                    with col_gap_btn2:
+                                        st.caption("Creates `gap_start` and `gap_end` events for each detected gap. Use these to exclude gap periods from analysis.")
+                                else:
+                                    st.success("✅ No time gaps detected - recording appears continuous")
 
-                        st.markdown("---")
+                    # Variability Changepoint Analysis Expander
+                    if changepoint_key in st.session_state:
+                        cp_info = st.session_state[changepoint_key]
+                        # Determine badge for expander title
+                        high_var_count = sum(1 for s in cp_info.get('segment_stats', []) if s['cv'] > 0.15)
+                        if high_var_count == 0:
+                            var_title = f"📈 Variability Analysis (✅ Score: {cp_info['quality_score']}/100)"
+                        else:
+                            var_title = f"📈 Variability Analysis (🟡 {high_var_count} high-CV segments)"
 
-                        # Changepoint Results
-                        if changepoint_key in st.session_state:
-                            cp_info = st.session_state[changepoint_key]
-                            st.markdown("##### 📈 Variability Changepoint Analysis")
+                        with st.expander(var_title, expanded=False):
+                            st.caption("Uses NeuroKit2's signal_changepoints() with PELT algorithm to detect variance changes (movement artifacts, electrode issues, physiological changes)")
 
                             col_q1, col_q2, col_q3 = st.columns(3)
                             with col_q1:
@@ -2776,138 +2907,177 @@ def main():
                                     with col_var_desc:
                                         st.caption(f"Creates `high_variability_start` and `high_variability_end` events for segments with CV > {cv_threshold:.0f}%")
 
-                        st.caption("""
-                        **Legend**:
-                        - **CV (Coefficient of Variation)** = Std / Mean × 100. Lower = more stable.
-                        - 🟢 Good: CV < 10% | 🟡 Moderate: 10-15% | 🔴 High: > 15%
-                        - **Gray regions** on plot = time gaps (missing data)
-                        - **Colored regions** = variability segments (green=stable, orange=moderate, red=high)
+                            st.caption("""
+                            **Legend**:
+                            - **CV (Coefficient of Variation)** = Std / Mean × 100. Lower = more stable.
+                            - 🟢 Good: CV < 10% | 🟡 Moderate: 10-15% | 🔴 High: > 15%
+                            - **Gray regions** on plot = time gaps (missing data)
+                            - **Colored regions** = variability segments (green=stable, orange=moderate, red=high)
+                            """)
+
+                    # Music Change Event Generator (inside events mode)
+                    with st.expander("🎵 Generate Music Change Events", expanded=False):
+                        st.markdown("""
+                        **Auto-generate music section boundaries** based on timing intervals and playlist group.
+
+                        Music changes every 5 minutes in a cycling pattern based on the participant's randomization group.
                         """)
 
-                # Music Change Event Generator
-                with st.expander("Generate Music Change Events", expanded=False):
-                    st.markdown("""
-                    **Auto-generate music section boundaries** based on timing intervals and playlist group.
+                        # Ensure participant is initialized in events dict
+                        if selected_participant not in st.session_state.participant_events:
+                            st.session_state.participant_events[selected_participant] = {'events': [], 'manual': []}
 
-                    Music changes every 5 minutes in a cycling pattern based on the participant's randomization group.
-                    """)
+                        # Get existing events to find measurement boundaries
+                        stored_data = st.session_state.participant_events.get(selected_participant, {'events': [], 'manual': []})
+                        all_current_events = stored_data.get('events', []) + stored_data.get('manual', [])
 
-                    # Ensure participant is initialized in events dict
-                    if selected_participant not in st.session_state.participant_events:
-                        st.session_state.participant_events[selected_participant] = {'events': [], 'manual': []}
+                        # Find all relevant boundary events for music generation
+                        boundary_events = {}
+                        for evt in all_current_events:
+                            canonical = evt.canonical if hasattr(evt, 'canonical') else None
+                            if canonical in ['measurement_start', 'measurement_end', 'pause_start', 'pause_end']:
+                                if evt.first_timestamp:
+                                    boundary_events[canonical] = evt.first_timestamp
 
-                    # Get existing events to find measurement boundaries
-                    stored_data = st.session_state.participant_events.get(selected_participant, {'events': [], 'manual': []})
-                    all_current_events = stored_data.get('events', []) + stored_data.get('manual', [])
+                        st.markdown("**Music Change Settings:**")
 
-                    # Find all relevant boundary events for music generation
-                    boundary_events = {}
-                    for evt in all_current_events:
-                        canonical = evt.canonical if hasattr(evt, 'canonical') else None
-                        if canonical in ['measurement_start', 'measurement_end', 'pause_start', 'pause_end']:
-                            if evt.first_timestamp:
-                                boundary_events[canonical] = evt.first_timestamp
+                        # Initialize playlist groups if needed
+                        if "playlist_groups" not in st.session_state:
+                            st.session_state.playlist_groups = {}
+                        if "participant_playlists" not in st.session_state:
+                            st.session_state.participant_playlists = {}
 
-                    st.markdown("**Music Change Settings:**")
+                        # Playlist group selection for this participant
+                        playlist_options = ["(None - use custom order)"] + list(st.session_state.playlist_groups.keys())
+                        current_playlist = st.session_state.participant_playlists.get(selected_participant, "(None - use custom order)")
+                        if current_playlist not in playlist_options:
+                            current_playlist = "(None - use custom order)"
 
-                    # Initialize playlist groups if needed
-                    if "playlist_groups" not in st.session_state:
-                        st.session_state.playlist_groups = {}
-                    if "participant_playlists" not in st.session_state:
-                        st.session_state.participant_playlists = {}
+                        selected_playlist = st.selectbox(
+                            "Playlist Group (Randomization)",
+                            options=playlist_options,
+                            index=playlist_options.index(current_playlist) if current_playlist in playlist_options else 0,
+                            key=f"playlist_select_{selected_participant}",
+                            help="Select the randomization group for this participant"
+                        )
 
-                    # Playlist group selection for this participant
-                    playlist_options = ["(None - use custom order)"] + list(st.session_state.playlist_groups.keys())
-                    current_playlist = st.session_state.participant_playlists.get(selected_participant, "(None - use custom order)")
-                    if current_playlist not in playlist_options:
-                        current_playlist = "(None - use custom order)"
+                        # Save playlist assignment
+                        if selected_playlist != "(None - use custom order)":
+                            if st.session_state.participant_playlists.get(selected_participant) != selected_playlist:
+                                st.session_state.participant_playlists[selected_participant] = selected_playlist
+                            playlist_data = st.session_state.playlist_groups.get(selected_playlist, {})
+                            music_label_list = playlist_data.get("music_order", ["music_1", "music_2", "music_3"])
+                            st.success(f"Using **{selected_playlist}** music order: {' → '.join(music_label_list)}")
+                        else:
+                            if selected_participant in st.session_state.participant_playlists:
+                                del st.session_state.participant_playlists[selected_participant]
 
-                    selected_playlist = st.selectbox(
-                        "Playlist Group (Randomization)",
-                        options=playlist_options,
-                        index=playlist_options.index(current_playlist) if current_playlist in playlist_options else 0,
-                        key=f"playlist_select_{selected_participant}",
-                        help="Select the randomization group for this participant"
-                    )
+                            # Custom order input
+                            col_m1, col_m2 = st.columns(2)
+                            with col_m1:
+                                music_interval_min = st.number_input(
+                                    "Interval (minutes)",
+                                    min_value=1,
+                                    max_value=30,
+                                    value=5,
+                                    step=1,
+                                    key=f"music_interval_{selected_participant}",
+                                    help="How often the music changes (in minutes)"
+                                )
+                            with col_m2:
+                                music_labels = st.text_area(
+                                    "Music type labels (one per line)",
+                                    value="music_1\nmusic_2\nmusic_3",
+                                    height=100,
+                                    key=f"music_labels_{selected_participant}",
+                                    help="Custom labels for each music type"
+                                )
 
-                    # Save playlist assignment
-                    if selected_playlist != "(None - use custom order)":
-                        if st.session_state.participant_playlists.get(selected_participant) != selected_playlist:
-                            st.session_state.participant_playlists[selected_participant] = selected_playlist
-                        playlist_data = st.session_state.playlist_groups.get(selected_playlist, {})
-                        music_label_list = playlist_data.get("music_order", ["music_1", "music_2", "music_3"])
-                        st.success(f"Using **{selected_playlist}** music order: {' → '.join(music_label_list)}")
-                    else:
-                        if selected_participant in st.session_state.participant_playlists:
-                            del st.session_state.participant_playlists[selected_participant]
+                            # Parse music labels
+                            music_label_list = [line.strip() for line in music_labels.strip().split('\n') if line.strip()]
+                            if not music_label_list:
+                                music_label_list = ["music_1", "music_2", "music_3"]
 
-                        # Custom order input
-                        col_m1, col_m2 = st.columns(2)
-                        with col_m1:
+                        # Always show interval setting when using playlist group
+                        if selected_playlist != "(None - use custom order)":
                             music_interval_min = st.number_input(
                                 "Interval (minutes)",
                                 min_value=1,
                                 max_value=30,
                                 value=5,
                                 step=1,
-                                key=f"music_interval_{selected_participant}",
+                                key=f"music_interval_pl_{selected_participant}",
                                 help="How often the music changes (in minutes)"
                             )
-                        with col_m2:
-                            music_labels = st.text_area(
-                                "Music type labels (one per line)",
-                                value="music_1\nmusic_2\nmusic_3",
-                                height=100,
-                                key=f"music_labels_{selected_participant}",
-                                help="Custom labels for each music type"
-                            )
 
-                        # Parse music labels
-                        music_label_list = [line.strip() for line in music_labels.strip().split('\n') if line.strip()]
-                        if not music_label_list:
-                            music_label_list = ["music_1", "music_2", "music_3"]
+                        st.markdown("**Preview:**")
+                        st.write(f"Music cycle: {' → '.join(music_label_list)} → (repeat)")
 
-                    # Always show interval setting when using playlist group
-                    if selected_playlist != "(None - use custom order)":
-                        music_interval_min = st.number_input(
-                            "Interval (minutes)",
-                            min_value=1,
-                            max_value=30,
-                            value=5,
-                            step=1,
-                            key=f"music_interval_pl_{selected_participant}",
-                            help="How often the music changes (in minutes)"
-                        )
+                        # Generate button
+                        if st.button("🎵 Generate Music Events", key=f"gen_music_{selected_participant}"):
+                            from music_hrv.prep.summaries import EventStatus
+                            from datetime import timedelta
 
-                    st.markdown("**Preview:**")
-                    st.write(f"Music cycle: {' → '.join(music_label_list)} → (repeat)")
+                            events_added = 0
+                            interval_seconds = music_interval_min * 60
+                            num_music_types = len(music_label_list)
 
-                    # Generate button
-                    if st.button("🎵 Generate Music Events", key=f"gen_music_{selected_participant}"):
-                        from music_hrv.prep.summaries import EventStatus
-                        from datetime import timedelta
-
-                        events_added = 0
-                        interval_seconds = music_interval_min * 60
-                        num_music_types = len(music_label_list)
-
-                        # Initialize music_events list if not present
-                        if 'music_events' not in st.session_state.participant_events[selected_participant]:
+                            # Initialize music_events list if not present
+                            if 'music_events' not in st.session_state.participant_events[selected_participant]:
+                                st.session_state.participant_events[selected_participant]['music_events'] = []
+                            # Clear existing music events before generating new ones
                             st.session_state.participant_events[selected_participant]['music_events'] = []
-                        # Clear existing music events before generating new ones
-                        st.session_state.participant_events[selected_participant]['music_events'] = []
 
-                        # Generate for pre-pause period (measurement_start to pause_start)
-                        if 'measurement_start' in boundary_events:
-                            start_time = boundary_events['measurement_start']
-                            end_time = boundary_events.get('pause_start') or boundary_events.get('measurement_end')
+                            # Generate for pre-pause period (measurement_start to pause_start)
+                            if 'measurement_start' in boundary_events:
+                                start_time = boundary_events['measurement_start']
+                                end_time = boundary_events.get('pause_start') or boundary_events.get('measurement_end')
 
-                            if end_time:
+                                if end_time:
+                                    current_time = start_time
+                                    music_idx = 0
+
+                                    while current_time < end_time:
+                                        # Create music section start event
+                                        label = music_label_list[music_idx % num_music_types]
+                                        event_label = f"{label}_start"
+
+                                        new_event = EventStatus(
+                                            raw_label=event_label,
+                                            canonical=event_label,
+                                            first_timestamp=current_time,
+                                            last_timestamp=current_time
+                                        )
+                                        st.session_state.participant_events[selected_participant]['music_events'].append(new_event)
+                                        events_added += 1
+
+                                        # Calculate end time for this music segment
+                                        segment_end = current_time + timedelta(seconds=interval_seconds)
+                                        if segment_end > end_time:
+                                            segment_end = end_time
+
+                                        # Create music section end event
+                                        end_event = EventStatus(
+                                            raw_label=f"{label}_end",
+                                            canonical=f"{label}_end",
+                                            first_timestamp=segment_end,
+                                            last_timestamp=segment_end
+                                        )
+                                        st.session_state.participant_events[selected_participant]['music_events'].append(end_event)
+                                        events_added += 1
+
+                                        current_time = segment_end
+                                        music_idx += 1
+
+                            # Generate for post-pause period (pause_end to measurement_end)
+                            if 'pause_end' in boundary_events and 'measurement_end' in boundary_events:
+                                start_time = boundary_events['pause_end']
+                                end_time = boundary_events['measurement_end']
+
                                 current_time = start_time
-                                music_idx = 0
+                                music_idx = 0  # Reset cycle after pause
 
                                 while current_time < end_time:
-                                    # Create music section start event
                                     label = music_label_list[music_idx % num_music_types]
                                     event_label = f"{label}_start"
 
@@ -2920,12 +3090,10 @@ def main():
                                     st.session_state.participant_events[selected_participant]['music_events'].append(new_event)
                                     events_added += 1
 
-                                    # Calculate end time for this music segment
                                     segment_end = current_time + timedelta(seconds=interval_seconds)
                                     if segment_end > end_time:
                                         segment_end = end_time
 
-                                    # Create music section end event
                                     end_event = EventStatus(
                                         raw_label=f"{label}_end",
                                         canonical=f"{label}_end",
@@ -2938,99 +3106,59 @@ def main():
                                     current_time = segment_end
                                     music_idx += 1
 
-                        # Generate for post-pause period (pause_end to measurement_end)
-                        if 'pause_end' in boundary_events and 'measurement_end' in boundary_events:
-                            start_time = boundary_events['pause_end']
-                            end_time = boundary_events['measurement_end']
+                            if events_added > 0:
+                                show_toast(f"✅ Created {events_added} music section events", icon="success")
+                            else:
+                                show_toast("⚠️ No events created - check boundary events", icon="warning")
+                            st.rerun()
 
-                            current_time = start_time
-                            music_idx = 0  # Reset cycle after pause
+                        st.caption("""
+                        **How it works:**
+                        1. Uses the participant's playlist group to determine music order
+                        2. Finds `measurement_start`, `pause_start`, `pause_end`, `measurement_end` events
+                        3. Creates music section events every 5 minutes between these boundaries
+                        4. Restarts cycle after the pause
+                        """)
 
-                            while current_time < end_time:
-                                label = music_label_list[music_idx % num_music_types]
-                                event_label = f"{label}_start"
+                # ================== EVENTS MANAGEMENT (only in events mode) ==================
+                if interaction_mode != "🚫 Add Exclusions":
+                    st.markdown("---")
 
-                                new_event = EventStatus(
-                                    raw_label=event_label,
-                                    canonical=event_label,
-                                    first_timestamp=current_time,
-                                    last_timestamp=current_time
-                                )
-                                st.session_state.participant_events[selected_participant]['music_events'].append(new_event)
-                                events_added += 1
+                    # Events table with reordering and inline editing
+                    st.markdown("**Events Detected:**")
 
-                                segment_end = current_time + timedelta(seconds=interval_seconds)
-                                if segment_end > end_time:
-                                    segment_end = end_time
+                    # Get events from session state (already initialized above for the plot)
+                    stored_data = st.session_state.participant_events[selected_participant]
+                    all_events = stored_data['events'] + stored_data['manual']
 
-                                end_event = EventStatus(
-                                    raw_label=f"{label}_end",
-                                    canonical=f"{label}_end",
-                                    first_timestamp=segment_end,
-                                    last_timestamp=segment_end
-                                )
-                                st.session_state.participant_events[selected_participant]['music_events'].append(end_event)
-                                events_added += 1
+                    if all_events:
 
-                                current_time = segment_end
-                                music_idx += 1
+                        # Helper function to safely compare datetimes (handle timezone-aware/naive mix)
+                        def safe_compare_timestamps(ts1, ts2):
+                            """Compare two timestamps, handling timezone-aware/naive mix."""
+                            if ts1 is None or ts2 is None:
+                                return 0  # Equal if either is None
+                            # Make both timezone-aware or both timezone-naive
+                            import datetime
+                            if ts1.tzinfo is None and ts2.tzinfo is not None:
+                                ts1 = ts1.replace(tzinfo=datetime.timezone.utc)
+                            elif ts1.tzinfo is not None and ts2.tzinfo is None:
+                                ts2 = ts2.replace(tzinfo=datetime.timezone.utc)
+                            return 1 if ts1 > ts2 else (-1 if ts1 < ts2 else 0)
 
-                        if events_added > 0:
-                            show_toast(f"✅ Created {events_added} music section events", icon="success")
-                        else:
-                            show_toast("⚠️ No events created - check boundary events", icon="warning")
-                        st.rerun()
+                        # Check timestamp order and display warning if needed
+                        is_chronological = True
+                        for i in range(len(all_events) - 1):
+                            if all_events[i].first_timestamp and all_events[i+1].first_timestamp:
+                                if safe_compare_timestamps(all_events[i].first_timestamp, all_events[i+1].first_timestamp) > 0:
+                                    is_chronological = False
+                                    break
 
-                    st.caption("""
-                    **How it works:**
-                    1. Uses the participant's playlist group to determine music order
-                    2. Finds `measurement_start`, `pause_start`, `pause_end`, `measurement_end` events
-                    3. Creates music section events every 5 minutes between these boundaries
-                    4. Restarts cycle after the pause
-                    """)
-
-                st.markdown("---")
-
-                # Events table with reordering and inline editing
-                st.markdown("**Events Detected:**")
-
-                # Get events from session state (already initialized above for the plot)
-                stored_data = st.session_state.participant_events[selected_participant]
-                all_events = stored_data['events'] + stored_data['manual']
-
-                if all_events:
-
-                    # Helper function to safely compare datetimes (handle timezone-aware/naive mix)
-                    def safe_compare_timestamps(ts1, ts2):
-                        """Compare two timestamps, handling timezone-aware/naive mix."""
-                        if ts1 is None or ts2 is None:
-                            return 0  # Equal if either is None
-                        # Make both timezone-aware or both timezone-naive
-                        import datetime
-                        if ts1.tzinfo is None and ts2.tzinfo is not None:
-                            ts1 = ts1.replace(tzinfo=datetime.timezone.utc)
-                        elif ts1.tzinfo is not None and ts2.tzinfo is None:
-                            ts2 = ts2.replace(tzinfo=datetime.timezone.utc)
-                        return 1 if ts1 > ts2 else (-1 if ts1 < ts2 else 0)
-
-                    # Check timestamp order and display warning if needed
-                    is_chronological = True
-                    for i in range(len(all_events) - 1):
-                        if all_events[i].first_timestamp and all_events[i+1].first_timestamp:
-                            if safe_compare_timestamps(all_events[i].first_timestamp, all_events[i+1].first_timestamp) > 0:
-                                is_chronological = False
-                                break
-
-                    if not is_chronological:
-                        st.error("⚠️ **Events are NOT in chronological order!** Click 'Auto-Sort by Timestamp' to fix.")
+                        if not is_chronological:
+                            st.error("⚠️ **Events are NOT in chronological order!** Click 'Auto-Sort by Timestamp' to fix.")
 
                     # Quick Add Event Section
                     st.markdown("### ➕ Add Event")
-
-                    # Get recording time range for time input
-                    stored_data = st.session_state.participant_events.get(selected_participant, {})
-                    all_evts_for_range = stored_data.get('events', []) + stored_data.get('manual', [])
-                    timestamps_with_data = [e.first_timestamp for e in all_evts_for_range if e.first_timestamp]
 
                     # Get first RR timestamp as reference
                     first_rr_time = None
@@ -3568,202 +3696,251 @@ def main():
                             "Count": event.count,
                         })
 
-                    df_events = pd.DataFrame(events_data)
-                    csv_events = df_events.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Events CSV",
-                        data=csv_events,
-                        file_name=f"events_{selected_participant}.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                    )
+                    # Create download button AFTER the loop (once)
+                    if events_data:
+                        df_events = pd.DataFrame(events_data)
+                        csv_events = df_events.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Events CSV",
+                            data=csv_events,
+                            file_name=f"events_{selected_participant}.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            key=f"download_events_{selected_participant}",
+                        )
 
-                    # Show unmatched warning
-                    unmatched_count = sum(1 for e in all_events if not e.canonical)
-                    if unmatched_count > 0:
-                        st.warning(f"⚠️ {unmatched_count} unmatched event(s) - assign canonical mappings above")
-                else:
-                    st.info("No events found for this participant")
+                        # Show unmatched warning
+                        unmatched_count = sum(1 for e in all_events if not e.canonical)
+                        if unmatched_count > 0:
+                            st.warning(f"⚠️ {unmatched_count} unmatched event(s) - assign canonical mappings above")
+                    else:
+                        st.info("No events found for this participant")
 
-                # ISSUE 4 FIX: Show event mapping status (visible and working)
-                st.markdown("---")
-                st.markdown("**Event Mapping Status:**")
+                    # ISSUE 4 FIX: Show event mapping status (visible and working)
+                    st.markdown("---")
+                    st.markdown("**Event Mapping Status:**")
 
-                # Get expected events for this participant's group
-                participant_group = st.session_state.participant_groups.get(selected_participant, "Default")
-                expected_events = st.session_state.groups.get(participant_group, {}).get("expected_events", {})
+                    # Get expected events for this participant's group
+                    participant_group = st.session_state.participant_groups.get(selected_participant, "Default")
+                    expected_events = st.session_state.groups.get(participant_group, {}).get("expected_events", {})
 
-                # Get current events with raw labels
-                stored_data = st.session_state.participant_events[selected_participant]
-                current_events = stored_data['events'] + stored_data['manual']
+                    # Get current events with raw labels
+                    stored_data = st.session_state.participant_events[selected_participant]
+                    current_events = stored_data['events'] + stored_data['manual']
 
-                if expected_events:
-                    mapping_data = []
-                    for event_name, synonyms in expected_events.items():
-                        # Check if this canonical event exists in current session state events
-                        matched = any(e.canonical == event_name for e in current_events)
-                        # Find raw labels that matched this canonical event
-                        matching_raw = [e.raw_label for e in current_events if e.canonical == event_name]
-                        raw_labels_str = ", ".join(matching_raw) if matching_raw else "—"
+                    if expected_events:
+                        mapping_data = []
+                        for event_name, synonyms in expected_events.items():
+                            # Check if this canonical event exists in current session state events
+                            matched = any(e.canonical == event_name for e in current_events)
+                            # Find raw labels that matched this canonical event
+                            matching_raw = [e.raw_label for e in current_events if e.canonical == event_name]
+                            raw_labels_str = ", ".join(matching_raw) if matching_raw else "—"
 
-                        mapping_data.append({
-                            "Expected Event": event_name,
-                            "Status": "✅ Found" if matched else "❌ Missing",
-                            "Raw Labels": raw_labels_str,
-                        })
+                            mapping_data.append({
+                                "Expected Event": event_name,
+                                "Status": "✅ Found" if matched else "❌ Missing",
+                                "Raw Labels": raw_labels_str,
+                            })
 
-                    df_mapping = pd.DataFrame(mapping_data)
-                    st.dataframe(df_mapping, use_container_width=True, hide_index=True)
-                else:
-                    st.info(f"No expected events defined for group '{participant_group}'. Add them in the Event Mapping tab.")
+                        df_mapping = pd.DataFrame(mapping_data)
+                        st.dataframe(df_mapping, use_container_width=True, hide_index=True)
+                    else:
+                        st.info(f"No expected events defined for group '{participant_group}'. Add them in the Event Mapping tab.")
 
-                # Timing validation section
-                st.markdown("---")
-                st.markdown("##### ⏱️ Timing Validation")
+                    # Timing validation section
+                    st.markdown("---")
+                    st.markdown("##### ⏱️ Timing Validation")
 
-                # Find boundary events from current events
-                boundary_events = {}
-                for evt in current_events:
-                    canonical = evt.canonical if hasattr(evt, 'canonical') else None
-                    if canonical in ['measurement_start', 'measurement_end', 'pause_start', 'pause_end',
-                                    'rest_pre_start', 'rest_pre_end', 'rest_post_start', 'rest_post_end']:
-                        if evt.first_timestamp:
-                            boundary_events[canonical] = evt.first_timestamp
+                    # Get exclusion zones for this participant
+                    participant_exclusion_zones = st.session_state.participant_events.get(
+                        selected_participant, {}
+                    ).get('exclusion_zones', [])
 
-                if boundary_events:
-                    # Show detected boundaries
-                    with st.expander("Detected Boundary Events", expanded=False):
-                        # Normalize timestamps for sorting (remove timezone info if present)
-                        def sort_key(item):
-                            ts = item[1]
+                    # Helper to calculate excluded time within a range
+                    def calc_excluded_time_in_range(start_ts, end_ts, zones):
+                        """Calculate total excluded time (in seconds) between start and end."""
+                        if not zones or not start_ts or not end_ts:
+                            return 0.0
+                        total_excluded = 0.0
+                        for zone in zones:
+                            if not zone.get('exclude_from_duration', True):
+                                continue  # Skip zones not marked for duration exclusion
+                            zone_start = zone.get('start')
+                            zone_end = zone.get('end')
+                            if not zone_start or not zone_end:
+                                continue
+                            # Normalize timestamps (remove timezone)
+                            if hasattr(zone_start, 'tzinfo') and zone_start.tzinfo:
+                                zone_start = zone_start.replace(tzinfo=None)
+                            if hasattr(zone_end, 'tzinfo') and zone_end.tzinfo:
+                                zone_end = zone_end.replace(tzinfo=None)
+                            if hasattr(start_ts, 'tzinfo') and start_ts.tzinfo:
+                                start_ts = start_ts.replace(tzinfo=None)
+                            if hasattr(end_ts, 'tzinfo') and end_ts.tzinfo:
+                                end_ts = end_ts.replace(tzinfo=None)
+                            # Calculate overlap
+                            overlap_start = max(zone_start, start_ts)
+                            overlap_end = min(zone_end, end_ts)
+                            if overlap_start < overlap_end:
+                                total_excluded += (overlap_end - overlap_start).total_seconds()
+                        return total_excluded
+
+                    # Find boundary events from current events
+                    boundary_events = {}
+                    for evt in current_events:
+                        canonical = evt.canonical if hasattr(evt, 'canonical') else None
+                        if canonical in ['measurement_start', 'measurement_end', 'pause_start', 'pause_end',
+                                        'rest_pre_start', 'rest_pre_end', 'rest_post_start', 'rest_post_end']:
+                            if evt.first_timestamp:
+                                boundary_events[canonical] = evt.first_timestamp
+
+                    if boundary_events:
+                        # Show detected boundaries
+                        with st.expander("Detected Boundary Events", expanded=False):
+                            # Normalize timestamps for sorting (remove timezone info if present)
+                            def sort_key(item):
+                                ts = item[1]
+                                if ts is None:
+                                    return pd.Timestamp.min
+                                # Convert to naive timestamp for comparison
+                                if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
+                                    return ts.replace(tzinfo=None)
+                                return ts
+                            for name, ts in sorted(boundary_events.items(), key=sort_key):
+                                st.write(f"- {name}: {ts.strftime('%H:%M:%S') if ts else 'N/A'}")
+
+                        # Calculate and validate durations
+                        validation_issues = []
+                        validation_ok = []
+
+                        # Helper to normalize timestamps for safe arithmetic
+                        def normalize_ts(ts):
                             if ts is None:
-                                return pd.Timestamp.min
-                            # Convert to naive timestamp for comparison
+                                return None
                             if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
                                 return ts.replace(tzinfo=None)
                             return ts
-                        for name, ts in sorted(boundary_events.items(), key=sort_key):
-                            st.write(f"- {name}: {ts.strftime('%H:%M:%S') if ts else 'N/A'}")
 
-                    # Calculate and validate durations
-                    validation_issues = []
-                    validation_ok = []
+                        # Rest Pre duration (should be 3-5 min)
+                        if 'rest_pre_start' in boundary_events and 'rest_pre_end' in boundary_events:
+                            raw_dur = (normalize_ts(boundary_events['rest_pre_end']) - normalize_ts(boundary_events['rest_pre_start'])).total_seconds()
+                            excluded = calc_excluded_time_in_range(boundary_events['rest_pre_start'], boundary_events['rest_pre_end'], participant_exclusion_zones)
+                            rest_pre_dur = (raw_dur - excluded) / 60
+                            excl_note = f" (excl: {excluded/60:.1f} min)" if excluded > 0 else ""
+                            if rest_pre_dur < 3:
+                                validation_issues.append(f"⚠️ Rest Pre: {rest_pre_dur:.1f} min{excl_note} (should be ≥3 min)")
+                            elif rest_pre_dur < 5:
+                                validation_ok.append(f"🟡 Rest Pre: {rest_pre_dur:.1f} min{excl_note} (OK, but 5 min recommended)")
+                            else:
+                                validation_ok.append(f"✅ Rest Pre: {rest_pre_dur:.1f} min{excl_note}")
 
-                    # Helper to normalize timestamps for safe arithmetic
-                    def normalize_ts(ts):
-                        if ts is None:
-                            return None
-                        if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
-                            return ts.replace(tzinfo=None)
-                        return ts
+                        # Rest Post duration (should be 3-5 min)
+                        if 'rest_post_start' in boundary_events and 'rest_post_end' in boundary_events:
+                            raw_dur = (normalize_ts(boundary_events['rest_post_end']) - normalize_ts(boundary_events['rest_post_start'])).total_seconds()
+                            excluded = calc_excluded_time_in_range(boundary_events['rest_post_start'], boundary_events['rest_post_end'], participant_exclusion_zones)
+                            rest_post_dur = (raw_dur - excluded) / 60
+                            excl_note = f" (excl: {excluded/60:.1f} min)" if excluded > 0 else ""
+                            if rest_post_dur < 3:
+                                validation_issues.append(f"⚠️ Rest Post: {rest_post_dur:.1f} min{excl_note} (should be ≥3 min)")
+                            elif rest_post_dur < 5:
+                                validation_ok.append(f"🟡 Rest Post: {rest_post_dur:.1f} min{excl_note} (OK, but 5 min recommended)")
+                            else:
+                                validation_ok.append(f"✅ Rest Post: {rest_post_dur:.1f} min{excl_note}")
 
-                    # Rest Pre duration (should be 3-5 min)
-                    if 'rest_pre_start' in boundary_events and 'rest_pre_end' in boundary_events:
-                        rest_pre_dur = (normalize_ts(boundary_events['rest_pre_end']) - normalize_ts(boundary_events['rest_pre_start'])).total_seconds() / 60
-                        if rest_pre_dur < 3:
-                            validation_issues.append(f"⚠️ Rest Pre: {rest_pre_dur:.1f} min (should be ≥3 min)")
-                        elif rest_pre_dur < 5:
-                            validation_ok.append(f"🟡 Rest Pre: {rest_pre_dur:.1f} min (OK, but 5 min recommended)")
-                        else:
-                            validation_ok.append(f"✅ Rest Pre: {rest_pre_dur:.1f} min")
+                        # Pre-pause measurement (should be ~90 min / 1.5 hours)
+                        if 'measurement_start' in boundary_events and 'pause_start' in boundary_events:
+                            raw_dur = (normalize_ts(boundary_events['pause_start']) - normalize_ts(boundary_events['measurement_start'])).total_seconds()
+                            excluded = calc_excluded_time_in_range(boundary_events['measurement_start'], boundary_events['pause_start'], participant_exclusion_zones)
+                            pre_pause_dur = (raw_dur - excluded) / 60
+                            expected_segments = int(pre_pause_dur / 5)
+                            excl_note = f" (excl: {excluded/60:.1f} min)" if excluded > 0 else ""
+                            if abs(pre_pause_dur - 90) > 10:
+                                validation_issues.append(f"⚠️ Pre-pause measurement: {pre_pause_dur:.1f} min{excl_note} (expected ~90 min)")
+                            else:
+                                validation_ok.append(f"✅ Pre-pause measurement: {pre_pause_dur:.1f} min{excl_note} ({expected_segments} × 5-min segments)")
 
-                    # Rest Post duration (should be 3-5 min)
-                    if 'rest_post_start' in boundary_events and 'rest_post_end' in boundary_events:
-                        rest_post_dur = (normalize_ts(boundary_events['rest_post_end']) - normalize_ts(boundary_events['rest_post_start'])).total_seconds() / 60
-                        if rest_post_dur < 3:
-                            validation_issues.append(f"⚠️ Rest Post: {rest_post_dur:.1f} min (should be ≥3 min)")
-                        elif rest_post_dur < 5:
-                            validation_ok.append(f"🟡 Rest Post: {rest_post_dur:.1f} min (OK, but 5 min recommended)")
-                        else:
-                            validation_ok.append(f"✅ Rest Post: {rest_post_dur:.1f} min")
+                            # Check if 5-min intervals fit evenly
+                            remainder = pre_pause_dur % 5
+                            if remainder > 0.5 and remainder < 4.5:
+                                validation_issues.append(f"⚠️ Pre-pause: {remainder:.1f} min leftover after 5-min segments")
 
-                    # Pre-pause measurement (should be ~90 min / 1.5 hours)
-                    if 'measurement_start' in boundary_events and 'pause_start' in boundary_events:
-                        pre_pause_dur = (normalize_ts(boundary_events['pause_start']) - normalize_ts(boundary_events['measurement_start'])).total_seconds() / 60
-                        expected_segments = int(pre_pause_dur / 5)
-                        if abs(pre_pause_dur - 90) > 10:
-                            validation_issues.append(f"⚠️ Pre-pause measurement: {pre_pause_dur:.1f} min (expected ~90 min)")
-                        else:
-                            validation_ok.append(f"✅ Pre-pause measurement: {pre_pause_dur:.1f} min ({expected_segments} × 5-min segments)")
+                        # Post-pause measurement (should be ~90 min / 1.5 hours)
+                        if 'pause_end' in boundary_events and 'measurement_end' in boundary_events:
+                            raw_dur = (normalize_ts(boundary_events['measurement_end']) - normalize_ts(boundary_events['pause_end'])).total_seconds()
+                            excluded = calc_excluded_time_in_range(boundary_events['pause_end'], boundary_events['measurement_end'], participant_exclusion_zones)
+                            post_pause_dur = (raw_dur - excluded) / 60
+                            expected_segments = int(post_pause_dur / 5)
+                            excl_note = f" (excl: {excluded/60:.1f} min)" if excluded > 0 else ""
+                            if abs(post_pause_dur - 90) > 10:
+                                validation_issues.append(f"⚠️ Post-pause measurement: {post_pause_dur:.1f} min{excl_note} (expected ~90 min)")
+                            else:
+                                validation_ok.append(f"✅ Post-pause measurement: {post_pause_dur:.1f} min{excl_note} ({expected_segments} × 5-min segments)")
 
-                        # Check if 5-min intervals fit evenly
-                        remainder = pre_pause_dur % 5
-                        if remainder > 0.5 and remainder < 4.5:
-                            validation_issues.append(f"⚠️ Pre-pause: {remainder:.1f} min leftover after 5-min segments")
+                            # Check if 5-min intervals fit evenly
+                            remainder = post_pause_dur % 5
+                            if remainder > 0.5 and remainder < 4.5:
+                                validation_issues.append(f"⚠️ Post-pause: {remainder:.1f} min leftover after 5-min segments")
 
-                    # Post-pause measurement (should be ~90 min / 1.5 hours)
-                    if 'pause_end' in boundary_events and 'measurement_end' in boundary_events:
-                        post_pause_dur = (normalize_ts(boundary_events['measurement_end']) - normalize_ts(boundary_events['pause_end'])).total_seconds() / 60
-                        expected_segments = int(post_pause_dur / 5)
-                        if abs(post_pause_dur - 90) > 10:
-                            validation_issues.append(f"⚠️ Post-pause measurement: {post_pause_dur:.1f} min (expected ~90 min)")
-                        else:
-                            validation_ok.append(f"✅ Post-pause measurement: {post_pause_dur:.1f} min ({expected_segments} × 5-min segments)")
+                        # Display validation results
+                        for msg in validation_ok:
+                            st.write(msg)
+                        for msg in validation_issues:
+                            st.warning(msg)
 
-                        # Check if 5-min intervals fit evenly
-                        remainder = post_pause_dur % 5
-                        if remainder > 0.5 and remainder < 4.5:
-                            validation_issues.append(f"⚠️ Post-pause: {remainder:.1f} min leftover after 5-min segments")
-
-                    # Display validation results
-                    for msg in validation_ok:
-                        st.write(msg)
-                    for msg in validation_issues:
-                        st.warning(msg)
-
-                    if not validation_ok and not validation_issues:
-                        st.info("Waiting for more boundary events to validate timing...")
-                else:
-                    st.info("No boundary events found yet. Events will be validated once measurement boundaries are detected.")
-
-                # Save/Reset participant events
-                st.markdown("---")
-                from music_hrv.gui.persistence import (
-                    save_participant_events,
-                    load_participant_events,
-                    delete_participant_events,
-                    list_saved_participant_events,
-                )
-
-                col_save, col_reset, col_status = st.columns([1, 1, 2])
-
-                with col_save:
-                    def save_events_to_yaml():
-                        """Save participant events to YAML persistence."""
-                        stored_data = st.session_state.participant_events.get(selected_participant, {})
-                        save_participant_events(selected_participant, stored_data)
-                        show_toast(f"Saved events for {selected_participant}", icon="success")
-
-                    st.button("💾 Save Events",
-                             key=f"save_{selected_participant}",
-                             on_click=save_events_to_yaml,
-                             help="Save all event changes for this participant",
-                             type="primary")
-
-                with col_reset:
-                    def reset_to_original():
-                        """Reset participant events to original (from file)."""
-                        # Delete saved events
-                        delete_participant_events(selected_participant)
-                        # Clear from session state so it reloads from original
-                        if selected_participant in st.session_state.participant_events:
-                            del st.session_state.participant_events[selected_participant]
-                        show_toast(f"Reset {selected_participant} to original events", icon="success")
-
-                    # Only show reset if there are saved events
-                    saved_participants = list_saved_participant_events()
-                    if selected_participant in saved_participants:
-                        st.button("🔄 Reset to Original",
-                                 key=f"reset_{selected_participant}",
-                                 on_click=reset_to_original,
-                                 help="Discard saved changes and reload original events")
-
-                with col_status:
-                    # Check if participant has saved events
-                    if selected_participant in saved_participants:
-                        st.caption(f"✅ Has saved event edits")
+                        if not validation_ok and not validation_issues:
+                            st.info("Waiting for more boundary events to validate timing...")
                     else:
-                        st.caption("⚠️ Not yet saved")
+                        st.info("No boundary events found yet. Events will be validated once measurement boundaries are detected.")
+
+                    # Save/Reset participant events
+                    st.markdown("---")
+                    from music_hrv.gui.persistence import (
+                        save_participant_events,
+                        load_participant_events,
+                        delete_participant_events,
+                        list_saved_participant_events,
+                    )
+
+                    col_save, col_reset, col_status = st.columns([1, 1, 2])
+
+                    with col_save:
+                        def save_events_to_yaml():
+                            """Save participant events to YAML persistence."""
+                            stored_data = st.session_state.participant_events.get(selected_participant, {})
+                            save_participant_events(selected_participant, stored_data)
+                            show_toast(f"Saved events for {selected_participant}", icon="success")
+
+                        st.button("💾 Save Events",
+                                 key=f"save_{selected_participant}",
+                                 on_click=save_events_to_yaml,
+                                 help="Save all event changes for this participant",
+                                 type="primary")
+
+                    with col_reset:
+                        def reset_to_original():
+                            """Reset participant events to original (from file)."""
+                            # Delete saved events
+                            delete_participant_events(selected_participant)
+                            # Clear from session state so it reloads from original
+                            if selected_participant in st.session_state.participant_events:
+                                del st.session_state.participant_events[selected_participant]
+                            show_toast(f"Reset {selected_participant} to original events", icon="success")
+
+                        # Only show reset if there are saved events
+                        saved_participants = list_saved_participant_events()
+                        if selected_participant in saved_participants:
+                            st.button("🔄 Reset to Original",
+                                     key=f"reset_{selected_participant}",
+                                     on_click=reset_to_original,
+                                     help="Discard saved changes and reload original events")
+
+                    with col_status:
+                        # Check if participant has saved events
+                        if selected_participant in saved_participants:
+                            st.caption("✅ Has saved event edits")
+                        else:
+                            st.caption("⚠️ Not yet saved")
 
             # Bottom navigation buttons (duplicate for convenience)
             st.markdown("---")
@@ -3807,431 +3984,7 @@ def main():
 
     # ================== TAB: ANALYSIS ==================
     elif selected_page == "Analysis":
-        st.header("HRV Analysis")
-
-        with st.expander("📖 Help - HRV Analysis & Scientific Best Practices", expanded=False):
-            st.markdown(ANALYSIS_HELP)
-
-        if not NEUROKIT_AVAILABLE:
-            st.error("❌ NeuroKit2 is not installed. Please install it to use HRV analysis features.")
-            st.code("uv add neurokit2")
-            return
-
-        if not st.session_state.summaries:
-            st.info("📊 Load data from the 'Data & Groups' tab to perform analysis")
-        else:
-            st.markdown("Select a participant, choose multiple sections, and analyze HRV metrics for each section individually and combined.")
-
-            # Initialize analysis results in session state
-            if "analysis_results" not in st.session_state:
-                st.session_state.analysis_results = {}
-
-            # Selection mode
-            analysis_mode = st.radio(
-                "Analysis Mode",
-                options=["Single Participant", "Music Section Analysis", "Group Analysis"],
-                horizontal=True,
-            )
-
-            if analysis_mode == "Single Participant":
-                # Participant selection
-                participant_list = get_participant_list()  # Cached for performance
-                selected_participant = st.selectbox(
-                    "Select Participant",
-                    options=participant_list,
-                    key="analysis_participant"
-                )
-
-                # Section selection
-                available_sections = list(st.session_state.sections.keys())
-                if not available_sections:
-                    st.warning("⚠️ No sections defined. Please define sections in the Sections tab first.")
-                else:
-                    selected_sections = st.multiselect(
-                        "Select Sections to Analyze",
-                        options=available_sections,
-                        default=[available_sections[0]] if available_sections else [],
-                        key="analysis_sections_single"
-                    )
-
-                    # Artifact correction options
-                    with st.expander("🔧 Artifact Correction (signal_fixpeaks)", expanded=False):
-                        st.markdown("""
-                        Uses NeuroKit2's `signal_fixpeaks()` with the **Kubios algorithm** to detect and correct:
-                        - **Ectopic beats** (premature/delayed beats)
-                        - **Missed beats** (undetected R-peaks)
-                        - **Extra beats** (false positive detections)
-                        - **Long/short intervals** (physiologically implausible)
-                        """)
-                        apply_artifact_correction = st.checkbox(
-                            "Apply artifact correction before HRV analysis",
-                            value=False,
-                            key="apply_artifact_correction",
-                            help="Recommended for data with known quality issues"
-                        )
-
-                    if st.button("🔬 Analyze HRV", key="analyze_single_btn", type="primary"):
-                        if not selected_sections:
-                            st.error("Please select at least one section")
-                        else:
-                            # Use status context for multi-step analysis
-                            with st.status("Analyzing HRV for selected sections...", expanded=True) as status:
-                                try:
-                                    st.write("📂 Loading recording data...")
-                                    progress = st.progress(0)
-
-                                    # Check source type from summary
-                                    summary = get_summary_dict().get(selected_participant)
-                                    source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
-                                    is_vns = (source_app == "VNS Analyse")
-
-                                    if is_vns and getattr(summary, 'vns_path', None):
-                                        # Load VNS recording
-                                        recording_data = cached_load_vns_recording(
-                                            str(summary.vns_path),
-                                            selected_participant,
-                                            use_corrected=st.session_state.get("vns_use_corrected", False),
-                                        )
-                                    else:
-                                        # Load HRV Logger recording
-                                        bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-                                        bundle = next(b for b in bundles if b.participant_id == selected_participant)
-                                        recording_data = cached_load_recording(
-                                            tuple(str(p) for p in bundle.rr_paths),
-                                            tuple(str(p) for p in bundle.events_paths),
-                                            selected_participant
-                                        )
-
-                                    # Reconstruct recording object from cached data
-                                    from music_hrv.io.hrv_logger import HRVLoggerRecording, EventMarker
-                                    from music_hrv.cleaning.rr import RRInterval
-                                    rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                                                    for ts, rr, elapsed in recording_data['rr_intervals']]
-                                    events = [EventMarker(label=label, timestamp=ts, offset_s=None)
-                                              for label, ts in recording_data['events']]
-                                    recording = HRVLoggerRecording(
-                                        participant_id=selected_participant,
-                                        rr_intervals=rr_intervals,
-                                        events=events
-                                    )
-                                    progress.progress(20)
-
-                                    from music_hrv.cleaning.rr import clean_rr_intervals
-
-                                    # Store results for each section
-                                    section_results = {}
-                                    combined_rr = []
-
-                                    st.write(f"🔬 Analyzing {len(selected_sections)} section(s)...")
-
-                                    # Analyze each section individually
-                                    for idx, section_name in enumerate(selected_sections):
-                                        progress.progress(20 + int((idx / len(selected_sections)) * 60))
-                                        st.write(f"  • Processing section: {section_name}")
-
-                                        section_def = st.session_state.sections[section_name]
-                                        section_rr = extract_section_rr_intervals(
-                                            recording, section_def, st.session_state.normalizer
-                                        )
-
-                                        if section_rr:
-                                            # Clean RR intervals for this section
-                                            cleaned_section_rr, stats = clean_rr_intervals(
-                                                section_rr, st.session_state.cleaning_config
-                                            )
-
-                                            if cleaned_section_rr:
-                                                rr_ms = [rr.rr_ms for rr in cleaned_section_rr]
-
-                                                # Apply artifact correction if enabled
-                                                artifact_info = None
-                                                if apply_artifact_correction:
-                                                    st.write("    🔧 Applying artifact correction...")
-                                                    artifact_result = detect_artifacts_fixpeaks(rr_ms)
-                                                    if artifact_result["correction_applied"]:
-                                                        rr_ms = artifact_result["corrected_rr"]
-                                                        artifact_info = artifact_result
-                                                        st.write(f"    ✓ Corrected {artifact_result['total_artifacts']} artifacts")
-
-                                                combined_rr.extend(rr_ms)
-
-                                                # Calculate HRV metrics
-                                                nk = get_neurokit()
-                                                peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
-                                                hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                                hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                                hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
-
-                                                section_results[section_name] = {
-                                                    "hrv_results": hrv_results,
-                                                    "rr_intervals": rr_ms,
-                                                    "n_beats": len(rr_ms),
-                                                    "label": section_def.get("label", section_name),
-                                                    "artifact_info": artifact_info,
-                                                }
-                                        else:
-                                            st.write(f"  ⚠️ Could not find events for section '{section_name}'")
-
-                                    # Analyze combined sections if multiple selected
-                                    if len(selected_sections) > 1 and combined_rr:
-                                        progress.progress(80)
-                                        st.write("📊 Computing combined analysis...")
-                                        nk = get_neurokit()
-                                        peaks = nk.intervals_to_peaks(combined_rr, sampling_rate=1000)
-                                        hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                        combined_hrv = pd.concat([hrv_time, hrv_freq], axis=1)
-                                        section_results["_combined"] = {
-                                            "hrv_results": combined_hrv,
-                                            "rr_intervals": combined_rr,
-                                            "n_beats": len(combined_rr),
-                                            "label": "Combined Sections",
-                                        }
-
-                                    # Store in session state
-                                    progress.progress(100)
-                                    st.session_state.analysis_results[selected_participant] = section_results
-
-                                    status.update(label=f"✅ Analysis complete for {len(section_results)} section(s)!", state="complete")
-                                    show_toast(f"Analysis complete for {len(section_results)} section(s)", icon="success")
-
-                                except Exception as e:
-                                    status.update(label="❌ Error during analysis", state="error")
-                                    st.error(f"Error during analysis: {e}")
-                                    import traceback
-                                    st.code(traceback.format_exc())
-
-                    # Display results if available
-                    if selected_participant in st.session_state.analysis_results:
-                        st.markdown("---")
-                        st.subheader(f"📊 Results for {selected_participant}")
-
-                        section_results = st.session_state.analysis_results[selected_participant]
-
-                        for section_name, result_data in section_results.items():
-                            section_label = result_data["label"]
-                            hrv_results = result_data["hrv_results"]
-                            rr_intervals = result_data["rr_intervals"]
-                            n_beats = result_data["n_beats"]
-                            artifact_info = result_data.get("artifact_info")
-
-                            with st.expander(f"📈 {section_label} ({n_beats} beats)", expanded=True):
-                                # Show artifact correction info if applied
-                                if artifact_info:
-                                    st.info(f"🔧 **Artifact Correction Applied**: {artifact_info['total_artifacts']} artifacts corrected "
-                                           f"({artifact_info['artifact_ratio']*100:.1f}% of beats)")
-                                    art = artifact_info['artifacts']
-                                    col_a1, col_a2, col_a3, col_a4 = st.columns(4)
-                                    with col_a1:
-                                        st.metric("Ectopic", art['ectopic'])
-                                    with col_a2:
-                                        st.metric("Missed", art['missed'])
-                                    with col_a3:
-                                        st.metric("Extra", art['extra'])
-                                    with col_a4:
-                                        st.metric("Long/Short", art['longshort'])
-
-                                # Key metrics
-                                if not hrv_results.empty:
-                                    metrics_to_show = {
-                                        "HRV_RMSSD": "RMSSD (ms)",
-                                        "HRV_SDNN": "SDNN (ms)",
-                                        "HRV_pNN50": "pNN50 (%)",
-                                        "HRV_HF": "HF Power",
-                                        "HRV_LF": "LF Power",
-                                        "HRV_LFHF": "LF/HF Ratio",
-                                    }
-
-                                    cols = st.columns(3)
-                                    for idx, (col_name, display_name) in enumerate(metrics_to_show.items()):
-                                        if col_name in hrv_results.columns:
-                                            value = hrv_results[col_name].iloc[0]
-                                            with cols[idx % 3]:
-                                                st.metric(display_name, f"{value:.2f}")
-
-                                    # Full results table
-                                    st.markdown("**Full HRV Metrics:**")
-                                    st.dataframe(hrv_results.T, use_container_width=True)
-
-                                    # Download button for this section
-                                    csv_hrv = hrv_results.to_csv(index=True)
-                                    st.download_button(
-                                        label=f"📥 Download {section_label} Results",
-                                        data=csv_hrv,
-                                        file_name=f"hrv_{selected_participant}_{section_name}.csv",
-                                        mime="text/csv",
-                                        key=f"download_{selected_participant}_{section_name}",
-                                    )
-
-                                    # RR interval plot for this section
-                                    st.markdown("**RR Interval Plot:**")
-                                    plt = get_matplotlib()
-                                    fig, ax = plt.subplots(figsize=(12, 4))
-                                    ax.plot(rr_intervals, marker='o', markersize=2, linestyle='-', linewidth=0.5)
-                                    ax.set_xlabel("Beat Index")
-                                    ax.set_ylabel("RR Interval (ms)")
-                                    ax.set_title(f"RR Intervals - {section_label}")
-                                    ax.grid(True, alpha=0.3)
-                                    st.pyplot(fig)
-                                    plt.close(fig)
-
-            elif analysis_mode == "Music Section Analysis":
-                # Music Section Analysis - protocol-based 5-minute section analysis
-                _render_music_section_analysis()
-
-            else:  # Group Analysis
-                # Group selection
-                group_list = list(st.session_state.groups.keys())
-                selected_group = st.selectbox(
-                    "Select Group",
-                    options=group_list,
-                    key="analysis_group"
-                )
-
-                # Section selection
-                available_sections = list(st.session_state.sections.keys())
-                if not available_sections:
-                    st.warning("⚠️ No sections defined. Please define sections in the Sections tab first.")
-                else:
-                    selected_sections = st.multiselect(
-                        "Select Sections to Analyze",
-                        options=available_sections,
-                        default=[available_sections[0]] if available_sections else [],
-                        key="analysis_sections_group"
-                    )
-
-                    if st.button("🔬 Analyze Group HRV", key="analyze_group_btn", type="primary"):
-                        if not selected_sections:
-                            st.error("Please select at least one section")
-                        else:
-                            # Get participants in selected group
-                            group_participants = [
-                                pid for pid, gname in st.session_state.participant_groups.items()
-                                if gname == selected_group
-                            ]
-
-                            if not group_participants:
-                                st.warning(f"No participants assigned to group '{selected_group}'")
-                            else:
-                                # Use status context for group analysis
-                                with st.status(f"Analyzing {len(group_participants)} participants...", expanded=True) as status:
-                                    from music_hrv.cleaning.rr import clean_rr_intervals, RRInterval
-                                    from music_hrv.io.hrv_logger import HRVLoggerRecording, EventMarker
-                                    bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-
-                                    # Results organized by section
-                                    results_by_section = {section: [] for section in selected_sections}
-                                    if len(selected_sections) > 1:
-                                        results_by_section["_combined"] = []
-
-                                    progress = st.progress(0)
-                                    total_steps = len(group_participants)
-
-                                    for idx, participant_id in enumerate(group_participants):
-                                        st.write(f"📊 Processing {participant_id} ({idx + 1}/{total_steps})")
-                                        progress.progress(int((idx / total_steps) * 100))
-                                        try:
-                                            bundle = next(b for b in bundles if b.participant_id == participant_id)
-                                            # Use CACHED loading
-                                            recording_data = cached_load_recording(
-                                                tuple(str(p) for p in bundle.rr_paths),
-                                                tuple(str(p) for p in bundle.events_paths),
-                                                participant_id
-                                            )
-                                            # Reconstruct recording object
-                                            rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                                                            for ts, rr, elapsed in recording_data['rr_intervals']]
-                                            events = [EventMarker(label=label, timestamp=ts, offset_s=None)
-                                                      for label, ts in recording_data['events']]
-                                            recording = HRVLoggerRecording(
-                                                participant_id=participant_id,
-                                                rr_intervals=rr_intervals,
-                                                events=events
-                                            )
-
-                                            combined_rr = []
-
-                                            # Analyze each section
-                                            for section_name in selected_sections:
-                                                section_def = st.session_state.sections[section_name]
-                                                section_rr = extract_section_rr_intervals(
-                                                    recording, section_def, st.session_state.normalizer
-                                                )
-
-                                                if section_rr:
-                                                    cleaned_rr, stats = clean_rr_intervals(
-                                                        section_rr, st.session_state.cleaning_config
-                                                    )
-
-                                                    if cleaned_rr:
-                                                        rr_ms = [rr.rr_ms for rr in cleaned_rr]
-                                                        combined_rr.extend(rr_ms)
-
-                                                        nk = get_neurokit()
-                                                        peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
-                                                        hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                                        hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
-
-                                                        if not hrv_results.empty:
-                                                            result_row = {"participant_id": participant_id}
-                                                            for col in hrv_results.columns:
-                                                                result_row[col] = hrv_results[col].iloc[0]
-                                                            results_by_section[section_name].append(result_row)
-
-                                            # Combined analysis
-                                            if len(selected_sections) > 1 and combined_rr:
-                                                nk = get_neurokit()
-                                                peaks = nk.intervals_to_peaks(combined_rr, sampling_rate=1000)
-                                                hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                                hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                                combined_hrv = pd.concat([hrv_time, hrv_freq], axis=1)
-
-                                                if not combined_hrv.empty:
-                                                    result_row = {"participant_id": participant_id}
-                                                    for col in combined_hrv.columns:
-                                                        result_row[col] = combined_hrv[col].iloc[0]
-                                                    results_by_section["_combined"].append(result_row)
-
-                                        except Exception as e:
-                                            st.write(f"  ⚠️ Could not analyze {participant_id}: {e}")
-
-                                    # Complete
-                                    progress.progress(100)
-                                    status.update(label="✅ Group analysis complete!", state="complete")
-                                    show_toast(f"Group analysis complete for {len(group_participants)} participants", icon="success")
-
-                                    # Display results by section
-                                    st.subheader(f"Group HRV Results - {selected_group}")
-
-                                    for section_name, results in results_by_section.items():
-                                        if results:
-                                            section_label = (
-                                                "Combined Sections"
-                                                if section_name == "_combined"
-                                                else st.session_state.sections[section_name].get("label", section_name)
-                                            )
-
-                                            with st.expander(f"📊 {section_label} ({len(results)} participants)", expanded=True):
-                                                df_results = pd.DataFrame(results)
-
-                                                # Summary statistics
-                                                st.markdown("**Summary Statistics:**")
-                                                st.dataframe(df_results.describe(), use_container_width=True)
-
-                                                # Individual results
-                                                st.markdown("**Individual Results:**")
-                                                st.dataframe(df_results, use_container_width=True)
-
-                                                # Download
-                                                csv_data = df_results.to_csv(index=False)
-                                                st.download_button(
-                                                    label=f"📥 Download {section_label} Results",
-                                                    data=csv_data,
-                                                    file_name=f"hrv_group_{selected_group}_{section_name}.csv",
-                                                    mime="text/csv",
-                                                    key=f"download_group_{section_name}",
-                                                )
+        render_analysis_tab()
 
     # Record render time for debugging
     st.session_state.last_render_time = (_time.time() - _script_start) * 1000

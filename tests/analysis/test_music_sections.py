@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta
 
-import pytest
 
 from music_hrv.analysis.music_sections import (
     ProtocolConfig,
