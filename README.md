@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.6.6-green.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.6.7-green.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-18%20passing-brightgreen.svg)](tests/)
 [![NeuroKit2](https://img.shields.io/badge/powered%20by-NeuroKit2-orange.svg)](https://neuropsychology.github.io/NeuroKit/)
 
@@ -37,7 +37,7 @@ Music HRV Toolkit is a Python-based pipeline for analyzing Heart Rate Variabilit
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/music_hrv.git
+git clone https://github.com/saiko-psych/music_hrv.git
 cd music_hrv
 
 # Install with uv (recommended)
@@ -51,6 +51,9 @@ pip install -e .
 
 ```bash
 uv run streamlit run src/music_hrv/gui/app.py
+
+# Or with test mode (auto-loads demo data)
+uv run streamlit run src/music_hrv/gui/app.py -- --test-mode
 ```
 
 ### Try the Demo Data
@@ -200,9 +203,11 @@ RR-Intervalle - Korrigierte Werte (Aktiv)
 
 ---
 
-## Configuration Storage
+## Configuration & Data Storage
 
-All settings persist in `~/.music_hrv/`:
+### App Settings (`~/.music_hrv/`)
+
+Global settings persist across sessions:
 
 ```
 ~/.music_hrv/
@@ -210,10 +215,24 @@ All settings persist in `~/.music_hrv/`:
 ├── events.yml              # Event types and synonyms
 ├── sections.yml            # Section definitions
 ├── participants.yml        # Participant group assignments
-├── participant_events.yml  # Saved events and exclusion zones
+├── participant_events.yml  # Backup of saved events
 ├── playlist_groups.yml     # Music randomization groups
+├── settings.yml            # App settings (data folder, plot options)
 └── music_labels.yml        # Music item labels
 ```
+
+### Processed Data (`data/processed/`)
+
+Edited events are saved alongside your data for portability:
+
+```
+data/processed/
+├── 0001CTRL_events.yml     # Per-participant event files
+├── 0002EXPR_events.yml     # Standardized format (v1.0)
+└── ...
+```
+
+This allows sharing processed events with collaborators without sharing raw data.
 
 ---
 
@@ -239,6 +258,7 @@ music_hrv/
 │   ├── demo/               # Demo data (included in repo)
 │   │   ├── hrv_logger/     # Simulated HRV Logger files
 │   │   └── vns_analyse/    # Simulated VNS files
+│   ├── processed/          # Saved events per participant (git-ignored)
 │   └── raw/                # Your data here (git-ignored)
 ├── docs/                    # Documentation
 ├── scripts/                 # Utility scripts
@@ -274,7 +294,8 @@ uv run ruff check src/ tests/ --fix
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| **v0.6.6** | 2025-12 | Settings panel, plot resolution slider, performance fixes |
+| **v0.6.7** | 2026-01 | Processed folder for events, --test-mode flag, Analysis tab fixes |
+| v0.6.6 | 2025-12 | Settings panel, plot resolution slider, performance fixes |
 | v0.6.5 | 2025-12 | Demo data, VNS event alignment fix, tachogram naming |
 | v0.6.4 | 2025-12 | Multiple end events, VNS timestamp parsing |
 | v0.6.3 | 2025-12 | Section-based validation with duration/tolerance |
