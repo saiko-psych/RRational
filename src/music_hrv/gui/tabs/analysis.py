@@ -1157,13 +1157,19 @@ def _render_single_participant_analysis():
                     # Add manual events from Participants tab
                     stored_events = st.session_state.participant_events.get(selected_participant, {})
                     all_stored = stored_events.get('events', []) + stored_events.get('manual', [])
+                    n_file_events = len(events)
                     for evt in all_stored:
                         if hasattr(evt, 'first_timestamp') and evt.first_timestamp:
-                            # Use raw_label if available, otherwise canonical
-                            label = getattr(evt, 'raw_label', None) or getattr(evt, 'canonical', 'unknown')
+                            # Use canonical name for manual events (they're already normalized)
+                            label = getattr(evt, 'canonical', None) or getattr(evt, 'raw_label', 'unknown')
                             events.append(EventMarker(label=label, timestamp=evt.first_timestamp, offset_s=None))
 
-                    st.write(f"📌 Found {len(events)} events (file + manual)")
+                    st.write(f"📌 Found {len(events)} events ({n_file_events} from file, {len(all_stored)} from session)")
+
+                    # Debug: show event labels
+                    with st.expander("🔍 Debug: Event labels", expanded=False):
+                        for evt in events:
+                            st.write(f"  - '{evt.label}' at {evt.timestamp}")
 
                     recording = HRVLoggerRecording(
                         participant_id=selected_participant,
@@ -1184,6 +1190,10 @@ def _render_single_participant_analysis():
                         st.write(f"  • Processing section: {section_name}")
 
                         section_def = st.session_state.sections[section_name]
+                        start_evt = section_def.get("start_event")
+                        end_evts = section_def.get("end_events", []) or [section_def.get("end_event")]
+                        st.write(f"    Looking for: start='{start_evt}', end={end_evts}")
+
                         section_rr = extract_section_rr_intervals(
                             recording, section_def, st.session_state.normalizer
                         )
@@ -1354,7 +1364,7 @@ def _display_single_participant_results(selected_participant: str):
                         with col_dl1:
                             csv_hrv = hrv_results.to_csv(index=True)
                             st.download_button(
-                                label=f"📥 Download HRV Results (CSV)",
+                                label="📥 Download HRV Results (CSV)",
                                 data=csv_hrv,
                                 file_name=f"hrv_{selected_participant}_{section_name}.csv",
                                 mime="text/csv",
@@ -1365,7 +1375,7 @@ def _display_single_participant_results(selected_participant: str):
                             rr_df = pd.DataFrame({"beat_index": range(len(rr_intervals)), "rr_ms": rr_intervals})
                             csv_rr = rr_df.to_csv(index=False)
                             st.download_button(
-                                label=f"📥 Download RR Intervals (CSV)",
+                                label="📥 Download RR Intervals (CSV)",
                                 data=csv_rr,
                                 file_name=f"rr_{selected_participant}_{section_name}.csv",
                                 mime="text/csv",
