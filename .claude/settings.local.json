@@ -33,7 +33,11 @@
       "WebFetch(domain:pmc.ncbi.nlm.nih.gov)",
       "Bash(git push:*)",
       "Bash(echo:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(powershell -Command \"Measure-Command { uv run python -c ''from music_hrv.gui.app import *'' 2>&1 } | Select-Object -Property TotalSeconds\")",
+      "Bash(powershell -Command:*)",
+      "Bash(pkill:*)",
+      "Bash(tasklist:*)"
     ],
     "deny": [],
     "ask": []

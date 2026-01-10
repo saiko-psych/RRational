@@ -282,8 +282,17 @@ def validate_regex_pattern(pattern):
         return str(e)
 
 
-def extract_section_rr_intervals(recording, section_def, normalizer):
-    """Extract RR intervals for a specific section based on start/end events."""
+def extract_section_rr_intervals(recording, section_def, normalizer, saved_events=None):
+    """Extract RR intervals for a specific section based on start/end events.
+
+    Args:
+        recording: Recording object with rr_intervals and events
+        section_def: Section definition dict with start_event and end_events
+        normalizer: SectionNormalizer for mapping labels to canonical names
+        saved_events: Optional list of saved/edited events (EventStatus objects or dicts).
+                     If provided, uses these instead of recording.events.
+                     This allows using user-edited events from session state.
+    """
     start_event_name = section_def.get("start_event")
     # Support both old (end_event) and new (end_events) format
     end_event_names = section_def.get("end_events", [])
@@ -296,21 +305,52 @@ def extract_section_rr_intervals(recording, section_def, normalizer):
     start_ts = None
     end_ts = None
 
-    for event in recording.events:
-        label = event.label
-        canonical = normalizer.normalize(label)
+    # Use saved events if provided, otherwise fall back to recording.events
+    if saved_events:
+        # Saved events are EventStatus objects or dicts with canonical/first_timestamp
+        for event in saved_events:
+            # Handle both EventStatus objects and dicts
+            if isinstance(event, dict):
+                canonical = event.get("canonical")
+                timestamp = event.get("first_timestamp")
+                raw_label = event.get("raw_label", "")
+            else:
+                canonical = getattr(event, "canonical", None)
+                timestamp = getattr(event, "first_timestamp", None)
+                raw_label = getattr(event, "raw_label", "")
 
-        # First check if label is already a canonical name (for manual events)
-        if label == start_event_name and event.timestamp:
-            start_ts = event.timestamp
-        elif label in end_event_names and event.timestamp:
-            if end_ts is None:
-                end_ts = event.timestamp
-        elif canonical == start_event_name and event.timestamp:
-            start_ts = event.timestamp
-        elif canonical in end_event_names and event.timestamp:
-            if end_ts is None:
-                end_ts = event.timestamp
+            if not timestamp:
+                continue
+
+            # Check canonical name (already normalized in saved events)
+            if canonical == start_event_name:
+                start_ts = timestamp
+            elif canonical in end_event_names:
+                if end_ts is None:
+                    end_ts = timestamp
+            # Also check raw label as fallback
+            elif raw_label == start_event_name:
+                start_ts = timestamp
+            elif raw_label in end_event_names:
+                if end_ts is None:
+                    end_ts = timestamp
+    else:
+        # Fall back to recording.events (raw events from file)
+        for event in recording.events:
+            label = event.label
+            canonical = normalizer.normalize(label)
+
+            # First check if label is already a canonical name (for manual events)
+            if label == start_event_name and event.timestamp:
+                start_ts = event.timestamp
+            elif label in end_event_names and event.timestamp:
+                if end_ts is None:
+                    end_ts = event.timestamp
+            elif canonical == start_event_name and event.timestamp:
+                start_ts = event.timestamp
+            elif canonical in end_event_names and event.timestamp:
+                if end_ts is None:
+                    end_ts = event.timestamp
 
     if not start_ts or not end_ts:
         return None

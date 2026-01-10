@@ -1872,60 +1872,6 @@ def render_rr_plot_fragment(participant_id: str):
                         st.toast(f"✅ Added '{event_label}' at {clicked_time_str} - click 'Refresh Plot' or interact with plot to see marker")
 
 
-def extract_section_rr_intervals(recording, section_def, normalizer):
-    """Extract RR intervals for a specific section based on start/end events.
-
-    Args:
-        recording: HRVLoggerRecording object
-        section_def: dict with 'start_event' and 'end_events' keys
-        normalizer: SectionNormalizer instance
-
-    Returns:
-        list of RRInterval objects for the section, or None if events not found
-    """
-
-    start_event_name = section_def.get("start_event")
-    # Support both old (end_event) and new (end_events) format
-    end_event_names = section_def.get("end_events", [])
-    if not end_event_names and "end_event" in section_def:
-        end_event_names = [section_def["end_event"]]
-
-    if not start_event_name or not end_event_names:
-        return None
-
-    # Find start and end event timestamps
-    start_ts = None
-    end_ts = None
-
-    for event in recording.events:
-        label = event.label
-        # First check if label is already a canonical name (for manual events)
-        if label == start_event_name and event.timestamp:
-            start_ts = event.timestamp
-        elif label in end_event_names and event.timestamp:
-            if end_ts is None:
-                end_ts = event.timestamp
-        else:
-            # Try normalizing for raw labels from file
-            canonical = normalizer.normalize(label)
-            if canonical == start_event_name and event.timestamp:
-                start_ts = event.timestamp
-            elif canonical in end_event_names and event.timestamp:
-                if end_ts is None:
-                    end_ts = event.timestamp
-
-    if not start_ts or not end_ts:
-        return None
-
-    # Extract RR intervals between start and end timestamps
-    section_rr = []
-    for rr in recording.rr_intervals:
-        if rr.timestamp and start_ts <= rr.timestamp <= end_ts:
-            section_rr.append(rr)
-
-    return section_rr if section_rr else None
-
-
 def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") -> dict:
     """Detect quality changepoints in RR interval data using NeuroKit2.
 

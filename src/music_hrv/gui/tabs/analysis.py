@@ -1246,7 +1246,8 @@ def _render_single_participant_analysis():
                         st.write(f"    Looking for: start='{start_evt}', end={end_evts}")
 
                         section_rr = extract_section_rr_intervals(
-                            recording, section_def, st.session_state.normalizer
+                            recording, section_def, st.session_state.normalizer,
+                            saved_events=all_stored  # Use saved/edited events, not raw file events
                         )
 
                         if section_rr:
@@ -1594,7 +1595,8 @@ def _render_group_analysis():
                             for section_name in selected_sections:
                                 section_def = st.session_state.sections[section_name]
                                 section_rr = extract_section_rr_intervals(
-                                    recording, section_def, st.session_state.normalizer
+                                    recording, section_def, st.session_state.normalizer,
+                                    saved_events=all_stored  # Use saved/edited events, not raw file events
                                 )
 
                                 if section_rr:
