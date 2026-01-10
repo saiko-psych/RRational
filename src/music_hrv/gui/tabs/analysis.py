@@ -1155,6 +1155,14 @@ def _render_single_participant_analysis():
                               for label, ts in recording_data['events']]
 
                     # Add stored/manual events from Participants tab
+                    # Load from YAML if not already in session state
+                    if selected_participant not in st.session_state.participant_events:
+                        from music_hrv.gui.persistence import load_participant_events
+                        saved = load_participant_events(selected_participant)
+                        if saved:
+                            st.session_state.participant_events[selected_participant] = saved
+                            st.write(f"📥 Loaded saved events from storage for {selected_participant}")
+
                     # These are stored as dicts in YAML, not objects
                     stored_events = st.session_state.participant_events.get(selected_participant, {})
                     all_stored = stored_events.get('events', []) + stored_events.get('manual', [])
@@ -1490,6 +1498,13 @@ def _render_group_analysis():
                                       for label, ts in recording_data['events']]
 
                             # Add stored/manual events from Participants tab
+                            # Load from YAML if not already in session state
+                            if participant_id not in st.session_state.participant_events:
+                                from music_hrv.gui.persistence import load_participant_events
+                                saved = load_participant_events(participant_id)
+                                if saved:
+                                    st.session_state.participant_events[participant_id] = saved
+
                             # These are stored as dicts in YAML, not objects
                             stored_events = st.session_state.participant_events.get(participant_id, {})
                             all_stored = stored_events.get('events', []) + stored_events.get('manual', [])
