@@ -12,7 +12,7 @@ from music_hrv.cleaning.rr import CleaningConfig
 from music_hrv.io import DEFAULT_ID_PATTERN, PREDEFINED_PATTERNS, load_recording, discover_recordings
 from music_hrv.prep.summaries import load_hrv_logger_preview, load_vns_preview
 from music_hrv.segments.section_normalizer import SectionNormalizer
-from music_hrv.config.sections import SectionsConfig, SectionDefinition
+from music_hrv.config.sections import SectionsConfig, SectionDefinition, load_sections_config, DEFAULT_SECTIONS_PATH
 from music_hrv.gui.persistence import (
     save_groups,
     load_groups,
@@ -104,20 +104,50 @@ def get_matplotlib():
 
 
 def create_gui_normalizer(gui_events_dict):
-    """Create a custom SectionNormalizer that ONLY uses GUI-defined events."""
+    """Create a SectionNormalizer that merges default patterns with GUI-defined events.
+
+    The normalizer uses patterns from sections.yml as the base, then adds any
+    additional synonyms defined in the GUI. This ensures German labels like
+    'messung start' are properly matched even if not explicitly configured.
+
+    GUI synonyms are treated as EXACT matches (escaped for regex, full-string match).
+    Default patterns from sections.yml are treated as regex patterns.
+    """
+    # Load default patterns from sections.yml
+    default_config = load_sections_config(DEFAULT_SECTIONS_PATH)
+
+    # Build canonical order: start with default order, then add GUI-only events
+    canonical_order = list(default_config.canonical_order)
+    for name in gui_events_dict.keys():
+        if name not in canonical_order:
+            canonical_order.append(name)
+
+    # Build sections_dict in canonical order (order matters for pattern matching!)
     sections_dict = {}
-    for event_name, synonyms in gui_events_dict.items():
+    for event_name in canonical_order:
+        # Start with default patterns if available
+        default_def = default_config.sections.get(event_name)
+        default_synonyms = list(default_def.synonyms) if default_def else []
+
+        # Get GUI-defined synonyms and convert to exact-match patterns
+        # GUI synonyms are user-entered literal strings, not regex
+        gui_synonyms_raw = gui_events_dict.get(event_name, [])
+        gui_synonyms = [f"^{re.escape(s)}$" for s in gui_synonyms_raw if s]
+
+        # Merge: GUI exact-match patterns first (higher priority), then default regex patterns
+        merged_synonyms = gui_synonyms + [s for s in default_synonyms if s not in gui_synonyms]
+
         sections_dict[event_name] = SectionDefinition(
             name=event_name,
-            synonyms=tuple(synonyms) if synonyms else (),
-            required=False,
-            description=None,
-            group=None
+            synonyms=tuple(merged_synonyms),
+            required=default_def.required if default_def else False,
+            description=default_def.description if default_def else None,
+            group=default_def.group if default_def else None
         )
 
     config = SectionsConfig(
         version=1,
-        canonical_order=tuple(gui_events_dict.keys()),
+        canonical_order=tuple(canonical_order),
         sections=sections_dict,
         groups={}
     )
@@ -159,9 +189,8 @@ def init_session_state():
         else:
             st.session_state.all_events = loaded_events
 
-    # Create normalizer from GUI events
-    if "normalizer" not in st.session_state:
-        st.session_state.normalizer = create_gui_normalizer(st.session_state.all_events)
+    # Create normalizer from GUI events - always recreate to pick up code/config changes
+    st.session_state.normalizer = create_gui_normalizer(st.session_state.all_events)
 
     # Load participant-specific data
     if "participant_groups" not in st.session_state or "event_order" not in st.session_state:
@@ -269,20 +298,19 @@ def extract_section_rr_intervals(recording, section_def, normalizer):
 
     for event in recording.events:
         label = event.label
+        canonical = normalizer.normalize(label)
+
         # First check if label is already a canonical name (for manual events)
         if label == start_event_name and event.timestamp:
             start_ts = event.timestamp
         elif label in end_event_names and event.timestamp:
             if end_ts is None:
                 end_ts = event.timestamp
-        else:
-            # Try normalizing for raw labels from file
-            canonical = normalizer.normalize(label)
-            if canonical == start_event_name and event.timestamp:
-                start_ts = event.timestamp
-            elif canonical in end_event_names and event.timestamp:
-                if end_ts is None:
-                    end_ts = event.timestamp
+        elif canonical == start_event_name and event.timestamp:
+            start_ts = event.timestamp
+        elif canonical in end_event_names and event.timestamp:
+            if end_ts is None:
+                end_ts = event.timestamp
 
     if not start_ts or not end_ts:
         return None

@@ -224,9 +224,8 @@ if "sections" not in st.session_state:
                 section_data["end_events"] = [section_data.pop("end_event")]
         st.session_state.sections = loaded_sections
 
-# ISSUE 1 FIX: Create normalizer from GUI events only (not from sections.yml)
-if "normalizer" not in st.session_state:
-    st.session_state.normalizer = create_gui_normalizer(st.session_state.all_events)
+# Create normalizer from GUI events - always recreate to pick up code/config changes
+st.session_state.normalizer = create_gui_normalizer(st.session_state.all_events)
 
 # Load participant-specific data (groups, playlists, labels, event orders, manual events)
 if "participant_groups" not in st.session_state or "event_order" not in st.session_state:
