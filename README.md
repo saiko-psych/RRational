@@ -55,12 +55,18 @@ Music HRV Toolkit is a Python-based pipeline for analyzing Heart Rate Variabilit
 git clone https://github.com/saiko-psych/music_hrv.git
 cd music_hrv
 
-# Install with uv (recommended - handles Python version automatically)
+# If you have Python 3.14, install a compatible version first:
+uv python install 3.11
+
+# Install dependencies (uv will use the correct Python version)
 uv sync
 
 # Or with pip (requires correct Python version already active)
 pip install -e .
 ```
+
+> **Troubleshooting:** If you see `Failed to build pyarrow`, you likely have Python 3.14.
+> Run `uv python install 3.11` first, then `uv sync` again.
 
 ### Launch the GUI
 
