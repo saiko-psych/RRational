@@ -33,19 +33,32 @@ Music HRV Toolkit is a Python-based pipeline for analyzing Heart Rate Variabilit
 
 ## Quick Start
 
-### Installation
+### Prerequisites
 
-**Requirements:** Python 3.11, 3.12, or 3.13 (Python 3.14 is not yet supported due to pyarrow compatibility)
+1. **Python 3.11, 3.12, or 3.13** - [Download from python.org](https://www.python.org/downloads/)
+   - ⚠️ Python 3.14 is **not yet supported** (pyarrow lacks wheels)
+   - Check your version: `python --version`
+
+2. **uv** (recommended package manager) - [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+   ```bash
+   # Windows (PowerShell)
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+   # macOS/Linux
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+### Installation
 
 ```bash
 # Clone the repository
 git clone https://github.com/saiko-psych/music_hrv.git
 cd music_hrv
 
-# Install with uv (recommended)
+# Install with uv (recommended - handles Python version automatically)
 uv sync
 
-# Or with pip
+# Or with pip (requires correct Python version already active)
 pip install -e .
 ```
 
@@ -318,9 +331,9 @@ uv run ruff check src/ tests/ --fix
 
 ## References
 
-- **Quigley, K. S., et al. (2024)** - Guidelines for reporting heart rate variability
-- **Khandoker, A. H., et al. (2020)** - Artifact tolerance thresholds in HRV
-- **NeuroKit2** - [neuropsychology.github.io/NeuroKit](https://neuropsychology.github.io/NeuroKit/)
+- **Quigley, K. S., et al. (2024)** - [Publication guidelines for human heart rate and heart rate variability studies in psychophysiology](https://doi.org/10.1111/psyp.14604) - *Psychophysiology*, 61(9), 1-63.
+- **Lipponen & Tarvainen (2019)** - [A robust algorithm for heart rate variability time series artefact correction](https://doi.org/10.1088/1361-6579/ab3c96) - *Physiological Measurement*, 40(10).
+- **NeuroKit2** - [neuropsychology.github.io/NeuroKit](https://neuropsychology.github.io/NeuroKit/) - Open-source Python toolbox for neurophysiological signal processing.
 
 ---
 
