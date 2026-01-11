@@ -540,12 +540,17 @@ def apply_custom_css():
         border-radius: 8px !important;
     }
 
-    [data-testid="stExpander"] summary {
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] details > summary,
+    [data-testid="stExpander"] summary[class*="emotion-cache"] {
         color: var(--text-primary) !important;
         font-weight: 500 !important;
+        background-color: var(--bg-secondary) !important;
     }
 
-    [data-testid="stExpander"] details > div {
+    [data-testid="stExpander"] details,
+    [data-testid="stExpander"] details > div,
+    [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
         background-color: var(--bg-secondary) !important;
     }
 
