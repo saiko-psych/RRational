@@ -1169,30 +1169,21 @@ def apply_custom_css():
             // Inject CSS after a short delay to ensure DOM is ready
             setTimeout(injectAccentCSS, 100);
 
-            // Update Plotly charts for current theme (both dark AND light)
+            // Update Plotly charts for current theme (both dark AND light, including iframes)
             function updatePlotsForTheme() {
-                var plots = parentDoc.querySelectorAll('.js-plotly-plot');
-                if (plots.length === 0) {
-                    return;
-                }
-
-                var Plotly = window.parent.Plotly;
-                if (!Plotly) return;
-
                 // Check current theme state (not captured value)
                 var currentIsDark = root.classList.contains('dark-theme');
                 var bgColor = currentIsDark ? '#0E1117' : '#FFFFFF';
-                var plotBg = currentIsDark ? '#0E1117' : '#FFFFFF';
                 var gridColor = currentIsDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)';
                 var textColor = currentIsDark ? '#FAFAFA' : '#31333F';
                 var lineColor = currentIsDark ? '#3D3D4D' : '#E5E5E5';
 
-                plots.forEach(function(plot) {
-                    try {
-                        if (plot.data) {
+                function updatePlot(plot, Plotly) {
+                    if (Plotly && plot.data) {
+                        try {
                             Plotly.relayout(plot, {
                                 'paper_bgcolor': bgColor,
-                                'plot_bgcolor': plotBg,
+                                'plot_bgcolor': bgColor,
                                 'xaxis.gridcolor': gridColor,
                                 'yaxis.gridcolor': gridColor,
                                 'xaxis.linecolor': lineColor,
@@ -1205,10 +1196,27 @@ def apply_custom_css():
                                 'title.font.color': textColor,
                                 'legend.font.color': textColor
                             });
-                        }
-                    } catch(e) {
-                        console.log('Plot update skipped:', e);
+                        } catch(e) {}
                     }
+                }
+
+                // Update plots in main document
+                var plots = parentDoc.querySelectorAll('.js-plotly-plot');
+                plots.forEach(function(plot) {
+                    updatePlot(plot, window.parent.Plotly);
+                });
+
+                // Also update plots inside iframes (for plotly_events component)
+                var iframes = parentDoc.querySelectorAll('iframe');
+                iframes.forEach(function(iframe) {
+                    try {
+                        var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        var iframePlots = iframeDoc.querySelectorAll('.js-plotly-plot');
+                        var iframePlotly = iframe.contentWindow.Plotly;
+                        iframePlots.forEach(function(plot) {
+                            updatePlot(plot, iframePlotly);
+                        });
+                    } catch(e) {} // Cross-origin iframes will throw
                 });
             }
 
@@ -2505,30 +2513,53 @@ def render_settings_panel():
                     updatePlotlyTheme('dark');
                 };
 
-                // Update Plotly charts to match theme
+                // Update Plotly charts to match theme (including those in iframes)
                 function updatePlotlyTheme(theme) {
-                    var plots = parentDoc.querySelectorAll('.js-plotly-plot');
                     var isDark = theme === 'dark';
                     var bgColor = isDark ? '#0E1117' : '#FFFFFF';
                     var gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
                     var textColor = isDark ? '#FAFAFA' : '#31333F';
+                    var lineColor = isDark ? '#3D3D4D' : '#E5E5E5';
 
-                    plots.forEach(function(plot) {
-                        if (window.parent.Plotly && plot.data) {
-                            window.parent.Plotly.relayout(plot, {
-                                'paper_bgcolor': bgColor,
-                                'plot_bgcolor': bgColor,
-                                'font.color': textColor,
-                                'title.font.color': textColor,
-                                'xaxis.gridcolor': gridColor,
-                                'xaxis.tickfont.color': textColor,
-                                'xaxis.title.font.color': textColor,
-                                'yaxis.gridcolor': gridColor,
-                                'yaxis.tickfont.color': textColor,
-                                'yaxis.title.font.color': textColor,
-                                'legend.font.color': textColor
-                            });
+                    function updatePlot(plot, Plotly) {
+                        if (Plotly && plot.data) {
+                            try {
+                                Plotly.relayout(plot, {
+                                    'paper_bgcolor': bgColor,
+                                    'plot_bgcolor': bgColor,
+                                    'font.color': textColor,
+                                    'title.font.color': textColor,
+                                    'xaxis.gridcolor': gridColor,
+                                    'xaxis.linecolor': lineColor,
+                                    'xaxis.tickfont.color': textColor,
+                                    'xaxis.title.font.color': textColor,
+                                    'yaxis.gridcolor': gridColor,
+                                    'yaxis.linecolor': lineColor,
+                                    'yaxis.tickfont.color': textColor,
+                                    'yaxis.title.font.color': textColor,
+                                    'legend.font.color': textColor
+                                });
+                            } catch(e) {}
                         }
+                    }
+
+                    // Update plots in main document
+                    var plots = parentDoc.querySelectorAll('.js-plotly-plot');
+                    plots.forEach(function(plot) {
+                        updatePlot(plot, window.parent.Plotly);
+                    });
+
+                    // Also update plots inside iframes (for plotly_events component)
+                    var iframes = parentDoc.querySelectorAll('iframe');
+                    iframes.forEach(function(iframe) {
+                        try {
+                            var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                            var iframePlots = iframeDoc.querySelectorAll('.js-plotly-plot');
+                            var iframePlotly = iframe.contentWindow.Plotly;
+                            iframePlots.forEach(function(plot) {
+                                updatePlot(plot, iframePlotly);
+                            });
+                        } catch(e) {} // Cross-origin iframes will throw
                     });
                 }
 
