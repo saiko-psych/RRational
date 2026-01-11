@@ -531,8 +531,10 @@ dependencies = [
     { name = "neurokit2" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "plotly" },
     { name = "pyyaml" },
     { name = "streamlit" },
+    { name = "streamlit-plotly-events" },
 ]
 
 [package.dev-dependencies]
@@ -547,8 +549,10 @@ requires-dist = [
     { name = "neurokit2", specifier = ">=0.2.7" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "pandas", specifier = ">=2.0" },
+    { name = "plotly", specifier = ">=5.18" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "streamlit", specifier = ">=1.28" },
+    { name = "streamlit-plotly-events", specifier = ">=0.0.6" },
 ]
 
 [package.metadata.requires-dev]
@@ -781,6 +785,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/61/33/9611380c2bdb1225fdef633e2a9610622310fed35ab11dac9620972ee088/platformdirs-4.5.0.tar.gz", hash = "sha256:70ddccdd7c99fc5942e9fc25636a8b34d04c24b335100223152c2803e4063312", size = 21632, upload-time = "2025-10-08T17:44:48.791Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/73/cb/ac7874b3e5d58441674fb70742e6c374b28b0c7cb988d37d991cde47166c/platformdirs-4.5.0-py3-none-any.whl", hash = "sha256:e578a81bb873cbb89a41fcc904c7ef523cc18284b7e3b3ccf06aca1403b7ebd3", size = 18651, upload-time = "2025-10-08T17:44:47.223Z" },
+]
+
+[[package]]
+name = "plotly"
+version = "6.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "narwhals" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d6/ff/a4938b75e95114451efdb34db6b41930253e67efc8dc737bd592ef2e419d/plotly-6.5.1.tar.gz", hash = "sha256:b0478c8d5ada0c8756bce15315bcbfec7d3ab8d24614e34af9aff7bfcfea9281", size = 7014606, upload-time = "2026-01-07T20:11:41.644Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e9/8e/24e0bb90b2d75af84820693260c5534e9ed351afdda67ed6f393a141a0e2/plotly-6.5.1-py3-none-any.whl", hash = "sha256:5adad4f58c360612b6c5ce11a308cdbc4fd38ceb1d40594a614f0062e227abe1", size = 9894981, upload-time = "2026-01-07T20:11:38.124Z" },
 ]
 
 [[package]]
@@ -1264,6 +1281,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/59/6d/327ddd5fc35fcf2aeecb4040668337f5565a1c6c95b1e892b8bfd4bb9031/streamlit-1.51.0.tar.gz", hash = "sha256:1e742a9c0b698f466c6f5bf58d333beda5a1fbe8de660743976791b5c1446ef6", size = 9742904, upload-time = "2025-10-29T17:07:39.082Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/39/60/868371b6482ccd9ef423c6f62650066cf8271fdb2ee84f192695ad6b7a96/streamlit-1.51.0-py3-none-any.whl", hash = "sha256:4008b029f71401ce54946bb09a6a3e36f4f7652cbb48db701224557738cfda38", size = 10171702, upload-time = "2025-10-29T17:07:35.97Z" },
+]
+
+[[package]]
+name = "streamlit-plotly-events"
+version = "0.0.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "plotly" },
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/61/8c/e51c4867cc4d819f8452811199241d0edbcec73621768270ada66153f874/streamlit-plotly-events-0.0.6.tar.gz", hash = "sha256:1fe25dbf0e5d803aeb90253be04d7b395f5bcfdf3c654f96ff3c19424e7f9582", size = 4874598, upload-time = "2021-04-26T23:36:16.973Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/08/51dd5c822e27410f6452c3cfe61f7163fdeb40f4d285f2da6c2b9f88584d/streamlit_plotly_events-0.0.6-py3-none-any.whl", hash = "sha256:e63fbe3c6a0746fdfce20060fc45ba5cd97805505c332b27372dcbd02c2ede29", size = 14802161, upload-time = "2021-04-26T23:36:09.194Z" },
 ]
 
 [[package]]
