@@ -2467,9 +2467,7 @@ def render_settings_panel():
 
                 // Switch to light theme
                 window.switchToLightTheme = function() {
-                    var currentTheme = window.parent.localStorage.getItem('music-hrv-theme');
-                    if (currentTheme === 'light') return; // Already light
-
+                    htmlEl.classList.remove('dark-theme');
                     window.parent.localStorage.setItem('music-hrv-theme', 'light');
                     // Also set Streamlit's theme for data grids
                     var lightTheme = {
@@ -2483,15 +2481,13 @@ def render_settings_panel():
                         }
                     };
                     window.parent.localStorage.setItem('stActiveTheme-/-v1', JSON.stringify(lightTheme));
-                    // Reload to apply theme to all components (data grids use canvas)
-                    window.parent.location.reload();
+                    updateButtons();
+                    updatePlotlyTheme('light');
                 };
 
                 // Switch to dark theme
                 window.switchToDarkTheme = function() {
-                    var currentTheme = window.parent.localStorage.getItem('music-hrv-theme');
-                    if (currentTheme === 'dark') return; // Already dark
-
+                    htmlEl.classList.add('dark-theme');
                     window.parent.localStorage.setItem('music-hrv-theme', 'dark');
                     // Also set Streamlit's theme for data grids
                     var darkTheme = {
@@ -2505,8 +2501,8 @@ def render_settings_panel():
                         }
                     };
                     window.parent.localStorage.setItem('stActiveTheme-/-v1', JSON.stringify(darkTheme));
-                    // Reload to apply theme to all components (data grids use canvas)
-                    window.parent.location.reload();
+                    updateButtons();
+                    updatePlotlyTheme('dark');
                 };
 
                 // Update Plotly charts to match theme
