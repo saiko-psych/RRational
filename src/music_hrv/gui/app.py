@@ -68,14 +68,28 @@ def get_matplotlib():
         _plt = plt
     return _plt
 
-try:
-    import plotly.graph_objects as go
-    from streamlit_plotly_events import plotly_events
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    go = None
-    plotly_events = None
+
+# Lazy import for plotly (saves ~0.12s on startup)
+PLOTLY_AVAILABLE = True
+_go = None
+_plotly_events = None
+
+
+def get_plotly():
+    """Lazily import plotly to speed up app startup."""
+    global _go, _plotly_events, PLOTLY_AVAILABLE
+    if _go is None:
+        try:
+            import plotly.graph_objects as go
+            from streamlit_plotly_events import plotly_events
+            _go = go
+            _plotly_events = plotly_events
+        except ImportError:
+            PLOTLY_AVAILABLE = False
+            _go = None
+            _plotly_events = None
+    return _go, _plotly_events
+
 
 # Page configuration
 st.set_page_config(
@@ -1432,6 +1446,12 @@ def render_rr_plot_fragment(participant_id: str):
     plot_data = st.session_state[plot_data_key]
     stored_data = st.session_state.participant_events.get(participant_id, {})
 
+    # Get plotly (lazy import)
+    go, plotly_events = get_plotly()
+    if go is None:
+        st.warning("Plotly is not installed. Please install it with: `pip install plotly streamlit-plotly-events`")
+        return
+
     # Always use Scattergl for performance
     ScatterType = go.Scattergl
 
@@ -2629,7 +2649,9 @@ def main():
                         is_vns_data=is_vns
                     )
 
-                    if not PLOTLY_AVAILABLE:
+                    # Check plotly availability (triggers lazy import)
+                    go, _ = get_plotly()
+                    if go is None:
                         st.warning("Plotly is not installed. Please install it with: `pip install plotly streamlit-plotly-events`")
                     elif not rr_with_timestamps:
                         st.warning("No RR interval data available for visualization. The data may be empty or all intervals were filtered out.")

@@ -10,12 +10,27 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-try:
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
+# Lazy import for plotly (saves ~0.12s on startup)
+_go = None
+_make_subplots = None
+PLOTLY_AVAILABLE = True
+
+
+def get_plotly_analysis():
+    """Lazily import plotly for analysis tab."""
+    global _go, _make_subplots, PLOTLY_AVAILABLE
+    if _go is None:
+        try:
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
+            _go = go
+            _make_subplots = make_subplots
+        except ImportError:
+            PLOTLY_AVAILABLE = False
+            _go = None
+            _make_subplots = None
+    return _go, _make_subplots
+
 
 from music_hrv.gui.shared import (
     NEUROKIT_AVAILABLE,
@@ -188,7 +203,7 @@ MIN_DURATION_FREQUENCY_DOMAIN_SEC = 120  # 2 minutes minimum, 5 minutes recommen
 
 
 def create_professional_tachogram(rr_intervals: list, section_label: str,
-                                   artifact_indices: list = None) -> tuple[go.Figure, dict]:
+                                   artifact_indices: list = None):
     """Create a professional tachogram with clean layout.
 
     Features:
@@ -200,6 +215,10 @@ def create_professional_tachogram(rr_intervals: list, section_label: str,
     Returns:
         Tuple of (figure, stats_dict) for external display of statistics
     """
+    go, _ = get_plotly_analysis()
+    if go is None:
+        return None, {}
+
     rr = np.array(rr_intervals)
     n_beats = len(rr)
 
@@ -315,7 +334,7 @@ def create_professional_tachogram(rr_intervals: list, section_label: str,
     return fig, stats
 
 
-def create_poincare_plot(rr_intervals: list, section_label: str) -> tuple[go.Figure, dict]:
+def create_poincare_plot(rr_intervals: list, section_label: str):
     """Create a Poincaré plot (RR[n] vs RR[n+1]) with SD1/SD2 ellipse.
 
     The Poincaré plot visualizes short-term (SD1) and long-term (SD2) HRV.
@@ -325,6 +344,10 @@ def create_poincare_plot(rr_intervals: list, section_label: str) -> tuple[go.Fig
     Returns:
         Tuple of (figure, stats_dict) for external display of statistics
     """
+    go, _ = get_plotly_analysis()
+    if go is None:
+        return None, {}
+
     rr = np.array(rr_intervals)
     rr_n = rr[:-1]   # RR[n]
     rr_n1 = rr[1:]   # RR[n+1]
@@ -469,7 +492,7 @@ def create_poincare_plot(rr_intervals: list, section_label: str) -> tuple[go.Fig
 
 
 def create_frequency_domain_plot(rr_intervals: list, section_label: str,
-                                  sampling_rate: int = 4) -> tuple[go.Figure, dict] | tuple[None, None]:
+                                  sampling_rate: int = 4):
     """Create a power spectral density plot with frequency bands highlighted.
 
     Frequency bands (standard):
@@ -480,6 +503,10 @@ def create_frequency_domain_plot(rr_intervals: list, section_label: str,
     Returns:
         Tuple of (figure, stats_dict) for external display, or (None, None) on error
     """
+    go, _ = get_plotly_analysis()
+    if go is None:
+        return None, None
+
     nk = get_neurokit()
     if nk is None:
         return None, None
@@ -629,12 +656,16 @@ def create_frequency_domain_plot(rr_intervals: list, section_label: str,
         return None, None
 
 
-def create_hr_distribution_plot(rr_intervals: list, section_label: str) -> tuple[go.Figure, dict]:
+def create_hr_distribution_plot(rr_intervals: list, section_label: str):
     """Create a heart rate distribution histogram with density curve.
 
     Returns:
         Tuple of (figure, stats_dict) for external display of statistics
     """
+    go, make_subplots = get_plotly_analysis()
+    if go is None:
+        return None, {}
+
     rr = np.array(rr_intervals)
     hr = 60000 / rr  # Convert to beats per minute
 
