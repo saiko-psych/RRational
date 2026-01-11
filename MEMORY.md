@@ -35,6 +35,61 @@ textColor = "#31333F"               # Dark gray text
 - Hardcoded dark colors in light mode or vice versa
 - CSS !important overrides for theme colors (breaks theme switching)
 
+### Dark Mode Canvas Fix (IMPORTANT)
+
+**Problem:** Streamlit's `st.data_editor` and `st.dataframe` use Glide Data Grid which renders to HTML `<canvas>`. Canvas elements completely ignore CSS styling - they're painted by JavaScript.
+
+**Solution:** Use CSS `filter` property to invert colors in dark mode only:
+
+```css
+/* Dark mode: invert data grid canvas colors (canvas ignores CSS, needs filter) */
+:root.dark-theme .stDataFrame [data-testid="stDataFrameResizable"],
+:root.dark-theme [data-testid="glideDataEditor"] {
+    filter: invert(0.93) hue-rotate(180deg);
+}
+```
+
+**How it works:**
+- `invert(0.93)` - Flips colors (white→dark gray, black→light). Higher value = darker background (0.88-0.95 range)
+- `hue-rotate(180deg)` - Restores color tones after inversion (keeps blues blue, etc.)
+- `:root.dark-theme` prefix - Only applies when dark mode class is present
+
+**Key selectors for data grids:**
+- `[data-testid="stDataFrameResizable"]` - DataFrame container
+- `[data-testid="glideDataEditor"]` - Data editor container
+
+This same pattern can fix other canvas-based components that don't respond to CSS theming.
+
+### Sidebar Input Fix (Dark Mode)
+
+**Problem:** Text inputs inside sidebar expanders (like Settings) showed white backgrounds in dark mode because Streamlit's dynamic `st-*` classes override CSS variables.
+
+**Solution:** Target inputs comprehensively using multiple selectors:
+
+```css
+/* Sidebar inputs - comprehensive targeting */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] [data-baseweb="input"],
+[data-testid="stSidebar"] [data-baseweb="input"] > div,
+[data-testid="stSidebar"] .stTextInput > div > div,
+[data-testid="stSidebar"] .stTextInput input,
+[data-testid="stSidebar"] [data-testid="stExpander"] input,
+[data-testid="stSidebar"] [data-testid="stExpander"] [data-baseweb="input"],
+[data-testid="stSidebar"] [data-testid="stExpander"] [data-baseweb="input"] > div {
+    background-color: var(--input-bg) !important;
+    color: var(--sidebar-text) !important;
+    border-color: var(--input-border) !important;
+}
+```
+
+**Key selectors:**
+- `[data-testid="stSidebar"]` - Sidebar container
+- `[data-baseweb="input"]` - Base Web input wrapper
+- `[data-testid="stExpander"]` - Expander component
+- `.stTextInput` - Streamlit text input class
+
+**Note:** `!important` is required here because Streamlit's generated classes have high specificity.
+
 ### Streamlit Component Guidelines
 
 **Always use native Streamlit components** for theme compatibility:
@@ -197,9 +252,51 @@ This section documents patterns for testing the Streamlit app via Claude's Chrom
 5. View results in expandable sections
 
 **To change theme:**
-1. Click "⚙️ Settings" expander in sidebar
-2. Select "System", "Light", or "Dark" radio buttons
-3. Theme applies immediately on selection
+The theme toggle buttons are inside an iframe (components.html). Regular coordinate clicks may not work!
+
+**Best method - use JavaScript:**
+```javascript
+// Click Dark button
+var iframes = document.querySelectorAll('iframe');
+for (var i = 0; i < iframes.length; i++) {
+    try {
+        var doc = iframes[i].contentDocument || iframes[i].contentWindow.document;
+        var darkBtn = doc.querySelector('.dark-btn');
+        if (darkBtn) { darkBtn.click(); break; }
+    } catch(e) {}
+}
+
+// Click Light button
+// Same as above but use: doc.querySelector('.light-btn')
+```
+
+**Theme button structure (inside iframe):**
+- Light: `<button class="theme-btn light-btn" onclick="switchToLightTheme()">Light</button>`
+- Dark: `<button class="theme-btn dark-btn" onclick="switchToDarkTheme()">Dark</button>`
+- Active button gets class "active" added
+
+### Approximate UI Coordinates (1657x741 viewport)
+
+**Sidebar navigation buttons** (left side, ~30-180px x):
+- Data tab: ~(103, 90)
+- Participants tab: ~(103, 137)
+- Setup tab: ~(103, 182)
+- Analysis tab: ~(103, 228)
+
+**Settings expander**: ~(103, 412) - click to expand/collapse
+
+**Theme buttons** (inside Settings, inside iframe - USE JAVASCRIPT INSTEAD):
+- Light button: ~(68, 522)
+- Dark button: ~(138, 522)
+
+**Main content area**: starts at ~230px from left
+
+### Important: Iframe Interactions
+
+Many Streamlit components use iframes (components.html). When clicking doesn't work:
+1. Use `mcp__claude-in-chrome__javascript_tool` to execute JS
+2. Access iframe content: `iframe.contentDocument.querySelector()`
+3. Trigger clicks programmatically: `element.click()`
 
 **To export documentation:**
 1. Run analysis first

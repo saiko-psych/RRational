@@ -585,6 +585,12 @@ def apply_custom_css():
         border: 1px solid var(--border-light) !important;
     }
 
+    /* Dark mode: invert data grid canvas colors (canvas ignores CSS, needs filter) */
+    :root.dark-theme .stDataFrame [data-testid="stDataFrameResizable"],
+    :root.dark-theme [data-testid="glideDataEditor"] {
+        filter: invert(0.93) hue-rotate(180deg);
+    }
+
     /* ============================================
        ALERTS & MESSAGES
        ============================================ */
@@ -1098,10 +1104,18 @@ def apply_custom_css():
         background-color: var(--input-bg) !important;
     }
 
-    /* Sidebar inputs */
-    [data-testid="stSidebar"] input {
+    /* Sidebar inputs - comprehensive targeting */
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] [data-baseweb="input"],
+    [data-testid="stSidebar"] [data-baseweb="input"] > div,
+    [data-testid="stSidebar"] .stTextInput > div > div,
+    [data-testid="stSidebar"] .stTextInput input,
+    [data-testid="stSidebar"] [data-testid="stExpander"] input,
+    [data-testid="stSidebar"] [data-testid="stExpander"] [data-baseweb="input"],
+    [data-testid="stSidebar"] [data-testid="stExpander"] [data-baseweb="input"] > div {
         background-color: var(--input-bg) !important;
         color: var(--sidebar-text) !important;
+        border-color: var(--input-border) !important;
     }
 
     /* Sidebar buttons */
