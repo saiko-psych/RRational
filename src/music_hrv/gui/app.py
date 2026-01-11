@@ -1605,23 +1605,58 @@ if "summaries" not in st.session_state:
     auto_load_enabled = st.session_state.app_settings.get("auto_load", False)
     should_auto_load = (TEST_MODE or auto_load_enabled) and st.session_state.data_dir
     if should_auto_load:
-        from music_hrv.gui.shared import cached_load_hrv_logger_preview
+        from music_hrv.gui.shared import cached_load_hrv_logger_preview, cached_load_vns_preview
         config_dict = {"rr_min_ms": 200, "rr_max_ms": 2000, "sudden_change_pct": 100}
-        try:
-            summaries = cached_load_hrv_logger_preview(
-                st.session_state.data_dir,
-                pattern=DEFAULT_ID_PATTERN,
-                config_dict=config_dict,
-                gui_events_dict={},
-            )
+        summaries = []
+        data_path = Path(st.session_state.data_dir)
+
+        # Determine folders to scan: check for known subfolders, otherwise use root
+        folders_to_scan = []
+        hrv_subfolder = data_path / "hrv_logger"
+        vns_subfolder = data_path / "vns"
+
+        if hrv_subfolder.exists():
+            folders_to_scan.append(("hrv", str(hrv_subfolder)))
+        if vns_subfolder.exists():
+            folders_to_scan.append(("vns", str(vns_subfolder)))
+
+        # If no known subfolders, scan root directory with both formats
+        if not folders_to_scan:
+            folders_to_scan.append(("hrv", str(data_path)))
+            folders_to_scan.append(("vns", str(data_path)))
+
+        for format_type, folder_path in folders_to_scan:
+            try:
+                if format_type == "hrv":
+                    folder_summaries = cached_load_hrv_logger_preview(
+                        folder_path,
+                        pattern=DEFAULT_ID_PATTERN,
+                        config_dict=config_dict,
+                        gui_events_dict={},
+                    )
+                else:  # vns
+                    folder_summaries = cached_load_vns_preview(
+                        folder_path,
+                        pattern=DEFAULT_ID_PATTERN,
+                        config_dict=config_dict,
+                        gui_events_dict={},
+                        use_corrected=False,
+                    )
+                # Only add summaries that aren't already loaded (by participant_id)
+                existing_ids = {s.participant_id for s in summaries}
+                for s in folder_summaries:
+                    if s.participant_id not in existing_ids:
+                        summaries.append(s)
+            except Exception:
+                pass
+
+        if summaries:
             st.session_state.summaries = summaries
             # Auto-assign to Default group
             for s in summaries:
                 if "participant_groups" not in st.session_state:
                     st.session_state.participant_groups = {}
                 st.session_state.participant_groups[s.participant_id] = "Default"
-        except Exception:
-            pass  # Silently fail - user can load manually
 if "participant_events" not in st.session_state:
     st.session_state.participant_events = {}
 if "id_pattern" not in st.session_state:
