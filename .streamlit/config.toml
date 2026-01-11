@@ -1,7 +1,7 @@
 # Streamlit configuration for Music HRV Toolkit
 
 [theme]
-# Light theme as base - dark mode handled by CSS injection
+# Custom theme with light base
 base = "light"
 primaryColor = "#2E86AB"
 backgroundColor = "#FFFFFF"

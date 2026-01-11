@@ -433,117 +433,64 @@ def apply_custom_css():
         border-color: var(--accent-primary) !important;
     }
 
-    /* Sliders - MAXIMUM SPECIFICITY OVERRIDE */
-    .stSlider label {
+    /* ============================================
+       HORIZONTAL RADIO BUTTONS (Segmented Controls)
+       ============================================ */
+
+    /* Hide the radio circles completely */
+    .stRadio [data-testid="stMarkdownContainer"] + div [role="radiogroup"] > div > label > div:first-child,
+    .stRadio [role="radiogroup"] label > div:first-child:has(input[type="radio"]),
+    .stRadio [role="radiogroup"] label > div[data-testid="stMarkdownContainer"]:first-child ~ div:empty,
+    .stRadio div[data-baseweb="radio"] {
+        display: none !important;
+    }
+
+    /* Container for horizontal radio */
+    .stRadio [role="radiogroup"] {
+        border: 1px solid var(--border-color) !important;
+        border-radius: 6px !important;
+        overflow: hidden !important;
+        gap: 0 !important;
+    }
+
+    /* Individual segment buttons */
+    .stRadio [role="radiogroup"] > div {
+        border-right: 1px solid var(--border-color) !important;
+    }
+
+    .stRadio [role="radiogroup"] > div:last-child {
+        border-right: none !important;
+    }
+
+    .stRadio [role="radiogroup"] label {
+        padding: 8px 16px !important;
+        background-color: #E8EAED !important;
         color: var(--text-primary) !important;
+        font-weight: 500 !important;
+        cursor: pointer !important;
+        transition: background-color 0.15s ease !important;
+        margin: 0 !important;
     }
 
-    /* Slider track background (unfilled) - target emotion-cache classes */
-    .stSlider [class*="emotion-cache"][class*="e10fdlpp3"],
-    .stSlider [class*="emotion-cache"][class*="e10fdlpp4"],
-    .stSlider [data-baseweb="slider"] > div > div:first-child,
-    [data-baseweb="slider"] [data-testid="stTickBar"] > div,
-    .stSlider > div > div > div > div {
-        background-color: var(--bg-tertiary) !important;
+    /* Dark theme unselected */
+    :root.dark-theme .stRadio [role="radiogroup"] label {
+        background-color: #3D3D4D !important;
     }
 
-    /* Slider thumb and filled portion - override teal color */
-    .stSlider [class*="emotion-cache"][class*="e10fdlpp1"],
-    .stSlider [class*="emotion-cache"][class*="e10fdlpp2"],
-    .stSlider div[role="slider"],
-    .stSlider [data-baseweb="slider"] [role="slider"],
-    .stSlider [data-baseweb="slider"] > div > div > div:last-child {
+    /* Hover state */
+    .stRadio [role="radiogroup"] label:hover {
+        background-color: #D0D3D8 !important;
+    }
+
+    :root.dark-theme .stRadio [role="radiogroup"] label:hover {
+        background-color: #4D4D5D !important;
+    }
+
+    /* Selected segment - use data-checked attribute */
+    .stRadio [role="radiogroup"] > div:has(input:checked) label,
+    .stRadio [role="radiogroup"] label:has(input:checked) {
         background-color: var(--accent-primary) !important;
         color: white !important;
-    }
-
-    /* Slider thumb inner element */
-    .stSlider [data-baseweb="slider"] [role="slider"] > div,
-    .stSlider div[role="slider"] > div {
-        background-color: var(--accent-primary) !important;
-    }
-
-    /* Target any slider element with colored background */
-    .stSlider [class*="st-au"],
-    .stSlider [class*="st-c6"],
-    .stSlider [class*="st-c7"] {
-        background-color: var(--accent-primary) !important;
-    }
-
-    /* Slider value display */
-    .stSlider [data-testid="stTickBarMin"],
-    .stSlider [data-testid="stTickBarMax"] {
-        color: var(--text-muted) !important;
-    }
-
-    /* Slider track endpoints - circular caps at start/end of track */
-    .stSlider [data-baseweb="slider"] > div > div,
-    .stSlider [data-baseweb="slider"] > div > div > div,
-    .stSlider [data-baseweb="slider"] [class*="InnerTrack"],
-    .stSlider [data-baseweb="slider"] [class*="Track"] {
-        background-color: var(--bg-tertiary) !important;
-    }
-
-    /* Override any leftover baseui teal colors on slider */
-    .stSlider [style*="rgb(1, 179, 179)"],
-    .stSlider [style*="rgb(0, 179, 179)"],
-    .stSlider [style*="#01b3b3"],
-    .stSlider [style*="#00b3b3"] {
-        background-color: var(--accent-primary) !important;
-    }
-
-    /* Slider filled portion and range indicator */
-    .stSlider [data-baseweb="slider"] [class*="InnerTrackFill"],
-    .stSlider [data-baseweb="slider"] > div > div:nth-child(2),
-    .stSlider [data-baseweb="slider"] > div > div > div:nth-child(2) {
-        background-color: var(--accent-primary) !important;
-    }
-
-    /* Slider track endpoint circles (the small circles at start/end of track) */
-    .stSlider [data-baseweb="slider"] > div > div:first-child::before,
-    .stSlider [data-baseweb="slider"] > div > div:first-child::after,
-    .stSlider [data-baseweb="slider"] > div::before,
-    .stSlider [data-baseweb="slider"] > div::after {
-        background-color: var(--bg-tertiary) !important;
-    }
-
-    /* Target the actual tick/endpoint elements by their structure */
-    .stSlider [data-baseweb="slider"] > div > div > div:first-child,
-    .stSlider [data-baseweb="slider"] > div > div > div:last-child {
-        background-color: var(--accent-primary) !important;
-    }
-
-    /* Force override any teal/cyan colored elements in slider */
-    .stSlider * {
-        --baseui-slider-tick-fill: var(--accent-primary) !important;
-    }
-
-    /* Slider StartThumb and EndThumb markers */
-    .stSlider [class*="StartThumb"],
-    .stSlider [class*="EndThumb"],
-    .stSlider [class*="Tick"],
-    .stSlider [class*="tick"] {
-        background-color: var(--accent-primary) !important;
-        border-color: var(--accent-primary) !important;
-    }
-
-    /* SVG elements in slider (often used for endpoint circles) */
-    .stSlider svg,
-    .stSlider svg circle,
-    .stSlider svg ellipse,
-    .stSlider svg rect {
-        fill: var(--accent-primary) !important;
-        stroke: var(--accent-primary) !important;
-    }
-
-    /* Hide or restyle the teal endpoint dots - aggressive override */
-    .stSlider [data-baseweb="slider"] div[style*="background"],
-    .stSlider div[style*="rgb(1, 179, 179)"],
-    .stSlider div[style*="rgb(0, 179, 179)"],
-    .stSlider div[style*="01b3b3"],
-    .stSlider div[style*="00b3b3"] {
-        background-color: var(--accent-primary) !important;
-        background: var(--accent-primary) !important;
     }
 
     /* ============================================
@@ -832,6 +779,17 @@ def apply_custom_css():
         background-color: var(--bg-secondary) !important;
         color: var(--text-primary) !important;
         border-color: var(--input-border) !important;
+    }
+
+    /* Remove blue highlighting from number input */
+    .stNumberInput [data-baseweb="input"] {
+        border-color: var(--input-border) !important;
+        background-color: var(--input-bg) !important;
+    }
+
+    .stNumberInput [data-baseweb="input"]:focus-within {
+        border-color: var(--accent-primary) !important;
+        box-shadow: none !important;
     }
 
     /* ============================================
@@ -1187,9 +1145,38 @@ def apply_custom_css():
             var parentDoc = window.parent.document;
             var root = parentDoc.documentElement;
 
-            // Apply saved theme
-            var savedTheme = window.parent.localStorage.getItem('music-hrv-theme');
+            // Force Streamlit to use custom theme from config.toml on startup
+            var savedTheme = window.parent.localStorage.getItem('music-hrv-theme') || 'light';
             var isDark = savedTheme === 'dark';
+
+            // Check if we already attempted theme setup (prevent infinite reload)
+            var themeSetupDone = window.parent.localStorage.getItem('music-hrv-theme-setup-done');
+
+            if (!themeSetupDone) {
+                // Set Streamlit's internal theme to use custom theme (from config.toml)
+                var customTheme = {
+                    name: 'Custom',
+                    themeInput: isDark ? {
+                        primaryColor: '#2E86AB',
+                        backgroundColor: '#0E1117',
+                        secondaryBackgroundColor: '#262730',
+                        textColor: '#FAFAFA',
+                        base: 'dark'
+                    } : {
+                        primaryColor: '#2E86AB',
+                        backgroundColor: '#FFFFFF',
+                        secondaryBackgroundColor: '#F0F2F6',
+                        textColor: '#31333F',
+                        base: 'light'
+                    }
+                };
+                window.parent.localStorage.setItem('stActiveTheme-/-v1', JSON.stringify(customTheme));
+                window.parent.localStorage.setItem('music-hrv-theme-setup-done', 'true');
+                // One-time reload to apply custom theme
+                window.parent.location.reload();
+                return;
+            }
+
             if (isDark) {
                 root.classList.add('dark-theme');
             }
@@ -1229,16 +1216,6 @@ def apply_custom_css():
                     .stCheckbox input[aria-checked="false"] + span {
                         background-color: var(--input-bg) !important;
                         border-color: var(--border-color) !important;
-                    }
-                    .stSlider div[role="slider"],
-                    .stSlider [class*="e10fdlpp1"],
-                    .stSlider [class*="e10fdlpp2"] {
-                        background-color: ${savedAccent} !important;
-                    }
-                    /* Slider track (unfilled) */
-                    .stSlider [class*="e10fdlpp3"],
-                    .stSlider [class*="e10fdlpp4"] {
-                        background-color: var(--bg-secondary) !important;
                     }
                     .stTabs [data-baseweb="tab"][aria-selected="true"],
                     .stTabs button[role="tab"][aria-selected="true"] {
@@ -1328,44 +1305,6 @@ def apply_custom_css():
             // Inject CSS after a short delay to ensure DOM is ready
             setTimeout(injectAccentCSS, 100);
 
-            // Fix slider endpoint colors (baseui uses inline styles we can't override with CSS)
-            function fixSliderColors() {
-                var accentColor = window.parent.localStorage.getItem('music-hrv-accent') || '${saved_accent}';
-                var isDark = root.classList.contains('dark-theme');
-                var trackColor = isDark ? '#3D3D4D' : '#E6E9EF';  // Match --bg-tertiary
-
-                // Find ALL elements inside sliders and check for teal colors
-                parentDoc.querySelectorAll('.stSlider *').forEach(function(el) {
-                    var computed = window.parent.getComputedStyle(el);
-                    var bg = computed.backgroundColor;
-                    // Check for various teal color representations
-                    if (bg === 'rgb(1, 179, 179)' || bg === 'rgb(0, 179, 179)' ||
-                        bg === 'rgb(1,179,179)' || bg === 'rgb(0,179,179)') {
-                        // Determine if this is the thumb (filled) or track (unfilled)
-                        var rect = el.getBoundingClientRect();
-                        // Small circular elements are likely the track endpoint dots
-                        if (rect.width < 20 && rect.height < 20) {
-                            el.style.setProperty('background-color', accentColor, 'important');
-                        } else {
-                            el.style.setProperty('background-color', accentColor, 'important');
-                        }
-                    }
-                });
-
-                // Also check inline styles directly
-                parentDoc.querySelectorAll('.stSlider [style*="179"]').forEach(function(el) {
-                    var style = el.getAttribute('style') || '';
-                    if (style.includes('179, 179') || style.includes('179,179')) {
-                        el.style.setProperty('background-color', accentColor, 'important');
-                    }
-                });
-            }
-            // Run slider fix on load and periodically for dynamically added sliders
-            setTimeout(fixSliderColors, 200);
-            setTimeout(fixSliderColors, 500);
-            setTimeout(fixSliderColors, 1000);
-            setTimeout(fixSliderColors, 2000);
-
             // Update Plotly charts for current theme (both dark AND light, including iframes)
             function updatePlotsForTheme() {
                 // Check current theme state (not captured value)
@@ -1420,34 +1359,18 @@ def apply_custom_css():
             // Initial update for any existing plots (MutationObserver handles new ones)
             setTimeout(updatePlotsForTheme, 300);
 
-            // Debounced observer for new plots and sliders (avoid excessive updates)
+            // Debounced observer for new plots (avoid excessive updates)
             var plotUpdateTimeout = null;
-            var sliderFixTimeout = null;
             var observer = new MutationObserver(function(mutations) {
-                // Check for Plotly or slider changes
-                var hasPlotlyChange = false;
-                var hasSliderChange = false;
-                mutations.forEach(function(m) {
-                    if (m.addedNodes.length > 0) {
-                        Array.from(m.addedNodes).forEach(function(n) {
-                            if (n.nodeType === 1) {
-                                if (n.classList?.contains('js-plotly-plot') || n.querySelector?.('.js-plotly-plot')) {
-                                    hasPlotlyChange = true;
-                                }
-                                if (n.classList?.contains('stSlider') || n.querySelector?.('.stSlider')) {
-                                    hasSliderChange = true;
-                                }
-                            }
-                        });
-                    }
+                var hasPlotlyChange = mutations.some(function(m) {
+                    return m.addedNodes.length > 0 &&
+                           Array.from(m.addedNodes).some(function(n) {
+                               return n.nodeType === 1 && (n.classList?.contains('js-plotly-plot') || n.querySelector?.('.js-plotly-plot'));
+                           });
                 });
                 if (hasPlotlyChange) {
                     clearTimeout(plotUpdateTimeout);
                     plotUpdateTimeout = setTimeout(updatePlotsForTheme, 200);
-                }
-                if (hasSliderChange) {
-                    clearTimeout(sliderFixTimeout);
-                    sliderFixTimeout = setTimeout(fixSliderColors, 200);
                 }
             });
             observer.observe(parentDoc.body, { childList: true, subtree: true });
@@ -2689,9 +2612,9 @@ def render_settings_panel():
                 window.switchToLightTheme = function() {
                     htmlEl.classList.remove('dark-theme');
                     window.parent.localStorage.setItem('music-hrv-theme', 'light');
-                    // Also set Streamlit's theme for data grids
+                    // Also set Streamlit's theme for data grids (use 'Custom' to keep using config.toml)
                     var lightTheme = {
-                        name: 'Light',
+                        name: 'Custom',
                         themeInput: {
                             primaryColor: '#2E86AB',
                             backgroundColor: '#FFFFFF',
@@ -2709,9 +2632,9 @@ def render_settings_panel():
                 window.switchToDarkTheme = function() {
                     htmlEl.classList.add('dark-theme');
                     window.parent.localStorage.setItem('music-hrv-theme', 'dark');
-                    // Also set Streamlit's theme for data grids
+                    // Also set Streamlit's theme for data grids (use 'Custom' to keep using config.toml)
                     var darkTheme = {
-                        name: 'Dark',
+                        name: 'Custom',
                         themeInput: {
                             primaryColor: '#2E86AB',
                             backgroundColor: '#0E1117',
@@ -2860,11 +2783,6 @@ def render_settings_panel():
                     .stCheckbox input[aria-checked="false"] + span {{
                         background-color: var(--input-bg, #fff) !important;
                         border-color: var(--input-border, #ccc) !important;
-                    }}
-                    .stSlider div[role="slider"],
-                    .stSlider [class*="e10fdlpp1"],
-                    .stSlider [class*="e10fdlpp2"] {{
-                        background-color: ${{color}} !important;
                     }}
                     .stTabs [data-baseweb="tab"][aria-selected="true"],
                     .stTabs button[role="tab"][aria-selected="true"] {{
