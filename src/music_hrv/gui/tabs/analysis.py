@@ -641,17 +641,42 @@ def create_hr_distribution_plot(rr_intervals: list, section_label: str) -> tuple
     return fig, stats
 
 
-def create_hrv_metrics_card(hrv_results: pd.DataFrame, n_beats: int,
-                            artifact_info: dict = None,
-                            recording_duration_sec: float = None) -> str:
-    """Create HTML card with key HRV metrics interpretation.
+def _get_reference_bar_html(value: float, ref_low: float, ref_high: float, max_val: float = None) -> str:
+    """Create a visual reference bar showing where value falls in range."""
+    if max_val is None:
+        max_val = ref_high * 1.5
 
-    Includes:
-    - Key metrics with reference-based interpretation
-    - Data quality warnings if insufficient data
-    - Artifact correction info if applied
+    # Calculate position (0-100%)
+    position = min(100, max(0, (value / max_val) * 100))
 
-    Reference values based on Shaffer & Ginsberg (2017) and Nunan et al. (2010).
+    # Determine color based on position relative to reference
+    if value < ref_low:
+        color = "#e74c3c"  # Red - below normal
+    elif value <= ref_high:
+        color = "#27ae60"  # Green - normal range
+    else:
+        color = "#3498db"  # Blue - above normal
+
+    # Reference zone (as percentage)
+    ref_start = (ref_low / max_val) * 100
+    ref_end = (ref_high / max_val) * 100
+
+    return f'''<div style="position:relative; height:6px; background:#e9ecef; border-radius:3px; margin-top:8px;">
+<div style="position:absolute; left:{ref_start:.0f}%; width:{ref_end-ref_start:.0f}%; height:100%; background:rgba(39,174,96,0.2); border-radius:3px;"></div>
+<div style="position:absolute; left:{position:.0f}%; top:-2px; width:10px; height:10px; background:{color}; border-radius:50%; transform:translateX(-50%); border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,0.2);"></div>
+</div>'''
+
+
+def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
+                                      artifact_info: dict = None,
+                                      recording_duration_sec: float = None) -> None:
+    """Display HRV metrics using Streamlit native components for a professional look.
+
+    Uses clean, scientific styling with:
+    - Native Streamlit metrics and columns
+    - Visual reference range indicators
+    - Expandable details sections
+    - Clear data quality indicators
     """
 
     # Extract key metrics
@@ -661,130 +686,176 @@ def create_hrv_metrics_card(hrv_results: pd.DataFrame, n_beats: int,
     lf_hf = hrv_results.get('HRV_LFHF', [0]).iloc[0] if 'HRV_LFHF' in hrv_results.columns else 0
     hf = hrv_results.get('HRV_HF', [0]).iloc[0] if 'HRV_HF' in hrv_results.columns else 0
     lf = hrv_results.get('HRV_LF', [0]).iloc[0] if 'HRV_LF' in hrv_results.columns else 0
-
-    # Interpret RMSSD using reference values
-    rmssd_ref = HRV_REFERENCE_VALUES["RMSSD"]
-    if rmssd >= rmssd_ref["high"]:
-        rmssd_color = "#28a745"  # Green
-        rmssd_interp = rmssd_ref["interpretation"]["high"]
-    elif rmssd >= rmssd_ref["low"]:
-        rmssd_color = "#17a2b8"  # Blue (normal)
-        rmssd_interp = rmssd_ref["interpretation"]["normal"]
+    mean_hr = hrv_results.get('HRV_MeanNN', [0]).iloc[0] if 'HRV_MeanNN' in hrv_results.columns else 0
+    if mean_hr > 0:
+        mean_hr_bpm = 60000 / mean_hr  # Convert ms to BPM
     else:
-        rmssd_color = "#dc3545"  # Red
-        rmssd_interp = rmssd_ref["interpretation"]["low"]
+        mean_hr_bpm = 0
 
-    # Interpret SDNN
-    sdnn_ref = HRV_REFERENCE_VALUES["SDNN"]
-    if sdnn >= sdnn_ref["low"]:
-        sdnn_color = "#17a2b8"  # Blue (normal/good)
-        sdnn_interp = "Normal range"
-    else:
-        sdnn_color = "#ffc107"  # Yellow (caution)
-        sdnn_interp = "Below typical"
+    # Calculate total power for percentages
+    total_power = lf + hf if (lf + hf) > 0 else 1
+    lf_pct = (lf / total_power) * 100
+    hf_pct = (hf / total_power) * 100
 
-    # Interpret LF/HF ratio
-    lf_hf_ref = HRV_REFERENCE_VALUES["LF_HF"]
-    if lf_hf < lf_hf_ref["low"]:
-        lfhf_interp = "Parasympathetic dominant"
-        lfhf_color = "#28a745"
-    elif lf_hf < lf_hf_ref["high"]:
-        lfhf_interp = "Balanced ANS"
-        lfhf_color = "#17a2b8"
-    else:
-        lfhf_interp = "Sympathetic dominant"
-        lfhf_color = "#ffc107"
+    # Duration display
+    duration_min = recording_duration_sec / 60 if recording_duration_sec else 0
 
-    # Build data quality warnings
-    warnings_html = ""
-    warnings = []
-
+    # Data quality assessment
+    quality_issues = []
     if n_beats < MIN_BEATS_TIME_DOMAIN:
-        warnings.append(f"⚠️ Low beat count ({n_beats}) - time domain metrics may be unreliable (min: {MIN_BEATS_TIME_DOMAIN})")
-
+        quality_issues.append(("Low beat count", f"{n_beats} beats (min: {MIN_BEATS_TIME_DOMAIN})"))
     if n_beats < MIN_BEATS_FREQUENCY_DOMAIN:
-        warnings.append(f"⚠️ Insufficient beats for frequency domain ({n_beats}/{MIN_BEATS_FREQUENCY_DOMAIN}) - LF/HF values may be unreliable")
-
+        quality_issues.append(("Insufficient for frequency domain", f"{n_beats}/{MIN_BEATS_FREQUENCY_DOMAIN} beats"))
     if recording_duration_sec and recording_duration_sec < MIN_DURATION_FREQUENCY_DOMAIN_SEC:
-        warnings.append(f"⚠️ Short recording ({recording_duration_sec/60:.1f} min) - frequency domain requires ≥2 min, ideally 5 min")
+        quality_issues.append(("Short recording", f"{duration_min:.1f} min (recommended: ≥5 min)"))
 
-    if warnings:
-        warnings_html = f"""
-        <div style="background:#fff3cd; padding:10px; border-radius:6px; margin-top:12px; border-left:4px solid #ffc107;">
-            <div style="font-size:11px; color:#856404;">
-                {'<br>'.join(warnings)}
-            </div>
-        </div>
-        """
+    # Header with recording info
+    header_html = f'''<div style="background:#f8f9fa; border:1px solid #dee2e6; border-radius:8px; padding:16px; margin-bottom:16px;">
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+<div>
+<span style="font-size:11px; color:#6c757d; text-transform:uppercase; letter-spacing:0.5px;">Recording Summary</span>
+<div style="font-size:14px; color:#212529; margin-top:4px;"><strong>{n_beats:,}</strong> beats · <strong>{duration_min:.1f}</strong> min · <strong>{mean_hr_bpm:.0f}</strong> BPM avg</div>
+</div>
+<div style="display:flex; gap:16px; align-items:center;">'''
 
-    # Build artifact info if available
-    artifact_html = ""
+    # Add artifact info to header if available
     if artifact_info:
         artifact_pct = artifact_info.get('artifact_ratio', 0) * 100
         if artifact_pct > 10:
-            artifact_bg = "#f8d7da"  # Red - high artifact rate
-            artifact_border = "#dc3545"
+            art_color = "#dc3545"
+            art_label = "High"
         elif artifact_pct > 2:
-            artifact_bg = "#fff3cd"  # Yellow - moderate
-            artifact_border = "#ffc107"
+            art_color = "#ffc107"
+            art_label = "Moderate"
         else:
-            artifact_bg = "#d4edda"  # Green - low
-            artifact_border = "#28a745"
+            art_color = "#28a745"
+            art_label = "Low"
+        header_html += f'''<div style="text-align:center;">
+<span style="font-size:10px; color:#6c757d;">Artifacts</span>
+<div style="font-size:13px; color:{art_color}; font-weight:600;">{artifact_pct:.1f}% <span style="font-weight:normal; font-size:11px;">({art_label})</span></div>
+</div>'''
 
-        artifact_html = f"""
-        <div style="background:{artifact_bg}; padding:10px; border-radius:6px; margin-top:12px; border-left:4px solid {artifact_border};">
-            <div style="font-size:12px; color:#333;">
-                <b>Artifact Correction:</b> {artifact_info.get('total_artifacts', 0)} corrected ({artifact_pct:.1f}%)
-            </div>
-        </div>
-        """
+    # Data quality badge
+    if not quality_issues:
+        quality_color = "#28a745"
+        quality_label = "Good"
+    elif len(quality_issues) == 1:
+        quality_color = "#ffc107"
+        quality_label = "Fair"
+    else:
+        quality_color = "#dc3545"
+        quality_label = "Limited"
 
-    # Calculate recording duration from RR intervals if not provided
-    duration_display = ""
-    if recording_duration_sec:
-        duration_display = f" | {recording_duration_sec/60:.1f} min"
+    header_html += f'''<div style="text-align:center;">
+<span style="font-size:10px; color:#6c757d;">Data Quality</span>
+<div style="font-size:13px; color:{quality_color}; font-weight:600;">{quality_label}</div>
+</div>
+</div></div></div>'''
 
-    # Build HTML without comments (Streamlit can have issues with HTML comments)
-    html = f"""<div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding:20px; border-radius:12px; color:white; margin-bottom:20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-<h3 style="margin:0 0 15px 0; font-size:18px; font-weight:600;">📊 HRV Analysis Summary <span style="font-size:13px; font-weight:normal; opacity:0.9;">({n_beats} beats{duration_display})</span></h3>
-<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px;">
-<div style="background:rgba(255,255,255,0.15); padding:14px; border-radius:8px;">
-<div style="font-size:28px; font-weight:bold;">{rmssd:.1f}</div>
-<div style="font-size:12px; opacity:0.9; margin-bottom:4px;">RMSSD (ms)</div>
-<div style="font-size:10px; color:{rmssd_color}; background:white; padding:3px 8px; border-radius:4px; display:inline-block;">{rmssd_interp}</div>
-<div style="font-size:9px; opacity:0.6; margin-top:4px;">Ref: {rmssd_ref['normal']} ms (mean)</div>
+    if hasattr(st, 'html'):
+        st.html(header_html)
+    else:
+        st.markdown(header_html, unsafe_allow_html=True)
+
+    # Show quality warnings if any
+    if quality_issues:
+        with st.expander("⚠️ Data Quality Notes", expanded=False):
+            for issue, detail in quality_issues:
+                st.warning(f"**{issue}**: {detail}")
+
+    # Time Domain Section
+    st.markdown("#### Time Domain Metrics")
+    st.caption("Measures beat-to-beat variability in the time series")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        rmssd_ref = HRV_REFERENCE_VALUES["RMSSD"]
+        st.metric("RMSSD", f"{rmssd:.1f} ms", help="Root Mean Square of Successive Differences - primary parasympathetic indicator")
+        bar_html = _get_reference_bar_html(rmssd, rmssd_ref["low"], rmssd_ref["high"], 100)
+        if hasattr(st, 'html'):
+            st.html(f'<div style="margin-top:-10px;">{bar_html}<div style="font-size:10px; color:#6c757d; margin-top:4px;">Ref: {rmssd_ref["low"]}–{rmssd_ref["high"]} ms</div></div>')
+        else:
+            st.markdown(f'<div style="margin-top:-10px;">{bar_html}<div style="font-size:10px; color:#6c757d; margin-top:4px;">Ref: {rmssd_ref["low"]}–{rmssd_ref["high"]} ms</div></div>', unsafe_allow_html=True)
+
+    with col2:
+        sdnn_ref = HRV_REFERENCE_VALUES["SDNN"]
+        st.metric("SDNN", f"{sdnn:.1f} ms", help="Standard Deviation of NN intervals - overall HRV indicator")
+        bar_html = _get_reference_bar_html(sdnn, sdnn_ref["low"], sdnn_ref["normal"], 250)
+        if hasattr(st, 'html'):
+            st.html(f'<div style="margin-top:-10px;">{bar_html}<div style="font-size:10px; color:#6c757d; margin-top:4px;">Ref: ≥{sdnn_ref["low"]} ms</div></div>')
+        else:
+            st.markdown(f'<div style="margin-top:-10px;">{bar_html}<div style="font-size:10px; color:#6c757d; margin-top:4px;">Ref: ≥{sdnn_ref["low"]} ms</div></div>', unsafe_allow_html=True)
+
+    with col3:
+        pnn_ref = HRV_REFERENCE_VALUES["pNN50"]
+        st.metric("pNN50", f"{pnn50:.1f}%", help="Percentage of successive RR intervals differing by >50ms")
+        bar_html = _get_reference_bar_html(pnn50, pnn_ref["low"], pnn_ref["high"], 60)
+        if hasattr(st, 'html'):
+            st.html(f'<div style="margin-top:-10px;">{bar_html}<div style="font-size:10px; color:#6c757d; margin-top:4px;">Ref: {pnn_ref["low"]}–{pnn_ref["high"]}%</div></div>')
+        else:
+            st.markdown(f'<div style="margin-top:-10px;">{bar_html}<div style="font-size:10px; color:#6c757d; margin-top:4px;">Ref: {pnn_ref["low"]}–{pnn_ref["high"]}%</div></div>', unsafe_allow_html=True)
+
+    with col4:
+        st.metric("Mean HR", f"{mean_hr_bpm:.0f} BPM", help="Average heart rate during recording")
+        # Simple range indicator for HR
+        hr_bar = _get_reference_bar_html(mean_hr_bpm, 60, 100, 150)
+        if hasattr(st, 'html'):
+            st.html(f'<div style="margin-top:-10px;">{hr_bar}<div style="font-size:10px; color:#6c757d; margin-top:4px;">Normal: 60–100 BPM</div></div>')
+        else:
+            st.markdown(f'<div style="margin-top:-10px;">{hr_bar}<div style="font-size:10px; color:#6c757d; margin-top:4px;">Normal: 60–100 BPM</div></div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Frequency Domain Section
+    st.markdown("#### Frequency Domain Metrics")
+    st.caption("Spectral analysis of HRV - requires ≥2 min recording for reliability")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("LF Power", f"{lf:.0f} ms²", delta=f"{lf_pct:.0f}% of total", delta_color="off",
+                  help="Low Frequency (0.04–0.15 Hz) - mixed sympathetic/parasympathetic")
+
+    with col2:
+        st.metric("HF Power", f"{hf:.0f} ms²", delta=f"{hf_pct:.0f}% of total", delta_color="off",
+                  help="High Frequency (0.15–0.4 Hz) - parasympathetic/vagal activity")
+
+    with col3:
+        lf_hf_ref = HRV_REFERENCE_VALUES["LF_HF"]
+        if lf_hf < lf_hf_ref["low"]:
+            lfhf_label = "PNS dominant"
+        elif lf_hf < lf_hf_ref["high"]:
+            lfhf_label = "Balanced"
+        else:
+            lfhf_label = "SNS dominant"
+        st.metric("LF/HF Ratio", f"{lf_hf:.2f}", delta=lfhf_label, delta_color="off",
+                  help="Sympathovagal balance indicator")
+
+    # LF/HF Balance visualization
+    balance_html = f'''<div style="background:#f8f9fa; border-radius:6px; padding:12px; margin-top:8px;">
+<div style="display:flex; justify-content:space-between; font-size:11px; color:#6c757d; margin-bottom:6px;">
+<span>Parasympathetic</span><span>Sympathetic</span>
 </div>
-<div style="background:rgba(255,255,255,0.15); padding:14px; border-radius:8px;">
-<div style="font-size:28px; font-weight:bold;">{sdnn:.1f}</div>
-<div style="font-size:12px; opacity:0.9; margin-bottom:4px;">SDNN (ms)</div>
-<div style="font-size:10px; color:{sdnn_color}; background:white; padding:3px 8px; border-radius:4px; display:inline-block;">{sdnn_interp}</div>
-<div style="font-size:9px; opacity:0.6; margin-top:4px;">Overall variability</div>
+<div style="position:relative; height:8px; background:linear-gradient(90deg, #27ae60 0%, #f1c40f 50%, #e74c3c 100%); border-radius:4px;">
+<div style="position:absolute; left:{min(95, max(5, (lf_pct))):.0f}%; top:-4px; width:16px; height:16px; background:white; border:3px solid #2c3e50; border-radius:50%; transform:translateX(-50%); box-shadow:0 2px 4px rgba(0,0,0,0.2);"></div>
 </div>
-<div style="background:rgba(255,255,255,0.15); padding:14px; border-radius:8px;">
-<div style="font-size:28px; font-weight:bold;">{pnn50:.1f}%</div>
-<div style="font-size:12px; opacity:0.9; margin-bottom:4px;">pNN50</div>
-<div style="font-size:10px; opacity:0.7; margin-top:4px;">% successive RR diff &gt;50ms</div>
+<div style="display:flex; justify-content:space-between; font-size:10px; color:#6c757d; margin-top:6px;">
+<span>HF {hf_pct:.0f}%</span><span>LF {lf_pct:.0f}%</span>
 </div>
-<div style="background:rgba(255,255,255,0.15); padding:14px; border-radius:8px;">
-<div style="font-size:28px; font-weight:bold;">{lf:.0f}</div>
-<div style="font-size:12px; opacity:0.9; margin-bottom:4px;">LF Power (ms²)</div>
-<div style="font-size:10px; opacity:0.7;">0.04–0.15 Hz</div>
-</div>
-<div style="background:rgba(255,255,255,0.15); padding:14px; border-radius:8px;">
-<div style="font-size:28px; font-weight:bold;">{hf:.0f}</div>
-<div style="font-size:12px; opacity:0.9; margin-bottom:4px;">HF Power (ms²)</div>
-<div style="font-size:10px; opacity:0.7;">0.15–0.4 Hz (vagal)</div>
-</div>
-<div style="background:rgba(255,255,255,0.15); padding:14px; border-radius:8px;">
-<div style="font-size:28px; font-weight:bold;">{lf_hf:.2f}</div>
-<div style="font-size:12px; opacity:0.9; margin-bottom:4px;">LF/HF Ratio</div>
-<div style="font-size:10px; color:{lfhf_color}; background:white; padding:3px 8px; border-radius:4px; display:inline-block;">{lfhf_interp}</div>
-</div>
-</div>
-{artifact_html}
-{warnings_html}
-</div>"""
-    return html
+</div>'''
+
+    if hasattr(st, 'html'):
+        st.html(balance_html)
+    else:
+        st.markdown(balance_html, unsafe_allow_html=True)
+
+
+def create_hrv_metrics_card(hrv_results: pd.DataFrame, n_beats: int,
+                            artifact_info: dict = None,
+                            recording_duration_sec: float = None) -> str:
+    """Legacy function - returns empty string. Use display_hrv_metrics_professional() instead."""
+    return ""
 
 
 def _get_exclusion_zones(participant_id: str) -> list[dict]:
@@ -1497,17 +1568,12 @@ def _display_single_participant_results(selected_participant: str):
         recording_duration_sec = sum(rr_intervals) / 1000.0 if rr_intervals else 0
 
         with st.expander(f"📈 {section_label} ({n_beats} beats, {recording_duration_sec/60:.1f} min)", expanded=True):
-            # Display HRV metrics summary card
+            # Display HRV metrics using professional layout
             if not hrv_results.empty:
-                metrics_card = create_hrv_metrics_card(
+                display_hrv_metrics_professional(
                     hrv_results, n_beats, artifact_info,
                     recording_duration_sec=recording_duration_sec
                 )
-                # Use st.html if available (Streamlit 1.33+), otherwise fall back to markdown
-                if hasattr(st, 'html'):
-                    st.html(metrics_card)
-                else:
-                    st.markdown(metrics_card, unsafe_allow_html=True)
 
             # Visualization tabs for professional plots
             if PLOTLY_AVAILABLE and len(rr_intervals) > 10:
