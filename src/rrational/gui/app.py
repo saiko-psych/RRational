@@ -1964,6 +1964,24 @@ def cached_clean_rr_intervals(rr_data_tuple, config_dict, is_vns_data: bool = Fa
             sudden_change_pct=config_dict["sudden_change_pct"]
         )
         cleaned, stats = clean_rr_intervals(rr_intervals, config)
+        
+        # HRV Logger has packet timestamps (~1/sec) where multiple beats share same timestamp.
+        # For accurate plotting, synthesize beat-level timestamps using elapsed_ms (cumulative RR).
+        # This gives each beat a unique x-position based on actual beat timing.
+        if cleaned and cleaned[0].timestamp:
+            from datetime import timedelta
+            base_ts = cleaned[0].timestamp
+            # Use elapsed_ms to create unique timestamps for each beat
+            result = []
+            for rr in cleaned:
+                if rr.elapsed_ms is not None:
+                    # Synthesize timestamp from base + elapsed time
+                    synth_ts = base_ts + timedelta(milliseconds=rr.elapsed_ms)
+                    result.append((synth_ts, rr.rr_ms))
+                elif rr.timestamp:
+                    # Fallback to original timestamp if no elapsed data
+                    result.append((rr.timestamp, rr.rr_ms))
+            return result, stats, {}
         return [(rr.timestamp, rr.rr_ms) for rr in cleaned if rr.timestamp], stats, {}
 
 
@@ -3569,6 +3587,10 @@ def render_rr_plot_fragment(participant_id: str):
         gap_result = cached_gap_detection(tuple(timestamps_list), tuple(rr_list), gap_threshold)
     st.session_state[f"gaps_{participant_id}"] = gap_result
 
+    # Get manual artifacts (always available, even if show_artifacts is False)
+    manual_artifact_key = f"manual_artifacts_{participant_id}"
+    manual_artifacts = st.session_state.get(manual_artifact_key, [])
+
     # Artifact detection (threshold or Kubios method)
     if show_artifacts:
         artifact_result = cached_artifact_detection(
@@ -3606,11 +3628,21 @@ def render_rr_plot_fragment(participant_id: str):
                     hovertemplate='Time: %{x}<br>RR: %{y} ms (ARTIFACT)<extra></extra>'
                 ))
 
-            # Show corrected preview (interpolated NN intervals)
-            if show_corrected and artifact_result["artifact_indices"]:
+            # Collect manual artifact indices that are valid for current plot data (manual_artifacts already defined above)
+            manual_artifact_indices = []
+            for art in manual_artifacts:
+                plot_idx = art.get('plot_idx', -1)
+                if 0 <= plot_idx < len(rr_list):
+                    manual_artifact_indices.append(plot_idx)
+            
+            # Merge algorithm and manual artifact indices (remove duplicates)
+            all_artifact_indices = sorted(set(artifact_result["artifact_indices"] + manual_artifact_indices))
+            
+            # Show corrected preview (interpolated NN intervals) - includes both algorithm and manual artifacts
+            if show_corrected and all_artifact_indices:
                 correction_result = cached_artifact_correction(
                     tuple(rr_list), tuple(timestamps_list),
-                    tuple(artifact_result["artifact_indices"])
+                    tuple(all_artifact_indices)
                 )
                 if correction_result["n_corrected"] > 0:
                     fig.add_trace(ScatterType(
@@ -3622,11 +3654,16 @@ def render_rr_plot_fragment(participant_id: str):
                         opacity=0.7,
                         hovertemplate='Time: %{x}<br>NN: %{y:.0f} ms<extra></extra>'
                     ))
-                    st.success(f"Correction preview: {correction_result['n_corrected']} beats interpolated")
+                    algo_count = len(artifact_result["artifact_indices"])
+                    manual_count = len(manual_artifact_indices)
+                    if manual_count > 0 and algo_count > 0:
+                        st.success(f"Correction preview: {correction_result['n_corrected']} beats interpolated ({algo_count} algorithm + {manual_count} manual)")
+                    elif manual_count > 0:
+                        st.success(f"Correction preview: {correction_result['n_corrected']} beats interpolated ({manual_count} manual)")
+                    else:
+                        st.success(f"Correction preview: {correction_result['n_corrected']} beats interpolated")
 
     # Display manual artifacts (purple diamond markers)
-    manual_artifact_key = f"manual_artifacts_{participant_id}"
-    manual_artifacts = st.session_state.get(manual_artifact_key, [])
     if manual_artifacts:
         # Get timestamps and RR values for manual artifacts
         manual_ts = []
@@ -3877,17 +3914,19 @@ def render_rr_plot_fragment(participant_id: str):
                 line=dict(width=0)
             )
 
-    # Check if in click-two-points exclusion mode
+    # Check current interaction mode (needed for conditional display below)
+    plot_mode_key = f"plot_mode_{participant_id}"
+    current_interaction_mode = st.session_state.get(plot_mode_key, "Add Events")
+
+    # Check if in click-two-points exclusion mode (must also be in Add Exclusions mode)
     exclusion_method_key = f"exclusion_method_{participant_id}"
     is_exclusion_click_mode_check = (
+        current_interaction_mode == "Add Exclusions" and
         exclusion_method_key in st.session_state and
         st.session_state[exclusion_method_key] == "Click two points on plot"
     )
 
     # Display interactive plot with click detection
-    # Check current interaction mode
-    plot_mode_key = f"plot_mode_{participant_id}"
-    current_interaction_mode = st.session_state.get(plot_mode_key, "Add Events")
 
     col_mode_info, col_refresh = st.columns([5, 1])
     with col_mode_info:
@@ -3967,6 +4006,10 @@ def render_rr_plot_fragment(participant_id: str):
 
             # Handle Signal Inspection mode - manual artifact marking
             if current_mode == "Signal Inspection":
+                # Only process if this is a NEW click (avoid infinite loop on rerun)
+                if not is_new_click:
+                    return
+
                 # Find nearest beat index to clicked timestamp
                 timestamps = plot_data['timestamps']
                 rr_values = plot_data['rr_values']
@@ -3988,6 +4031,9 @@ def render_rr_plot_fragment(participant_id: str):
                 if time_diffs[nearest_idx] > 2.0:
                     st.info(f"Click closer to a beat to mark it. Nearest beat is {time_diffs[nearest_idx]:.1f}s away.")
                     return
+
+                # Store this click as processed BEFORE modifying state
+                st.session_state[last_click_key] = clicked_time_str
 
                 # Toggle manual artifact marking
                 manual_artifact_key = f"manual_artifacts_{participant_id}"
@@ -4763,11 +4809,6 @@ def main():
                                 label_visibility="collapsed"
                             )
                         with col_mode2:
-                            if interaction_mode != "Add Exclusions":
-                                # Clear exclusion method when not in exclusion mode
-                                if f"exclusion_method_{selected_participant}" in st.session_state:
-                                    del st.session_state[f"exclusion_method_{selected_participant}"]
-
                             # Auto-maximize resolution for Signal Inspection mode
                             if interaction_mode == "Signal Inspection":
                                 st.caption("High resolution for beat-level inspection")
@@ -5297,6 +5338,67 @@ def main():
                         else:
                             st.info("Click on beats in the plot to mark them as artifacts")
 
+                        # Save corrected data section
+                        st.markdown("---")
+                        st.markdown("##### Export Corrected Data")
+                        
+                        # Get current plot data and artifact info
+                        plot_data_export = st.session_state.get(f"plot_data_{selected_participant}", {})
+                        artifact_result_export = st.session_state.get(f"artifacts_{selected_participant}", {})
+                        
+                        if plot_data_export and 'timestamps' in plot_data_export:
+                            ts_export = plot_data_export['timestamps']
+                            rr_export = plot_data_export['rr_values']
+                            
+                            # Collect all artifact indices (algorithm + manual)
+                            algo_indices = set(artifact_result_export.get('artifact_indices', []))
+                            manual_indices = set(art.get('plot_idx', -1) for art in manual_artifacts)
+                            all_artifact_idx = algo_indices | manual_indices
+                            
+                            # Generate corrected RR values if there are artifacts
+                            if all_artifact_idx:
+                                correction_export = cached_artifact_correction(
+                                    tuple(rr_export), tuple(ts_export),
+                                    tuple(sorted(all_artifact_idx))
+                                )
+                                corrected_rr = correction_export.get('corrected_rr', rr_export)
+                            else:
+                                corrected_rr = rr_export
+                            
+                            # Create DataFrame for export
+                            import io
+                            export_data = []
+                            for i, (ts, rr_orig, rr_corr) in enumerate(zip(ts_export, rr_export, corrected_rr)):
+                                ts_str = ts.strftime('%Y-%m-%d %H:%M:%S.%f') if hasattr(ts, 'strftime') else str(ts)
+                                is_artifact = i in all_artifact_idx
+                                export_data.append({
+                                    'timestamp': ts_str,
+                                    'rr_ms': rr_orig,
+                                    'nn_ms': round(rr_corr, 1),
+                                    'is_artifact': is_artifact,
+                                    'artifact_source': 'algorithm' if i in algo_indices else ('manual' if i in manual_indices else '')
+                                })
+                            
+                            df_export = pd.DataFrame(export_data)
+                            csv_buffer = io.StringIO()
+                            df_export.to_csv(csv_buffer, index=False)
+                            csv_data = csv_buffer.getvalue()
+                            
+                            col_exp1, col_exp2 = st.columns([2, 1])
+                            with col_exp1:
+                                st.caption(f"{len(ts_export)} beats | {len(all_artifact_idx)} artifacts corrected")
+                            with col_exp2:
+                                st.download_button(
+                                    "Download CSV",
+                                    data=csv_data,
+                                    file_name=f"{selected_participant}_corrected.csv",
+                                    mime="text/csv",
+                                    key=f"download_corrected_{selected_participant}",
+                                    type="primary"
+                                )
+                        else:
+                            st.caption("Load participant data to enable export")
+
                         # Instructions
                         st.markdown("---")
                         st.markdown("##### Tips")
@@ -5757,8 +5859,8 @@ def main():
                         4. Restarts cycle after the pause
                         """)
 
-                # ================== EVENTS MANAGEMENT (only in events mode) ==================
-                if interaction_mode != "Add Exclusions":
+                # ================== EVENTS MANAGEMENT (only in Add Events mode) ==================
+                if interaction_mode == "Add Events":
                     st.markdown("---")
 
                     # Events table with reordering and inline editing
