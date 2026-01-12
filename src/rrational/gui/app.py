@@ -134,10 +134,13 @@ def get_plot_colors():
     }
 
 
-# Page configuration
+# Page configuration - load favicon
+_favicon_path = Path(__file__).parent / "assets" / "favicon.svg"
+_favicon = _favicon_path.read_text() if _favicon_path.exists() else "R"
+
 st.set_page_config(
     page_title="RRational" + (" [TEST MODE]" if TEST_MODE else ""),
-    page_icon="M" if TEST_MODE else "M",
+    page_icon=_favicon,
     layout="wide",
 )
 

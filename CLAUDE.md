@@ -99,6 +99,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 - [ ] Setup section rework (better saving, design improvements)
 - [ ] Project management / data browsing (R-style projects, data can be anywhere)
 - [ ] Kubios workflow comparison research (ensure quality parity with Kubios)
+- [ ] Evaluate hrv-analysis library for preprocessing (multiple ectopic methods, cleaner RR→NN pipeline)
 - [ ] R-R power spectrum plot
 - [ ] Generalized event system (music events with single border, extensible for other event types)
 - [ ] Speed/loading improvements
@@ -107,6 +108,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 - [ ] Report generation (PDF/HTML, scientific quality for methods sections)
 
 **Low Priority:**
+- [ ] Add nice banner at top (RR-plot style)
 - [ ] Keyboard shortcuts for faster workflow
 - [ ] Standalone app (no Python required) - PyInstaller/Nuitka
 - [ ] Tutorial videos
@@ -116,6 +118,7 @@ uv run ruff check src/ tests/ --fix            # Lint
   - Workaround: Resolution slider (1k-20k points), auto-shows all for <10k datasets
 
 **Done:**
+- [x] ~~Favicon (Poincaré plot style)~~ (v0.7.0)
 - [x] ~~Project renamed to RRational~~ (v0.7.0)
 - [x] ~~Smart power formatting (no more "0 ms²")~~ (v0.7.0)
 - [x] ~~Light/dark theme switching~~ (v0.6.8)
