@@ -1984,53 +1984,81 @@ def cached_quality_analysis(rr_values_tuple, timestamps_tuple):
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def cached_artifact_detection(rr_values_tuple, timestamps_tuple):
-    """Cache NeuroKit2 artifact detection results with indices.
+def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "threshold",
+                               threshold_pct: float = 0.20):
+    """Cache artifact detection results with indices.
+
+    Args:
+        rr_values_tuple: Tuple of RR interval values in ms
+        timestamps_tuple: Tuple of corresponding timestamps
+        method: Detection method - "threshold" (simple, good for long recordings)
+                or "kubios" (NeuroKit2 Kubios algorithm)
+        threshold_pct: For threshold method - max allowed change between beats (0.20 = 20%)
 
     Returns dict with artifact indices mapped to timestamps for plotting.
     """
-    if not NEUROKIT_AVAILABLE:
-        return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
-                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {}}
-
     rr_list = list(rr_values_tuple)
     timestamps_list = list(timestamps_tuple)
 
     if len(rr_list) < 10:
         return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
-                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {}}
+                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
+                "method": method}
 
     try:
         import numpy as np
-        nk = get_neurokit()
 
-        rr_array = np.array(rr_list, dtype=float)
-        peak_indices = np.cumsum(rr_array).astype(int)
-        peak_indices = np.insert(peak_indices, 0, 0)
+        if method == "threshold":
+            # Simple threshold-based detection (Malik method)
+            # Good for long recordings - detects beats that change > threshold_pct from previous
+            rr_array = np.array(rr_list, dtype=float)
+            artifact_indices = []
 
-        info, _ = nk.signal_fixpeaks(
-            peak_indices,
-            sampling_rate=1000,
-            iterative=True,
-            method="Kubios",
-            show=False,
-        )
+            for i in range(1, len(rr_array)):
+                # Check ratio to previous beat
+                ratio = rr_array[i] / rr_array[i-1]
+                if ratio < (1 - threshold_pct) or ratio > (1 + threshold_pct):
+                    artifact_indices.append(i)
 
-        # Collect all artifact indices
-        artifact_indices = set()
-        by_type = {}
+            by_type = {"threshold": len(artifact_indices)}
 
-        for artifact_type in ["ectopic", "missed", "extra", "longshort"]:
-            indices = info.get(artifact_type, [])
-            if isinstance(indices, np.ndarray):
-                indices = indices.tolist()
-            elif not isinstance(indices, list):
-                indices = []
-            by_type[artifact_type] = len(indices)
-            artifact_indices.update(indices)
+        else:  # kubios method
+            if not NEUROKIT_AVAILABLE:
+                return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
+                        "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
+                        "method": method}
+
+            nk = get_neurokit()
+            rr_array = np.array(rr_list, dtype=float)
+            peak_indices = np.cumsum(rr_array).astype(int)
+            peak_indices = np.insert(peak_indices, 0, 0)
+
+            # Use higher alpha for less sensitivity (better for long recordings)
+            info, _ = nk.signal_fixpeaks(
+                peak_indices,
+                sampling_rate=1000,
+                iterative=True,
+                method="Kubios",
+                show=False,
+            )
+
+            # Collect all artifact indices
+            artifact_indices_set = set()
+            by_type = {}
+
+            for artifact_type in ["ectopic", "missed", "extra", "longshort"]:
+                indices = info.get(artifact_type, [])
+                if isinstance(indices, np.ndarray):
+                    indices = indices.tolist()
+                elif not isinstance(indices, list):
+                    indices = []
+                by_type[artifact_type] = len(indices)
+                artifact_indices_set.update(indices)
+
+            artifact_indices = sorted(artifact_indices_set)
 
         # Filter to valid range and get timestamps/values
-        valid_indices = sorted([i for i in artifact_indices if 0 <= i < len(timestamps_list)])
+        valid_indices = [i for i in artifact_indices if 0 <= i < len(timestamps_list)]
         artifact_timestamps = [timestamps_list[i] for i in valid_indices]
         artifact_rr = [rr_list[i] for i in valid_indices]
 
@@ -2041,10 +2069,69 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple):
             "total_artifacts": len(valid_indices),
             "artifact_ratio": len(valid_indices) / len(rr_list) if rr_list else 0.0,
             "by_type": by_type,
+            "method": method,
         }
     except Exception:
         return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
-                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {}}
+                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
+                "method": method}
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def cached_artifact_correction(rr_values_tuple, timestamps_tuple, artifact_indices_tuple):
+    """Generate corrected NN intervals by interpolating artifacts.
+
+    Uses cubic interpolation to replace artifact values with estimated values
+    based on surrounding valid intervals. This gives a preview of what the
+    cleaned data would look like.
+    """
+    import numpy as np
+    from scipy.interpolate import interp1d
+
+    rr_list = list(rr_values_tuple)
+    timestamps_list = list(timestamps_tuple)
+    artifact_indices = set(artifact_indices_tuple)
+
+    if not artifact_indices or len(rr_list) < 4:
+        return {
+            "corrected_rr": rr_list,
+            "corrected_timestamps": timestamps_list,
+            "n_corrected": 0,
+        }
+
+    try:
+        rr_array = np.array(rr_list, dtype=float)
+
+        # Create mask for valid (non-artifact) indices
+        valid_mask = np.array([i not in artifact_indices for i in range(len(rr_array))])
+        valid_indices = np.where(valid_mask)[0]
+        valid_rr = rr_array[valid_mask]
+
+        if len(valid_indices) < 4:
+            return {
+                "corrected_rr": rr_list,
+                "corrected_timestamps": timestamps_list,
+                "n_corrected": 0,
+            }
+
+        # Cubic interpolation for smoother correction
+        f = interp1d(valid_indices, valid_rr, kind='cubic', fill_value='extrapolate')
+        corrected_rr = f(np.arange(len(rr_array)))
+
+        # Keep original values for non-artifacts (only interpolate artifacts)
+        corrected_rr[valid_mask] = rr_array[valid_mask]
+
+        return {
+            "corrected_rr": corrected_rr.tolist(),
+            "corrected_timestamps": timestamps_list,
+            "n_corrected": len(artifact_indices),
+        }
+    except Exception:
+        return {
+            "corrected_rr": rr_list,
+            "corrected_timestamps": timestamps_list,
+            "n_corrected": 0,
+        }
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -3196,9 +3283,34 @@ def render_rr_plot_fragment(participant_id: str):
         show_music_events = st.checkbox("Show music events", value=plot_defaults.get("show_music_events", False),
                                         key=f"frag_show_music_evt_{participant_id}")
     with col_opt3:
-        show_artifacts = st.checkbox("Show artifacts (NeuroKit2)", value=plot_defaults.get("show_artifacts", False),
+        show_artifacts = st.checkbox("Show artifacts", value=plot_defaults.get("show_artifacts", True),
                                      key=f"frag_show_artifacts_{participant_id}",
-                                     help="Detect ectopic, missed, extra beats using Kubios algorithm")
+                                     help="Detect artifacts using selected method")
+        # Artifact detection settings (only when enabled)
+        if show_artifacts:
+            artifact_method = st.selectbox(
+                "Method",
+                options=["threshold", "kubios"],
+                index=0,  # Default to threshold (better for long recordings)
+                key=f"frag_artifact_method_{participant_id}",
+                help="Threshold: simple ratio check (better for long recordings). Kubios: NeuroKit2 algorithm."
+            )
+            if artifact_method == "threshold":
+                artifact_threshold = st.slider(
+                    "Threshold %",
+                    min_value=10, max_value=50, value=20, step=5,
+                    key=f"frag_artifact_thresh_{participant_id}",
+                    help="Max allowed RR change between beats (20% = Malik method)"
+                ) / 100.0
+            else:
+                artifact_threshold = 0.20  # Not used for kubios
+        else:
+            artifact_method = "threshold"
+            artifact_threshold = 0.20
+        show_corrected = st.checkbox("Show corrected (NN)", value=plot_defaults.get("show_corrected", False),
+                                     key=f"frag_show_corrected_{participant_id}",
+                                     disabled=not show_artifacts,
+                                     help="Preview corrected NN intervals (artifacts interpolated)")
         show_variability = st.checkbox("Show variability segments", value=plot_defaults.get("show_variability", False),
                                        key=f"frag_show_var_{participant_id}",
                                        help="Detect variance changepoints")
@@ -3374,21 +3486,30 @@ def render_rr_plot_fragment(participant_id: str):
         gap_result = cached_gap_detection(tuple(timestamps_list), tuple(rr_list), gap_threshold)
     st.session_state[f"gaps_{participant_id}"] = gap_result
 
-    # Variability analysis (slow - only if enabled)
-    # Artifact detection using NeuroKit2 (Kubios algorithm)
+    # Artifact detection (threshold or Kubios method)
     if show_artifacts:
-        artifact_result = cached_artifact_detection(tuple(rr_list), tuple(timestamps_list))
+        artifact_result = cached_artifact_detection(
+            tuple(rr_list), tuple(timestamps_list),
+            method=artifact_method, threshold_pct=artifact_threshold
+        )
         st.session_state[f"artifacts_{participant_id}"] = artifact_result
 
         if artifact_result and artifact_result["total_artifacts"] > 0:
-            # Show artifact summary
+            # Show artifact summary based on method
             by_type = artifact_result["by_type"]
-            st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
-                   f"({artifact_result['artifact_ratio']*100:.1f}%) - "
-                   f"Ectopic: {by_type.get('ectopic', 0)}, "
-                   f"Missed: {by_type.get('missed', 0)}, "
-                   f"Extra: {by_type.get('extra', 0)}, "
-                   f"Long/Short: {by_type.get('longshort', 0)}")
+            method_used = artifact_result.get("method", "threshold")
+
+            if method_used == "threshold":
+                st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
+                       f"({artifact_result['artifact_ratio']*100:.1f}%) - "
+                       f"Method: Threshold ({artifact_threshold*100:.0f}%)")
+            else:
+                st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
+                       f"({artifact_result['artifact_ratio']*100:.1f}%) - "
+                       f"Ectopic: {by_type.get('ectopic', 0)}, "
+                       f"Missed: {by_type.get('missed', 0)}, "
+                       f"Extra: {by_type.get('extra', 0)}, "
+                       f"Long/Short: {by_type.get('longshort', 0)}")
 
             # Add artifact markers to plot (orange X markers)
             if artifact_result["artifact_timestamps"]:
@@ -3396,10 +3517,28 @@ def render_rr_plot_fragment(participant_id: str):
                     x=artifact_result["artifact_timestamps"],
                     y=artifact_result["artifact_rr"],
                     mode='markers',
-                    name='Artifacts (NeuroKit2)',
+                    name=f'Artifacts ({method_used})',
                     marker=dict(size=8, color='orange', symbol='x', line=dict(width=2)),
                     hovertemplate='Time: %{x}<br>RR: %{y} ms (ARTIFACT)<extra></extra>'
                 ))
+
+            # Show corrected preview (interpolated NN intervals)
+            if show_corrected and artifact_result["artifact_indices"]:
+                correction_result = cached_artifact_correction(
+                    tuple(rr_list), tuple(timestamps_list),
+                    tuple(artifact_result["artifact_indices"])
+                )
+                if correction_result["n_corrected"] > 0:
+                    fig.add_trace(ScatterType(
+                        x=timestamps_list,
+                        y=correction_result["corrected_rr"],
+                        mode='lines',
+                        name='Corrected (NN)',
+                        line=dict(width=2, color='green', dash='dot'),
+                        opacity=0.7,
+                        hovertemplate='Time: %{x}<br>NN: %{y:.0f} ms<extra></extra>'
+                    ))
+                    st.success(f"Correction preview: {correction_result['n_corrected']} beats interpolated")
 
     if show_variability:
         changepoint_result = cached_quality_analysis(tuple(rr_list), tuple(timestamps_list))
