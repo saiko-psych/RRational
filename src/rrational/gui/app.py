@@ -3320,6 +3320,33 @@ def render_rr_plot_fragment(participant_id: str):
         source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
     is_vns_data = (source_app == "VNS Analyse")
 
+    # Check interaction mode for timestamp transformation
+    plot_mode_key = f"plot_mode_{participant_id}"
+    current_mode = st.session_state.get(plot_mode_key, "Add Events")
+    use_sequential_timestamps = (current_mode == "Signal Inspection" and not is_vns_data)
+
+    # Store original timestamps for event alignment and click handling
+    original_timestamps = plot_data['timestamps']
+
+    # For Signal Inspection mode with HRV Logger data, transform to sequential timestamps
+    # This ensures each beat has a unique x-position for clicking
+    if use_sequential_timestamps:
+        from datetime import timedelta
+        rr_values = plot_data['rr_values']
+        if original_timestamps and len(original_timestamps) > 0:
+            base_ts = original_timestamps[0]
+            cumulative_ms = 0
+            sequential_timestamps = []
+            for i, rr in enumerate(rr_values):
+                # Each beat's timestamp = base + cumulative RR time
+                seq_ts = base_ts + timedelta(milliseconds=cumulative_ms)
+                sequential_timestamps.append(seq_ts)
+                cumulative_ms += rr
+            # Replace timestamps in plot_data for this render
+            plot_data = dict(plot_data)  # Make a copy
+            plot_data['timestamps'] = sequential_timestamps
+            plot_data['original_timestamps'] = original_timestamps  # Keep for click mapping
+
     # Show source info and clear any old gap data for VNS
     if is_vns_data:
         st.info(f"**Data source: {source_app}** - Gap detection disabled (timestamps synthesized from RR intervals)")
@@ -3486,14 +3513,28 @@ def render_rr_plot_fragment(participant_id: str):
 
     # Check if Signal Inspection section filter is active
     inspection_range = st.session_state.get(f"inspection_section_range_{participant_id}")
-    xaxis_config = dict(
-        title=dict(text="Time", font=dict(color=theme['text'])),
-        tickformat='%H:%M:%S',
-        gridcolor=theme['grid'],
-        linecolor=theme['line'],
-        tickfont=dict(color=theme['text']),
-        uirevision=True,  # Preserve x-axis zoom
-    )
+
+    # Configure x-axis based on mode
+    if use_sequential_timestamps:
+        # Signal Inspection mode: x-axis shows sequential beat time (each beat unique position)
+        xaxis_config = dict(
+            title=dict(text="Sequential Beat Time (gaps removed)", font=dict(color=theme['text'])),
+            tickformat='%H:%M:%S',
+            gridcolor=theme['grid'],
+            linecolor=theme['line'],
+            tickfont=dict(color=theme['text']),
+            uirevision=True,
+        )
+    else:
+        # Normal mode: x-axis shows real clock time (aligned with events)
+        xaxis_config = dict(
+            title=dict(text="Time", font=dict(color=theme['text'])),
+            tickformat='%H:%M:%S',
+            gridcolor=theme['grid'],
+            linecolor=theme['line'],
+            tickfont=dict(color=theme['text']),
+            uirevision=True,  # Preserve x-axis zoom
+        )
     # If a section is selected in Signal Inspection mode, zoom to that range
     if inspection_range and len(inspection_range) == 2:
         start_time, end_time = inspection_range
@@ -3560,15 +3601,15 @@ def render_rr_plot_fragment(participant_id: str):
                     font=dict(color=color, size=10)
                 )
 
-    # Gap detection (CACHED) - skip for VNS data (synthesized timestamps)
+    # Gap detection (CACHED) - skip for VNS data and Signal Inspection mode (synthesized timestamps)
     timestamps_list = plot_data['timestamps']
     rr_list = plot_data['rr_values']
-    if is_vns_data:
-        # VNS timestamps are synthesized from RR intervals, so gaps are meaningless
-        gap_result = {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": True}
+    if is_vns_data or use_sequential_timestamps:
+        # VNS timestamps and Signal Inspection mode use synthesized timestamps, gaps are meaningless
+        gap_result = {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": is_vns_data}
     else:
-        # Use cached version to avoid recalculation on every threshold change
-        gap_result = cached_gap_detection(tuple(timestamps_list), tuple(rr_list), gap_threshold)
+        # Use cached version with ORIGINAL timestamps to avoid recalculation
+        gap_result = cached_gap_detection(tuple(original_timestamps), tuple(rr_list), gap_threshold)
     st.session_state[f"gaps_{participant_id}"] = gap_result
 
     # Get manual artifacts (always available, even if show_artifacts is False)
@@ -3694,10 +3735,10 @@ def render_rr_plot_fragment(participant_id: str):
                         fillcolor=fill_color, line=dict(width=0), layer="below"
                     )
 
-    # Visualize gaps (skip for VNS data - timestamps are synthesized)
+    # Visualize gaps (skip for VNS data and Signal Inspection mode - timestamps are synthesized)
     # PERFORMANCE: Limit gaps shown to prevent plot slowdown
     MAX_GAPS_SHOWN = 50
-    if show_gaps and gap_result.get("gaps") and not is_vns_data:
+    if show_gaps and gap_result.get("gaps") and not is_vns_data and not use_sequential_timestamps:
         gaps_to_show = gap_result["gaps"]
         total_gaps = len(gaps_to_show)
         if total_gaps > MAX_GAPS_SHOWN:
