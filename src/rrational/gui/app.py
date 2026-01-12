@@ -1964,24 +1964,8 @@ def cached_clean_rr_intervals(rr_data_tuple, config_dict, is_vns_data: bool = Fa
             sudden_change_pct=config_dict["sudden_change_pct"]
         )
         cleaned, stats = clean_rr_intervals(rr_intervals, config)
-        
-        # HRV Logger has packet timestamps (~1/sec) where multiple beats share same timestamp.
-        # For accurate plotting, synthesize beat-level timestamps using elapsed_ms (cumulative RR).
-        # This gives each beat a unique x-position based on actual beat timing.
-        if cleaned and cleaned[0].timestamp:
-            from datetime import timedelta
-            base_ts = cleaned[0].timestamp
-            # Use elapsed_ms to create unique timestamps for each beat
-            result = []
-            for rr in cleaned:
-                if rr.elapsed_ms is not None:
-                    # Synthesize timestamp from base + elapsed time
-                    synth_ts = base_ts + timedelta(milliseconds=rr.elapsed_ms)
-                    result.append((synth_ts, rr.rr_ms))
-                elif rr.timestamp:
-                    # Fallback to original timestamp if no elapsed data
-                    result.append((rr.timestamp, rr.rr_ms))
-            return result, stats, {}
+        # HRV Logger: use original packet timestamps (align with events, ~1/sec resolution)
+        # Multiple beats can share same timestamp - this is correct for plotting
         return [(rr.timestamp, rr.rr_ms) for rr in cleaned if rr.timestamp], stats, {}
 
 
