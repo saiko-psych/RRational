@@ -2428,6 +2428,9 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
     # Sequential time = cumulative RR time, removes gaps
     sequential_timestamps = []
     detected_gaps = []  # Gaps detected from real timestamps
+    gap_adjacent_indices = set()  # Beats immediately after gaps (segment boundaries)
+    total_gap_time_ms = 0  # Total gap time for validation
+    
     if timestamps and rr_values:
         base_ts = timestamps[0]
         cumulative_ms = 0
@@ -2446,6 +2449,9 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
                         'seq_ts': seq_ts,
                         'real_gap_sec': real_delta_ms / 1000
                     })
+                    # Mark this beat as gap-adjacent (segment boundary)
+                    gap_adjacent_indices.add(i)
+                    total_gap_time_ms += real_delta_ms - rr  # Gap time = real delta - RR
             
             cumulative_ms += rr
 
@@ -2458,8 +2464,10 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
         sequential_timestamps = sequential_timestamps[::step]
         if flags:
             flags = flags[::step]
-        # Downsample gap indices to match
+        # Downsample gap indices to match (convert to new indices)
         detected_gaps = [g for g in detected_gaps if g['beat_idx'] % step == 0]
+        # Convert gap-adjacent indices to downsampled indices
+        gap_adjacent_indices = {i // step for i in gap_adjacent_indices if i % step == 0}
 
     y_min = min(rr_values)
     y_max = max(rr_values)
@@ -2476,6 +2484,9 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
         'n_displayed': len(timestamps),
         'participant_id': participant_id,
         'detected_gaps': detected_gaps,  # Gaps for Signal Inspection mode
+        'gap_adjacent_indices': gap_adjacent_indices,  # Beats after gaps (segment boundaries)
+        'total_gap_time_ms': total_gap_time_ms,  # For section validation
+        'total_rr_time_ms': cumulative_ms if timestamps else 0,  # Sum of all RR intervals
     }
     if flags:
         result['flags'] = flags
@@ -3438,11 +3449,27 @@ def render_rr_plot_fragment(participant_id: str):
             show_corrected = st.checkbox("Show corrected (NN)", value=plot_defaults.get("show_corrected", False),
                                          key=f"frag_show_corrected_{participant_id}",
                                          help="Preview corrected NN intervals (artifacts interpolated)")
+            # Gap-adjacent beat handling (only for HRV Logger data with gaps)
+            gap_handling_options = {
+                "include": "Include in artifacts (default)",
+                "exclude": "Exclude gap-adjacent beats",
+                "boundary": "Treat as segment boundaries",
+            }
+            gap_handling = st.selectbox(
+                "Gap-adjacent beats",
+                options=list(gap_handling_options.keys()),
+                format_func=lambda x: gap_handling_options[x],
+                index=0,
+                key=f"frag_gap_handling_{participant_id}",
+                help="Beats immediately after signal gaps may show large RR changes. Choose how to handle them: Include (count as artifacts), Exclude (ignore them), or Boundary (create segment breaks).",
+                disabled=is_vns_data,
+            )
         else:
             artifact_method = "threshold"
             artifact_threshold = 0.20
             segment_beats = 300  # Default
             show_corrected = False  # Not available without artifacts
+            gap_handling = "include"  # Default
         show_variability = st.checkbox("Show variability segments", value=plot_defaults.get("show_variability", False),
                                        key=f"frag_show_var_{participant_id}",
                                        help="Detect variance changepoints")
@@ -3671,6 +3698,45 @@ def render_rr_plot_fragment(participant_id: str):
             method=artifact_method, threshold_pct=artifact_threshold,
             segment_beats=segment_beats
         )
+
+        # Get gap-adjacent indices from plot_data (beats immediately after gaps)
+        gap_adjacent_indices = plot_data.get('gap_adjacent_indices', set())
+
+        # Filter out gap-adjacent beats based on gap_handling setting
+        original_artifact_indices = artifact_result.get("artifact_indices", [])
+        gap_adjacent_excluded = []  # Track how many were excluded
+        segment_boundaries = []  # Track segment boundaries
+
+        if gap_handling == "exclude" and gap_adjacent_indices:
+            # Remove gap-adjacent beats from artifact detection
+            filtered_indices = [i for i in original_artifact_indices if i not in gap_adjacent_indices]
+            gap_adjacent_excluded = [i for i in original_artifact_indices if i in gap_adjacent_indices]
+
+            # Update artifact_result with filtered data
+            artifact_result = dict(artifact_result)  # Make a copy
+            artifact_result["artifact_indices"] = filtered_indices
+            artifact_result["artifact_timestamps"] = [timestamps_list[i] for i in filtered_indices if 0 <= i < len(timestamps_list)]
+            artifact_result["artifact_rr"] = [rr_list[i] for i in filtered_indices if 0 <= i < len(rr_list)]
+            artifact_result["total_artifacts"] = len(filtered_indices)
+            artifact_result["artifact_ratio"] = len(filtered_indices) / len(rr_list) if rr_list else 0.0
+            artifact_result["gap_adjacent_excluded"] = len(gap_adjacent_excluded)
+
+        elif gap_handling == "boundary" and gap_adjacent_indices:
+            # Remove gap-adjacent beats from artifact detection AND mark as segment boundaries
+            filtered_indices = [i for i in original_artifact_indices if i not in gap_adjacent_indices]
+            gap_adjacent_excluded = [i for i in original_artifact_indices if i in gap_adjacent_indices]
+            segment_boundaries = sorted(gap_adjacent_indices)
+
+            # Update artifact_result with filtered data
+            artifact_result = dict(artifact_result)  # Make a copy
+            artifact_result["artifact_indices"] = filtered_indices
+            artifact_result["artifact_timestamps"] = [timestamps_list[i] for i in filtered_indices if 0 <= i < len(timestamps_list)]
+            artifact_result["artifact_rr"] = [rr_list[i] for i in filtered_indices if 0 <= i < len(rr_list)]
+            artifact_result["total_artifacts"] = len(filtered_indices)
+            artifact_result["artifact_ratio"] = len(filtered_indices) / len(rr_list) if rr_list else 0.0
+            artifact_result["gap_adjacent_excluded"] = len(gap_adjacent_excluded)
+            artifact_result["segment_boundaries"] = segment_boundaries
+
         st.session_state[f"artifacts_{participant_id}"] = artifact_result
 
         if artifact_result and artifact_result["total_artifacts"] > 0:
@@ -3678,17 +3744,26 @@ def render_rr_plot_fragment(participant_id: str):
             by_type = artifact_result["by_type"]
             method_used = artifact_result.get("method", "threshold")
 
+            # Build summary message with gap handling info
+            gap_excluded_count = artifact_result.get("gap_adjacent_excluded", 0)
+            gap_suffix = ""
+            if gap_excluded_count > 0:
+                gap_suffix = f" | {gap_excluded_count} gap-adjacent excluded"
+            boundary_count = len(artifact_result.get("segment_boundaries", []))
+            if boundary_count > 0:
+                gap_suffix += f" | {boundary_count} segment boundaries"
+
             if method_used == "threshold":
                 st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
                        f"({artifact_result['artifact_ratio']*100:.1f}%) - "
-                       f"Method: Threshold ({artifact_threshold*100:.0f}%)")
+                       f"Method: Threshold ({artifact_threshold*100:.0f}%){gap_suffix}")
             else:
                 st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
                        f"({artifact_result['artifact_ratio']*100:.1f}%) - "
                        f"Ectopic: {by_type.get('ectopic', 0)}, "
                        f"Missed: {by_type.get('missed', 0)}, "
                        f"Extra: {by_type.get('extra', 0)}, "
-                       f"Long/Short: {by_type.get('longshort', 0)}")
+                       f"Long/Short: {by_type.get('longshort', 0)}{gap_suffix}")
 
             # Add artifact markers to plot (orange X markers)
             if artifact_result["artifact_timestamps"]:
@@ -3700,6 +3775,21 @@ def render_rr_plot_fragment(participant_id: str):
                     marker=dict(size=8, color='orange', symbol='x', line=dict(width=2)),
                     hovertemplate='Time: %{x}<br>RR: %{y} ms (ARTIFACT)<extra></extra>'
                 ))
+
+            # Add segment boundary markers (cyan diamonds) when using boundary mode
+            segment_boundaries = artifact_result.get("segment_boundaries", [])
+            if segment_boundaries:
+                boundary_ts = [timestamps_list[i] for i in segment_boundaries if 0 <= i < len(timestamps_list)]
+                boundary_rr = [rr_list[i] for i in segment_boundaries if 0 <= i < len(rr_list)]
+                if boundary_ts:
+                    fig.add_trace(ScatterType(
+                        x=boundary_ts,
+                        y=boundary_rr,
+                        mode='markers',
+                        name=f'Segment Boundaries ({len(boundary_ts)})',
+                        marker=dict(size=10, color='cyan', symbol='diamond-open', line=dict(width=2)),
+                        hovertemplate='Time: %{x}<br>RR: %{y} ms (SEGMENT BOUNDARY)<extra></extra>'
+                    ))
 
             # Collect manual artifact indices that are valid for current plot data (manual_artifacts already defined above)
             manual_artifact_indices = []
@@ -6288,6 +6378,63 @@ def main():
                                 st.success(f"All {valid_count} section(s) valid")
                             elif valid_count == 0 and issue_count > 0:
                                 st.error(f"All {issue_count} section(s) have issues")
+
+                        # RR+Gap Duration Validation (HRV Logger only)
+                        # Compare event-based duration vs sum of RR intervals + gaps
+                        plot_data_key = f"plot_data_{selected_participant}"
+                        plot_data_for_validation = st.session_state.get(plot_data_key, {})
+
+                        # Check if this is HRV Logger data (has real timestamps)
+                        summary = get_summary_dict().get(selected_participant)
+                        is_vns_data = (getattr(summary, 'source_app', 'HRV Logger') == "VNS Analyse") if summary else False
+
+                        if not is_vns_data and plot_data_for_validation:
+                            st.markdown("---")
+                            st.markdown("**Data Integrity Check** (HRV Logger)")
+                            st.caption("Compares event-based duration with RR+gap duration from recorded data")
+
+                            total_rr_ms = plot_data_for_validation.get('total_rr_time_ms', 0)
+                            total_gap_ms = plot_data_for_validation.get('total_gap_time_ms', 0)
+                            n_gaps = len(plot_data_for_validation.get('detected_gaps', []))
+
+                            # Convert to minutes for display
+                            rr_duration_min = total_rr_ms / 1000 / 60
+                            gap_duration_min = total_gap_ms / 1000 / 60
+                            total_rr_gap_min = rr_duration_min + gap_duration_min
+
+                            # Get event-based duration (first to last event)
+                            if event_timestamps:
+                                all_ts = [ts for ts in event_timestamps.values() if ts]
+                                if len(all_ts) >= 2:
+                                    first_event = min(all_ts)
+                                    last_event = max(all_ts)
+                                    event_duration_sec = (last_event - first_event).total_seconds()
+                                    event_duration_min = event_duration_sec / 60
+
+                                    # Compare with RR+gap duration
+                                    diff_min = abs(event_duration_min - total_rr_gap_min)
+                                    diff_pct = (diff_min / event_duration_min * 100) if event_duration_min > 0 else 0
+
+                                    col_dur1, col_dur2, col_dur3 = st.columns(3)
+                                    with col_dur1:
+                                        st.metric("Event Duration", f"{event_duration_min:.1f} min", help="Time between first and last event")
+                                    with col_dur2:
+                                        st.metric("RR + Gap Duration", f"{total_rr_gap_min:.1f} min", help=f"Sum of all RR intervals ({rr_duration_min:.1f} min) + gaps ({gap_duration_min:.1f} min)")
+                                    with col_dur3:
+                                        delta_str = f"{diff_min:.1f} min ({diff_pct:.1f}%)"
+                                        if diff_pct < 5:
+                                            st.metric("Difference", delta_str, delta_color="off", help="Good data integrity")
+                                        elif diff_pct < 15:
+                                            st.metric("Difference", delta_str, delta_color="normal", help="Some data may be missing")
+                                        else:
+                                            st.metric("Difference", delta_str, delta_color="inverse", help="Significant data mismatch - check for missing data")
+
+                                    if n_gaps > 0:
+                                        st.caption(f"Detected {n_gaps} gap(s) totaling {gap_duration_min:.1f} min")
+                                else:
+                                    st.info("Need at least 2 events for duration comparison")
+                            else:
+                                st.info("No events to compare with RR duration")
 
                     st.markdown("---")
 
