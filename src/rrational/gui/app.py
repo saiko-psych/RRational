@@ -3330,6 +3330,10 @@ def render_rr_plot_fragment(participant_id: str):
 
     # For Signal Inspection mode with HRV Logger data, transform to sequential timestamps
     # This ensures each beat has a unique x-position for clicking
+    # Also build a mapping from real timestamps to sequential for event alignment
+    real_to_sequential_map = None  # Will be a list of (real_ts, seq_ts) tuples
+    detected_gaps_for_display = []  # Gaps detected from real timestamps for visualization
+
     if use_sequential_timestamps:
         from datetime import timedelta
         rr_values = plot_data['rr_values']
@@ -3337,11 +3341,30 @@ def render_rr_plot_fragment(participant_id: str):
             base_ts = original_timestamps[0]
             cumulative_ms = 0
             sequential_timestamps = []
+            real_to_sequential_map = []
+
+            # Gap detection threshold (same as normal gap detection: 2x expected RR)
+            gap_threshold_ms = 2000  # 2 seconds - typical gap threshold
+
             for i, rr in enumerate(rr_values):
                 # Each beat's timestamp = base + cumulative RR time
                 seq_ts = base_ts + timedelta(milliseconds=cumulative_ms)
                 sequential_timestamps.append(seq_ts)
+                real_to_sequential_map.append((original_timestamps[i], seq_ts))
+
+                # Detect gaps: if real time jump is much larger than RR interval
+                if i > 0:
+                    real_delta = (original_timestamps[i] - original_timestamps[i-1]).total_seconds() * 1000
+                    if real_delta > gap_threshold_ms:
+                        # Record gap at this sequential position
+                        detected_gaps_for_display.append({
+                            'seq_ts': seq_ts,
+                            'real_gap_sec': real_delta / 1000,
+                            'beat_idx': i
+                        })
+
                 cumulative_ms += rr
+
             # Replace timestamps in plot_data for this render
             plot_data = dict(plot_data)  # Make a copy
             plot_data['timestamps'] = sequential_timestamps
@@ -3587,16 +3610,33 @@ def render_rr_plot_fragment(participant_id: str):
                     event_by_canonical[canonical] = []
                 event_by_canonical[canonical].append(timestamp)
 
+        # Helper function to map real timestamp to sequential position
+        def map_to_sequential(real_ts, mapping):
+            """Find the closest beat in real time and return its sequential position."""
+            if not mapping:
+                return real_ts
+            # Binary search for closest match
+            best_idx = 0
+            best_diff = abs((mapping[0][0] - real_ts).total_seconds())
+            for i, (real, seq) in enumerate(mapping):
+                diff = abs((real - real_ts).total_seconds())
+                if diff < best_diff:
+                    best_diff = diff
+                    best_idx = i
+            return mapping[best_idx][1]
+
         for idx, (event_name, event_times) in enumerate(event_by_canonical.items()):
             color = distinct_colors[idx % len(distinct_colors)]
             for event_time in event_times:
+                # Map to sequential position if in Signal Inspection mode
+                display_time = map_to_sequential(event_time, real_to_sequential_map) if real_to_sequential_map else event_time
                 fig.add_shape(
-                    type="line", x0=event_time, x1=event_time,
+                    type="line", x0=display_time, x1=display_time,
                     y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
                     line=dict(color=color, width=2, dash='dash'), opacity=0.7
                 )
                 fig.add_annotation(
-                    x=event_time, y=y_max + 0.08 * y_range,
+                    x=display_time, y=y_max + 0.08 * y_range,
                     text=event_name, showarrow=False, textangle=-90,
                     font=dict(color=color, size=10)
                 )
@@ -3760,6 +3800,30 @@ def render_rr_plot_fragment(participant_id: str):
                 text=f"GAP: {gap['duration_s']:.1f}s",
                 showarrow=False, font=dict(color='red', size=9),
                 bgcolor='rgba(255,255,255,0.8)'
+            )
+
+    # In Signal Inspection mode, show gap markers at sequential positions
+    # These mark where signal loss occurred in the original recording
+    if use_sequential_timestamps and detected_gaps_for_display and show_gaps:
+        MAX_GAPS_SHOWN = 50
+        gaps_to_show = detected_gaps_for_display[:MAX_GAPS_SHOWN]
+        if len(detected_gaps_for_display) > MAX_GAPS_SHOWN:
+            st.caption(f"Showing {MAX_GAPS_SHOWN} of {len(detected_gaps_for_display)} signal loss markers")
+
+        for gap_info in gaps_to_show:
+            gap_ts = gap_info['seq_ts']
+            gap_duration = gap_info['real_gap_sec']
+            # Add a vertical line at the gap position (dashed gray)
+            fig.add_shape(
+                type="line", x0=gap_ts, x1=gap_ts,
+                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                line=dict(color='rgba(128, 128, 128, 0.8)', width=2, dash='dot'),
+            )
+            fig.add_annotation(
+                x=gap_ts, y=y_min - 0.1 * y_range,
+                text=f"GAP: {gap_duration:.1f}s",
+                showarrow=False, font=dict(color='gray', size=8),
+                bgcolor='rgba(255,255,255,0.7)'
             )
 
     # Music sections
