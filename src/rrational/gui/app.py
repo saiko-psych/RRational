@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import pandas as pd
 import streamlit as st
 from pathlib import Path
+import time
+import re
 
 from rrational.cleaning.rr import CleaningConfig
 from rrational.io import DEFAULT_ID_PATTERN, load_recording, discover_recordings
 from rrational.prep import load_hrv_logger_preview
 from rrational.segments.section_normalizer import SectionNormalizer
 from rrational.config.sections import SectionsConfig, SectionDefinition
-import time
-import re
 from rrational.gui.persistence import (
     save_groups,
     load_groups,
@@ -29,13 +28,54 @@ from rrational.gui.persistence import (
     save_settings,
     DEFAULT_SETTINGS,
 )
-from rrational.gui.tabs.setup import render_setup_tab
-from rrational.gui.tabs.data import render_data_tab
-from rrational.gui.tabs.analysis import render_analysis_tab
 from rrational.gui.help_text import (
     ARTIFACT_CORRECTION_HELP,
     VNS_DATA_HELP,
 )
+
+# Lazy imports for heavy modules (saves ~0.5s+ on startup)
+_pd = None
+_render_setup_tab = None
+_render_data_tab = None
+_render_analysis_tab = None
+
+
+def get_pandas():
+    """Lazily import pandas to speed up app startup."""
+    global _pd
+    if _pd is None:
+        import pandas as pd
+        _pd = pd
+    return _pd
+
+
+
+
+def _get_render_setup_tab():
+    """Lazily import setup tab."""
+    global _render_setup_tab
+    if _render_setup_tab is None:
+        from rrational.gui.tabs.setup import render_setup_tab
+        _render_setup_tab = render_setup_tab
+    return _render_setup_tab
+
+
+def _get_render_data_tab():
+    """Lazily import data tab."""
+    global _render_data_tab
+    if _render_data_tab is None:
+        from rrational.gui.tabs.data import render_data_tab
+        _render_data_tab = render_data_tab
+    return _render_data_tab
+
+
+def _get_render_analysis_tab():
+    """Lazily import analysis tab."""
+    global _render_analysis_tab
+    if _render_analysis_tab is None:
+        from rrational.gui.tabs.analysis import render_analysis_tab
+        _render_analysis_tab = render_analysis_tab
+    return _render_analysis_tab
 
 # Parse command line arguments (passed via: streamlit run app.py -- --test-mode)
 import sys
@@ -2612,7 +2652,7 @@ def render_participant_table_fragment():
     # Cache DataFrame creation (avoid rebuilding on every rerun)
     df_cache_key = f"df_{len(participants_data)}_{participants_data[0]['Participant'] if participants_data else ''}"
     if st.session_state.get("_df_participants_cache_key") != df_cache_key:
-        st.session_state._df_participants = pd.DataFrame(participants_data)
+        st.session_state._df_participants = get_pandas().DataFrame(participants_data)
         st.session_state._df_participants_cache_key = df_cache_key
     df_participants = st.session_state._df_participants
 
@@ -2752,7 +2792,7 @@ def render_participant_table_fragment():
 
         if uploaded_file is not None:
             try:
-                import_df = pd.read_csv(uploaded_file)
+                import_df = get_pandas().read_csv(uploaded_file)
                 columns = list(import_df.columns)
                 st.write(f"Found {len(import_df)} rows. Columns: {columns}")
 
@@ -2819,12 +2859,12 @@ def render_participant_table_fragment():
                             if pid in participant_ids:
                                 preview_data.append({
                                     "ID": pid,
-                                    "Group": str(row[group_col]) if use_group and pd.notna(row[group_col]) else "-",
-                                    "Randomization": str(row[rand_col]) if use_rand and pd.notna(row[rand_col]) else "-"
+                                    "Group": str(row[group_col]) if use_group and get_pandas().notna(row[group_col]) else "-",
+                                    "Randomization": str(row[rand_col]) if use_rand and get_pandas().notna(row[rand_col]) else "-"
                                 })
                         if preview_data:
                             st.write("Preview (first matches):")
-                            st.dataframe(pd.DataFrame(preview_data), hide_index=True)
+                            st.dataframe(get_pandas().DataFrame(preview_data), hide_index=True)
 
                     if st.button("Apply Assignments", type="primary", key="apply_csv_import"):
                         applied_groups = 0
@@ -2832,7 +2872,7 @@ def render_participant_table_fragment():
                         for _, row in import_df.iterrows():
                             pid = str(row[id_col])
                             if pid in participant_ids:
-                                if use_group and pd.notna(row[group_col]):
+                                if use_group and get_pandas().notna(row[group_col]):
                                     new_group = str(row[group_col])
                                     # Create group if it doesn't exist
                                     if new_group not in st.session_state.groups:
@@ -2843,7 +2883,7 @@ def render_participant_table_fragment():
                                         }
                                     st.session_state.participant_groups[pid] = new_group
                                     applied_groups += 1
-                                if use_rand and pd.notna(row[rand_col]):
+                                if use_rand and get_pandas().notna(row[rand_col]):
                                     new_rand = str(row[rand_col])
                                     # Auto-create playlist group if it doesn't exist
                                     if new_rand and new_rand not in st.session_state.playlist_groups:
@@ -3853,7 +3893,7 @@ def render_rr_plot_fragment(participant_id: str):
             if segment_stats:
                 with st.expander(f"Segment Artifact Details ({len(segment_stats)} segments)"):
                     import pandas as pd
-                    df = pd.DataFrame(segment_stats)
+                    df = get_pandas().DataFrame(segment_stats)
                     df.columns = ["Segment", "Start Beat", "End Beat", "N Beats", "N Artifacts", "Artifact %"]
 
                     # Highlight segments with high artifact rates
@@ -4122,9 +4162,9 @@ def render_rr_plot_fragment(participant_id: str):
             if zone_start and zone_end:
                 # Convert ISO strings back to datetime if needed
                 if isinstance(zone_start, str):
-                    zone_start = pd.to_datetime(zone_start)
+                    zone_start = get_pandas().to_datetime(zone_start)
                 if isinstance(zone_end, str):
-                    zone_end = pd.to_datetime(zone_end)
+                    zone_end = get_pandas().to_datetime(zone_end)
 
                 # Draw exclusion zone as red rectangle
                 fig.add_shape(
@@ -4278,7 +4318,7 @@ def render_rr_plot_fragment(participant_id: str):
     if selected_points and len(selected_points) > 0:
         clicked_point = selected_points[0]
         if 'x' in clicked_point:
-            clicked_ts = pd.to_datetime(clicked_point['x'])
+            clicked_ts = get_pandas().to_datetime(clicked_point['x'])
             clicked_time_str = clicked_ts.strftime("%H:%M:%S.%f")  # Include microseconds for uniqueness
 
             # Check if this is a new click (not a re-processed one)
@@ -4327,7 +4367,7 @@ def render_rr_plot_fragment(participant_id: str):
 
                 # Convert clicked timestamp to comparable format
                 import numpy as np
-                ts_array = pd.to_datetime(timestamps)
+                ts_array = get_pandas().to_datetime(timestamps)
 
                 # Ensure both timestamps have matching timezone awareness
                 if ts_array.tz is not None and clicked_ts.tzinfo is None:
@@ -4356,7 +4396,7 @@ def render_rr_plot_fragment(participant_id: str):
                 # Check if this beat is already marked - use original index from plot_data
                 original_idx = plot_data.get('original_indices', list(range(len(timestamps))))[nearest_idx]
                 clicked_rr = rr_values[nearest_idx]
-                clicked_ts_str = pd.to_datetime(timestamps[nearest_idx]).strftime('%H:%M:%S.%f')
+                clicked_ts_str = get_pandas().to_datetime(timestamps[nearest_idx]).strftime('%H:%M:%S.%f')
 
                 # Find if this index is already in manual artifacts
                 existing_entry = None
@@ -4808,7 +4848,7 @@ def main():
 
     # ================== PAGE: DATA ==================
     if selected_page == "Data":
-        render_data_tab()
+        _get_render_data_tab()()
 
 
     # ================== TAB: PARTICIPANTS ==================
@@ -5614,7 +5654,7 @@ def main():
                                         "Method": detection_method,
                                     })
                                 if artifact_data:
-                                    st.dataframe(pd.DataFrame(artifact_data), hide_index=True, use_container_width=True)
+                                    st.dataframe(get_pandas().DataFrame(artifact_data), hide_index=True, use_container_width=True)
                                 if len(artifact_indices) > 50:
                                     st.caption(f"Showing first 50 of {len(artifact_indices)} artifacts")
 
@@ -5648,7 +5688,7 @@ def main():
                                         "RR (ms)": f"{art.get('rr_value', 0):.0f}",
                                         "Index": art.get('original_idx', 'N/A'),
                                     })
-                                st.dataframe(pd.DataFrame(manual_data), hide_index=True, use_container_width=True)
+                                st.dataframe(get_pandas().DataFrame(manual_data), hide_index=True, use_container_width=True)
                                 st.caption("Click on marked beats in the plot to remove them")
                         else:
                             st.info("Click on beats in the plot to mark them as artifacts")
@@ -5694,7 +5734,7 @@ def main():
                                     'artifact_source': 'algorithm' if i in algo_indices else ('manual' if i in manual_indices else '')
                                 })
                             
-                            df_export = pd.DataFrame(export_data)
+                            df_export = get_pandas().DataFrame(export_data)
                             csv_buffer = io.StringIO()
                             df_export.to_csv(csv_buffer, index=False)
                             csv_data = csv_buffer.getvalue()
@@ -5779,7 +5819,7 @@ def main():
                                             "Duration (s)": f"{gap['duration_s']:.1f}",
                                             "Beat Index": f"{gap['start_idx']} → {gap['end_idx']}"
                                         })
-                                    st.dataframe(pd.DataFrame(gap_data), width='stretch', hide_index=True)
+                                    st.dataframe(get_pandas().DataFrame(gap_data), width='stretch', hide_index=True)
 
                                     # Recommendations for gaps
                                     st.markdown("##### Recommendations for Gaps:")
@@ -5877,7 +5917,7 @@ def main():
                                         "CV (%)": f"{cv_pct:.1f}",
                                         "Quality": quality
                                     })
-                                st.dataframe(pd.DataFrame(seg_data), width='stretch', hide_index=True)
+                                st.dataframe(get_pandas().DataFrame(seg_data), width='stretch', hide_index=True)
 
                                 # Check for high variability segments
                                 high_var_segments = [s for s in cp_info['segment_stats'] if s['cv'] > 0.15]
@@ -6789,10 +6829,10 @@ def main():
                     def get_sort_key(event):
                         ts = event.first_timestamp
                         if ts is None:
-                            return pd.Timestamp.max.tz_localize('UTC')
+                            return get_pandas().Timestamp.max.tz_localize('UTC')
                         # Ensure all timestamps are timezone-aware for comparison
                         if hasattr(ts, 'tzinfo') and ts.tzinfo is None:
-                            ts = pd.Timestamp(ts).tz_localize('UTC')
+                            ts = get_pandas().Timestamp(ts).tz_localize('UTC')
                         return ts
 
                     # Auto-sort button - use return value instead of on_click for proper rerun
@@ -6879,7 +6919,7 @@ def main():
 
                     # Create download button AFTER the loop (once)
                     if events_data:
-                        df_events = pd.DataFrame(events_data)
+                        df_events = get_pandas().DataFrame(events_data)
                         csv_events = df_events.to_csv(index=False)
                         st.download_button(
                             label=" Download Events CSV",
@@ -6924,7 +6964,7 @@ def main():
                                 "Raw Labels": raw_labels_str,
                             })
 
-                        df_mapping = pd.DataFrame(mapping_data)
+                        df_mapping = get_pandas().DataFrame(mapping_data)
                         st.dataframe(df_mapping, width='stretch', hide_index=True)
                     else:
                         st.info(f"No expected events defined for group '{participant_group}'. Add them in the Event Mapping tab.")
@@ -7016,11 +7056,11 @@ def main():
 
     # ================== TAB: SETUP ==================
     elif selected_page == "Setup":
-        render_setup_tab()
+        _get_render_setup_tab()()
 
     # ================== TAB: ANALYSIS ==================
     elif selected_page == "Analysis":
-        render_analysis_tab()
+        _get_render_analysis_tab()()
 
     # Record render time for debugging
     st.session_state.last_render_time = (_time.time() - _script_start) * 1000
