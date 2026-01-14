@@ -3501,6 +3501,116 @@ def render_rr_plot_fragment(participant_id: str):
             "gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": True
         }
 
+    # Keyboard shortcut for Signal Inspection mode (inside fragment for fast response)
+    if current_mode == "Signal Inspection":
+        zoom_key = f"inspection_zoom_{participant_id}"
+
+        # Compact zoom controls
+        col_zoom, col_auto, col_info = st.columns([2, 1, 3])
+        with col_zoom:
+            if st.button("Inspection Zoom", key=f"frag_zoom_btn_{participant_id}",
+                        help="Reset Y-axis to 400-1200ms, X to 60s window (press I)"):
+                st.session_state[zoom_key] = {
+                    'y_min': 400,
+                    'y_max': 1200,
+                    'x_window_seconds': 60,
+                    'center_on_mean': True
+                }
+        with col_auto:
+            if zoom_key in st.session_state:
+                if st.button("Auto", key=f"frag_clear_zoom_{participant_id}",
+                            help="Return to auto-scaling"):
+                    del st.session_state[zoom_key]
+        with col_info:
+            st.caption("Drag to pan, scroll to zoom, I / arrow keys")
+
+        # Inject JavaScript for instant keyboard shortcuts (client-side, no server roundtrip)
+        import streamlit.components.v1 as components
+        components.html("""
+        <script>
+        (function() {
+            // Only attach once per page load
+            if (window._rrationalKeysAttached) return;
+            window._rrationalKeysAttached = true;
+
+            const PAN_SECONDS = 10000; // 10 seconds in milliseconds
+
+            // Find Plotly plot in document or iframes
+            const findPlot = () => {
+                const findInDoc = (doc) => {
+                    try {
+                        const div = doc.querySelector('.js-plotly-plot');
+                        if (div) return {div, Plotly: doc.defaultView.Plotly};
+                    } catch(err) {}
+                    return null;
+                };
+
+                let result = findInDoc(document);
+                if (result) return result;
+
+                // Check iframes (streamlit-plotly-events uses iframe)
+                const iframes = document.querySelectorAll('iframe');
+                for (const iframe of iframes) {
+                    try {
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        result = findInDoc(iframeDoc);
+                        if (result) return result;
+                    } catch(err) {} // Cross-origin will fail
+                }
+                return null;
+            };
+
+            // Click button without scrolling
+            const clickButtonNoScroll = (selector) => {
+                const scrollPos = window.scrollY;
+                const btn = document.querySelector(selector);
+                if (btn) {
+                    btn.click();
+                    // Restore scroll position after Streamlit rerun
+                    requestAnimationFrame(() => {
+                        window.scrollTo(0, scrollPos);
+                        setTimeout(() => window.scrollTo(0, scrollPos), 50);
+                        setTimeout(() => window.scrollTo(0, scrollPos), 150);
+                    });
+                }
+            };
+
+            document.addEventListener('keydown', function(e) {
+                // Don't trigger if typing in an input
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+                // Handle "I" key - click Inspection Zoom button
+                if (e.key === 'i' || e.key === 'I') {
+                    clickButtonNoScroll('button[data-testid="stBaseButton-secondary"]');
+                    e.preventDefault();
+                    return;
+                }
+
+                // Handle arrow keys - instant pan via Plotly
+                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+                const plot = findPlot();
+                if (!plot) return;
+
+                const {div, Plotly} = plot;
+                if (!div || !Plotly || !div.layout || !div.layout.xaxis) return;
+
+                const xaxis = div.layout.xaxis;
+                if (!xaxis.range || xaxis.range.length < 2) return;
+
+                const shift = e.key === 'ArrowRight' ? PAN_SECONDS : -PAN_SECONDS;
+                const newRange = [
+                    new Date(new Date(xaxis.range[0]).getTime() + shift),
+                    new Date(new Date(xaxis.range[1]).getTime() + shift)
+                ];
+
+                Plotly.relayout(div, {'xaxis.range': newRange});
+                e.preventDefault();
+            });
+        })();
+        </script>
+        """, height=0)
+
     # Plot display options - use saved defaults
     plot_defaults = st.session_state.get("app_settings", {}).get("plot_options", {})
     st.markdown("**Plot Options:**")
@@ -3733,18 +3843,17 @@ def render_rr_plot_fragment(participant_id: str):
         # Also set X-axis range if time window specified
         ts_for_zoom = plot_data.get('timestamps', [])
         if inspection_zoom.get('x_window_seconds') and ts_for_zoom:
-            # Find center of data (with pan offset)
+            # Set initial X-axis window centered on data
+            # User can then pan with arrow keys (client-side JS) or drag
             mid_idx = len(ts_for_zoom) // 2
             mid_time = get_pandas().to_datetime(ts_for_zoom[mid_idx])
-
-            # Apply pan offset (from arrow key navigation)
-            pan_key = f"pan_position_{participant_id}"
-            pan_offset_seconds = st.session_state.get(pan_key, 0)
-            pan_offset = get_pandas().Timedelta(seconds=pan_offset_seconds)
-
             half_window = get_pandas().Timedelta(seconds=inspection_zoom['x_window_seconds'] / 2)
-            center_time = mid_time + pan_offset
-            xaxis_config['range'] = [center_time - half_window, center_time + half_window]
+            xaxis_config['range'] = [mid_time - half_window, mid_time + half_window]
+
+    # Set dragmode based on interaction mode
+    # Signal Inspection: pan mode for instant drag-to-pan (client-side, no server roundtrip)
+    # Other modes: zoom mode for selecting regions
+    dragmode = 'pan' if current_mode == "Signal Inspection" else 'zoom'
 
     fig.update_layout(
         title=f"Tachogram - {participant_id}",
@@ -3758,6 +3867,7 @@ def render_rr_plot_fragment(participant_id: str):
         paper_bgcolor=theme['bg'],
         plot_bgcolor=theme['bg'],
         font=dict(color=theme['text']),
+        dragmode=dragmode,  # Enable instant pan in Signal Inspection mode
     )
 
     # Add event markers (conditional on show_events)
@@ -5262,48 +5372,9 @@ def main():
                                 label_visibility="collapsed"
                             )
                         with col_mode2:
-                            # Auto-maximize resolution for Signal Inspection mode
+                            # Signal Inspection mode info (controls moved to fragment for speed)
                             if interaction_mode == "Signal Inspection":
-                                # Inspection zoom button - resets to optimal viewing range
-                                zoom_key = f"inspection_zoom_{selected_participant}"
-                                col_zoom, col_clear = st.columns(2)
-                                with col_zoom:
-                                    if shortcut_button("Inspection Zoom", "i", key=f"zoom_btn_{selected_participant}",
-                                                help="Reset Y-axis to 400-1200ms, X to 60s window (press I)"):
-                                        # Calculate mean RR for centering
-                                        mean_rr = sum(rr_values) / len(rr_values) if rr_values else 700
-                                        # Set inspection zoom: Y-axis 400-1200ms, X-axis ~60s window
-                                        st.session_state[zoom_key] = {
-                                            'y_min': 400,
-                                            'y_max': 1200,
-                                            'x_window_seconds': 60,  # Show 60 seconds of data
-                                            'center_on_mean': True
-                                        }
-                                        st.rerun()
-                                with col_clear:
-                                    if zoom_key in st.session_state:
-                                        if st.button("↩ Auto", key=f"clear_zoom_{selected_participant}",
-                                                    help="Return to auto-scaling"):
-                                            del st.session_state[zoom_key]
-                                            st.rerun()
-
-                                # Arrow key navigation (hidden buttons - shortcuts only)
-                                pan_key = f"pan_position_{selected_participant}"
-                                pan_step = 15  # Pan by 15 seconds
-
-                                # Left arrow - pan earlier
-                                if shortcut_button("←", "arrowleft", key=f"pan_left_{selected_participant}",
-                                                  hint=False):
-                                    current_pan = st.session_state.get(pan_key, 0)
-                                    st.session_state[pan_key] = current_pan - pan_step
-                                    st.rerun()
-
-                                # Right arrow - pan later
-                                if shortcut_button("→", "arrowright", key=f"pan_right_{selected_participant}",
-                                                  hint=False):
-                                    current_pan = st.session_state.get(pan_key, 0)
-                                    st.session_state[pan_key] = current_pan + pan_step
-                                    st.rerun()
+                                st.caption("Use I, ←, → keys")
 
                         with col_mode3:
                             # Plot resolution slider - allow up to all points
