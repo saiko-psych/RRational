@@ -68,6 +68,32 @@ pip install -e .
 > **Troubleshooting:** If you see `Failed to build pyarrow`, you likely have Python 3.14.
 > Run `uv python install 3.11` first, then `uv sync` again.
 
+### Updating
+
+Already have RRational installed? Update to the latest version:
+
+```bash
+cd rrational
+
+# Pull latest changes
+git pull origin main
+
+# Sync dependencies
+uv sync
+```
+
+> **Troubleshooting:** If you see `failed to canonicalize script path` when launching the app,
+> your virtual environment may be corrupted. Delete it and re-sync:
+> ```bash
+> # Windows
+> rmdir /s /q .venv
+> uv sync
+>
+> # macOS/Linux
+> rm -rf .venv
+> uv sync
+> ```
+
 ### Launch the GUI
 
 ```bash
