@@ -3611,6 +3611,177 @@ def render_rr_plot_fragment(participant_id: str):
         </script>
         """, height=0)
 
+        # Quick Save for Analysis expander
+        with st.expander("Quick Save for Analysis", expanded=False):
+            # Get available sections
+            sections = load_sections()
+            section_names = ["Full Recording"] + [s.get("label", name) for name, s in sections.items() if s.get("start_event")]
+
+            save_section = st.selectbox(
+                "Segment to save",
+                options=section_names,
+                key=f"frag_save_section_{participant_id}",
+                help="Select a section to export, or export full recording"
+            )
+
+            include_corrected = st.checkbox(
+                "Include corrected NN intervals",
+                value=False,
+                key=f"frag_include_corrected_{participant_id}",
+                help="Include interpolated NN intervals (artifact-corrected)"
+            )
+
+            if st.button("Save (.rrational)", key=f"frag_save_btn_{participant_id}",
+                        help="Export data with audit trail for analysis"):
+                # Import the export module
+                from rrational.gui.rrational_export import (
+                    RRationalExport, RRIntervalExport, SegmentDefinition,
+                    ArtifactDetection, ManualArtifact, ExclusionZone,
+                    QualityMetrics, ProcessingStep, save_rrational,
+                    build_export_filename, get_quality_grade, get_quigley_recommendation
+                )
+                from datetime import datetime
+
+                # Get current artifact state
+                artifacts_key = f"artifacts_{participant_id}"
+                manual_artifacts_key = f"manual_artifacts_{participant_id}"
+                exclusions_key = f"artifact_exclusions_{participant_id}"
+
+                artifacts_data = st.session_state.get(artifacts_key, {})
+                manual_artifacts_list = st.session_state.get(manual_artifacts_key, [])
+                excluded_indices = list(st.session_state.get(exclusions_key, set()))
+
+                # Get RR data from plot_data
+                rr_values = plot_data.get('rr_values', [])
+                timestamps = plot_data.get('timestamps', [])
+
+                # Determine segment info
+                segment_name = None
+                if save_section != "Full Recording":
+                    # Find the section key from the label
+                    for name, s in sections.items():
+                        if s.get("label", name) == save_section:
+                            segment_name = name
+                            break
+
+                # Build export data
+                now = datetime.now().isoformat()
+
+                # Get source info from summary
+                summary = get_summary_dict().get(participant_id)
+                source_app = "HRV Logger"
+                source_paths = []
+                recording_dt = None
+                if summary:
+                    source_app = getattr(summary, 'source_app', 'HRV Logger')
+                    source_paths = getattr(summary, 'rr_paths', []) or []
+                    recording_dt = getattr(summary, 'recording_datetime', None)
+                    if recording_dt:
+                        recording_dt = recording_dt.isoformat() if hasattr(recording_dt, 'isoformat') else str(recording_dt)
+
+                # Build RR interval exports
+                rr_exports = []
+                for i, (ts, rr) in enumerate(zip(timestamps, rr_values)):
+                    ts_str = ts.isoformat() if hasattr(ts, 'isoformat') else str(ts)
+                    rr_exports.append(RRIntervalExport(
+                        timestamp=ts_str,
+                        rr_ms=int(rr),
+                        original_idx=i
+                    ))
+
+                # Build artifact detection info
+                artifact_detection = None
+                if artifacts_data:
+                    artifact_detection = ArtifactDetection(
+                        method=artifacts_data.get('method', 'threshold'),
+                        total=artifacts_data.get('total_artifacts', 0),
+                        by_type=artifacts_data.get('by_type', {}),
+                        indices=artifacts_data.get('artifact_indices', [])
+                    )
+
+                # Build manual artifacts
+                manual_exports = []
+                for ma in manual_artifacts_list:
+                    ts_str = ma.get('timestamp', '')
+                    if hasattr(ts_str, 'isoformat'):
+                        ts_str = ts_str.isoformat()
+                    manual_exports.append(ManualArtifact(
+                        original_idx=ma.get('original_idx', 0),
+                        timestamp=ts_str,
+                        rr_value=ma.get('rr_value', 0),
+                        marked_at=now
+                    ))
+
+                # Calculate final artifact indices
+                detected_indices = set(artifacts_data.get('artifact_indices', []))
+                manual_indices = set(ma.get('original_idx', 0) for ma in manual_artifacts_list)
+                excluded_set = set(excluded_indices)
+                final_artifacts = list((detected_indices | manual_indices) - excluded_set)
+
+                # Build quality metrics
+                artifact_rate = len(final_artifacts) / len(rr_values) if rr_values else 0
+                quality = QualityMetrics(
+                    artifact_rate_raw=artifacts_data.get('artifact_ratio', 0),
+                    artifact_rate_final=artifact_rate,
+                    beats_after_cleaning=len(rr_values),
+                    quality_grade=get_quality_grade(artifact_rate),
+                    quigley_recommendation=get_quigley_recommendation(artifact_rate, len(rr_values))
+                )
+
+                # Build segment definition
+                segment_def = SegmentDefinition(
+                    type="section" if segment_name else "full_recording",
+                    section_name=segment_name,
+                )
+
+                # Build audit trail
+                steps = [
+                    ProcessingStep(step=1, action="export_ready_for_analysis",
+                                  timestamp=now, details=f"Exported {len(rr_values)} beats")
+                ]
+
+                # Get software versions
+                import neurokit2 as nk
+                import sys
+                software_versions = {
+                    "rrational": "0.7.0",
+                    "neurokit2": getattr(nk, '__version__', 'unknown'),
+                    "python": sys.version.split()[0]
+                }
+
+                # Create export object
+                export_data = RRationalExport(
+                    participant_id=participant_id,
+                    export_timestamp=now,
+                    exported_by="RRational v0.7.0",
+                    source_app=source_app,
+                    source_file_paths=[str(p) for p in source_paths],
+                    recording_datetime=recording_dt,
+                    segment=segment_def,
+                    n_beats=len(rr_exports),
+                    rr_intervals=rr_exports,
+                    artifact_detection=artifact_detection,
+                    manual_artifacts=manual_exports,
+                    excluded_detected_indices=excluded_indices,
+                    final_artifact_indices=final_artifacts,
+                    include_corrected=include_corrected,
+                    quality=quality,
+                    processing_steps=steps,
+                    software_versions=software_versions
+                )
+
+                # Save to processed folder
+                data_dir = st.session_state.get("data_dir")
+                if data_dir:
+                    from pathlib import Path
+                    processed_dir = Path(data_dir).parent / "processed"
+                    filename = build_export_filename(participant_id, segment_name)
+                    filepath = processed_dir / filename
+                    save_rrational(export_data, filepath)
+                    st.success(f"Saved: {filepath}")
+                else:
+                    st.error("No data directory set - cannot save")
+
     # Plot display options - use saved defaults
     plot_defaults = st.session_state.get("app_settings", {}).get("plot_options", {})
     st.markdown("**Plot Options:**")
