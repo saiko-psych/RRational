@@ -3597,11 +3597,15 @@ def render_rr_plot_fragment(participant_id: str):
             help="Threshold for detecting gaps in data",
             disabled=is_vns_data
         )
-        with st.popover("Help"):
-            if is_vns_data:
-                st.markdown(VNS_DATA_HELP)
-            else:
-                st.markdown(ARTIFACT_CORRECTION_HELP)
+        # Only show Help button here if NOT in Signal Inspection mode
+        # (Signal Inspection has its own dedicated Help section)
+        current_mode = st.session_state.get(f"plot_mode_{participant_id}", "Add Events")
+        if current_mode != "Signal Inspection":
+            with st.popover("Help"):
+                if is_vns_data:
+                    st.markdown(VNS_DATA_HELP)
+                else:
+                    st.markdown(ARTIFACT_CORRECTION_HELP)
 
     # Show downsampling info
     if plot_data['n_displayed'] < plot_data['n_original']:
@@ -5256,8 +5260,8 @@ def main():
                                 zoom_key = f"inspection_zoom_{selected_participant}"
                                 col_zoom, col_clear = st.columns(2)
                                 with col_zoom:
-                                    if st.button("🔍 Inspection Zoom", key=f"zoom_btn_{selected_participant}",
-                                                help="Reset Y-axis to 400-1200ms (optimal for beat inspection)"):
+                                    if st.button("Inspection Zoom (I)", key=f"zoom_btn_{selected_participant}",
+                                                help="Reset Y-axis to 400-1200ms, X to 60s window (keyboard: I)"):
                                         # Calculate mean RR for centering
                                         mean_rr = sum(rr_values) / len(rr_values) if rr_values else 700
                                         # Set inspection zoom: Y-axis 400-1200ms, X-axis ~60s window
