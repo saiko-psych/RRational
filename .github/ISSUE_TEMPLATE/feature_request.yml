@@ -1,0 +1,75 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before submitting
+
+        **Please check if someone already suggested this!**
+
+        1. Go to [Issues](https://github.com/saiko-psych/rrational/issues)
+        2. Search for keywords related to your idea
+        3. If you find a similar request, add a thumbs up or comment there
+
+        ---
+
+  - type: checkboxes
+    id: existing-check
+    attributes:
+      label: I have checked for existing requests
+      options:
+        - label: I searched the existing issues and didn't find a similar feature request
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the problem or limitation you're facing.
+      placeholder: |
+        Example: "I need to analyze multiple participants at once, but currently I have to do them one by one which takes a long time."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to see?
+      description: Describe your ideal solution. How would this feature work?
+      placeholder: |
+        Example: "A 'Batch Analysis' button that lets me select multiple participants and runs HRV analysis on all of them, then shows a summary table."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've tried
+      description: Have you found any workarounds? What else have you tried?
+      placeholder: |
+        Example: "I tried exporting each participant's results separately and combining them in Excel, but it's very time-consuming."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How important is this to you?
+      options:
+        - Nice to have
+        - Would help my workflow
+        - Important for my research
+        - Critical - blocking my work
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other information, screenshots, or examples that would help explain your request?
+    validations:
+      required: false

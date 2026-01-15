@@ -1,4 +1,4 @@
-"""Help text and documentation for the Music HRV GUI.
+"""Help text and documentation for the RRational HRV GUI.
 
 This module contains markdown text for help sections displayed in the UI.
 
@@ -8,12 +8,175 @@ References:
 - German Journal Sports Medicine (2024) HRV Methods and Analysis
 """
 
+# =============================================================================
+# GETTING STARTED
+# =============================================================================
+
+GETTING_STARTED_HELP = """
+## Getting Started with RRational
+
+### What is RRational?
+
+RRational is a free, open-source HRV analysis toolkit - like Kubios, but free.
+It follows scientific best practices (2024 Quigley guidelines) and provides
+a complete workflow from raw data to publication-ready metrics.
+
+---
+
+### Typical Workflow
+
+```
+1. Create/Open Project  →  2. Import Data  →  3. Review & Clean  →  4. Analyze
+```
+
+#### Step 1: Project Setup
+- **New Study**: Create a project with a folder structure for your data
+- **Existing Study**: Open an existing project folder
+- **Quick Test**: Use "Continue Without Project" for temporary work
+
+#### Step 2: Import Data
+- Place HRV files in `YourProject/data/raw/hrv_logger/` or `data/raw/vns/`
+- Click "Load Selected Sources" in the Data tab
+- Review participant overview table
+
+#### Step 3: Review & Clean
+- Use **Participants** tab to inspect each recording
+- Enable artifact detection to identify problems
+- Define exclusion zones for bad segments
+- Save events and exclusions
+
+#### Step 4: Analyze
+- Go to **Analysis** tab
+- Select participant and section
+- Enable artifact correction if needed
+- View metrics and export results
+
+---
+
+### Quick Tips
+
+- **Keyboard**: Use Previous/Next buttons or dropdown to navigate participants
+- **Saving**: Click "Save" in sidebar to persist changes
+- **Help**: Look for ℹ️ icons and expandable help sections throughout the app
+- **Export**: Use "Ready for Analysis" export to save inspected data with audit trail
+"""
+
+PROJECT_HELP = """
+## Project Management
+
+### Why Projects?
+
+Projects keep your HRV studies organized. Each project is a self-contained folder
+with your data, configuration, and results. This makes it easy to:
+
+- **Share** studies with collaborators
+- **Archive** completed research
+- **Reproduce** your analysis workflow
+
+---
+
+### Project Structure
+
+When you create a project, RRational sets up this folder structure:
+
+```
+MyStudy/
+├── project.rrational          # Project metadata (name, author, notes)
+├── data/
+│   ├── raw/                   # Your original HRV files
+│   │   ├── hrv_logger/        # HRV Logger CSV files go here
+│   │   └── vns/               # VNS Analyse TXT files go here
+│   └── processed/             # Exported .rrational files, saved events
+├── config/                    # Project-specific settings
+│   ├── groups.yml             # Study groups
+│   ├── events.yml             # Event definitions
+│   ├── sections.yml           # Section definitions
+│   └── ...                    # Other configuration
+└── analysis/                  # Future: analysis results
+```
+
+---
+
+### Creating a New Project
+
+1. Click **"Create New Project"** on the welcome screen
+2. **Choose location**: Browse to where you want the project folder
+3. **Enter details**: Name, description, author (optional)
+4. **Select data sources**: HRV Logger, VNS Analyse, or both
+5. **Review and create**: Check the summary and click "Create Project"
+
+The project folder will be created with all necessary subfolders.
+Copy your HRV data files into `data/raw/hrv_logger/` or `data/raw/vns/`.
+
+---
+
+### Opening an Existing Project
+
+1. Click **"Open Existing Project"** on the welcome screen
+2. Browse to a folder containing `project.rrational`
+3. The project will load with all your saved settings
+
+**Recent Projects**: Previously opened projects appear in the list for quick access.
+
+---
+
+### Project vs Temporary Workspace
+
+| Aspect | Project | Temporary Workspace |
+|--------|---------|---------------------|
+| **Settings saved** | In project folder | In `~/.rrational/` |
+| **Portable** | Yes, share the folder | No, tied to your computer |
+| **Auto-load** | Remembers last project | No persistence |
+| **Best for** | Real research | Quick testing |
+
+---
+
+### Switching Projects
+
+- Click **"Switch Project"** in the sidebar to return to the welcome screen
+- Your last used project is remembered and will auto-load next time
+
+---
+
+### Migrating Existing Configuration
+
+If you have configuration from previous RRational sessions (in `~/.rrational/`),
+the Create Project wizard offers to import it into your new project.
+"""
+
+WELCOME_SCREEN_HELP = """
+## Welcome Screen
+
+The welcome screen appears when you launch RRational.
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| **Recent Projects** | Click any project to open it immediately |
+| **Open Existing Project** | Browse for a project folder (contains `project.rrational`) |
+| **Create New Project** | Start a new study with organized folder structure |
+| **Continue Without Project** | Use temporary workspace (settings saved globally) |
+
+### Auto-Load
+
+RRational remembers your last used project and offers to load it automatically.
+Click "Continue" to load, or "Choose Different" to see all options.
+
+### First Time Users
+
+1. Click **"Create New Project"** to set up your first study
+2. Follow the wizard to name your project and select data sources
+3. Copy your HRV data files into the `data/raw/` subfolders
+4. Start analyzing!
+"""
+
 DATA_CORRECTION_WORKFLOW = """
 ## Data Correction Workflow
 
 ### Overview
 
-The Music HRV app processes RR interval data through three stages:
+RRational processes RR interval data through three stages:
 **Import → Display → Analysis**. Each stage handles data differently depending
 on the source (HRV Logger vs VNS Analyse).
 

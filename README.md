@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.7.1-green.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.7.2-green.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-18%20passing-brightgreen.svg)](tests/)
 [![NeuroKit2](https://img.shields.io/badge/powered%20by-NeuroKit2-orange.svg)](https://neuropsychology.github.io/NeuroKit/)
 
@@ -22,6 +22,7 @@ RRational is a free, open-source HRV analysis toolkit built for researchers. It 
 
 ### Key Capabilities
 
+- **Project Management**: Self-contained project folders with data, config, and results
 - **Multi-format Import**: HRV Logger CSV and VNS Analyse TXT files
 - **Interactive Visualization**: WebGL-accelerated tachograms with click-to-add events
 - **Section-Based Analysis**: Define time segments with start/end events and duration validation
@@ -118,6 +119,52 @@ Load the demo data in the GUI to explore all features without real participant d
 
 ---
 
+## Project Management
+
+RRational uses a **project-based workflow** where each study is a self-contained folder.
+
+### Creating a Project
+
+1. Launch RRational - the welcome screen appears
+2. Click **"Create New Project"**
+3. Choose a location and enter project details
+4. Select your data sources (HRV Logger, VNS Analyse)
+5. Click "Create Project"
+
+### Project Structure
+
+```
+MyStudy/
+├── project.rrational          # Project metadata (YAML)
+├── data/
+│   ├── raw/                   # Your original HRV files
+│   │   ├── hrv_logger/        # Place HRV Logger CSV files here
+│   │   └── vns/               # Place VNS Analyse TXT files here
+│   └── processed/             # Exported .rrational files, saved events
+├── config/                    # Project-specific configuration
+│   ├── groups.yml             # Study groups
+│   ├── events.yml             # Event definitions
+│   ├── sections.yml           # Section definitions
+│   └── ...                    # Other settings
+└── analysis/                  # Future: analysis results
+```
+
+### Why Projects?
+
+| Feature | Project | Temporary Workspace |
+|---------|---------|---------------------|
+| **Settings saved** | In project folder | In `~/.rrational/` |
+| **Portable** | Yes - share the folder | No - tied to your computer |
+| **Auto-load** | Remembers last project | No persistence |
+| **Best for** | Real research | Quick testing |
+
+### Auto-Load
+
+RRational remembers your last used project and automatically loads it on startup.
+Click "Switch Project" in the sidebar to choose a different project.
+
+---
+
 ## Features
 
 ### Data Import & Management
@@ -177,15 +224,33 @@ This toolkit follows current HRV research guidelines:
 
 ---
 
-## GUI Tabs
+## GUI Overview
+
+### Welcome Screen
+
+On launch, choose how to work:
+- **Recent Projects**: Quick access to previously opened projects
+- **Open Existing Project**: Browse for a project folder
+- **Create New Project**: Set up a new study with organized folder structure
+- **Continue Without Project**: Use temporary workspace for quick testing
+
+### Main Tabs
 
 | Tab | Purpose |
 |-----|---------|
+| **Data** | Import data, view participant overview, load sources |
 | **Participants** | View tachogram, manage events, validate sections, define exclusion zones |
 | **Setup > Events** | Define expected events with synonym patterns (regex support) |
 | **Setup > Groups** | Create/edit study groups, assign expected sections |
 | **Setup > Sections** | Define time ranges with duration and tolerance |
 | **Analysis** | Run HRV analysis, view metrics, export CSV |
+
+### Sidebar
+
+- **Project indicator**: Shows current project name
+- **Switch Project**: Return to welcome screen
+- **Settings**: Data folder, plot options, resolution
+- **Save/Reset**: Persist or reset configuration
 
 ---
 
@@ -245,47 +310,58 @@ RR-Intervalle - Korrigierte Werte (Aktiv)
 
 ## Configuration & Data Storage
 
-### App Settings (`~/.rrational/`)
+### Project-Based Storage (Recommended)
 
-Global settings persist across sessions:
+When using a project, all configuration is stored **inside the project folder**:
+
+```
+MyProject/
+├── config/                    # Project configuration
+│   ├── groups.yml             # Study group definitions
+│   ├── events.yml             # Event types and synonyms
+│   ├── sections.yml           # Section definitions
+│   ├── participants.yml       # Participant group assignments
+│   ├── playlist_groups.yml    # Randomization groups
+│   └── music_labels.yml       # Section labels
+└── data/processed/            # Saved events and exports
+    ├── 0001CTRL_events.yml    # Per-participant events
+    └── 0001CTRL_baseline.rrational  # Ready for Analysis exports
+```
+
+### Global Settings (`~/.rrational/`)
+
+Some settings are always stored globally:
 
 ```
 ~/.rrational/
-├── groups.yml              # Study group definitions
-├── events.yml              # Event types and synonyms
-├── sections.yml            # Section definitions
-├── participants.yml        # Participant group assignments
-├── participant_events.yml  # Backup of saved events
-├── playlist_groups.yml     # Randomization groups
-├── settings.yml            # App settings (data folder, plot options)
-└── music_labels.yml        # Section labels
+├── settings.yml            # App settings (last project, plot options)
+└── [config files]          # Fallback when not using a project
 ```
 
-### Processed Data (`data/processed/`)
+### Sharing Projects
 
-Edited events are saved alongside your data for portability:
+To share a study with collaborators:
+1. Copy the entire project folder
+2. Recipient opens it with "Open Existing Project"
+3. All configuration and processed data is included
 
-```
-data/processed/
-├── 0001CTRL_events.yml     # Per-participant event files
-├── 0002EXPR_events.yml     # Standardized format (v1.0)
-└── ...
-```
-
-This allows sharing processed events with collaborators without sharing raw data.
+> **Note**: Raw HRV data files are in `data/raw/` - include or exclude as needed.
 
 ---
 
-## Project Structure
+## Code Structure
 
 ```
 rrational/
 ├── src/rrational/
 │   ├── gui/
-│   │   ├── app.py           # Main Streamlit app (~3700 lines)
+│   │   ├── app.py           # Main Streamlit app (~3800 lines)
+│   │   ├── project.py       # Project management (ProjectManager class)
+│   │   ├── welcome.py       # Welcome screen and project wizard
 │   │   ├── tabs/            # Tab modules (data, setup, analysis)
 │   │   ├── shared.py        # Caching and utilities
-│   │   └── persistence.py   # YAML storage
+│   │   ├── persistence.py   # YAML storage and settings
+│   │   └── rrational_export.py  # .rrational export format
 │   ├── io/
 │   │   ├── hrv_logger.py    # HRV Logger CSV parser
 │   │   └── vns_analyse.py   # VNS Analyse TXT parser
@@ -334,7 +410,8 @@ uv run ruff check src/ tests/ --fix
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| **v0.7.1** | 2026-01 | Ready for Analysis export (.rrational files with audit trail) |
+| **v0.7.2** | 2026-01 | Project management system (welcome screen, project folders, auto-load) |
+| v0.7.1 | 2026-01 | Ready for Analysis export (.rrational files with audit trail) |
 | v0.7.0 | 2026-01 | Renamed to RRational, smart power formatting |
 | v0.6.8 | 2026-01 | Professional analysis plots with reference values, data quality warnings |
 | v0.6.7 | 2026-01 | Processed folder for events, --test-mode flag, Analysis tab fixes |
@@ -345,10 +422,11 @@ uv run ruff check src/ tests/ --fix
 
 ## Roadmap
 
+- [ ] Group comparison visualization (compare HRV across study groups)
+- [ ] PDF/HTML report generation (publication-ready methods sections)
+- [ ] Manual beat editing (click to mark/unmark individual artifacts)
 - [ ] Standalone executable (PyInstaller/Nuitka)
 - [ ] Tutorial videos
-- [ ] Group comparison visualization
-- [ ] PDF/HTML report generation
 
 ---
 
@@ -357,6 +435,18 @@ uv run ruff check src/ tests/ --fix
 - **Quigley, K. S., et al. (2024)** - [Publication guidelines for human heart rate and heart rate variability studies in psychophysiology](https://doi.org/10.1111/psyp.14604) - *Psychophysiology*, 61(9), 1-63.
 - **Lipponen & Tarvainen (2019)** - [A robust algorithm for heart rate variability time series artefact correction](https://doi.org/10.1088/1361-6579/ab3c96) - *Physiological Measurement*, 40(10).
 - **NeuroKit2** - [neuropsychology.github.io/NeuroKit](https://neuropsychology.github.io/NeuroKit/) - Open-source Python toolbox for neurophysiological signal processing.
+
+---
+
+## Contributing & Reporting Issues
+
+Found a bug or have a feature request?
+
+1. **Check existing issues** at [Issues](https://github.com/saiko-psych/rrational/issues)
+2. **Create a new issue** using our templates - they guide you through what information to include
+3. **Include screenshots** if possible - very helpful for GUI issues!
+
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 ---
 

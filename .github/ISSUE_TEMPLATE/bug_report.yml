@@ -1,0 +1,150 @@
+name: Bug Report
+description: Report a problem with RRational
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before submitting
+
+        **Please check if a similar issue already exists!**
+
+        1. Go to [Issues](https://github.com/saiko-psych/rrational/issues)
+        2. Use the search box to look for keywords related to your problem
+        3. If you find a similar issue, add a comment there instead of creating a new one
+
+        ---
+
+  - type: checkboxes
+    id: existing-check
+    attributes:
+      label: I have checked for existing issues
+      options:
+        - label: I searched the existing issues and didn't find a similar problem
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem in your own words. What were you trying to do? What went wrong?
+      placeholder: |
+        Example: "I was trying to load my HRV data and clicked 'Load Selected Sources', but nothing happened and I saw an error message."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we recreate this problem? Please be as detailed as possible.
+      placeholder: |
+        1. I opened RRational
+        2. I went to the Data tab
+        3. I clicked "Load Selected Sources"
+        4. I saw an error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      description: What should have happened instead?
+      placeholder: |
+        Example: "I expected to see my participants listed in the table."
+    validations:
+      required: false
+
+  - type: textarea
+    id: error-message
+    attributes:
+      label: Error message (if any)
+      description: |
+        If you see a red error message in the app, please copy and paste it here.
+
+        **Tip**: You can often select and copy the error text directly from the browser.
+      placeholder: |
+        Paste any error message here...
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: |
+        If possible, add a screenshot showing the problem.
+
+        **How to take a screenshot:**
+        - Windows: Press `Win + Shift + S` and select the area
+        - Mac: Press `Cmd + Shift + 4` and select the area
+
+        Then paste the image here (Ctrl+V or Cmd+V).
+      placeholder: |
+        Drag and drop or paste your screenshot here...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What operating system are you using?
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: RRational Version
+      description: |
+        You can find this in the app title bar or README.
+        Current version is v0.7.2
+      placeholder: "v0.7.2"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: data-source
+    attributes:
+      label: Data Source
+      description: What type of HRV data are you using?
+      options:
+        - HRV Logger (CSV files)
+        - VNS Analyse (TXT files)
+        - Both
+        - Demo data
+        - Not applicable
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How urgent is this?
+      description: Please help us prioritize by indicating how much this affects your work.
+      options:
+        - Low - Minor inconvenience, I have a workaround
+        - Medium - Affects my workflow but I can continue
+        - High - Significantly blocking my work
+        - Critical - Cannot use RRational at all
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional information
+      description: Any other details that might help us understand the problem?
+      placeholder: |
+        Example: "This only happens with files from a specific participant" or "It worked fine yesterday"
+    validations:
+      required: false
