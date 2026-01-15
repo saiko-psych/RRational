@@ -5511,12 +5511,30 @@ def main():
                                 'exclusion_zones': exclusion_zones,
                             }
                         else:
-                            # Load from original recording - VNS events already have correct
-                            # timestamps from the VNS loader (based on cumulative RR intervals
-                            # from filename datetime)
+                            # Load from original recording - use raw events, not grouped EventStatus
+                            # Fix: Events with same label but different timestamps should be kept separate
+                            from rrational.prep.summaries import EventStatus
+                            raw_events = recording_data.get('events', [])
+                            # Deduplicate by (timestamp, label) - keep unique combinations
+                            seen = set()
+                            unique_events = []
+                            for label, ts in raw_events:
+                                key = (ts.isoformat() if ts else '', label.strip().lower())
+                                if key not in seen:
+                                    seen.add(key)
+                                    # Get canonical name from normalizer
+                                    canonical = st.session_state.normalizer.normalize(label) if hasattr(st.session_state, 'normalizer') else None
+                                    unique_events.append(EventStatus(
+                                        raw_label=label,
+                                        canonical=canonical,
+                                        count=1,
+                                        first_timestamp=ts,
+                                        last_timestamp=ts,
+                                    ))
                             st.session_state.participant_events[selected_participant] = {
-                                'events': list(summary.events),
+                                'events': unique_events,
                                 'manual': st.session_state.manual_events.get(selected_participant, []).copy(),
+                                'music_events': [],
                                 'exclusion_zones': [],
                             }
 
