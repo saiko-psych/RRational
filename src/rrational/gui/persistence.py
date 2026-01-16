@@ -727,22 +727,22 @@ def get_processed_dir(
     data_dir: str | Path | None = None,
     project_path: Path | None = None,
 ) -> Path:
-    """Get the processed directory path for storing .rrational files.
+    """Get the processed directory path for storing .rrational files and artifacts.
 
     Args:
-        data_dir: The data directory path
+        data_dir: The data directory path (e.g., project/data/raw)
         project_path: Project path (takes priority if provided)
 
     Priority:
-    1. If project_path: returns project/processed/
-    2. If data_dir: returns {data_dir}/../processed/
+    1. If project_path: returns project/data/processed/
+    2. If data_dir: returns {data_dir}/../processed/ (sibling to raw folder)
     3. Otherwise: returns ~/.rrational/exports/
 
     Returns:
-        Path to the processed/exports directory (created if needed)
+        Path to the processed directory (created if needed)
     """
     if project_path:
-        processed_dir = Path(project_path) / "processed"
+        processed_dir = Path(project_path) / "data" / "processed"
     elif data_dir:
         processed_dir = Path(data_dir).parent / "processed"
     else:
@@ -772,3 +772,196 @@ def list_ready_files_for_participant(
     """
     from rrational.gui.rrational_export import find_rrational_files
     return find_rrational_files(participant_id, data_dir, project_path)
+
+
+# --- Artifact Corrections ---
+
+def save_artifact_corrections(
+    participant_id: str,
+    manual_artifacts: list[dict],
+    artifact_exclusions: set[int] | list[int],
+    data_dir: str | None = None,
+    project_path: Path | None = None,
+    algorithm_artifacts: list[int] | None = None,
+    algorithm_method: str | None = None,
+    algorithm_threshold: float | None = None,
+    validated_artifacts: list[int] | None = None,
+) -> Path:
+    """Save artifact corrections (algorithm-detected, manual markings, and exclusions) to YAML.
+
+    Storage priority:
+    1. If project_path provided: saves to project/data/processed/{participant_id}_artifacts.yml
+    2. If data_dir provided: saves to {data_dir}/../processed/{participant_id}_artifacts.yml
+    3. Otherwise: saves to ~/.rrational/{participant_id}_artifacts.yml (fallback)
+
+    Args:
+        participant_id: The participant ID
+        manual_artifacts: List of manually marked artifacts (dicts with original_idx, timestamp, rr_value, etc.)
+        artifact_exclusions: Set of original indices for excluded detected artifacts
+        data_dir: Optional data directory
+        project_path: Project path (takes priority if provided)
+        algorithm_artifacts: List of indices detected by algorithm (optional)
+        algorithm_method: Detection method used (e.g., "threshold", "malik")
+        algorithm_threshold: Threshold value used for detection
+        validated_artifacts: List of algorithm artifact indices that have been validated/reviewed
+
+    Returns:
+        Path to the saved file
+    """
+    from datetime import datetime
+
+    # Serialize data
+    output_data = {
+        "participant_id": participant_id,
+        "format_version": "1.2",
+        "source_type": "rrational_toolkit",
+        "saved_at": datetime.now().isoformat(),
+        "manual_artifacts": manual_artifacts,
+        "excluded_artifact_indices": list(artifact_exclusions) if artifact_exclusions else [],
+    }
+
+    # Add algorithm-detected artifacts if provided
+    if algorithm_artifacts is not None:
+        output_data["algorithm_artifact_indices"] = list(algorithm_artifacts)
+        if algorithm_method:
+            output_data["algorithm_method"] = algorithm_method
+        if algorithm_threshold is not None:
+            output_data["algorithm_threshold"] = algorithm_threshold
+
+    # Add validated artifacts if provided
+    if validated_artifacts is not None:
+        output_data["validated_artifact_indices"] = list(validated_artifacts)
+
+    # Use the same processed directory as .rrational files
+    processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
+    artifact_file = processed_dir / f"{participant_id}_artifacts.yml"
+
+    with open(artifact_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(output_data, f, default_flow_style=False, allow_unicode=True)
+
+    return artifact_file
+
+
+def load_artifact_corrections(
+    participant_id: str,
+    data_dir: str | None = None,
+    project_path: Path | None = None,
+) -> dict[str, Any] | None:
+    """Load saved artifact corrections from YAML.
+
+    Uses the same processed directory as .rrational files (via get_processed_dir).
+    Also checks ~/.rrational/ as fallback for legacy files.
+
+    Returns:
+        Dict with 'manual_artifacts' (list), 'excluded_artifact_indices' (list),
+        and optionally 'algorithm_artifact_indices' (list), 'algorithm_method' (str),
+        'algorithm_threshold' (float), 'validated_artifact_indices' (list),
+        'saved_at' (str), or None if no saved corrections exist.
+    """
+    # Primary location: same as .rrational files
+    processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
+    artifact_file = processed_dir / f"{participant_id}_artifacts.yml"
+
+    # Also check legacy location as fallback
+    search_paths = [artifact_file, CONFIG_DIR / f"{participant_id}_artifacts.yml"]
+
+    for artifact_file in search_paths:
+        if artifact_file.exists():
+            with open(artifact_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+
+            result = {
+                "manual_artifacts": data.get("manual_artifacts", []),
+                "excluded_artifact_indices": data.get("excluded_artifact_indices", []),
+                "saved_at": data.get("saved_at"),
+            }
+
+            # Include algorithm artifacts if present (format version 1.1+)
+            if "algorithm_artifact_indices" in data:
+                result["algorithm_artifact_indices"] = data.get("algorithm_artifact_indices", [])
+                result["algorithm_method"] = data.get("algorithm_method")
+                result["algorithm_threshold"] = data.get("algorithm_threshold")
+
+            # Include validated artifacts if present (format version 1.2+)
+            if "validated_artifact_indices" in data:
+                result["validated_artifact_indices"] = data.get("validated_artifact_indices", [])
+
+            return result
+
+    return None
+
+
+def delete_artifact_corrections(
+    participant_id: str,
+    data_dir: str | None = None,
+    project_path: Path | None = None,
+) -> bool:
+    """Delete saved artifact corrections for a participant.
+
+    Returns True if corrections were deleted, False if none existed.
+    """
+    deleted_any = False
+
+    # Primary location: same as .rrational files
+    processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
+    delete_paths = [
+        processed_dir / f"{participant_id}_artifacts.yml",
+        CONFIG_DIR / f"{participant_id}_artifacts.yml",  # Legacy fallback
+    ]
+
+    for artifact_file in delete_paths:
+        if artifact_file.exists():
+            artifact_file.unlink()
+            deleted_any = True
+
+    return deleted_any
+
+
+def load_artifact_corrections_from_rrational(
+    rrational_file: Path,
+) -> dict[str, Any] | None:
+    """Load artifact markings from a .rrational export file.
+
+    This allows restoring artifact markings from a previously exported file
+    when no _artifacts.yml exists (fallback).
+
+    Args:
+        rrational_file: Path to the .rrational file
+
+    Returns:
+        Dict with 'manual_artifacts' (list) and 'excluded_artifact_indices' (list),
+        or None if file doesn't exist or has no artifact data.
+    """
+    if not rrational_file.exists():
+        return None
+
+    try:
+        with open(rrational_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        processing = data.get("processing", {})
+        manual_artifacts = processing.get("manual_artifacts", [])
+        excluded_indices = processing.get("excluded_detected_indices", [])
+
+        # Convert ManualArtifact format to session state format
+        converted_manual = []
+        for ma in manual_artifacts:
+            converted_manual.append({
+                "original_idx": ma.get("original_idx", 0),
+                "timestamp": ma.get("timestamp", ""),
+                "rr_value": ma.get("rr_value", 0),
+                "source": ma.get("source", "manual"),
+                "plot_idx": ma.get("original_idx", 0),  # Use original_idx as plot_idx
+            })
+
+        if converted_manual or excluded_indices:
+            return {
+                "manual_artifacts": converted_manual,
+                "excluded_artifact_indices": excluded_indices,
+                "source_file": str(rrational_file),
+            }
+
+        return None
+
+    except Exception:
+        return None

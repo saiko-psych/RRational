@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import streamlit as st
-from streamlit_shortcuts import shortcut_button
 from pathlib import Path
 import time
 import re
@@ -3443,7 +3442,7 @@ def render_settings_panel():
         )
 
     # Save button
-    if st.button("Save Settings", key="save_settings_btn", use_container_width=True):
+    if st.button("Save Settings", key="save_settings_btn", width="stretch"):
         # Validate auto_load requires folder to be set
         if new_auto_load and not new_folder:
             st.error("Auto-load requires a data folder to be set. Please enter a folder path above.")
@@ -3660,6 +3659,158 @@ def render_rr_plot_fragment(participant_id: str):
 
         # Quick Save for Analysis expander
         with st.expander("Quick Save for Analysis", expanded=False):
+            # Check for existing .rrational files
+            from rrational.gui.rrational_export import find_rrational_files
+            from rrational.gui.persistence import load_artifact_corrections, save_artifact_corrections
+            data_dir_save = st.session_state.get("data_dir", "")
+            project_path_save = st.session_state.get("current_project")
+            existing_ready_files = find_rrational_files(participant_id, data_dir_save, project_path_save)
+
+            if existing_ready_files:
+                st.success(f"**{len(existing_ready_files)} .rrational file(s) saved** for this participant")
+                with st.expander("View saved files", expanded=False):
+                    for f in existing_ready_files:
+                        segment = f.stem.replace(f"{participant_id}_", "") or "full"
+                        mod_time = f.stat().st_mtime
+                        from datetime import datetime
+                        mod_str = datetime.fromtimestamp(mod_time).strftime("%Y-%m-%d %H:%M")
+                        st.caption(f"• **{segment}** - {f.name} ({mod_str})")
+
+            # Save Artifact Corrections button (more accessible location)
+            st.markdown("---")
+            st.markdown("**Save Artifact Markings**")
+            st.caption("Save your artifact markings to continue in future sessions")
+
+            manual_artifacts_save = st.session_state.get(f"manual_artifacts_{participant_id}", [])
+            artifact_exclusions_save = st.session_state.get(f"artifact_exclusions_{participant_id}", set())
+            artifact_data_save = st.session_state.get(f"artifacts_{participant_id}", {})
+            algo_indices_save = artifact_data_save.get('artifact_indices', [])
+
+            n_manual_save = len(manual_artifacts_save)
+            n_excluded_save = len(artifact_exclusions_save) if artifact_exclusions_save else 0
+            n_algo_save = len(algo_indices_save)
+            has_corrections_save = n_manual_save > 0 or n_excluded_save > 0 or n_algo_save > 0
+
+            saved_corrections_check = load_artifact_corrections(participant_id, data_dir_save, project_path_save)
+            has_saved_corrections = saved_corrections_check is not None
+
+            if has_corrections_save:
+                # Build summary text
+                parts = []
+                if n_algo_save > 0:
+                    parts.append(f"{n_algo_save} algorithm")
+                if n_manual_save > 0:
+                    parts.append(f"{n_manual_save} manual")
+                if n_excluded_save > 0:
+                    parts.append(f"{n_excluded_save} excluded")
+                st.write(" + ".join(parts))
+
+                if st.button("Save Artifact Corrections", key=f"sidebar_save_artifacts_{participant_id}",
+                            type="primary", width="stretch"):
+                    # Get algorithm method and threshold info
+                    algo_method = artifact_data_save.get('method', None)
+                    algo_threshold = artifact_data_save.get('threshold', None)
+
+                    # Get validated artifacts
+                    validated_save = st.session_state.get(f"validated_artifacts_{participant_id}", set())
+
+                    save_path = save_artifact_corrections(
+                        participant_id,
+                        manual_artifacts=manual_artifacts_save,
+                        artifact_exclusions=artifact_exclusions_save,
+                        data_dir=data_dir_save,
+                        project_path=project_path_save,
+                        algorithm_artifacts=algo_indices_save if algo_indices_save else None,
+                        algorithm_method=algo_method,
+                        algorithm_threshold=algo_threshold,
+                        validated_artifacts=list(validated_save) if validated_save else None,
+                    )
+                    st.toast(f"Saved artifact corrections to {save_path.name}")
+                    st.rerun()
+            elif has_saved_corrections:
+                st.success("Artifact corrections saved")
+            else:
+                st.caption("No artifact markings yet")
+
+            # Export NN as CSV button (easily accessible)
+            st.markdown("---")
+            st.markdown("**Export Corrected NN Intervals**")
+            st.caption("Download CSV with artifact-corrected (interpolated) NN intervals")
+
+            # Get current plot data
+            plot_data_nn = st.session_state.get(f"plot_data_{participant_id}", {})
+            artifact_data_nn = st.session_state.get(f"artifacts_{participant_id}", {})
+
+            if plot_data_nn and 'timestamps' in plot_data_nn:
+                ts_nn = plot_data_nn['timestamps']
+                rr_nn = plot_data_nn['rr_values']
+
+                # Collect all artifact indices (algorithm + manual + exclusions reversed)
+                algo_indices_nn = set(artifact_data_nn.get('artifact_indices', []))
+                manual_indices_nn = set(art.get('plot_idx', -1) for art in manual_artifacts_save)
+                # Remove excluded indices (user un-marked them)
+                excluded_indices_nn = artifact_exclusions_save if artifact_exclusions_save else set()
+                all_artifact_idx_nn = (algo_indices_nn | manual_indices_nn) - excluded_indices_nn
+
+                n_artifacts_nn = len(all_artifact_idx_nn)
+                st.write(f"{len(ts_nn)} beats | {n_artifacts_nn} artifacts to correct")
+
+                if st.button("Export NN as CSV", key=f"sidebar_export_nn_{participant_id}",
+                            width="stretch"):
+                    # Generate corrected RR values
+                    if all_artifact_idx_nn:
+                        correction_nn = cached_artifact_correction(
+                            tuple(rr_nn), tuple(ts_nn),
+                            tuple(sorted(all_artifact_idx_nn))
+                        )
+                        corrected_rr_nn = correction_nn.get('corrected_rr', rr_nn)
+                    else:
+                        corrected_rr_nn = rr_nn
+
+                    # Create DataFrame for export
+                    import io
+                    export_data_nn = []
+                    for i, (ts, rr_orig, rr_corr) in enumerate(zip(ts_nn, rr_nn, corrected_rr_nn)):
+                        ts_str = ts.strftime('%Y-%m-%d %H:%M:%S.%f') if hasattr(ts, 'strftime') else str(ts)
+                        is_art = i in all_artifact_idx_nn
+                        art_source = ''
+                        if is_art:
+                            if i in manual_indices_nn:
+                                art_source = 'manual'
+                            elif i in algo_indices_nn:
+                                art_source = 'algorithm'
+                        export_data_nn.append({
+                            'timestamp': ts_str,
+                            'rr_ms': rr_orig,
+                            'nn_ms': round(rr_corr, 1),
+                            'is_artifact': is_art,
+                            'artifact_source': art_source
+                        })
+
+                    df_nn = get_pandas().DataFrame(export_data_nn)
+
+                    # Store in session state for download
+                    csv_buffer_nn = io.StringIO()
+                    df_nn.to_csv(csv_buffer_nn, index=False)
+                    st.session_state[f"nn_csv_data_{participant_id}"] = csv_buffer_nn.getvalue()
+                    st.session_state[f"nn_csv_ready_{participant_id}"] = True
+                    st.rerun()
+
+                # Show download button if CSV is ready
+                if st.session_state.get(f"nn_csv_ready_{participant_id}"):
+                    csv_data_nn = st.session_state.get(f"nn_csv_data_{participant_id}", "")
+                    st.download_button(
+                        "Download NN CSV",
+                        data=csv_data_nn,
+                        file_name=f"{participant_id}_nn.csv",
+                        mime="text/csv",
+                        key=f"download_nn_{participant_id}",
+                        type="primary",
+                        width="stretch"
+                    )
+            else:
+                st.caption("Load participant data first")
+
             # Get available sections
             sections = load_sections()
             section_names = ["Full Recording"] + [s.get("label", name) for name, s in sections.items() if s.get("start_event")]
@@ -3683,8 +3834,7 @@ def render_rr_plot_fragment(participant_id: str):
                 # Import the export module
                 from rrational.gui.rrational_export import (
                     RRationalExport, RRIntervalExport, SegmentDefinition,
-                    ArtifactDetection, ManualArtifact, ExclusionZone,
-                    QualityMetrics, ProcessingStep, save_rrational,
+                    ArtifactDetection, ManualArtifact, QualityMetrics, ProcessingStep, save_rrational,
                     build_export_filename, get_quality_grade, get_quigley_recommendation
                 )
                 from datetime import datetime
@@ -3848,64 +3998,108 @@ def render_rr_plot_fragment(participant_id: str):
     with col_opt3:
         show_artifacts = st.checkbox("Show artifacts", value=plot_defaults.get("show_artifacts", True),
                                      key=f"frag_show_artifacts_{participant_id}",
-                                     help="Detect artifacts using selected method")
+                                     help="Show saved artifacts (manual, validated, algorithm)")
         # Artifact detection settings (only when enabled)
         if show_artifacts:
-            # Method display names for dropdown
-            # Note: Kubios and Lipponen2019 are the same algorithm - we only show Lipponen2019
-            # to avoid redundancy. The internal code still accepts "kubios" for compatibility.
-            method_options = {
-                "threshold": "Threshold (Malik)",
-                "lipponen2019": "Lipponen 2019",
-                "lipponen2019_segmented": "Lipponen 2019 (segmented)",
-            }
-            artifact_method = st.selectbox(
-                "Method",
-                options=list(method_options.keys()),
-                format_func=lambda x: method_options[x],
-                index=0,  # Default to threshold (better for long recordings)
-                key=f"frag_artifact_method_{participant_id}",
-                help="**Threshold**: Fast ratio check (>X% change). **Lipponen 2019**: State-of-the-art beat classification (=Kubios). **Segmented**: 5-min chunks for long recordings. Use Lipponen for <10min, Segmented for >10min."
-            )
-            if artifact_method == "threshold":
-                artifact_threshold = st.slider(
-                    "Threshold %",
-                    min_value=10, max_value=50, value=20, step=5,
-                    key=f"frag_artifact_thresh_{participant_id}",
-                    help="Max allowed RR change between beats (20% = Malik method)"
-                ) / 100.0
-                segment_beats = 300  # Default, not used for threshold
-            elif artifact_method in ("kubios_segmented", "lipponen2019_segmented"):
-                segment_beats = st.slider(
-                    "Segment size (beats)",
-                    min_value=100, max_value=600, value=300, step=50,
-                    key=f"frag_segment_beats_{participant_id}",
-                    help="Number of beats per segment (~300 = 5 min at 60 BPM)"
+            # Check if we have loaded artifact settings to use as defaults
+            loaded_info = st.session_state.get(f"artifacts_loaded_info_{participant_id}", {})
+            loaded_method = loaded_info.get("algorithm_method")
+            loaded_threshold = loaded_info.get("algorithm_threshold")
+
+            # Check if we have saved/loaded artifacts
+            saved_artifact_data = st.session_state.get(f"artifacts_{participant_id}", {})
+            has_saved_artifacts = bool(saved_artifact_data.get("artifact_indices"))
+
+            # Detection mode: saved (default) vs new detection
+            detect_new_key = f"detect_new_artifacts_{participant_id}"
+            run_new_detection = st.session_state.get(detect_new_key, False)
+
+            # Show saved artifact info if available (Clear button moved to results section)
+            if has_saved_artifacts:
+                n_saved = len(saved_artifact_data.get("artifact_indices", []))
+                saved_method = saved_artifact_data.get("method", "unknown")
+                st.caption(f"Loaded: {n_saved} artifacts ({saved_method})")
+
+            # New detection settings (in expander to avoid clutter)
+            with st.expander("Detect New Artifacts", expanded=run_new_detection):
+                # Method display names for dropdown
+                method_options = {
+                    "threshold": "Threshold (Malik)",
+                    "lipponen2019": "Lipponen 2019",
+                    "lipponen2019_segmented": "Lipponen 2019 (segmented)",
+                }
+
+                # Determine default method index based on loaded settings
+                method_keys = list(method_options.keys())
+                default_method_idx = 0  # Default to threshold
+                if loaded_method and loaded_method in method_keys:
+                    default_method_idx = method_keys.index(loaded_method)
+
+                artifact_method = st.selectbox(
+                    "Method",
+                    options=method_keys,
+                    format_func=lambda x: method_options[x],
+                    index=default_method_idx,
+                    key=f"frag_artifact_method_{participant_id}",
+                    help="**Threshold**: Fast ratio check (>X% change). **Lipponen 2019**: State-of-the-art beat classification (=Kubios). **Segmented**: 5-min chunks for long recordings."
                 )
-                artifact_threshold = 0.20  # Not used
-            else:
-                # kubios or lipponen2019 single-pass methods
-                artifact_threshold = 0.20  # Not used
-                segment_beats = 300  # Not used
+                if artifact_method == "threshold":
+                    # Use loaded threshold if available, convert to percentage (0.20 -> 20)
+                    default_thresh_pct = 20
+                    if loaded_threshold is not None and loaded_method == "threshold":
+                        default_thresh_pct = int(loaded_threshold * 100)
+                        # Clamp to valid range
+                        default_thresh_pct = max(10, min(50, default_thresh_pct))
+
+                    artifact_threshold = st.slider(
+                        "Threshold %",
+                        min_value=10, max_value=50, value=default_thresh_pct, step=5,
+                        key=f"frag_artifact_thresh_{participant_id}",
+                        help="Max allowed RR change between beats (20% = Malik method)"
+                    ) / 100.0
+                    segment_beats = 300  # Default, not used for threshold
+                elif artifact_method in ("kubios_segmented", "lipponen2019_segmented"):
+                    segment_beats = st.slider(
+                        "Segment size (beats)",
+                        min_value=100, max_value=600, value=300, step=50,
+                        key=f"frag_segment_beats_{participant_id}",
+                        help="Number of beats per segment (~300 = 5 min at 60 BPM)"
+                    )
+                    artifact_threshold = 0.20  # Not used
+                else:
+                    # kubios or lipponen2019 single-pass methods
+                    artifact_threshold = 0.20  # Not used
+                    segment_beats = 300  # Not used
+
+                # Gap-adjacent beat handling (only for HRV Logger data with gaps)
+                gap_handling_options = {
+                    "include": "Include in artifacts (default)",
+                    "exclude": "Exclude gap-adjacent beats",
+                    "boundary": "Treat as segment boundaries",
+                }
+                gap_handling = st.selectbox(
+                    "Gap-adjacent beats",
+                    options=list(gap_handling_options.keys()),
+                    format_func=lambda x: gap_handling_options[x],
+                    index=0,
+                    key=f"frag_gap_handling_{participant_id}",
+                    help="Beats immediately after signal gaps may show large RR changes.",
+                    disabled=is_vns_data,
+                )
+
+                # Run detection button
+                if st.button("Run Detection", key=f"run_artifact_detection_{participant_id}", type="primary",
+                            width="stretch"):
+                    st.session_state[detect_new_key] = True
+                    # Clear saved artifacts to force new detection
+                    if f"artifacts_{participant_id}" in st.session_state:
+                        st.session_state[f"artifacts_{participant_id}"]["force_redetect"] = True
+                    st.rerun()
+
             # Show corrected only when artifacts enabled
             show_corrected = st.checkbox("Show corrected (NN)", value=plot_defaults.get("show_corrected", False),
                                          key=f"frag_show_corrected_{participant_id}",
                                          help="Preview corrected NN intervals (artifacts interpolated)")
-            # Gap-adjacent beat handling (only for HRV Logger data with gaps)
-            gap_handling_options = {
-                "include": "Include in artifacts (default)",
-                "exclude": "Exclude gap-adjacent beats",
-                "boundary": "Treat as segment boundaries",
-            }
-            gap_handling = st.selectbox(
-                "Gap-adjacent beats",
-                options=list(gap_handling_options.keys()),
-                format_func=lambda x: gap_handling_options[x],
-                index=0,
-                key=f"frag_gap_handling_{participant_id}",
-                help="Beats immediately after signal gaps may show large RR changes. Choose how to handle them: Include (count as artifacts), Exclude (ignore them), or Boundary (create segment breaks).",
-                disabled=is_vns_data,
-            )
         else:
             artifact_method = "threshold"
             artifact_threshold = 0.20
@@ -3935,6 +4129,83 @@ def render_rr_plot_fragment(participant_id: str):
                     st.markdown(VNS_DATA_HELP)
                 else:
                     st.markdown(ARTIFACT_CORRECTION_HELP)
+
+    # Persistent notification when artifacts are loaded from saved session
+    loaded_info_key = f"artifacts_loaded_info_{participant_id}"
+    validated_key = f"validated_artifacts_{participant_id}"
+
+    # Get current algorithm artifacts and validated set
+    current_algo_artifacts = st.session_state.get(f"artifacts_{participant_id}", {}).get("artifact_indices", [])
+    validated_artifacts = st.session_state.get(validated_key, set())
+    n_current = len(current_algo_artifacts)
+    n_validated = len(validated_artifacts)
+
+    if loaded_info_key in st.session_state and show_artifacts:
+        loaded_info = st.session_state[loaded_info_key]
+
+        # Build info message
+        info_parts = []
+        if loaded_info.get("n_algorithm", 0) > 0:
+            method_name = loaded_info.get("algorithm_method", "unknown")
+            threshold = loaded_info.get("algorithm_threshold")
+            if threshold is not None:
+                info_parts.append(f"**{loaded_info['n_algorithm']}** algorithm ({method_name}, {threshold:.0%})")
+            else:
+                info_parts.append(f"**{loaded_info['n_algorithm']}** algorithm ({method_name})")
+        if loaded_info.get("n_manual", 0) > 0:
+            info_parts.append(f"**{loaded_info['n_manual']}** manual")
+        if n_validated > 0:
+            info_parts.append(f"**{n_validated}** validated")
+
+        if info_parts:
+            saved_at = loaded_info.get("saved_at", "")
+            if saved_at:
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(saved_at)
+                    saved_str = dt.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    saved_str = saved_at[:16] if len(saved_at) > 16 else saved_at
+            else:
+                saved_str = "unknown"
+
+            col_info1, col_info2 = st.columns([4, 1])
+            with col_info1:
+                st.info(f"**Loaded artifact corrections** (saved {saved_str}): " + " | ".join(info_parts))
+            with col_info2:
+                if n_current > 0 and n_current != n_validated:
+                    if st.button("Validate All", key=f"validate_artifacts_{participant_id}",
+                                help=f"Mark current {n_current} algorithm artifacts as validated/reviewed",
+                                width="stretch"):
+                        st.session_state[validated_key] = set(current_algo_artifacts)
+                        # Update loaded info
+                        st.session_state[loaded_info_key]["n_validated"] = n_current
+                        st.toast(f"Marked {n_current} artifacts as validated")
+                        st.rerun()
+                elif n_validated > 0:
+                    st.success("All validated")
+
+    # Show Validate button even when not loaded from saved session (for first-time detection)
+    elif show_artifacts and n_current > 0:
+        col_val1, col_val2 = st.columns([4, 1])
+        with col_val1:
+            artifact_data = st.session_state.get(f"artifacts_{participant_id}", {})
+            method_name = artifact_data.get("method", "unknown")
+            threshold = artifact_data.get("threshold")
+            if threshold is not None:
+                st.caption(f"Detected **{n_current}** artifacts ({method_name}, {threshold:.0%})")
+            else:
+                st.caption(f"Detected **{n_current}** artifacts ({method_name})")
+        with col_val2:
+            if n_current != n_validated:
+                if st.button("Validate All", key=f"validate_new_artifacts_{participant_id}",
+                            help=f"Mark current {n_current} algorithm artifacts as validated/reviewed",
+                            width="stretch"):
+                    st.session_state[validated_key] = set(current_algo_artifacts)
+                    st.toast(f"Marked {n_current} artifacts as validated")
+                    st.rerun()
+            elif n_validated > 0:
+                st.success("All validated")
 
     # Show downsampling info
     if plot_data['n_displayed'] < plot_data['n_original']:
@@ -4163,11 +4434,57 @@ def render_rr_plot_fragment(participant_id: str):
 
     # Artifact detection (threshold or Kubios method)
     if show_artifacts:
-        artifact_result = cached_artifact_detection(
-            tuple(rr_list), tuple(timestamps_list),
-            method=artifact_method, threshold_pct=artifact_threshold,
-            segment_beats=segment_beats
-        )
+        # Check if we should use saved artifacts or run new detection
+        detect_new_key = f"detect_new_artifacts_{participant_id}"
+        run_new_detection = st.session_state.get(detect_new_key, False)
+        saved_artifact_data = st.session_state.get(f"artifacts_{participant_id}", {})
+        has_saved_artifacts = bool(saved_artifact_data.get("artifact_indices"))
+        force_redetect = saved_artifact_data.get("force_redetect", False)
+
+        # Fast path for marker-only updates (user clicked to mark/unmark)
+        # Skip heavy detection processing, just reuse existing artifact data
+        marker_only_key = f"artifact_marker_only_{participant_id}"
+        is_marker_only_update = st.session_state.pop(marker_only_key, False)
+
+        if is_marker_only_update and has_saved_artifacts:
+            # Fast path: reuse existing artifact result, only manual markers changed
+            artifact_result = saved_artifact_data
+        elif run_new_detection or force_redetect:
+            # User explicitly requested new detection - run it
+            artifact_result = cached_artifact_detection(
+                tuple(rr_list), tuple(timestamps_list),
+                method=artifact_method, threshold_pct=artifact_threshold,
+                segment_beats=segment_beats
+            )
+            # Clear the force_redetect flag
+            if force_redetect and f"artifacts_{participant_id}" in st.session_state:
+                st.session_state[f"artifacts_{participant_id}"].pop("force_redetect", None)
+            # Reset detection flag
+            st.session_state[detect_new_key] = False
+        elif has_saved_artifacts:
+            # Use saved/loaded artifacts (no new detection)
+            artifact_result = {
+                "artifact_indices": saved_artifact_data.get("artifact_indices", []),
+                "artifact_timestamps": [timestamps_list[i] for i in saved_artifact_data.get("artifact_indices", []) if 0 <= i < len(timestamps_list)],
+                "artifact_rr": [rr_list[i] for i in saved_artifact_data.get("artifact_indices", []) if 0 <= i < len(rr_list)],
+                "total_artifacts": len(saved_artifact_data.get("artifact_indices", [])),
+                "artifact_ratio": len(saved_artifact_data.get("artifact_indices", [])) / len(rr_list) if rr_list else 0.0,
+                "method": saved_artifact_data.get("method", "loaded"),
+                "by_type": saved_artifact_data.get("by_type", {}),
+                "restored_from_save": True,
+            }
+        else:
+            # No saved artifacts and no detection requested - empty result
+            artifact_result = {
+                "artifact_indices": [],
+                "artifact_timestamps": [],
+                "artifact_rr": [],
+                "total_artifacts": 0,
+                "artifact_ratio": 0.0,
+                "method": "none",
+                "by_type": {},
+                "no_detection_yet": True,
+            }
 
         # Get gap-adjacent indices from plot_data (beats immediately after gaps)
         gap_adjacent_indices = plot_data.get('gap_adjacent_indices', set())
@@ -4259,23 +4576,34 @@ def render_rr_plot_fragment(participant_id: str):
             }
             method_display = method_display_names.get(method_used, method_used)
 
-            if method_used == "threshold":
-                st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
-                       f"({artifact_result['artifact_ratio']*100:.1f}%) - "
-                       f"Method: {method_display}{gap_suffix}")
-            else:
-                st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
-                       f"({artifact_result['artifact_ratio']*100:.1f}%) - "
-                       f"Ectopic: {by_type.get('ectopic', 0)}, "
-                       f"Missed: {by_type.get('missed', 0)}, "
-                       f"Extra: {by_type.get('extra', 0)}, "
+            # Show artifact summary with Clear button
+            col_summary, col_clear_btn = st.columns([5, 1])
+            with col_summary:
+                if method_used == "threshold":
+                    st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
+                           f"({artifact_result['artifact_ratio']*100:.1f}%) - "
+                           f"Method: {method_display}{gap_suffix}")
+                else:
+                    st.info(f"**{artifact_result['total_artifacts']} artifacts detected** "
+                           f"({artifact_result['artifact_ratio']*100:.1f}%) - "
+                           f"Ectopic: {by_type.get('ectopic', 0)}, "
+                           f"Missed: {by_type.get('missed', 0)}, "
+                           f"Extra: {by_type.get('extra', 0)}, "
                        f"Long/Short: {by_type.get('longshort', 0)}{gap_suffix}")
+            with col_clear_btn:
+                if st.button("Clear", key=f"clear_artifacts_result_{participant_id}",
+                            help="Clear algorithm-detected artifacts"):
+                    if f"artifacts_{participant_id}" in st.session_state:
+                        del st.session_state[f"artifacts_{participant_id}"]
+                    loaded_info_key = f"artifacts_loaded_info_{participant_id}"
+                    if loaded_info_key in st.session_state:
+                        del st.session_state[loaded_info_key]
+                    st.rerun()  # Full rerun to update Signal Inspection section
 
             # Display per-segment artifact percentages for segmented methods
             segment_stats = artifact_result.get("segment_stats", [])
             if segment_stats:
                 with st.expander(f"Segment Artifact Details ({len(segment_stats)} segments)"):
-                    import pandas as pd
                     df = get_pandas().DataFrame(segment_stats)
                     df.columns = ["Segment", "Start Beat", "End Beat", "N Beats", "N Artifacts", "Artifact %"]
 
@@ -4289,7 +4617,7 @@ def render_rr_plot_fragment(participant_id: str):
 
                     st.dataframe(
                         df.style.apply(highlight_high_artifacts, axis=1).format({"Artifact %": "{:.1f}"}),
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
 
@@ -4373,6 +4701,12 @@ def render_rr_plot_fragment(participant_id: str):
                         st.success(f"Correction preview: {correction_result['n_corrected']} beats interpolated ({manual_count} manual)")
                     else:
                         st.success(f"Correction preview: {correction_result['n_corrected']} beats interpolated")
+        elif artifact_result.get("no_detection_yet"):
+            # No detection has been run yet - show instructions
+            st.info("No artifact detection yet. Use **Detect New Artifacts** to run detection.")
+        elif artifact_result.get("restored_from_save") and artifact_result["total_artifacts"] == 0:
+            # Loaded from save but had no artifacts
+            st.info("No artifacts in saved data. Use **Detect New Artifacts** to run new detection.")
 
     # Display manual artifacts (purple diamond markers)
     if manual_artifacts:
@@ -4743,7 +5077,7 @@ def render_rr_plot_fragment(participant_id: str):
                     # Only rerun for second point (to show confirmation form)
                     # First point: don't rerun to avoid zoom reset - marker shows on next interaction
                     if len(st.session_state[exclusion_click_key]) >= 2:
-                        st.rerun()
+                        st.rerun(scope="fragment")
 
                 # Always return early in exclusion mode (don't show event form)
                 return
@@ -4754,19 +5088,16 @@ def render_rr_plot_fragment(participant_id: str):
 
             # Handle Signal Inspection mode - manual artifact marking
             if current_mode == "Signal Inspection":
-                # For Signal Inspection, we need to allow clicking the same point to toggle
-                # So we use a different key that includes artifact state
-                signal_last_click_key = f"signal_last_click_{participant_id}"
-                manual_artifact_key_check = f"manual_artifacts_{participant_id}"
-                current_artifact_count = len(st.session_state.get(manual_artifact_key_check, []))
-                click_signature = f"{clicked_time_str}_{current_artifact_count}"
+                # Use a "just processed" key to prevent reprocessing the same click after rerun
+                # This is simpler and more reliable than including artifact count in signature
+                just_processed_key = f"artifact_just_processed_{participant_id}"
 
-                last_signal_click = st.session_state.get(signal_last_click_key)
-                if last_signal_click == click_signature:
-                    # Same click on same state - skip (rerun duplicate)
+                # Check if this click was just processed (post-rerun)
+                just_processed = st.session_state.get(just_processed_key)
+                if just_processed == clicked_time_str:
+                    # This is a post-rerun duplicate - clear the flag and skip
+                    st.session_state[just_processed_key] = None
                     return
-                # Update the last click signature
-                st.session_state[signal_last_click_key] = click_signature
 
                 # Find nearest beat index to clicked timestamp
                 timestamps = plot_data['timestamps']
@@ -4811,7 +5142,9 @@ def render_rr_plot_fragment(participant_id: str):
                 clicked_ts_str = get_pandas().to_datetime(timestamps[nearest_idx]).strftime('%H:%M:%S.%f')
 
                 # Check if this beat is a detected artifact (from threshold detection)
-                detected_artifact_indices = plot_data.get('artifact_result', {}).get('artifact_indices', [])
+                # Artifacts are stored in session state, not plot_data
+                artifact_data = st.session_state.get(f"artifacts_{participant_id}", {})
+                detected_artifact_indices = artifact_data.get('artifact_indices', [])
                 is_detected_artifact = original_idx in detected_artifact_indices
 
                 # Check if this beat is a manual artifact
@@ -4857,7 +5190,11 @@ def render_rr_plot_fragment(participant_id: str):
                     st.toast(f"Marked as artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
                     st.session_state[manual_artifact_key] = manual_artifacts
 
-                st.rerun()
+                # Mark this click as just processed to prevent reprocessing after rerun
+                st.session_state[just_processed_key] = clicked_time_str
+                # Flag to skip heavy detection on rerun (we're just updating markers)
+                st.session_state[f"artifact_marker_only_{participant_id}"] = True
+                st.rerun()  # Full rerun to update Signal Inspection section
 
             # Only show event add form if in "Add Events" mode
             if current_mode != "Add Events":
@@ -5304,7 +5641,7 @@ def main():
             pm = st.session_state.project_manager
             project_name = pm.metadata.name if pm and pm.metadata else "Project"
             st.caption(f"Project: **{project_name}**")
-            if st.button("Switch Project", key="switch_project", use_container_width=True):
+            if st.button("Switch Project", key="switch_project", width="stretch"):
                 # Clear current project to show welcome screen
                 st.session_state.current_project = None
                 st.session_state.project_manager = None
@@ -5312,7 +5649,7 @@ def main():
                 st.rerun()
         else:
             st.caption("Temporary Workspace")
-            if st.button("Open Project", key="open_project", use_container_width=True):
+            if st.button("Open Project", key="open_project", width="stretch"):
                 st.session_state.show_welcome = True
                 st.rerun()
 
@@ -5538,6 +5875,107 @@ def main():
                 # Recording date/time
                 if summary.recording_datetime:
                     st.info(f" Recording Date: {summary.recording_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                # Check for saved .rrational files and artifact corrections
+                from rrational.gui.rrational_export import find_rrational_files
+                from rrational.gui.persistence import load_artifact_corrections
+
+                data_dir = st.session_state.get("data_dir", "")
+                project_path = st.session_state.get("current_project")
+
+                ready_files = find_rrational_files(selected_participant, data_dir, project_path)
+                saved_artifacts = load_artifact_corrections(selected_participant, data_dir, project_path)
+
+                # Show status badges
+                status_parts = []
+                if ready_files:
+                    status_parts.append(f"**{len(ready_files)}** .rrational file(s)")
+                if saved_artifacts:
+                    n_algo = len(saved_artifacts.get("algorithm_artifact_indices", []))
+                    n_manual = len(saved_artifacts.get("manual_artifacts", []))
+                    n_excluded = len(saved_artifacts.get("excluded_artifact_indices", []))
+                    if n_algo or n_manual or n_excluded:
+                        art_parts = []
+                        if n_algo:
+                            art_parts.append(f"**{n_algo}** algorithm")
+                        if n_manual:
+                            art_parts.append(f"**{n_manual}** manual")
+                        if n_excluded:
+                            art_parts.append(f"**{n_excluded}** excluded")
+                        status_parts.append(" + ".join(art_parts) + " artifacts saved")
+
+                if status_parts:
+                    st.success(f"Saved data: {' | '.join(status_parts)}")
+
+                # Auto-load saved artifact corrections BEFORE plot is built
+                # This ensures saved artifacts appear on the plot immediately
+                artifacts_loaded_key = f"artifacts_loaded_{selected_participant}"
+                if artifacts_loaded_key not in st.session_state:
+                    st.session_state[artifacts_loaded_key] = True  # Mark as loaded
+
+                    from rrational.gui.persistence import load_artifact_corrections, load_artifact_corrections_from_rrational
+                    from rrational.gui.rrational_export import find_rrational_files
+
+                    data_dir_load = str(st.session_state.get("data_dir", ""))
+                    project_path_load = st.session_state.get("current_project")
+
+                    # Try _artifacts.yml first
+                    saved = load_artifact_corrections(
+                        selected_participant,
+                        data_dir=data_dir_load,
+                        project_path=project_path_load,
+                    )
+
+                    if saved:
+                        manual_artifact_key_load = f"manual_artifacts_{selected_participant}"
+                        artifact_exclusions_key_load = f"artifact_exclusions_{selected_participant}"
+
+                        st.session_state[manual_artifact_key_load] = saved.get("manual_artifacts", [])
+                        st.session_state[artifact_exclusions_key_load] = set(saved.get("excluded_artifact_indices", []))
+
+                        # Restore algorithm artifacts if present
+                        if "algorithm_artifact_indices" in saved:
+                            artifacts_key_load = f"artifacts_{selected_participant}"
+                            st.session_state[artifacts_key_load] = {
+                                "artifact_indices": saved.get("algorithm_artifact_indices", []),
+                                "method": saved.get("algorithm_method"),
+                                "threshold": saved.get("algorithm_threshold"),
+                                "restored_from_save": True,
+                            }
+
+                        # Restore validated artifacts
+                        if "validated_artifact_indices" in saved:
+                            validated_key_load = f"validated_artifacts_{selected_participant}"
+                            st.session_state[validated_key_load] = set(saved.get("validated_artifact_indices", []))
+
+                        # Store info for persistent notification
+                        has_any = (saved.get("manual_artifacts") or
+                                  saved.get("excluded_artifact_indices") or
+                                  saved.get("algorithm_artifact_indices"))
+                        if has_any:
+                            st.session_state[f"artifacts_loaded_info_{selected_participant}"] = {
+                                "saved_at": saved.get("saved_at"),
+                                "algorithm_method": saved.get("algorithm_method"),
+                                "algorithm_threshold": saved.get("algorithm_threshold"),
+                                "n_algorithm": len(saved.get("algorithm_artifact_indices", [])),
+                                "n_manual": len(saved.get("manual_artifacts", [])),
+                                "n_excluded": len(saved.get("excluded_artifact_indices", [])),
+                                "n_validated": len(saved.get("validated_artifact_indices", [])),
+                            }
+                            st.toast("Loaded artifact corrections from saved session")
+                    else:
+                        # Fallback: try .rrational file
+                        ready_files = find_rrational_files(selected_participant, data_dir_load, project_path_load)
+                        if ready_files:
+                            from_rrational = load_artifact_corrections_from_rrational(ready_files[0])
+                            if from_rrational:
+                                manual_artifact_key_load = f"manual_artifacts_{selected_participant}"
+                                artifact_exclusions_key_load = f"artifact_exclusions_{selected_participant}"
+                                st.session_state[manual_artifact_key_load] = from_rrational.get("manual_artifacts", [])
+                                st.session_state[artifact_exclusions_key_load] = set(from_rrational.get("excluded_artifact_indices", []))
+                                source_name = Path(from_rrational.get("source_file", "")).name
+                                st.toast(f"Restored artifact markings from {source_name}")
+                                st.session_state[f"artifacts_from_rrational_{selected_participant}"] = source_name
 
                 # RR Interval Plot with Event Markers
                 st.markdown("---")
@@ -6208,7 +6646,7 @@ def main():
                                         "Method": detection_method,
                                     })
                                 if artifact_data:
-                                    st.dataframe(get_pandas().DataFrame(artifact_data), hide_index=True, use_container_width=True)
+                                    st.dataframe(get_pandas().DataFrame(artifact_data), hide_index=True, width="stretch")
                                 if len(artifact_indices) > 50:
                                     st.caption(f"Showing first 50 of {len(artifact_indices)} artifacts")
 
@@ -6217,8 +6655,9 @@ def main():
                         st.markdown("##### Manual Artifact Marking")
                         st.caption("Click on a beat in the plot to toggle manual artifact marking (purple diamonds)")
 
-                        # Initialize manual artifacts in session state
+                        # Manual artifacts session state keys (loaded automatically before plot)
                         manual_artifact_key = f"manual_artifacts_{selected_participant}"
+
                         if manual_artifact_key not in st.session_state:
                             st.session_state[manual_artifact_key] = []
 
@@ -6242,7 +6681,7 @@ def main():
                                         "RR (ms)": f"{art.get('rr_value', 0):.0f}",
                                         "Index": art.get('original_idx', 'N/A'),
                                     })
-                                st.dataframe(get_pandas().DataFrame(manual_data), hide_index=True, use_container_width=True)
+                                st.dataframe(get_pandas().DataFrame(manual_data), hide_index=True, width="stretch")
                                 st.caption("Click on marked beats in the plot to remove them")
                         else:
                             st.info("Click on beats in the plot to mark them as artifacts")
@@ -6307,6 +6746,97 @@ def main():
                                 )
                         else:
                             st.caption("Load participant data to enable export")
+
+                        # Artifact Corrections status section
+                        st.markdown("---")
+                        st.markdown("##### Artifact Status")
+
+                        # Get exclusion data
+                        artifact_exclusions_key = f"artifact_exclusions_{selected_participant}"
+                        artifact_exclusions = st.session_state.get(artifact_exclusions_key, set())
+
+                        # Get algorithm artifact data
+                        artifact_data_insp_check = st.session_state.get(f"artifacts_{selected_participant}", {})
+                        n_algo_insp = len(artifact_data_insp_check.get('artifact_indices', []))
+
+                        # Count corrections
+                        n_manual = len(manual_artifacts)
+                        n_excluded = len(artifact_exclusions) if artifact_exclusions else 0
+                        has_corrections = n_manual > 0 or n_excluded > 0 or n_algo_insp > 0
+
+                        # Check if saved corrections exist
+                        from rrational.gui.persistence import load_artifact_corrections
+                        saved_corrections = load_artifact_corrections(
+                            selected_participant,
+                            data_dir=str(st.session_state.get("data_dir", "")),
+                            project_path=st.session_state.get("current_project"),
+                        )
+                        has_saved = saved_corrections is not None
+
+                        if has_corrections:
+                            # Build summary text
+                            corr_parts = []
+                            if n_algo_insp > 0:
+                                corr_parts.append(f"**{n_algo_insp}** algorithm-detected")
+                            if n_manual > 0:
+                                corr_parts.append(f"**{n_manual}** manually marked")
+                            if n_excluded > 0:
+                                corr_parts.append(f"**{n_excluded}** excluded")
+                            st.write(" | ".join(corr_parts))
+
+                            if has_saved:
+                                st.success("Saved ✓")
+                            else:
+                                st.caption("Use **Save Artifact Corrections** in sidebar to save")
+
+                            # Reset buttons
+                            col_reset1, col_reset2 = st.columns(2)
+                            with col_reset1:
+                                # Reset to Original - keeps algorithm artifacts, clears manual changes
+                                if n_manual > 0 or n_excluded > 0:
+                                    if st.button("Reset to Original", key=f"reset_to_original_{selected_participant}",
+                                                help="Clear manual markings and exclusions, keep algorithm detection"):
+                                        st.session_state[manual_artifact_key] = []
+                                        st.session_state[artifact_exclusions_key] = set()
+                                        # Clear validated artifacts too
+                                        validated_key = f"validated_artifacts_{selected_participant}"
+                                        if validated_key in st.session_state:
+                                            st.session_state[validated_key] = set()
+                                        st.toast("Reset to original algorithm detection")
+                                        st.rerun()
+                            with col_reset2:
+                                # Reset All - clears everything and deletes saved file
+                                if st.button("Reset All", key=f"reset_artifacts_{selected_participant}", type="secondary",
+                                            help="Clear ALL markings and delete saved file"):
+                                    # Clear session state
+                                    st.session_state[manual_artifact_key] = []
+                                    st.session_state[artifact_exclusions_key] = set()
+                                    # Clear validated
+                                    validated_key = f"validated_artifacts_{selected_participant}"
+                                    if validated_key in st.session_state:
+                                        st.session_state[validated_key] = set()
+                                    # Clear loaded flag so fresh load can happen
+                                    artifacts_loaded_key = f"artifacts_loaded_{selected_participant}"
+                                    if artifacts_loaded_key in st.session_state:
+                                        del st.session_state[artifacts_loaded_key]
+                                    # Clear loaded info
+                                    loaded_info_key = f"artifacts_loaded_info_{selected_participant}"
+                                    if loaded_info_key in st.session_state:
+                                        del st.session_state[loaded_info_key]
+                                    # Clear rrational source indicator
+                                    if f"artifacts_from_rrational_{selected_participant}" in st.session_state:
+                                        del st.session_state[f"artifacts_from_rrational_{selected_participant}"]
+                                    # Delete saved file
+                                    from rrational.gui.persistence import delete_artifact_corrections
+                                    delete_artifact_corrections(
+                                        selected_participant,
+                                        data_dir=str(st.session_state.get("data_dir", "")),
+                                        project_path=st.session_state.get("current_project"),
+                                    )
+                                    st.toast("Reset all artifact corrections")
+                                    st.rerun()
+                        else:
+                            st.caption("Click on beats in the plot to mark/unmark artifacts")
 
                         # Instructions
                         st.markdown("---")
@@ -7766,8 +8296,7 @@ def main():
                                     type="primary", help="Export to processed folder"):
                             from rrational.gui.rrational_export import (
                                 RRationalExport, RRIntervalExport, SegmentDefinition,
-                                ArtifactDetection, ManualArtifact, ExclusionZone,
-                                QualityMetrics, ProcessingStep, save_rrational,
+                                ArtifactDetection, ManualArtifact, QualityMetrics, ProcessingStep, save_rrational,
                                 build_export_filename, get_quality_grade, get_quigley_recommendation
                             )
                             from datetime import datetime
