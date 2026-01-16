@@ -2546,15 +2546,18 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
 
     Downsamples data if too many points for faster rendering.
     Returns the data needed to build the plot quickly.
-    
+
     Also pre-calculates sequential timestamps (cumulative RR time) from FULL data
     before downsampling, for Signal Inspection mode.
+
+    Note: Gap detection is NOT done here - it's done separately in the fragment
+    using cached_gap_detection() with the user's configurable threshold.
 
     Args:
         flags_tuple: Optional tuple of booleans indicating flagged (problematic) intervals (VNS only)
     """
     from datetime import timedelta
-    
+
     timestamps = list(timestamps_tuple)
     rr_values = list(rr_values_tuple)
     flags = list(flags_tuple) if flags_tuple else None
@@ -2563,32 +2566,15 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
     # Calculate sequential timestamps from FULL data (before downsampling)
     # Sequential time = cumulative RR time, removes gaps
     sequential_timestamps = []
-    detected_gaps = []  # Gaps detected from real timestamps
-    gap_adjacent_indices = set()  # Beats immediately after gaps (segment boundaries)
-    total_gap_time_ms = 0  # Total gap time for validation
-    
+    total_gap_time_ms = 0  # Computed from actual gaps later
+
     if timestamps and rr_values:
         base_ts = timestamps[0]
         cumulative_ms = 0
-        gap_threshold_ms = 2000  # 2 seconds - typical gap threshold
-        
+
         for i, rr in enumerate(rr_values):
             seq_ts = base_ts + timedelta(milliseconds=cumulative_ms)
             sequential_timestamps.append(seq_ts)
-            
-            # Detect gaps from original timestamps
-            if i > 0:
-                real_delta_ms = (timestamps[i] - timestamps[i-1]).total_seconds() * 1000
-                if real_delta_ms > gap_threshold_ms:
-                    detected_gaps.append({
-                        'beat_idx': i,
-                        'seq_ts': seq_ts,
-                        'real_gap_sec': real_delta_ms / 1000
-                    })
-                    # Mark this beat as gap-adjacent (segment boundary)
-                    gap_adjacent_indices.add(i)
-                    total_gap_time_ms += real_delta_ms - rr  # Gap time = real delta - RR
-            
             cumulative_ms += rr
 
     # Downsample if too many points (keeps every Nth point)
@@ -2602,10 +2588,6 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
         original_indices = original_indices[::step]  # Keep mapping after downsampling
         if flags:
             flags = flags[::step]
-        # Downsample gap indices to match (convert to new indices)
-        detected_gaps = [g for g in detected_gaps if g['beat_idx'] % step == 0]
-        # Convert gap-adjacent indices to downsampled indices
-        gap_adjacent_indices = {i // step for i in gap_adjacent_indices if i % step == 0}
 
     y_min = min(rr_values)
     y_max = max(rr_values)
@@ -2621,10 +2603,8 @@ def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str,
         'n_original': n_points,
         'n_displayed': len(timestamps),
         'participant_id': participant_id,
-        'detected_gaps': detected_gaps,  # Gaps for Signal Inspection mode
-        'gap_adjacent_indices': gap_adjacent_indices,  # Beats after gaps (segment boundaries)
         'original_indices': original_indices,  # Maps displayed index -> original index (for artifact marking)
-        'total_gap_time_ms': total_gap_time_ms,  # For section validation
+        'downsample_step': step,  # For mapping gap indices after downsampling
         'total_rr_time_ms': cumulative_ms if timestamps else 0,  # Sum of all RR intervals
     }
     if flags:
@@ -3524,11 +3504,10 @@ def render_rr_plot_fragment(participant_id: str):
 
     # Original timestamps are always available for event alignment
     original_timestamps = plot_data['timestamps']
-    
-    # Pre-calculated sequential timestamps and gaps from cached_get_plot_data
+
+    # Pre-calculated sequential timestamps from cached_get_plot_data
     # These are calculated from FULL data before downsampling
     sequential_timestamps = plot_data.get('sequential_timestamps', [])
-    detected_gaps_for_display = plot_data.get('detected_gaps', [])
     
     # Build real-to-sequential mapping for event alignment
     real_to_sequential_map = None
@@ -4407,16 +4386,26 @@ def render_rr_plot_fragment(participant_id: str):
                     font=dict(color=color, size=10)
                 )
 
-    # Gap detection (CACHED) - skip for VNS data and Signal Inspection mode (synthesized timestamps)
+    # Gap detection (CACHED) - ALWAYS detect gaps from original timestamps
+    # This provides consistent gap info for both Add Events and Signal Inspection modes
     timestamps_list = plot_data['timestamps']
     rr_list = plot_data['rr_values']
-    if is_vns_data or use_sequential_timestamps:
-        # VNS timestamps and Signal Inspection mode use synthesized timestamps, gaps are meaningless
-        gap_result = {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": is_vns_data}
+    if is_vns_data:
+        # VNS data doesn't have meaningful timestamp gaps
+        gap_result = {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": True}
+        gap_adjacent_indices = set()
     else:
-        # Issue #11 fix: HRV Logger now uses RAW data for visualization, so original_timestamps are raw
+        # Detect gaps from ORIGINAL timestamps (not sequential), using user's threshold
         gap_result = cached_gap_detection(tuple(original_timestamps), tuple(rr_list), gap_threshold)
+        # Compute gap-adjacent indices (beats immediately after gaps) for artifact handling
+        gap_adjacent_indices = set()
+        for gap in gap_result.get("gaps", []):
+            gap_end_idx = gap.get("end_idx")
+            if gap_end_idx is not None and gap_end_idx < len(rr_list):
+                gap_adjacent_indices.add(gap_end_idx)
     st.session_state[f"gaps_{participant_id}"] = gap_result
+    # Store gap-adjacent indices in plot_data for artifact handling
+    plot_data['gap_adjacent_indices'] = gap_adjacent_indices
 
     # Get manual artifacts (always available, even if show_artifacts is False)
     manual_artifact_key = f"manual_artifacts_{participant_id}"
@@ -4774,27 +4763,33 @@ def render_rr_plot_fragment(participant_id: str):
 
     # In Signal Inspection mode, show gap markers at sequential positions
     # These mark where signal loss occurred in the original recording
-    if use_sequential_timestamps and detected_gaps_for_display and show_gaps:
+    # Use the same gap_result from cached_gap_detection for consistency
+    if use_sequential_timestamps and show_gaps and not is_vns_data:
+        gaps_from_result = gap_result.get("gaps", [])
         MAX_GAPS_SHOWN = 50
-        gaps_to_show = detected_gaps_for_display[:MAX_GAPS_SHOWN]
-        if len(detected_gaps_for_display) > MAX_GAPS_SHOWN:
-            st.caption(f"Showing {MAX_GAPS_SHOWN} of {len(detected_gaps_for_display)} signal loss markers")
+        gaps_to_show = gaps_from_result[:MAX_GAPS_SHOWN]
+        if len(gaps_from_result) > MAX_GAPS_SHOWN:
+            st.caption(f"Showing {MAX_GAPS_SHOWN} of {len(gaps_from_result)} signal loss markers")
 
         for gap_info in gaps_to_show:
-            gap_ts = gap_info['seq_ts']
-            gap_duration = gap_info['real_gap_sec']
-            # Add a vertical line at the gap position (dashed gray)
-            fig.add_shape(
-                type="line", x0=gap_ts, x1=gap_ts,
-                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                line=dict(color='rgba(128, 128, 128, 0.8)', width=2, dash='dot'),
-            )
-            fig.add_annotation(
-                x=gap_ts, y=y_min - 0.1 * y_range,
-                text=f"GAP: {gap_duration:.1f}s",
-                showarrow=False, font=dict(color='gray', size=8),
-                bgcolor='rgba(255,255,255,0.7)'
-            )
+            # Get the end index of the gap (beat after gap)
+            gap_end_idx = gap_info.get('end_idx', 0)
+            gap_duration = gap_info.get('duration_s', 0)
+            # Map to sequential timestamp position
+            if gap_end_idx < len(sequential_timestamps):
+                gap_ts = sequential_timestamps[gap_end_idx]
+                # Add a vertical line at the gap position (dashed gray)
+                fig.add_shape(
+                    type="line", x0=gap_ts, x1=gap_ts,
+                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                    line=dict(color='rgba(128, 128, 128, 0.8)', width=2, dash='dot'),
+                )
+                fig.add_annotation(
+                    x=gap_ts, y=y_min - 0.1 * y_range,
+                    text=f"GAP: {gap_duration:.1f}s",
+                    showarrow=False, font=dict(color='gray', size=8),
+                    bgcolor='rgba(255,255,255,0.7)'
+                )
 
     # Music sections
     music_events = stored_data.get('music_events', [])
@@ -7689,8 +7684,10 @@ def main():
                             st.caption("Compares event-based duration with RR+gap duration from recorded data")
 
                             total_rr_ms = plot_data_for_validation.get('total_rr_time_ms', 0)
-                            total_gap_ms = plot_data_for_validation.get('total_gap_time_ms', 0)
-                            n_gaps = len(plot_data_for_validation.get('detected_gaps', []))
+                            # Get gap info from session state (computed during plot rendering)
+                            gap_result_validation = st.session_state.get(f"gaps_{selected_participant}", {})
+                            total_gap_ms = gap_result_validation.get('total_gap_duration_s', 0) * 1000
+                            n_gaps = len(gap_result_validation.get('gaps', []))
 
                             # Convert to minutes for display
                             rr_duration_min = total_rr_ms / 1000 / 60

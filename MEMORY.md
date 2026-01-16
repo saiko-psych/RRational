@@ -333,6 +333,56 @@ Check background task output for actual port: `Local URL: http://localhost:850X`
 
 ---
 
+## Session 2026-01-16 (continued): Artifact Workflow Simplification
+
+### Version Tag: `v0.7.3` (continued)
+
+### Changes Made:
+
+#### 1. Removed Validated Artifacts Concept
+- Removed `validated_artifacts` parameter from `save_artifact_corrections()`
+- Removed `validated_artifact_indices` from artifact save/load
+- Reverted artifact format version from 1.2 to 1.1
+- Simplified workflow: **saving = implicit validation**
+
+#### 2. Added Warning for New Detection Over Saved Data
+- When user clicks "Run Detection" with existing saved corrections:
+  - Shows warning: "You have saved artifact corrections. Running new detection will **replace** them."
+  - Requires explicit "Replace & Detect" confirmation
+  - "Cancel" button dismisses warning
+- Prevents accidental overwriting of saved work
+
+#### 3. Fixed `loaded_info_key` Undefined Error
+- Variable was used before definition in artifact detection flow
+- Moved definition to before first use (line 4086)
+
+#### 4. Fixed Save Button Behavior
+- Removed `st.rerun()` after save to prevent session state issues
+- Now shows inline success message: "✓ Saved to {filename}"
+- Updates `artifacts_loaded_info` after save to keep UI in sync
+
+#### 5. Fixed Show Artifacts Toggle
+- Manual artifacts (purple diamonds) now hide when "Show Artifacts" unchecked
+- Changed condition from `if manual_artifacts:` to `if show_artifacts and manual_artifacts:`
+- All artifact types (algorithm + manual) now controlled by single toggle
+
+### Files Modified:
+- `src/rrational/gui/app.py`:
+  - Added `loaded_info_key` definition before first use
+  - Added warning dialog for new detection over saved data
+  - Updated save button to show inline success instead of rerun
+  - Fixed manual artifacts display to respect show_artifacts flag
+- `src/rrational/gui/persistence.py`:
+  - Removed `validated_artifacts` parameter from `save_artifact_corrections()`
+  - Removed `validated_artifact_indices` loading
+  - Reverted format_version to "1.1"
+
+### Testing Results:
+- ✅ All 18 tests passing
+- ✅ Commit: `ec5d12b`
+
+---
+
 ## Session 2026-01-16: Artifact Detection Workflow Improvements
 
 ### Version Tag: `v0.7.3`
