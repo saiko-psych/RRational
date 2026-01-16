@@ -3711,9 +3711,6 @@ def render_rr_plot_fragment(participant_id: str):
                     algo_method = artifact_data_save.get('method', None)
                     algo_threshold = artifact_data_save.get('threshold', None)
 
-                    # Get validated artifacts
-                    validated_save = st.session_state.get(f"validated_artifacts_{participant_id}", set())
-
                     save_path = save_artifact_corrections(
                         participant_id,
                         manual_artifacts=manual_artifacts_save,
@@ -3723,10 +3720,20 @@ def render_rr_plot_fragment(participant_id: str):
                         algorithm_artifacts=algo_indices_save if algo_indices_save else None,
                         algorithm_method=algo_method,
                         algorithm_threshold=algo_threshold,
-                        validated_artifacts=list(validated_save) if validated_save else None,
                     )
-                    st.toast(f"Saved artifact corrections to {save_path.name}")
-                    st.rerun()
+
+                    # Update loaded_info to reflect current saved state
+                    from datetime import datetime
+                    st.session_state[f"artifacts_loaded_info_{participant_id}"] = {
+                        "saved_at": datetime.now().isoformat(),
+                        "algorithm_method": algo_method,
+                        "algorithm_threshold": algo_threshold,
+                        "n_algorithm": n_algo_save,
+                        "n_manual": n_manual_save,
+                        "n_excluded": n_excluded_save,
+                    }
+
+                    st.success(f"✓ Saved to {save_path.name}")
             elif has_saved_corrections:
                 st.success("Artifact corrections saved")
             else:
@@ -4087,14 +4094,40 @@ def render_rr_plot_fragment(participant_id: str):
                     disabled=is_vns_data,
                 )
 
-                # Run detection button
-                if st.button("Run Detection", key=f"run_artifact_detection_{participant_id}", type="primary",
-                            width="stretch"):
-                    st.session_state[detect_new_key] = True
-                    # Clear saved artifacts to force new detection
-                    if f"artifacts_{participant_id}" in st.session_state:
-                        st.session_state[f"artifacts_{participant_id}"]["force_redetect"] = True
-                    st.rerun()
+                # Check if there are saved artifact corrections
+                loaded_info_key = f"artifacts_loaded_info_{participant_id}"
+                has_saved_corrections = loaded_info_key in st.session_state
+                confirm_key = f"confirm_new_detection_{participant_id}"
+
+                # Run detection button with warning for saved corrections
+                if has_saved_corrections and not st.session_state.get(confirm_key, False):
+                    # Show warning and require confirmation
+                    st.warning("⚠️ You have saved artifact corrections. Running new detection will **replace** them.")
+                    col_confirm, col_cancel = st.columns(2)
+                    with col_confirm:
+                        if st.button("Replace & Detect", key=f"confirm_detection_{participant_id}", type="primary"):
+                            st.session_state[confirm_key] = True
+                            st.session_state[detect_new_key] = True
+                            if f"artifacts_{participant_id}" in st.session_state:
+                                st.session_state[f"artifacts_{participant_id}"]["force_redetect"] = True
+                            # Clear saved info since we're replacing
+                            if loaded_info_key in st.session_state:
+                                del st.session_state[loaded_info_key]
+                            st.rerun()
+                    with col_cancel:
+                        if st.button("Cancel", key=f"cancel_detection_{participant_id}"):
+                            st.session_state[confirm_key] = False
+                else:
+                    if st.button("Run Detection", key=f"run_artifact_detection_{participant_id}", type="primary",
+                                width="stretch"):
+                        st.session_state[detect_new_key] = True
+                        # Clear saved artifacts to force new detection
+                        if f"artifacts_{participant_id}" in st.session_state:
+                            st.session_state[f"artifacts_{participant_id}"]["force_redetect"] = True
+                        st.rerun()
+                    # Reset confirm state when not in confirmation mode
+                    if confirm_key in st.session_state:
+                        del st.session_state[confirm_key]
 
             # Show corrected only when artifacts enabled
             show_corrected = st.checkbox("Show corrected (NN)", value=plot_defaults.get("show_corrected", False),
@@ -4132,13 +4165,6 @@ def render_rr_plot_fragment(participant_id: str):
 
     # Persistent notification when artifacts are loaded from saved session
     loaded_info_key = f"artifacts_loaded_info_{participant_id}"
-    validated_key = f"validated_artifacts_{participant_id}"
-
-    # Get current algorithm artifacts and validated set
-    current_algo_artifacts = st.session_state.get(f"artifacts_{participant_id}", {}).get("artifact_indices", [])
-    validated_artifacts = st.session_state.get(validated_key, set())
-    n_current = len(current_algo_artifacts)
-    n_validated = len(validated_artifacts)
 
     if loaded_info_key in st.session_state and show_artifacts:
         loaded_info = st.session_state[loaded_info_key]
@@ -4154,8 +4180,8 @@ def render_rr_plot_fragment(participant_id: str):
                 info_parts.append(f"**{loaded_info['n_algorithm']}** algorithm ({method_name})")
         if loaded_info.get("n_manual", 0) > 0:
             info_parts.append(f"**{loaded_info['n_manual']}** manual")
-        if n_validated > 0:
-            info_parts.append(f"**{n_validated}** validated")
+        if loaded_info.get("n_excluded", 0) > 0:
+            info_parts.append(f"**{loaded_info['n_excluded']}** excluded")
 
         if info_parts:
             saved_at = loaded_info.get("saved_at", "")
@@ -4169,43 +4195,7 @@ def render_rr_plot_fragment(participant_id: str):
             else:
                 saved_str = "unknown"
 
-            col_info1, col_info2 = st.columns([4, 1])
-            with col_info1:
-                st.info(f"**Loaded artifact corrections** (saved {saved_str}): " + " | ".join(info_parts))
-            with col_info2:
-                if n_current > 0 and n_current != n_validated:
-                    if st.button("Validate All", key=f"validate_artifacts_{participant_id}",
-                                help=f"Mark current {n_current} algorithm artifacts as validated/reviewed",
-                                width="stretch"):
-                        st.session_state[validated_key] = set(current_algo_artifacts)
-                        # Update loaded info
-                        st.session_state[loaded_info_key]["n_validated"] = n_current
-                        st.toast(f"Marked {n_current} artifacts as validated")
-                        st.rerun()
-                elif n_validated > 0:
-                    st.success("All validated")
-
-    # Show Validate button even when not loaded from saved session (for first-time detection)
-    elif show_artifacts and n_current > 0:
-        col_val1, col_val2 = st.columns([4, 1])
-        with col_val1:
-            artifact_data = st.session_state.get(f"artifacts_{participant_id}", {})
-            method_name = artifact_data.get("method", "unknown")
-            threshold = artifact_data.get("threshold")
-            if threshold is not None:
-                st.caption(f"Detected **{n_current}** artifacts ({method_name}, {threshold:.0%})")
-            else:
-                st.caption(f"Detected **{n_current}** artifacts ({method_name})")
-        with col_val2:
-            if n_current != n_validated:
-                if st.button("Validate All", key=f"validate_new_artifacts_{participant_id}",
-                            help=f"Mark current {n_current} algorithm artifacts as validated/reviewed",
-                            width="stretch"):
-                    st.session_state[validated_key] = set(current_algo_artifacts)
-                    st.toast(f"Marked {n_current} artifacts as validated")
-                    st.rerun()
-            elif n_validated > 0:
-                st.success("All validated")
+            st.info(f"**Loaded artifact corrections** (saved {saved_str}): " + " | ".join(info_parts))
 
     # Show downsampling info
     if plot_data['n_displayed'] < plot_data['n_original']:
@@ -4708,8 +4698,8 @@ def render_rr_plot_fragment(participant_id: str):
             # Loaded from save but had no artifacts
             st.info("No artifacts in saved data. Use **Detect New Artifacts** to run new detection.")
 
-    # Display manual artifacts (purple diamond markers)
-    if manual_artifacts:
+    # Display manual artifacts (purple diamond markers) - only when show_artifacts is enabled
+    if show_artifacts and manual_artifacts:
         # Get timestamps and RR values for manual artifacts
         manual_ts = []
         manual_rr = []
@@ -5943,11 +5933,6 @@ def main():
                                 "restored_from_save": True,
                             }
 
-                        # Restore validated artifacts
-                        if "validated_artifact_indices" in saved:
-                            validated_key_load = f"validated_artifacts_{selected_participant}"
-                            st.session_state[validated_key_load] = set(saved.get("validated_artifact_indices", []))
-
                         # Store info for persistent notification
                         has_any = (saved.get("manual_artifacts") or
                                   saved.get("excluded_artifact_indices") or
@@ -5960,7 +5945,6 @@ def main():
                                 "n_algorithm": len(saved.get("algorithm_artifact_indices", [])),
                                 "n_manual": len(saved.get("manual_artifacts", [])),
                                 "n_excluded": len(saved.get("excluded_artifact_indices", [])),
-                                "n_validated": len(saved.get("validated_artifact_indices", [])),
                             }
                             st.toast("Loaded artifact corrections from saved session")
                     else:
@@ -6798,10 +6782,6 @@ def main():
                                                 help="Clear manual markings and exclusions, keep algorithm detection"):
                                         st.session_state[manual_artifact_key] = []
                                         st.session_state[artifact_exclusions_key] = set()
-                                        # Clear validated artifacts too
-                                        validated_key = f"validated_artifacts_{selected_participant}"
-                                        if validated_key in st.session_state:
-                                            st.session_state[validated_key] = set()
                                         st.toast("Reset to original algorithm detection")
                                         st.rerun()
                             with col_reset2:
@@ -6811,10 +6791,6 @@ def main():
                                     # Clear session state
                                     st.session_state[manual_artifact_key] = []
                                     st.session_state[artifact_exclusions_key] = set()
-                                    # Clear validated
-                                    validated_key = f"validated_artifacts_{selected_participant}"
-                                    if validated_key in st.session_state:
-                                        st.session_state[validated_key] = set()
                                     # Clear loaded flag so fresh load can happen
                                     artifacts_loaded_key = f"artifacts_loaded_{selected_participant}"
                                     if artifacts_loaded_key in st.session_state:

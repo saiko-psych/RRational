@@ -785,7 +785,6 @@ def save_artifact_corrections(
     algorithm_artifacts: list[int] | None = None,
     algorithm_method: str | None = None,
     algorithm_threshold: float | None = None,
-    validated_artifacts: list[int] | None = None,
 ) -> Path:
     """Save artifact corrections (algorithm-detected, manual markings, and exclusions) to YAML.
 
@@ -803,7 +802,6 @@ def save_artifact_corrections(
         algorithm_artifacts: List of indices detected by algorithm (optional)
         algorithm_method: Detection method used (e.g., "threshold", "malik")
         algorithm_threshold: Threshold value used for detection
-        validated_artifacts: List of algorithm artifact indices that have been validated/reviewed
 
     Returns:
         Path to the saved file
@@ -813,7 +811,7 @@ def save_artifact_corrections(
     # Serialize data
     output_data = {
         "participant_id": participant_id,
-        "format_version": "1.2",
+        "format_version": "1.1",
         "source_type": "rrational_toolkit",
         "saved_at": datetime.now().isoformat(),
         "manual_artifacts": manual_artifacts,
@@ -827,10 +825,6 @@ def save_artifact_corrections(
             output_data["algorithm_method"] = algorithm_method
         if algorithm_threshold is not None:
             output_data["algorithm_threshold"] = algorithm_threshold
-
-    # Add validated artifacts if provided
-    if validated_artifacts is not None:
-        output_data["validated_artifact_indices"] = list(validated_artifacts)
 
     # Use the same processed directory as .rrational files
     processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
@@ -855,8 +849,7 @@ def load_artifact_corrections(
     Returns:
         Dict with 'manual_artifacts' (list), 'excluded_artifact_indices' (list),
         and optionally 'algorithm_artifact_indices' (list), 'algorithm_method' (str),
-        'algorithm_threshold' (float), 'validated_artifact_indices' (list),
-        'saved_at' (str), or None if no saved corrections exist.
+        'algorithm_threshold' (float), 'saved_at' (str), or None if no saved corrections exist.
     """
     # Primary location: same as .rrational files
     processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
@@ -881,10 +874,6 @@ def load_artifact_corrections(
                 result["algorithm_artifact_indices"] = data.get("algorithm_artifact_indices", [])
                 result["algorithm_method"] = data.get("algorithm_method")
                 result["algorithm_threshold"] = data.get("algorithm_threshold")
-
-            # Include validated artifacts if present (format version 1.2+)
-            if "validated_artifact_indices" in data:
-                result["validated_artifact_indices"] = data.get("validated_artifact_indices", [])
 
             return result
 
