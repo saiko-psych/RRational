@@ -7499,7 +7499,40 @@ def main():
                     # Section filter - focus on specific defined sections
                     st.markdown("##### Focus on Section")
                     sections = st.session_state.get("sections", {})
-                    section_options = ["Full recording"] + list(sections.keys())
+
+                    # Filter sections to only those valid for this participant
+                    participant_data = st.session_state.participant_events.get(selected_participant, {})
+                    all_evts = participant_data.get('events', []) + participant_data.get('manual', [])
+
+                    # Build set of event names this participant has (both canonical and raw)
+                    participant_event_names = set()
+                    for evt in all_evts:
+                        if hasattr(evt, 'canonical') and evt.canonical:
+                            participant_event_names.add(evt.canonical)
+                        if hasattr(evt, 'raw_label') and evt.raw_label:
+                            participant_event_names.add(evt.raw_label)
+
+                    # Filter to sections where participant has both start and end events
+                    valid_sections = []
+                    for section_name, section_def in sections.items():
+                        # Get start events (handle both old and new format)
+                        start_events = section_def.get("start_events", [])
+                        if not start_events and "start_event" in section_def:
+                            start_events = [section_def["start_event"]]
+
+                        # Get end events (handle both old and new format)
+                        end_events = section_def.get("end_events", [])
+                        if not end_events and "end_event" in section_def:
+                            end_events = [section_def["end_event"]]
+
+                        # Check if participant has at least one start and one end event
+                        has_start = any(e in participant_event_names for e in start_events)
+                        has_end = any(e in participant_event_names for e in end_events)
+
+                        if has_start and has_end:
+                            valid_sections.append(section_name)
+
+                    section_options = ["Full recording"] + valid_sections
                     selected_section = st.selectbox(
                         "View section",
                         options=section_options,
@@ -7508,22 +7541,36 @@ def main():
                         help="Focus the plot on a specific section for detailed inspection"
                     )
 
+                    if not valid_sections and sections:
+                        st.caption("No sections available for this participant (missing events)")
+
                     # Show section time range info if a section is selected
                     if selected_section != "Full recording" and selected_section in sections:
                         section_def = sections[selected_section]
-                        participant_data = st.session_state.participant_events.get(selected_participant, {})
+                        # participant_data and all_evts already fetched above for filtering
 
                         # Build event timestamp lookup from stored events
-                        all_evts = participant_data.get('events', []) + participant_data.get('manual', [])
                         event_timestamps = {}
                         for evt in all_evts:
                             if hasattr(evt, 'canonical') and evt.canonical and hasattr(evt, 'first_timestamp') and evt.first_timestamp:
                                 event_timestamps[evt.canonical] = evt.first_timestamp
 
-                        start_event = section_def.get("start_event", "")
+                        # Get start events (handle both old and new format)
+                        start_events_lookup = section_def.get("start_events", [])
+                        if not start_events_lookup and "start_event" in section_def:
+                            start_events_lookup = [section_def["start_event"]]
                         end_events = section_def.get("end_events", [])
+                        if not end_events and "end_event" in section_def:
+                            end_events = [section_def["end_event"]]
 
-                        start_time = event_timestamps.get(start_event) if start_event else None
+                        # Find start time from any matching start event
+                        start_time = None
+                        for start_ev in start_events_lookup:
+                            start_time = event_timestamps.get(start_ev)
+                            if start_time:
+                                break
+
+                        # Find end time from any matching end event
                         end_time = None
                         for end_ev in end_events:
                             end_time = event_timestamps.get(end_ev)
