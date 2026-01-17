@@ -1,0 +1,75 @@
+name: Issue Priority Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  label-priority:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Add priority labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+
+            // Define priority mappings
+            const priorityLabels = {
+              // Bug report priorities
+              'Low - Minor inconvenience': 'priority: low',
+              'Medium - Affects my workflow': 'priority: medium',
+              'High - Significantly blocking': 'priority: high',
+              'Critical - Cannot use RRational': 'priority: critical',
+              // Feature request priorities
+              'Nice to have': 'priority: low',
+              'Would help my workflow': 'priority: medium',
+              'Important for my research': 'priority: high',
+              'Critical - blocking my work': 'priority: critical'
+            };
+
+            // Find which priority was selected
+            let selectedPriority = null;
+            for (const [text, label] of Object.entries(priorityLabels)) {
+              if (body.includes(text)) {
+                selectedPriority = label;
+                break;
+              }
+            }
+
+            if (!selectedPriority) {
+              console.log('No priority selection found in issue body');
+              return;
+            }
+
+            // Get current labels
+            const currentLabels = issue.labels.map(l => l.name);
+
+            // Remove any existing priority labels
+            const allPriorityLabels = ['priority: low', 'priority: medium', 'priority: high', 'priority: critical'];
+            const labelsToRemove = currentLabels.filter(l => allPriorityLabels.includes(l));
+
+            for (const label of labelsToRemove) {
+              if (label !== selectedPriority) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  name: label
+                }).catch(() => {}); // Ignore if label doesn't exist
+              }
+            }
+
+            // Add the new priority label if not already present
+            if (!currentLabels.includes(selectedPriority)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: [selectedPriority]
+              });
+              console.log(`Added label: ${selectedPriority}`);
+            }
