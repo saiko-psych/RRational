@@ -8582,8 +8582,8 @@ def main():
                         st.caption("Validates that all defined sections have required events and expected durations.")
 
                         # Get participant's events from session state
-                        saved_events_key = f"events_{selected_participant}"
-                        saved_events = st.session_state.get(saved_events_key, [])
+                        participant_events_data = st.session_state.participant_events.get(selected_participant, {})
+                        saved_events = participant_events_data.get("events", []) + participant_events_data.get("manual", [])
 
                         # Get sections from session state
                         sections = st.session_state.get("sections", {})
