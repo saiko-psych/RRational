@@ -639,6 +639,11 @@ SECTIONS_HELP = """
 - Avoid sections that span recording gaps
 - Minimum ~100 beats for reliable time-domain metrics
 - Minimum ~300 beats for frequency-domain metrics
+
+#### Multiple Matching Events:
+If a participant has multiple events that could match a section boundary (e.g., two `rest_pre_start` markers),
+you'll see dropdown selectors in **Section Validation** to choose which specific event to use.
+Your selection is saved and used consistently across all features (Analysis, Artifact Detection, etc.).
 """
 
 ANALYSIS_HELP = """
