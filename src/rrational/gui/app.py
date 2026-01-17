@@ -4855,8 +4855,17 @@ def render_rr_plot_fragment(participant_id: str):
     inspection_zoom = st.session_state.get(zoom_key, None)
 
     # Use dynamic uirevision so zoom state resets properly when toggled
-    # When zoom is active, use one value; when auto, use another
-    zoom_revision = f"zoom_{participant_id}" if inspection_zoom else f"auto_{participant_id}"
+    # When section or zoom changes, use unique revision to force Plotly to update
+    if inspection_range:
+        # Use unique key for each section to force update when section changes
+        section_rev = f"sec_{inspection_range[0]}_{inspection_range[1]}"
+    else:
+        section_rev = "full"
+    zoom_rev = "zoom" if inspection_zoom else "auto"
+    zoom_revision = f"{zoom_rev}_{section_rev}_{participant_id}"
+
+    # When a section is selected, force Plotly to NOT preserve user zoom (use our range)
+    axis_uirevision = zoom_revision if not inspection_range else False
 
     # Configure x-axis based on mode
     if use_sequential_timestamps:
@@ -4867,7 +4876,7 @@ def render_rr_plot_fragment(participant_id: str):
             gridcolor=theme['grid'],
             linecolor=theme['line'],
             tickfont=dict(color=theme['text']),
-            uirevision=zoom_revision,  # Dynamic - changes when zoom toggled
+            uirevision=axis_uirevision,  # False when section selected to force range update
         )
     else:
         # Normal mode: x-axis shows real clock time (aligned with events)
@@ -4877,41 +4886,75 @@ def render_rr_plot_fragment(participant_id: str):
             gridcolor=theme['grid'],
             linecolor=theme['line'],
             tickfont=dict(color=theme['text']),
-            uirevision=zoom_revision,  # Dynamic - changes when zoom toggled
+            uirevision=axis_uirevision,  # False when section selected to force range update
         )
-    # If a section is selected in Signal Inspection mode, zoom to that range
-    if inspection_range and len(inspection_range) == 2:
-        start_time, end_time = inspection_range
-        xaxis_config['range'] = [start_time, end_time]
+    # Check if a section is selected in Signal Inspection mode
+    section_selected = inspection_range and len(inspection_range) == 2
+
+    # Convert section range to sequential timestamps if needed
+    section_seq_start, section_seq_end = None, None
+    if section_selected and use_sequential_timestamps:
+        original_ts = plot_data.get('original_timestamps', [])
+        sequential_ts = plot_data.get('timestamps', [])  # Already replaced with sequential
+
+        if original_ts and sequential_ts and len(original_ts) == len(sequential_ts):
+            pd = get_pandas()
+            start_time_dt = pd.to_datetime(inspection_range[0])
+            end_time_dt = pd.to_datetime(inspection_range[1])
+
+            # Find sequential timestamps for section boundaries
+            for orig_ts, seq_ts in zip(original_ts, sequential_ts):
+                orig_dt = pd.to_datetime(orig_ts)
+                if section_seq_start is None and orig_dt >= start_time_dt:
+                    section_seq_start = seq_ts
+                if orig_dt <= end_time_dt:
+                    section_seq_end = seq_ts
 
     # Build Y-axis config
-
     yaxis_config = dict(
         title=dict(text="RR Interval (ms)", font=dict(color=theme['text'])),
         gridcolor=theme['grid'],
         linecolor=theme['line'],
         tickfont=dict(color=theme['text']),
-        uirevision=zoom_revision,  # Dynamic - changes when zoom toggled
+        uirevision=axis_uirevision,  # False when section selected to force range update
     )
 
-    # Apply inspection zoom if set, otherwise explicitly enable autorange
+    # Determine X and Y axis ranges based on zoom and section state
     if inspection_zoom:
+        # Inspection zoom active: Y = 400-1200ms, X = 60s window (always)
         yaxis_config['range'] = [inspection_zoom['y_min'], inspection_zoom['y_max']]
         yaxis_config['autorange'] = False
-        # Also set X-axis range if time window specified
+
+        # X-axis: Always 60s window when inspection zoom is active
         ts_for_zoom = plot_data.get('timestamps', [])
         if inspection_zoom.get('x_window_seconds') and ts_for_zoom:
-            # Set initial X-axis window centered on data
-            # User can then pan with arrow keys (client-side JS) or drag
-            mid_idx = len(ts_for_zoom) // 2
-            mid_time = get_pandas().to_datetime(ts_for_zoom[mid_idx])
-            half_window = get_pandas().Timedelta(seconds=inspection_zoom['x_window_seconds'] / 2)
-            xaxis_config['range'] = [mid_time - half_window, mid_time + half_window]
+            pd = get_pandas()
+            half_window = pd.Timedelta(seconds=inspection_zoom['x_window_seconds'] / 2)
+
+            if section_selected and section_seq_start and section_seq_end:
+                # Center 60s window within the section
+                section_mid = pd.to_datetime(section_seq_start) + (pd.to_datetime(section_seq_end) - pd.to_datetime(section_seq_start)) / 2
+                xaxis_config['range'] = [section_mid - half_window, section_mid + half_window]
+            else:
+                # Center 60s window on full data
+                mid_idx = len(ts_for_zoom) // 2
+                mid_time = pd.to_datetime(ts_for_zoom[mid_idx])
+                xaxis_config['range'] = [mid_time - half_window, mid_time + half_window]
             xaxis_config['autorange'] = False
     else:
-        # Explicitly enable autorange when no zoom is set
+        # No inspection zoom: Y = auto
         yaxis_config['autorange'] = True
-        xaxis_config['autorange'] = True
+
+        if section_selected:
+            # Section selected, no zoom: X = section range
+            if use_sequential_timestamps and section_seq_start and section_seq_end:
+                xaxis_config['range'] = [section_seq_start, section_seq_end]
+            else:
+                xaxis_config['range'] = [inspection_range[0], inspection_range[1]]
+            xaxis_config['autorange'] = False
+        else:
+            # No section, no zoom: X = full recording (auto)
+            xaxis_config['autorange'] = True
 
     # Set dragmode based on interaction mode
     # Signal Inspection: pan mode for instant drag-to-pan (client-side, no server roundtrip)
@@ -7502,15 +7545,22 @@ def main():
 
                     # Filter sections to only those valid for this participant
                     participant_data = st.session_state.participant_events.get(selected_participant, {})
-                    all_evts = participant_data.get('events', []) + participant_data.get('manual', [])
+                    event_list = participant_data.get('events', []) + participant_data.get('manual', [])
 
                     # Build set of event names this participant has (both canonical and raw)
+                    # Handle both dict and object events (same as artifact detection code)
                     participant_event_names = set()
-                    for evt in all_evts:
-                        if hasattr(evt, 'canonical') and evt.canonical:
-                            participant_event_names.add(evt.canonical)
-                        if hasattr(evt, 'raw_label') and evt.raw_label:
-                            participant_event_names.add(evt.raw_label)
+                    for event in event_list:
+                        if isinstance(event, dict):
+                            if event.get("canonical"):
+                                participant_event_names.add(event["canonical"])
+                            if event.get("raw_label"):
+                                participant_event_names.add(event["raw_label"])
+                        else:
+                            if getattr(event, "canonical", None):
+                                participant_event_names.add(event.canonical)
+                            if getattr(event, "raw_label", None):
+                                participant_event_names.add(event.raw_label)
 
                     # Filter to sections where participant has both start and end events
                     valid_sections = []
@@ -7533,6 +7583,11 @@ def main():
                             valid_sections.append(section_name)
 
                     section_options = ["Full recording"] + valid_sections
+
+                    # Track previous selection to detect changes
+                    prev_section_key = f"_prev_section_{selected_participant}"
+                    prev_section = st.session_state.get(prev_section_key, "Full recording")
+
                     selected_section = st.selectbox(
                         "View section",
                         options=section_options,
@@ -7541,19 +7596,30 @@ def main():
                         help="Focus the plot on a specific section for detailed inspection"
                     )
 
+                    # If section changed, we need to update session state and rerun
+                    # so the plot (which rendered earlier) sees the new range
+                    section_changed = selected_section != prev_section
+                    st.session_state[prev_section_key] = selected_section
+
                     if not valid_sections and sections:
                         st.caption("No sections available for this participant (missing events)")
 
                     # Show section time range info if a section is selected
                     if selected_section != "Full recording" and selected_section in sections:
                         section_def = sections[selected_section]
-                        # participant_data and all_evts already fetched above for filtering
+                        # participant_data and event_list already fetched above for filtering
 
                         # Build event timestamp lookup from stored events
                         event_timestamps = {}
-                        for evt in all_evts:
-                            if hasattr(evt, 'canonical') and evt.canonical and hasattr(evt, 'first_timestamp') and evt.first_timestamp:
-                                event_timestamps[evt.canonical] = evt.first_timestamp
+                        for evt in event_list:
+                            if isinstance(evt, dict):
+                                canonical = evt.get("canonical")
+                                timestamp = evt.get("first_timestamp")
+                            else:
+                                canonical = getattr(evt, "canonical", None)
+                                timestamp = getattr(evt, "first_timestamp", None)
+                            if canonical and timestamp:
+                                event_timestamps[canonical] = timestamp
 
                         # Get start events (handle both old and new format)
                         start_events_lookup = section_def.get("start_events", [])
@@ -7602,6 +7668,10 @@ def main():
                     else:
                         # Clear section range when "Full recording" selected
                         st.session_state[f"inspection_section_range_{selected_participant}"] = None
+
+                    # If section changed, rerun so the plot sees the new range
+                    if section_changed:
+                        st.rerun()
 
                     st.markdown("---")
 
