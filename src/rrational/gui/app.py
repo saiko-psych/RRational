@@ -8710,26 +8710,39 @@ def main():
                                 expected_dur = section_data.get("expected_duration_min", 0)
                                 tolerance = section_data.get("tolerance_min", 1)
 
-                                if not result.is_valid:
+                                # Check if we have candidates for disambiguation
+                                has_candidates = result.start_candidates and result.end_candidates
+
+                                # If invalid and no candidates to choose from, show error and skip
+                                if not result.is_valid and not has_candidates:
                                     st.write(f"**{label}**: {result.error_message}")
                                     issue_count += 1
                                     continue
 
-                                validated = result.validated_section
-                                start_ts = validated.start_event.timestamp
-                                end_ts = validated.end_event.timestamp
+                                # Get current timestamps (from validated section if valid, or from first candidates)
+                                if result.validated_section:
+                                    validated = result.validated_section
+                                    current_start_ts = validated.start_event.timestamp
+                                    current_end_ts = validated.end_event.timestamp
+                                else:
+                                    # Fallback to first candidates when validation failed
+                                    current_start_ts = result.start_candidates[0].timestamp if result.start_candidates else None
+                                    current_end_ts = result.end_candidates[0].timestamp if result.end_candidates else None
 
-                                # Show disambiguation UI if multiple candidates
-                                if result.needs_disambiguation:
+                                # Show disambiguation UI if multiple candidates OR if invalid (to let user fix)
+                                if result.needs_disambiguation or (not result.is_valid and has_candidates):
                                     with st.container():
-                                        st.write(f"**{label}** (multiple events found - please select):")
+                                        if not result.is_valid:
+                                            st.warning(f"**{label}**: {result.error_message} - please select correct events:")
+                                        else:
+                                            st.write(f"**{label}** (multiple events found - please select):")
                                         col1, col2 = st.columns(2)
 
                                         with col1:
                                             start_options = [c.display_label() for c in result.start_candidates]
                                             current_start_idx = next(
                                                 (i for i, c in enumerate(result.start_candidates)
-                                                 if c.timestamp == validated.start_event.timestamp),
+                                                 if c.timestamp == current_start_ts),
                                                 0
                                             )
                                             new_start_idx = st.selectbox(
@@ -8744,7 +8757,7 @@ def main():
                                             end_options = [c.display_label() for c in result.end_candidates]
                                             current_end_idx = next(
                                                 (i for i, c in enumerate(result.end_candidates)
-                                                 if c.timestamp == validated.end_event.timestamp),
+                                                 if c.timestamp == current_end_ts),
                                                 0
                                             )
                                             new_end_idx = st.selectbox(
@@ -8768,6 +8781,15 @@ def main():
                                         # Use selected timestamps
                                         start_ts = result.start_candidates[new_start_idx].timestamp
                                         end_ts = result.end_candidates[new_end_idx].timestamp
+                                else:
+                                    start_ts = current_start_ts
+                                    end_ts = current_end_ts
+
+                                # Validate start < end after user selection
+                                if start_ts and end_ts and start_ts >= end_ts:
+                                    st.error(f"Start event ({start_ts.strftime('%H:%M:%S')}) must be before end event ({end_ts.strftime('%H:%M:%S')})")
+                                    issue_count += 1
+                                    continue
 
                                 # Calculate durations
                                 raw_dur = (normalize_ts(end_ts) - normalize_ts(start_ts)).total_seconds()
