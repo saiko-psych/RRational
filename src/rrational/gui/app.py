@@ -5002,11 +5002,15 @@ def render_rr_plot_fragment(participant_id: str):
         marker_only_key = f"artifact_marker_only_{participant_id}"
         is_marker_only_update = st.session_state.pop(marker_only_key, False)
 
+        # Track if we just ran detection (for triggering rerun to update Quick Save expander)
+        just_ran_detection = False
+
         if is_marker_only_update and has_saved_artifacts:
             # Fast path: reuse existing artifact result, only manual markers changed
             artifact_result = saved_artifact_data
         elif run_new_detection or force_redetect:
             # User explicitly requested new detection - run it
+            just_ran_detection = True
             # Get scope settings
             scope_settings = st.session_state.get(f"artifact_scope_settings_{participant_id}", {"scope": "full"})
             detection_scope = scope_settings.get("scope", "full")
@@ -5323,6 +5327,10 @@ def render_rr_plot_fragment(participant_id: str):
             artifact_result["user_excluded_count"] = len(excluded_indices)
 
         st.session_state[f"artifacts_{participant_id}"] = artifact_result
+
+        # Rerun after new detection to update Quick Save expander with new artifact data
+        if just_ran_detection:
+            st.rerun()
 
         if artifact_result and artifact_result["total_artifacts"] > 0:
             # Show artifact summary based on method
