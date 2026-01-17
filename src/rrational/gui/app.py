@@ -4437,9 +4437,20 @@ def render_rr_plot_fragment(participant_id: str):
 
                 # Check if sections are available for THIS participant
                 # Filter to only sections where this participant has the required start/end events
+                # AND that are selected for the participant's group (same as Section Validation)
                 all_sections = st.session_state.get("sections", {})
                 participant_events = st.session_state.participant_events.get(participant_id, {})
                 event_list = participant_events.get("events", [])
+
+                # Get participant's group and filter by group's selected sections
+                participant_group = st.session_state.participant_groups.get(participant_id, "Default")
+                group_data = st.session_state.groups.get(participant_group, {})
+                group_selected_sections = group_data.get("selected_sections", [])
+
+                # If group has selected sections, use only those; otherwise use all sections
+                sections_to_check = all_sections
+                if group_selected_sections:
+                    sections_to_check = {k: v for k, v in all_sections.items() if k in group_selected_sections}
 
                 # Get canonical event names for this participant
                 participant_event_names = set()
@@ -4457,7 +4468,7 @@ def render_rr_plot_fragment(participant_id: str):
 
                 # Filter sections to only those where participant has both start and end events
                 available_sections = []
-                for section_name, section_def in all_sections.items():
+                for section_name, section_def in sections_to_check.items():
                     start_events = section_def.get("start_events", [])
                     if not start_events and "start_event" in section_def:
                         start_events = [section_def["start_event"]]
@@ -4555,7 +4566,13 @@ def render_rr_plot_fragment(participant_id: str):
                         section_beats = sum(1 for ts in full_timestamps if start_ts <= ts <= end_ts)
                         if section_beats > 0:
                             n_beats_scoped = section_beats
+                            # Show the actual time range being used
+                            start_str = start_ts.strftime("%H:%M:%S") if start_ts else "?"
+                            end_str = end_ts.strftime("%H:%M:%S") if end_ts else "?"
                             scope_label = f"section '{selected_section}'"
+                            st.caption(f"Section range: {start_str} - {end_str}")
+                    else:
+                        st.warning(f"Could not determine time range for section '{selected_section}'")
 
                 elif artifact_scope == "custom" and custom_start_time and custom_end_time:
                     # Estimate custom range beats
