@@ -5110,7 +5110,7 @@ def render_rr_plot_fragment(participant_id: str):
                         if 0 <= local_idx < scope_length:
                             gap_adjacent_for_scope.add(local_idx)
 
-            # Use segmented detection at gaps if boundary mode is selected
+            # Use segmented detection at gaps if boundary mode is selected AND there are gaps in scope
             if gap_handling_for_detection == "boundary" and gap_adjacent_for_scope:
                 artifact_result = run_segmented_artifact_detection_at_gaps(
                     rr_for_detection, timestamps_for_detection,
@@ -5124,6 +5124,11 @@ def render_rr_plot_fragment(participant_id: str):
                     method=artifact_method, threshold_pct=artifact_threshold,
                     segment_beats=segment_beats
                 )
+                # If boundary mode but no gaps in scope, mark as handled to skip legacy fallback
+                if gap_handling_for_detection == "boundary":
+                    artifact_result = dict(artifact_result)
+                    artifact_result["independent_segment_analysis"] = True
+                    artifact_result["segment_boundaries"] = []  # No gaps in this scope
 
             # Always make a copy before modifying (cached result may be immutable)
             artifact_result = dict(artifact_result)
@@ -5138,6 +5143,9 @@ def render_rr_plot_fragment(participant_id: str):
                         k: [i + offset for i in v]
                         for k, v in artifact_result["indices_by_type"].items()
                     }
+                # Also map segment_boundaries to global indices
+                if "segment_boundaries" in artifact_result:
+                    artifact_result["segment_boundaries"] = [i + offset for i in artifact_result["segment_boundaries"]]
                 # Rebuild timestamps and RR from full recording indices
                 artifact_result["artifact_timestamps"] = [timestamps_list[i] for i in artifact_result["artifact_indices"] if 0 <= i < len(timestamps_list)]
                 artifact_result["artifact_rr"] = [rr_list[i] for i in artifact_result["artifact_indices"] if 0 <= i < len(rr_list)]
