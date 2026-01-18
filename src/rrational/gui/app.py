@@ -4199,16 +4199,83 @@ def render_rr_plot_fragment(participant_id: str):
                             'corrections': corrections_list,
                         }
 
-                        # Use section_key as section name, or '_full' for full recording
-                        section_for_nn = section_key_save if section_key_save != '_full' else '_full'
-                        save_nn_intervals(
-                            participant_id,
-                            section_for_nn,
-                            nn_data,
-                            data_dir=data_dir_save,
-                            project_path=project_path_save,
-                        )
-                        nn_saved = True
+                        # Check if we should auto-split to validated sections
+                        auto_split = artifact_data_save.get('auto_split_to_sections', False)
+
+                        if auto_split:
+                            # Auto-split: create separate NN files for each validated section
+                            from rrational.gui.persistence import load_section_validations as load_vals_auto
+                            vals_auto = load_vals_auto(participant_id, data_dir_save, project_path_save)
+                            valid_sections_auto = []
+                            if vals_auto and vals_auto.get("sections"):
+                                for sec_name, sec_data in vals_auto["sections"].items():
+                                    if sec_data.get("is_valid"):
+                                        valid_sections_auto.append((sec_name, sec_data))
+
+                            if valid_sections_auto:
+                                sections_saved_auto = 0
+                                for sec_name, sec_data in valid_sections_auto:
+                                    sec_start = sec_data.get('start_event', {}).get('beat_idx', 0)
+                                    sec_end = sec_data.get('end_event', {}).get('beat_idx', 0)
+
+                                    if sec_start < 0 or sec_end > len(corrected_rr):
+                                        continue
+
+                                    # Slice data for this section
+                                    sec_corrected = corrected_rr[sec_start:sec_end]
+                                    sec_timestamps = timestamps_for_nn[sec_start:sec_end]
+                                    sec_original = rr_values_for_nn[sec_start:sec_end] if rr_values_for_nn else sec_corrected
+
+                                    # Find artifacts in this section
+                                    sec_artifacts_local = {idx - sec_start for idx in local_artifact_indices
+                                                          if sec_start <= idx < sec_end}
+
+                                    # Build section NN data
+                                    sec_nn_intervals = []
+                                    sec_corrections = []
+                                    for i, (ts, rr_orig, rr_corr) in enumerate(zip(sec_timestamps, sec_original, sec_corrected)):
+                                        was_corr = i in sec_artifacts_local and abs(rr_orig - rr_corr) > 1
+                                        ts_ms = 0
+                                        if hasattr(ts, 'timestamp') and sec_timestamps and hasattr(sec_timestamps[0], 'timestamp'):
+                                            ts_ms = int((ts.timestamp() - sec_timestamps[0].timestamp()) * 1000)
+                                        sec_nn_intervals.append([ts_ms, round(rr_corr, 1), was_corr])
+                                        if was_corr:
+                                            sec_corrections.append({
+                                                'nn_idx': i,
+                                                'original_rr_ms': round(rr_orig, 1),
+                                                'corrected_nn_ms': round(rr_corr, 1),
+                                            })
+
+                                    sec_nn_data = {
+                                        'correction_method': 'kubios' if algo_method else 'manual',
+                                        'corrected_at': datetime.now().isoformat(),
+                                        'source_scope': '_full (auto-split)',
+                                        'original_beat_count': len(sec_corrected),
+                                        'artifacts_removed': len(sec_artifacts_local),
+                                        'intervals_corrected': len(sec_corrections),
+                                        'final_nn_count': len(sec_nn_intervals),
+                                        'intervals': sec_nn_intervals,
+                                        'corrections': sec_corrections,
+                                    }
+                                    save_nn_intervals(participant_id, sec_name, sec_nn_data,
+                                                     data_dir=data_dir_save, project_path=project_path_save)
+                                    sections_saved_auto += 1
+
+                                nn_saved = True
+                                nn_save_reason = f"Auto-split to {sections_saved_auto} sections"
+                            else:
+                                nn_save_reason = "No validated sections for auto-split"
+                        else:
+                            # Normal save: single NN file for the scope
+                            section_for_nn = section_key_save if section_key_save != '_full' else '_full'
+                            save_nn_intervals(
+                                participant_id,
+                                section_for_nn,
+                                nn_data,
+                                data_dir=data_dir_save,
+                                project_path=project_path_save,
+                            )
+                            nn_saved = True
 
                     # Update loaded_info to reflect current saved state
                     from datetime import datetime
@@ -4742,11 +4809,12 @@ def render_rr_plot_fragment(participant_id: str):
                 # Section-scoped detection
                 st.markdown("---")
                 st.markdown("**Detection Scope**")
-                scope_options = ["full", "section", "custom"]
+                scope_options = ["full", "section", "custom", "all_validated"]
                 scope_labels = {
                     "full": "Full recording",
                     "section": "Selected section",
                     "custom": "Custom time range",
+                    "all_validated": "All validated sections",
                 }
 
                 # Check if sections are available for THIS participant
@@ -4843,6 +4911,24 @@ def render_rr_plot_fragment(participant_id: str):
                             key=f"frag_custom_end_{participant_id}",
                             help="End time relative to recording start",
                         )
+                elif artifact_scope == "all_validated":
+                    # Load validated sections and show which will be processed
+                    from rrational.gui.persistence import load_section_validations as load_vals_scope
+                    vals_scope = load_vals_scope(
+                        participant_id,
+                        st.session_state.get("data_dir"),
+                        st.session_state.get("current_project")
+                    )
+                    validated_sections_scope = []
+                    if vals_scope and vals_scope.get("sections"):
+                        for sec_name, sec_data in vals_scope["sections"].items():
+                            if sec_data.get("is_valid"):
+                                validated_sections_scope.append(sec_name)
+
+                    if validated_sections_scope:
+                        st.caption(f"Will create NN files for: {', '.join(sorted(validated_sections_scope))}")
+                    else:
+                        st.warning("No validated sections found. Validate sections in the Sections tab first.")
 
                 # Store scope settings in session state for use later
                 st.session_state[f"artifact_scope_settings_{participant_id}"] = {
@@ -4850,6 +4936,7 @@ def render_rr_plot_fragment(participant_id: str):
                     "selected_section": selected_section,
                     "custom_start": custom_start_time,
                     "custom_end": custom_end_time,
+                    "validated_sections": validated_sections_scope if artifact_scope == "all_validated" else None,
                 }
 
                 # Calculate estimated beats for the selected scope (for adaptive sizing)
@@ -5497,6 +5584,11 @@ def render_rr_plot_fragment(participant_id: str):
                             st.warning(f"No data in time range {custom_start} - {custom_end}. Using full recording.")
                 except Exception as e:
                     st.warning(f"Could not parse time range: {e}. Using full recording.")
+            elif detection_scope == "all_validated":
+                # For "all_validated", run detection on full recording
+                # The auto-split to validated sections happens at save time
+                scope_info = {"type": "all_validated", "offset": 0}
+                # Keep rr_for_detection as full recording (already set above)
 
             # Run artifact detection
             # Get gap handling setting from session state
@@ -5568,6 +5660,10 @@ def render_rr_plot_fragment(participant_id: str):
             elif scope_info["type"] == "custom":
                 # Use a unique key for custom time ranges
                 section_key = f"custom_{scope_info.get('start', '0')}-{scope_info.get('end', '0')}".replace(":", "")
+            elif scope_info["type"] == "all_validated":
+                # For all_validated, use _full as key but mark for auto-split
+                section_key = "_full"
+                artifact_result["auto_split_to_sections"] = True
             else:
                 section_key = "_full"
             artifact_result["section_key"] = section_key
