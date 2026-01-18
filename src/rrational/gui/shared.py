@@ -480,7 +480,14 @@ def save_full_section_validations(participant_id: str):
                 "index": vs.end_event.index,
             }
             section_data["manually_selected"] = vs.is_user_selected
-            section_data["duration_s"] = vs.duration_s
+
+            # Calculate duration from timestamps (event-based) if RR-based is 0
+            duration_s = vs.duration_s
+            if duration_s == 0 and vs.start_event.timestamp and vs.end_event.timestamp:
+                # Calculate from event timestamps
+                duration_s = (vs.end_event.timestamp - vs.start_event.timestamp).total_seconds()
+
+            section_data["duration_s"] = duration_s
             section_data["beat_count"] = vs.beat_count
 
         # Store user's selection indices
