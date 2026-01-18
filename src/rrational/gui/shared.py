@@ -417,12 +417,17 @@ def save_full_section_validations(participant_id: str):
     if not normalizer or not sections_config:
         return
 
+    # Filter sections by group's selected sections if configured
+    if selected_sections:
+        sections_to_validate = {k: v for k, v in sections_config.items() if k in selected_sections}
+    else:
+        sections_to_validate = sections_config
+
     # Get validation results for this participant
     validation_results = get_validated_sections_for_participant(
         participant_id,
-        sections_config,
+        sections_to_validate,
         normalizer,
-        selected_sections=selected_sections if selected_sections else None,
     )
 
     # Build explicit section validation state
