@@ -6379,159 +6379,20 @@ def render_rr_plot_fragment(participant_id: str):
                 if 0 <= plot_idx < len(rr_list):
                     manual_artifact_indices.append(plot_idx)
 
-            # Show corrected NN intervals - prefer saved data, fallback to computed
+            # Show corrected NN intervals (only from fresh detection, not saved files)
+            # Note: Saved NN files are used for HRV analysis but can't be reliably
+            # visualized in the full recording view due to timestamp alignment issues
             algo_count = len(artifact_result["artifact_indices"])
             if show_corrected:
                 nn_displayed = False
                 nn_source = None
 
-                # Try to load saved NN intervals from disk
-                try:
-                    from rrational.gui.persistence import load_nn_intervals, load_section_validations
-                    from datetime import datetime as dt_parser
+                # Show computed corrected_rr if available (from fresh detection)
+                corrected_rr = artifact_result.get("corrected_rr")
+                is_restored = artifact_result.get("restored_from_save", False)
 
-                    saved_nn = load_nn_intervals(
-                        participant_id,
-                        section_name=None,  # Load all sections
-                        data_dir=st.session_state.get("data_dir"),
-                        project_path=st.session_state.get("project_path"),
-                    )
-
-                    # Also load section validations to get section time boundaries
-                    section_vals = load_section_validations(
-                        participant_id,
-                        data_dir=st.session_state.get("data_dir"),
-                        project_path=st.session_state.get("project_path"),
-                    )
-
-                    if saved_nn and saved_nn.get("sections") and section_vals and section_vals.get("sections"):
-                        from datetime import timedelta
-
-                        # Get original timestamps for matching
-                        original_timestamps = plot_data.get('original_timestamps', timestamps_list)
-
-                        # Convert plot timestamps to datetime objects for comparison
-                        def parse_ts(ts):
-                            """Parse timestamp to datetime object."""
-                            if hasattr(ts, 'timestamp'):
-                                return ts
-                            if isinstance(ts, str):
-                                try:
-                                    # Handle ISO format with or without timezone
-                                    ts_clean = ts.replace('Z', '+00:00')
-                                    return dt_parser.fromisoformat(ts_clean)
-                                except Exception:
-                                    return None
-                            return None
-
-                        plot_datetimes = [parse_ts(ts) for ts in original_timestamps]
-
-                        # Start with original RR values
-                        nn_values = list(rr_list)
-                        n_corrected_total = 0
-                        n_matched_sections = 0
-                        n_matched_beats = 0
-
-                        # Process each section that has both NN data and validation info
-                        for section_name, nn_section_data in saved_nn["sections"].items():
-                            # Get section validation info (contains start/end timestamps)
-                            val_section = section_vals["sections"].get(section_name)
-                            if not val_section:
-                                continue
-
-                            # Get section start/end timestamps
-                            start_event = val_section.get("start_event", {})
-                            end_event = val_section.get("end_event", {})
-
-                            start_ts_str = start_event.get("timestamp")
-                            end_ts_str = end_event.get("timestamp")
-
-                            if not start_ts_str or not end_ts_str:
-                                continue
-
-                            # Parse section timestamps
-                            section_start = parse_ts(start_ts_str)
-                            section_end = parse_ts(end_ts_str)
-
-                            if not section_start or not section_end:
-                                continue
-
-                            # Normalize for timezone comparison
-                            if section_start.tzinfo is not None:
-                                section_start = section_start.replace(tzinfo=None)
-                                section_end = section_end.replace(tzinfo=None)
-
-                            # Find plot indices within this section's time range
-                            section_plot_indices = []
-                            for i, dt_obj in enumerate(plot_datetimes):
-                                if dt_obj is None:
-                                    continue
-                                dt_naive = dt_obj.replace(tzinfo=None) if dt_obj.tzinfo else dt_obj
-                                if section_start <= dt_naive <= section_end:
-                                    section_plot_indices.append(i)
-
-                            if not section_plot_indices:
-                                continue
-
-                            # Get NN intervals for this section (sequential: beat 0, 1, 2...)
-                            nn_intervals = nn_section_data.get("intervals", [])
-                            if not nn_intervals:
-                                continue
-
-                            # Map NN intervals to plot indices by position
-                            # NN[0] → first plot beat in section, NN[1] → second, etc.
-                            for nn_idx, entry in enumerate(nn_intervals):
-                                if nn_idx >= len(section_plot_indices):
-                                    break  # More NN entries than plot points
-
-                                if len(entry) < 2:
-                                    continue
-
-                                nn_ms = entry[1]
-                                was_corrected = entry[2] if len(entry) > 2 else False
-
-                                plot_idx = section_plot_indices[nn_idx]
-                                if plot_idx < len(nn_values):
-                                    nn_values[plot_idx] = nn_ms
-                                    n_matched_beats += 1
-                                    if was_corrected:
-                                        n_corrected_total += 1
-
-                            n_matched_sections += 1
-
-                        if n_matched_sections > 0:
-                            fig.add_trace(ScatterType(
-                                x=timestamps_list,
-                                y=nn_values,
-                                mode='lines',
-                                name='Saved NN',
-                                line=dict(width=2, color='green', dash='dot'),
-                                opacity=0.7,
-                                hovertemplate='Time: %{x}<br>NN: %{y:.0f} ms<extra></extra>'
-                            ))
-                            nn_displayed = True
-                            nn_source = "saved"
-
-                            # Check if NN values differ from RR values
-                            n_differences = sum(1 for nn, rr in zip(nn_values, rr_list) if abs(nn - rr) > 0.5)
-                            if n_differences == 0 and algo_count > 0:
-                                st.warning(f"⚠️ NN values are **identical to RR** despite {algo_count} artifacts. "
-                                          f"The NN file may have been saved incorrectly. "
-                                          f"Try running **Detect New Artifacts** and saving again.")
-                            elif n_corrected_total == 0 and algo_count > 0:
-                                st.info(f"Showing **saved NN intervals**: {n_matched_sections} section(s), {n_matched_beats} beats. "
-                                       f"Note: 0 beats marked as 'corrected' in file (corrections may be subtle).")
-                            else:
-                                st.success(f"Showing **saved NN intervals**: {n_matched_sections} section(s), {n_matched_beats} beats matched, {n_corrected_total} corrected")
-                except Exception as e:
-                    # Log error but continue to fallback
-                    import traceback
-                    st.warning(f"Could not load saved NN: {e}")
-
-                # Fallback to computed corrected_rr if no saved data
-                if not nn_displayed and algo_count > 0:
-                    corrected_rr = artifact_result.get("corrected_rr", rr_list)
-                    if corrected_rr and len(corrected_rr) == len(timestamps_list):
+                if not nn_displayed and algo_count > 0 and corrected_rr is not None:
+                    if len(corrected_rr) == len(timestamps_list):
                         fig.add_trace(ScatterType(
                             x=timestamps_list,
                             y=corrected_rr,
@@ -6548,6 +6409,11 @@ def render_rr_plot_fragment(participant_id: str):
                             st.info(f"Correction preview (not saved): {algo_count} algorithm artifacts. {manual_count} manual artifacts marked.")
                         else:
                             st.info(f"Correction preview (not saved): {algo_count} artifacts corrected")
+
+                if not nn_displayed and algo_count > 0 and is_restored:
+                    # Restored from save - NN data exists but can't be visualized
+                    st.info(f"NN visualization requires fresh detection. Run **Detect New Artifacts** to see the corrected line. "
+                           f"(Saved NN data is still used for HRV analysis.)")
 
                 if not nn_displayed and algo_count == 0:
                     st.info("No artifacts detected - NN line would be identical to RR line.")
