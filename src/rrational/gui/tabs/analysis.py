@@ -50,6 +50,10 @@ from rrational.gui.help_text import ANALYSIS_HELP  # noqa: E402
 from rrational.gui.rrational_export import (  # noqa: E402
     find_rrational_files,
     load_rrational,
+    load_rrational_v2,
+    get_rrational_version,
+    RRATIONAL_VERSION_V2,
+    RRationalExportV2,
 )
 
 
@@ -1787,6 +1791,8 @@ def _render_single_participant_analysis():
     ready_files = []
     use_ready_file = False
     selected_ready_file = None
+    ready_file_version = "1.0"
+    selected_v2_sections = []  # For v2.0 section selection
 
     if selected_participant:
         data_dir = st.session_state.get("data_dir")
@@ -1796,8 +1802,8 @@ def _render_single_participant_analysis():
         with st.expander(f"Ready Files ({len(ready_files)} found)", expanded=False):
             st.info(
                 "Ready files contain pre-inspected data with artifact detection "
-                "and manual markings. Using a ready file skips section extraction "
-                "and uses the stored processing state."
+                "and corrected NN intervals. Using a ready file provides the highest "
+                "data quality for analysis."
             )
 
             data_source = st.radio(
@@ -1814,34 +1820,83 @@ def _render_single_participant_analysis():
                 file_options = []
                 for f in ready_files:
                     # Extract segment name from filename
-                    name = f.stem  # e.g., "0123ABCD_rest_pre"
-                    segment = name.replace(f"{selected_participant}_", "")
-                    file_options.append((f, segment, f.stat().st_mtime))
+                    name = f.stem  # e.g., "0123ABCD_rest_pre" or "VP01"
+                    segment = name.replace(f"{selected_participant}_", "") or name
+                    # Get version
+                    try:
+                        version = get_rrational_version(f)
+                    except Exception:
+                        version = "1.0"
+                    file_options.append((f, segment, version, f.stat().st_mtime))
 
                 selected_file_idx = st.selectbox(
                     "Select ready file",
                     options=range(len(file_options)),
-                    format_func=lambda i: f"{file_options[i][1]} ({file_options[i][0].name})",
+                    format_func=lambda i: f"{file_options[i][1]} (v{file_options[i][2]}) - {file_options[i][0].name}",
                     key="analysis_ready_file_select",
                 )
                 selected_ready_file = file_options[selected_file_idx][0]
+                ready_file_version = file_options[selected_file_idx][2]
 
-                # Show audit trail preview
+                # Show file info based on version
                 try:
-                    ready_data = load_rrational(selected_ready_file)
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Beats", ready_data.n_beats)
-                    with col2:
-                        artifact_rate = ready_data.quality.artifact_rate_final * 100
-                        st.metric("Artifact Rate", f"{artifact_rate:.1f}%")
-                    with col3:
-                        st.metric("Quality", ready_data.quality.quality_grade.capitalize())
+                    if ready_file_version == RRATIONAL_VERSION_V2:
+                        # V2.0 file - load and show sections
+                        ready_data_v2 = load_rrational_v2(selected_ready_file)
+                        st.success(f"**v2.0 Export** - {len(ready_data_v2.sections)} section(s) available")
 
-                    if ready_data.processing_steps:
-                        with st.expander("Audit Trail"):
-                            for step in ready_data.processing_steps:
-                                st.write(f"**{step.action}**: {step.details}")
+                        # Show available sections with quality info
+                        section_info = []
+                        for sec_name, sec_data in ready_data_v2.sections.items():
+                            nn_count = len(sec_data.nn_intervals.data)
+                            quality = sec_data.quality.grade
+                            artifact_rate = sec_data.final_artifacts.rate * 100
+                            section_info.append({
+                                "Section": sec_name,
+                                "NN Intervals": nn_count,
+                                "Quality": quality.capitalize(),
+                                "Artifact %": f"{artifact_rate:.1f}%",
+                            })
+
+                        if section_info:
+                            st.dataframe(
+                                pd.DataFrame(section_info),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+
+                        # Let user select which sections to analyze
+                        available_sections = list(ready_data_v2.sections.keys())
+                        selected_v2_sections = st.multiselect(
+                            "Select section(s) to analyze",
+                            options=available_sections,
+                            default=available_sections[:1] if available_sections else [],
+                            key="analysis_v2_sections",
+                        )
+
+                        # Store the loaded data for later use
+                        st.session_state._analysis_ready_v2_data = ready_data_v2
+
+                        if ready_data_v2.audit_trail:
+                            with st.expander("Audit Trail"):
+                                for entry in ready_data_v2.audit_trail[-5:]:  # Last 5 entries
+                                    st.write(f"**{entry.action}**: {entry.details}")
+                    else:
+                        # V1.0 file - original behavior
+                        ready_data = load_rrational(selected_ready_file)
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Beats", ready_data.n_beats)
+                        with col2:
+                            artifact_rate = ready_data.quality.artifact_rate_final * 100
+                            st.metric("Artifact Rate", f"{artifact_rate:.1f}%")
+                        with col3:
+                            st.metric("Quality", ready_data.quality.quality_grade.capitalize())
+
+                        if ready_data.processing_steps:
+                            with st.expander("Audit Trail"):
+                                for step in ready_data.processing_steps:
+                                    st.write(f"**{step.action}**: {step.details}")
                 except Exception as e:
                     st.error(f"Error loading ready file: {e}")
                     use_ready_file = False
@@ -1851,6 +1906,19 @@ def _render_single_participant_analysis():
     apply_artifact_correction = False
 
     if not use_ready_file:
+        # Show warning about using raw data
+        if ready_files:
+            st.warning(
+                "You have ready files available but are using raw data. "
+                "For best results, use the ready file with pre-inspected artifact correction. "
+                "Raw data analysis may include artifacts that affect HRV metrics."
+            )
+        else:
+            st.info(
+                "No ready file found. To create one, go to the Participants tab and "
+                "use the 'Export for Analysis' button after reviewing artifacts."
+            )
+
         available_sections = list(st.session_state.sections.keys())
         if not available_sections:
             st.warning("No sections defined. Please define sections in the Sections tab first.")
@@ -1885,6 +1953,10 @@ def _render_single_participant_analysis():
             if not selected_ready_file:
                 st.error("Please select a ready file")
                 return
+            # For v2.0 files, need section selection
+            if ready_file_version == RRATIONAL_VERSION_V2 and not selected_v2_sections:
+                st.error("Please select at least one section from the v2.0 file")
+                return
         else:
             if not selected_sections:
                 st.error("Please select at least one section")
@@ -1892,76 +1964,181 @@ def _render_single_participant_analysis():
 
         # ===== READY FILE ANALYSIS PATH =====
         if use_ready_file and selected_ready_file:
-            status_msg = "Analyzing HRV from ready file..."
-            with st.status(status_msg, expanded=True) as status:
-                try:
-                    st.write(f"Loading ready file: {selected_ready_file.name}")
-                    progress = st.progress(0)
+            # Check file version and use appropriate loading path
+            if ready_file_version == RRATIONAL_VERSION_V2:
+                # ===== V2.0 ANALYSIS PATH =====
+                status_msg = "Analyzing HRV from v2.0 export..."
+                with st.status(status_msg, expanded=True) as status:
+                    try:
+                        st.write(f"Loading v2.0 export: {selected_ready_file.name}")
+                        progress = st.progress(0)
 
-                    # Load ready file
-                    ready_data = load_rrational(selected_ready_file)
-                    progress.progress(20)
+                        # Get cached v2.0 data or reload
+                        ready_data_v2 = st.session_state.get("_analysis_ready_v2_data")
+                        if ready_data_v2 is None:
+                            ready_data_v2 = load_rrational_v2(selected_ready_file)
+                        progress.progress(10)
 
-                    # Get clean RR intervals (exclude artifact indices)
-                    artifact_indices = set(ready_data.final_artifact_indices)
-                    clean_rr_ms = []
-                    for i, rr in enumerate(ready_data.rr_intervals):
-                        if i not in artifact_indices:
-                            clean_rr_ms.append(rr.rr_ms)
+                        section_results = {}
+                        total_sections = len(selected_v2_sections)
+                        nk = get_neurokit()
 
-                    if not clean_rr_ms:
-                        st.error("No clean RR intervals after removing artifacts")
-                        status.update(label="Analysis failed - no clean data", state="error")
-                        return
+                        for idx, sec_name in enumerate(selected_v2_sections):
+                            st.write(f"Analyzing section: {sec_name}")
+                            sec_data = ready_data_v2.sections[sec_name]
 
-                    st.write(f"Using {len(clean_rr_ms)} clean beats ({len(artifact_indices)} artifacts removed)")
-                    progress.progress(40)
+                            # Extract NN intervals from v2.0 format
+                            # Data format: [[timestamp_ms, nn_ms, was_corrected], ...]
+                            nn_intervals_ms = [item[1] for item in sec_data.nn_intervals.data]
 
-                    # Calculate HRV metrics
-                    st.write("Computing HRV metrics...")
-                    nk = get_neurokit()
-                    peaks = nk.intervals_to_peaks(clean_rr_ms, sampling_rate=1000)
-                    hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                    hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                    hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
-                    progress.progress(80)
+                            if not nn_intervals_ms:
+                                st.warning(f"Section {sec_name} has no NN intervals, skipping")
+                                continue
 
-                    # Get segment name
-                    segment_name = "ready_file"
-                    if ready_data.segment:
-                        if ready_data.segment.section_name:
-                            segment_name = ready_data.segment.section_name
-                        elif ready_data.segment.time_range:
-                            segment_name = ready_data.segment.time_range.get("label", "custom_range")
+                            # Quality check
+                            quality_grade = sec_data.quality.grade
+                            meets_time = sec_data.quality.meets_time_domain_min
+                            meets_freq = sec_data.quality.meets_freq_domain_min
 
-                    # Store results
-                    section_results = {
-                        segment_name: {
-                            "hrv_results": hrv_results,
-                            "rr_intervals": clean_rr_ms,
-                            "n_beats": len(clean_rr_ms),
-                            "label": segment_name,
-                            "artifact_info": {
-                                "total_artifacts": len(artifact_indices),
-                                "artifact_rate": ready_data.quality.artifact_rate_final,
-                                "method": ready_data.artifact_detection.method if ready_data.artifact_detection else "manual",
-                            },
-                            "ready_file": str(selected_ready_file),
-                            "quality_grade": ready_data.quality.quality_grade,
-                            "audit_trail": ready_data.processing_steps,
+                            if quality_grade == "poor":
+                                st.warning(f"Section {sec_name} has poor quality - results may be unreliable")
+
+                            # Calculate HRV metrics
+                            st.write(f"  Computing HRV for {len(nn_intervals_ms)} NN intervals...")
+                            peaks = nk.intervals_to_peaks(nn_intervals_ms, sampling_rate=1000)
+                            hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
+
+                            # Only compute frequency metrics if enough data
+                            if meets_freq:
+                                hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                                hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
+                            else:
+                                st.info(f"  Section {sec_name}: frequency domain skipped (insufficient data)")
+                                hrv_results = hrv_time
+
+                            # Store results
+                            section_results[sec_name] = {
+                                "hrv_results": hrv_results,
+                                "rr_intervals": nn_intervals_ms,
+                                "n_beats": len(nn_intervals_ms),
+                                "label": sec_data.definition.label or sec_name,
+                                "artifact_info": {
+                                    "total_artifacts": sec_data.final_artifacts.count,
+                                    "artifact_rate": sec_data.final_artifacts.rate,
+                                    "method": sec_data.artifact_detection.method if sec_data.artifact_detection else "manual",
+                                },
+                                "ready_file": str(selected_ready_file),
+                                "quality_grade": quality_grade,
+                                "quality": {
+                                    "meets_time_domain": meets_time,
+                                    "meets_freq_domain": meets_freq,
+                                    "usable_beats": sec_data.quality.usable_beats,
+                                    "usable_duration_s": sec_data.quality.usable_duration_s,
+                                },
+                                "analysis_segments": [
+                                    {
+                                        "id": seg.segment_id,
+                                        "type": seg.type,
+                                        "nn_count": seg.nn_count,
+                                        "duration_s": seg.duration_s,
+                                    }
+                                    for seg in sec_data.analysis_segments
+                                ],
+                                "version": "2.0",
+                            }
+
+                            # Update progress
+                            progress.progress(10 + int(80 * (idx + 1) / total_sections))
+
+                        if not section_results:
+                            st.error("No sections could be analyzed")
+                            status.update(label="Analysis failed", state="error")
+                            return
+
+                        progress.progress(100)
+                        st.session_state.analysis_results[selected_participant] = section_results
+                        status.update(label=f"Analysis complete! ({len(section_results)} sections)", state="complete")
+                        show_toast(f"v2.0 analysis complete: {len(section_results)} section(s)", icon="success")
+
+                    except Exception as e:
+                        status.update(label="Error during v2.0 analysis", state="error")
+                        st.error(f"Error analyzing v2.0 file: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
+
+            else:
+                # ===== V1.0 ANALYSIS PATH (original behavior) =====
+                status_msg = "Analyzing HRV from ready file..."
+                with st.status(status_msg, expanded=True) as status:
+                    try:
+                        st.write(f"Loading ready file: {selected_ready_file.name}")
+                        progress = st.progress(0)
+
+                        # Load ready file
+                        ready_data = load_rrational(selected_ready_file)
+                        progress.progress(20)
+
+                        # Get clean RR intervals (exclude artifact indices)
+                        artifact_indices = set(ready_data.final_artifact_indices)
+                        clean_rr_ms = []
+                        for i, rr in enumerate(ready_data.rr_intervals):
+                            if i not in artifact_indices:
+                                clean_rr_ms.append(rr.rr_ms)
+
+                        if not clean_rr_ms:
+                            st.error("No clean RR intervals after removing artifacts")
+                            status.update(label="Analysis failed - no clean data", state="error")
+                            return
+
+                        st.write(f"Using {len(clean_rr_ms)} clean beats ({len(artifact_indices)} artifacts removed)")
+                        progress.progress(40)
+
+                        # Calculate HRV metrics
+                        st.write("Computing HRV metrics...")
+                        nk = get_neurokit()
+                        peaks = nk.intervals_to_peaks(clean_rr_ms, sampling_rate=1000)
+                        hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
+                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                        hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
+                        progress.progress(80)
+
+                        # Get segment name
+                        segment_name = "ready_file"
+                        if ready_data.segment:
+                            if ready_data.segment.section_name:
+                                segment_name = ready_data.segment.section_name
+                            elif ready_data.segment.time_range:
+                                segment_name = ready_data.segment.time_range.get("label", "custom_range")
+
+                        # Store results
+                        section_results = {
+                            segment_name: {
+                                "hrv_results": hrv_results,
+                                "rr_intervals": clean_rr_ms,
+                                "n_beats": len(clean_rr_ms),
+                                "label": segment_name,
+                                "artifact_info": {
+                                    "total_artifacts": len(artifact_indices),
+                                    "artifact_rate": ready_data.quality.artifact_rate_final,
+                                    "method": ready_data.artifact_detection.method if ready_data.artifact_detection else "manual",
+                                },
+                                "ready_file": str(selected_ready_file),
+                                "quality_grade": ready_data.quality.quality_grade,
+                                "audit_trail": ready_data.processing_steps,
+                                "version": "1.0",
+                            }
                         }
-                    }
 
-                    progress.progress(100)
-                    st.session_state.analysis_results[selected_participant] = section_results
-                    status.update(label="Analysis complete from ready file!", state="complete")
-                    show_toast("Ready file analysis complete", icon="success")
+                        progress.progress(100)
+                        st.session_state.analysis_results[selected_participant] = section_results
+                        status.update(label="Analysis complete from ready file!", state="complete")
+                        show_toast("Ready file analysis complete", icon="success")
 
-                except Exception as e:
-                    status.update(label="Error during analysis", state="error")
-                    st.error(f"Error analyzing ready file: {e}")
-                    import traceback
-                    st.code(traceback.format_exc())
+                    except Exception as e:
+                        status.update(label="Error during analysis", state="error")
+                        st.error(f"Error analyzing ready file: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
 
         # ===== SECTION-BASED ANALYSIS PATH =====
         else:

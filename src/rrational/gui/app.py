@@ -2287,7 +2287,7 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                 "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
                 "indices_by_type": {},
                 "method": method, "segment_stats": [], "corrected_rr": rr_list,
-                "corrected_timestamps": timestamps_list}
+                "corrected_timestamps": timestamps_list, "original_rr": rr_list}
 
     try:
         import numpy as np
@@ -2330,7 +2330,7 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                         "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
                         "indices_by_type": {},
                         "method": method, "segment_stats": [], "corrected_rr": rr_list,
-                        "corrected_timestamps": timestamps_list}
+                        "corrected_timestamps": timestamps_list, "original_rr": rr_list}
 
             nk = get_neurokit()
             rr_array = np.array(rr_list, dtype=float)
@@ -2428,7 +2428,7 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                         "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
                         "indices_by_type": {},
                         "method": method, "segment_stats": [], "corrected_rr": rr_list,
-                        "corrected_timestamps": timestamps_list}
+                        "corrected_timestamps": timestamps_list, "original_rr": rr_list}
 
             nk = get_neurokit()
             rr_array = np.array(rr_list, dtype=float)
@@ -2490,13 +2490,14 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             "segment_stats": segment_stats,
             "corrected_rr": corrected_rr,
             "corrected_timestamps": timestamps_list,
+            "original_rr": rr_list,  # Store original RR for NN interval comparison
         }
     except Exception:
         return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
                 "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
                 "indices_by_type": {},
                 "method": method, "segment_stats": [], "corrected_rr": rr_list,
-                "corrected_timestamps": timestamps_list}
+                "corrected_timestamps": timestamps_list, "original_rr": rr_list}
 
 
 def run_segmented_artifact_detection_at_gaps(
@@ -4104,6 +4105,10 @@ def render_rr_plot_fragment(participant_id: str):
                     # Get indices_by_type for artifact type categorization
                     indices_by_type_save = artifact_data_save.get('indices_by_type', None)
 
+                    # Get corrected_rr for NN intervals (saved separately)
+                    corrected_rr_save = artifact_data_save.get('corrected_rr')
+
+                    # Save artifact info (indices only, no corrected RR data)
                     save_path = save_artifact_corrections(
                         participant_id,
                         manual_artifacts=manual_artifacts_save,
@@ -4121,22 +4126,55 @@ def render_rr_plot_fragment(participant_id: str):
 
                     # Also save corrected NN intervals if available
                     from rrational.gui.persistence import save_nn_intervals
-                    corrected_rr = artifact_data_save.get('corrected_rr')
-                    plot_data_for_nn = st.session_state.get(f"plot_data_{participant_id}", {})
-                    timestamps_for_nn = plot_data_for_nn.get('timestamps', [])
-                    rr_values_for_nn = plot_data_for_nn.get('rr_values', [])
+                    corrected_rr = corrected_rr_save
+                    # Use timestamps from artifact data (scoped), not plot data
+                    timestamps_for_nn = artifact_data_save.get('corrected_timestamps', [])
+                    # Get original RR values from artifact data if available
+                    rr_values_for_nn = artifact_data_save.get('original_rr')
 
-                    if corrected_rr is not None and len(corrected_rr) == len(rr_values_for_nn):
-                        # Determine which intervals were corrected
-                        all_artifact_indices = (set(algo_indices_save) |
+                    nn_saved = False
+                    nn_save_reason = ""
+
+                    # Debug: Check what data we have
+                    has_corrected = corrected_rr is not None
+                    len_corrected = len(corrected_rr) if corrected_rr else 0
+                    len_timestamps = len(timestamps_for_nn) if timestamps_for_nn else 0
+
+                    if not has_corrected:
+                        nn_save_reason = "No corrected_rr in artifact data"
+                    elif len_corrected == 0:
+                        nn_save_reason = "corrected_rr is empty"
+                    elif len_timestamps == 0:
+                        nn_save_reason = "No timestamps in artifact data"
+                    elif len_corrected != len_timestamps:
+                        nn_save_reason = f"Length mismatch: corrected_rr={len_corrected}, timestamps={len_timestamps}"
+                    else:
+                        # All checks passed - save NN intervals
+                        from datetime import datetime
+
+                        # Get scope offset to convert global indices to local
+                        scope_offset = 0
+                        scope_info = artifact_data_save.get('scope', {})
+                        if scope_info:
+                            scope_offset = scope_info.get('offset', 0)
+
+                        # Determine which intervals were corrected (convert to LOCAL indices)
+                        global_artifact_indices = (set(algo_indices_save) |
                                                set(art.get('plot_idx', -1) for art in manual_artifacts_save)) - \
                                                (artifact_exclusions_save if artifact_exclusions_save else set())
+                        # Convert global indices to local indices within the scope
+                        local_artifact_indices = {idx - scope_offset for idx in global_artifact_indices
+                                                  if idx >= scope_offset and idx < scope_offset + len(corrected_rr)}
+
+                        # Use original RR if available, otherwise use corrected (can't detect changes)
+                        if rr_values_for_nn is None or len(rr_values_for_nn) != len(corrected_rr):
+                            rr_values_for_nn = corrected_rr  # Fallback
 
                         # Build NN intervals data
                         nn_intervals_data = []
                         corrections_list = []
                         for i, (ts, rr_orig, rr_corr) in enumerate(zip(timestamps_for_nn, rr_values_for_nn, corrected_rr)):
-                            was_corrected = i in all_artifact_indices and abs(rr_orig - rr_corr) > 1
+                            was_corrected = i in local_artifact_indices and abs(rr_orig - rr_corr) > 1
                             # Compact format: [timestamp_ms, nn_ms, was_corrected]
                             ts_ms = int((ts - timestamps_for_nn[0]).total_seconds() * 1000) if hasattr(ts, 'total_seconds') or hasattr(timestamps_for_nn[0], 'total_seconds') else 0
                             if hasattr(ts, 'timestamp') and hasattr(timestamps_for_nn[0], 'timestamp'):
@@ -4153,8 +4191,8 @@ def render_rr_plot_fragment(participant_id: str):
                         nn_data = {
                             'correction_method': 'kubios' if algo_method else 'manual',
                             'corrected_at': datetime.now().isoformat(),
-                            'original_beat_count': len(rr_values_for_nn),
-                            'artifacts_removed': len(all_artifact_indices),
+                            'original_beat_count': len(corrected_rr),
+                            'artifacts_removed': len(local_artifact_indices),
                             'intervals_corrected': len(corrections_list),
                             'final_nn_count': len(nn_intervals_data),
                             'intervals': nn_intervals_data,
@@ -4170,6 +4208,7 @@ def render_rr_plot_fragment(participant_id: str):
                             data_dir=data_dir_save,
                             project_path=project_path_save,
                         )
+                        nn_saved = True
 
                     # Update loaded_info to reflect current saved state
                     from datetime import datetime
@@ -4182,7 +4221,10 @@ def render_rr_plot_fragment(participant_id: str):
                         "n_excluded": n_excluded_save,
                     }
 
-                    st.success(f"Saved artifacts + NN intervals")
+                    if nn_saved:
+                        st.success(f"Saved artifacts + NN intervals ({len_corrected} beats)")
+                    else:
+                        st.warning(f"Saved artifacts only. NN intervals not saved: {nn_save_reason}")
             elif has_saved_corrections:
                 st.success("Artifact corrections saved")
             else:
@@ -4262,15 +4304,32 @@ def render_rr_plot_fragment(participant_id: str):
             else:
                 st.caption("Load participant data first")
 
-            # Get available sections
-            sections = load_sections()
-            section_names = ["Full Recording"] + [s.get("label", name) for name, s in sections.items() if s.get("start_event")]
+            # Get validated sections for this participant
+            from rrational.gui.persistence import load_section_validations as load_validations_for_export
+            validations_for_export = load_validations_for_export(
+                participant_id,
+                st.session_state.get("data_dir"),
+                st.session_state.get("current_project")
+            )
+            validated_section_names = []
+            if validations_for_export and validations_for_export.get("sections"):
+                for sec_name, sec_data in validations_for_export["sections"].items():
+                    if sec_data.get("is_valid"):
+                        validated_section_names.append(sec_name)
+
+            if not validated_section_names:
+                st.warning("No validated sections found. Validate sections in the Sections tab first.")
+                export_options = []
+            else:
+                # Options: "All Validated Sections" + individual sections
+                export_options = ["All Validated Sections"] + validated_section_names
 
             save_section = st.selectbox(
-                "Segment to save",
-                options=section_names,
+                "Sections to export",
+                options=export_options if export_options else ["No validated sections"],
                 key=f"frag_save_section_{participant_id}",
-                help="Select a section to export, or export full recording"
+                help="Select which validated section(s) to export",
+                disabled=not export_options
             )
 
             include_corrected = st.checkbox(
@@ -4289,7 +4348,8 @@ def render_rr_plot_fragment(participant_id: str):
                     get_quality_grade, get_quigley_recommendation
                 )
                 from rrational.gui.persistence import (
-                    load_section_validations, load_nn_intervals, get_processed_dir
+                    load_section_validations, load_nn_intervals, get_processed_dir,
+                    save_artifact_corrections, save_nn_intervals
                 )
                 from datetime import datetime
                 from pathlib import Path
@@ -4302,7 +4362,7 @@ def render_rr_plot_fragment(participant_id: str):
                 else:
                     # Determine which sections to export
                     sections_to_export = []
-                    if save_section == "Full Recording":
+                    if save_section == "All Validated Sections":
                         # Export all validated sections
                         validations = load_section_validations(participant_id, data_dir, project_path)
                         if validations and validations.get("sections"):
@@ -4311,22 +4371,99 @@ def render_rr_plot_fragment(participant_id: str):
                                     sections_to_export.append(sec_name)
                         if not sections_to_export:
                             st.warning("No validated sections found. Please validate sections first in the Sections tab.")
-                    else:
-                        # Find the section key from the label
-                        for name, s in sections.items():
-                            if s.get("label", name) == save_section:
-                                sections_to_export.append(name)
-                                break
+                    elif save_section and save_section != "No validated sections":
+                        # Export the selected section
+                        sections_to_export.append(save_section)
 
                     if sections_to_export:
-                        # Check if NN intervals exist for the sections
+                        # FIRST: Auto-save artifacts and NN intervals from session state if available
+                        artifact_data_export = st.session_state.get(f"artifacts_{participant_id}", {})
+                        manual_artifacts_export = st.session_state.get(f"manual_artifacts_{participant_id}", [])
+                        artifact_exclusions_export = st.session_state.get(f"artifact_exclusions_{participant_id}", set())
+
+                        if artifact_data_export.get('artifact_indices'):
+                            section_key_export = artifact_data_export.get('section_key', '_full')
+                            corrected_rr_export = artifact_data_export.get('corrected_rr')
+
+                            # Save artifact info (indices only, no corrected RR data)
+                            save_artifact_corrections(
+                                participant_id,
+                                manual_artifacts=manual_artifacts_export,
+                                artifact_exclusions=artifact_exclusions_export,
+                                data_dir=data_dir,
+                                project_path=project_path,
+                                algorithm_artifacts=artifact_data_export.get('artifact_indices'),
+                                algorithm_method=artifact_data_export.get('method'),
+                                algorithm_threshold=artifact_data_export.get('threshold'),
+                                scope=artifact_data_export.get('scope'),
+                                section_key=section_key_export,
+                                segment_beats=artifact_data_export.get('segment_beats'),
+                                indices_by_type=artifact_data_export.get('indices_by_type'),
+                            )
+
+                            # Save NN intervals if corrected_rr is available
+                            timestamps_export = artifact_data_export.get('corrected_timestamps', [])
+                            original_rr_export = artifact_data_export.get('original_rr', corrected_rr_export)
+
+                            if corrected_rr_export and len(corrected_rr_export) == len(timestamps_export):
+                                # Get scope offset to convert global indices to local
+                                scope_info_export = artifact_data_export.get('scope', {})
+                                scope_offset_export = scope_info_export.get('offset', 0) if scope_info_export else 0
+
+                                algo_indices_export = artifact_data_export.get('artifact_indices', [])
+                                global_artifact_idx_export = (set(algo_indices_export) |
+                                                          set(art.get('plot_idx', -1) for art in manual_artifacts_export)) - \
+                                                          (artifact_exclusions_export if artifact_exclusions_export else set())
+
+                                # Convert global indices to local indices within the scope
+                                local_artifact_idx_export = {idx - scope_offset_export for idx in global_artifact_idx_export
+                                                            if idx >= scope_offset_export and idx < scope_offset_export + len(corrected_rr_export)}
+
+                                if original_rr_export is None or len(original_rr_export) != len(corrected_rr_export):
+                                    original_rr_export = corrected_rr_export
+
+                                nn_intervals_data_export = []
+                                corrections_list_export = []
+                                for i, (ts, rr_orig, rr_corr) in enumerate(zip(timestamps_export, original_rr_export, corrected_rr_export)):
+                                    was_corrected = i in local_artifact_idx_export and abs(rr_orig - rr_corr) > 1
+                                    ts_ms = 0
+                                    if hasattr(ts, 'timestamp') and hasattr(timestamps_export[0], 'timestamp'):
+                                        ts_ms = int((ts.timestamp() - timestamps_export[0].timestamp()) * 1000)
+                                    nn_intervals_data_export.append([ts_ms, round(rr_corr, 1), was_corrected])
+                                    if was_corrected:
+                                        corrections_list_export.append({
+                                            'nn_idx': i,
+                                            'original_rr_ms': round(rr_orig, 1),
+                                            'corrected_nn_ms': round(rr_corr, 1),
+                                        })
+
+                                nn_data_export = {
+                                    'correction_method': 'kubios' if artifact_data_export.get('method') else 'manual',
+                                    'corrected_at': datetime.now().isoformat(),
+                                    'original_beat_count': len(corrected_rr_export),
+                                    'artifacts_removed': len(local_artifact_idx_export),
+                                    'intervals_corrected': len(corrections_list_export),
+                                    'final_nn_count': len(nn_intervals_data_export),
+                                    'intervals': nn_intervals_data_export,
+                                    'corrections': corrections_list_export,
+                                }
+                                save_nn_intervals(
+                                    participant_id,
+                                    section_key_export,
+                                    nn_data_export,
+                                    data_dir=data_dir,
+                                    project_path=project_path,
+                                )
+                                st.info(f"Auto-saved artifacts and NN intervals for section '{section_key_export}'")
+
+                        # Check if NN intervals exist for the sections (after auto-save)
                         nn_data = load_nn_intervals(participant_id, data_dir=data_dir, project_path=project_path)
                         nn_sections = nn_data.get("sections", {}) if nn_data else {}
 
                         missing_nn = [s for s in sections_to_export if s not in nn_sections and s != "_full"]
-                        if missing_nn and not include_corrected:
+                        if missing_nn:
                             st.warning(f"Sections without NN intervals: {', '.join(missing_nn)}. "
-                                      "Save artifact corrections first to generate NN intervals.")
+                                      "Run artifact detection on these sections first.")
 
                         # Build v2.0 export
                         with st.spinner("Building export..."):
@@ -5364,6 +5501,28 @@ def render_rr_plot_fragment(participant_id: str):
             st.session_state[detect_new_key] = False
         elif has_saved_artifacts:
             # Use saved/loaded artifacts (no new detection)
+            saved_scope = saved_artifact_data.get("scope", {})
+
+            # Use saved corrected_rr if available
+            saved_corrected_rr = saved_artifact_data.get("corrected_rr")
+
+            # Determine scoped timestamps based on scope offset
+            scope_offset = 0
+            if saved_scope:
+                scope_offset = saved_scope.get("offset", 0)
+
+            # If we have corrected_rr, use its length to determine scope size
+            if saved_corrected_rr and len(saved_corrected_rr) > 0:
+                scope_size = len(saved_corrected_rr)
+                scope_end = scope_offset + scope_size
+                scoped_timestamps = timestamps_list[scope_offset:scope_end] if scope_end <= len(timestamps_list) else timestamps_list
+                scoped_rr = rr_list[scope_offset:scope_end] if scope_end <= len(rr_list) else rr_list
+            else:
+                # No corrected_rr saved - use full recording
+                scoped_timestamps = timestamps_list
+                scoped_rr = rr_list
+                saved_corrected_rr = scoped_rr
+
             artifact_result = {
                 "artifact_indices": saved_artifact_data.get("artifact_indices", []),
                 "artifact_timestamps": [timestamps_list[i] for i in saved_artifact_data.get("artifact_indices", []) if 0 <= i < len(timestamps_list)],
@@ -5373,10 +5532,12 @@ def render_rr_plot_fragment(participant_id: str):
                 "method": saved_artifact_data.get("method", "loaded"),
                 "by_type": saved_artifact_data.get("by_type", {}),
                 "indices_by_type": saved_artifact_data.get("indices_by_type", {}),
-                "scope": saved_artifact_data.get("scope"),
+                "scope": saved_scope,
                 "section_key": saved_artifact_data.get("section_key", "_full"),
                 "segment_beats": saved_artifact_data.get("segment_beats"),
-                "corrected_rr": saved_artifact_data.get("corrected_rr"),
+                "corrected_rr": saved_corrected_rr,
+                "corrected_timestamps": scoped_timestamps,
+                "original_rr": scoped_rr,
                 "restored_from_save": True,
             }
         else:

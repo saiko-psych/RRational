@@ -796,6 +796,9 @@ def save_artifact_corrections(
     Artifacts are stored per-section, allowing independent detection for different parts
     of the recording. The section_key identifies which section these artifacts belong to.
 
+    NOTE: This file stores ONLY artifact information (indices, method, etc.), NOT the
+    corrected RR intervals. Use save_nn_intervals() for the corrected data.
+
     Storage priority:
     1. If project_path provided: saves to project/data/processed/{participant_id}_artifacts.yml
     2. If data_dir provided: saves to {data_dir}/../processed/{participant_id}_artifacts.yml
@@ -950,7 +953,6 @@ def load_artifact_corrections(
                             "algorithm_method": section_data.get("algorithm_method"),
                             "algorithm_threshold": section_data.get("algorithm_threshold"),
                             "scope": section_data.get("scope"),
-                            "corrected_rr": section_data.get("corrected_rr"),
                             "segment_beats": section_data.get("segment_beats"),
                             "indices_by_type": section_data.get("indices_by_type", {}),
                             "saved_at": section_data.get("saved_at"),
@@ -1348,13 +1350,18 @@ def save_nn_intervals(
     """Save corrected NN intervals for a participant's section.
 
     This stores the artifact-corrected (interpolated) NN intervals that are
-    ready for HRV analysis. Each participant has one file containing all
-    their sections' NN intervals.
+    ready for HRV analysis. Data is saved in two files:
+
+    1. CSV file: `{participant_id}_{section}_nn.csv` - the actual interval data
+       Columns: beat_idx, timestamp_ms, nn_ms, was_corrected
+
+    2. Metadata file: `{participant_id}_nn_metadata.yml` - correction info for all sections
+       Contains: correction_method, timestamps, beat counts, correction details
 
     Storage location:
-    1. If project_path: project/data/processed/{participant_id}_nn_intervals.yml
-    2. If data_dir: {data_dir}/../processed/{participant_id}_nn_intervals.yml
-    3. Otherwise: ~/.rrational/{participant_id}_nn_intervals.yml
+    1. If project_path: project/data/processed/
+    2. If data_dir: {data_dir}/../processed/
+    3. Otherwise: ~/.rrational/ (fallback)
 
     Args:
         participant_id: The participant ID
@@ -1363,7 +1370,6 @@ def save_nn_intervals(
             {
                 "correction_method": "kubios",  # or "none" if no correction
                 "corrected_at": "2026-01-18T14:55:00",  # ISO timestamp
-                "source_beat_range": [352, 704],  # Start/end indices in raw RR
                 "original_beat_count": 352,
                 "artifacts_removed": 4,
                 "intervals_corrected": 3,  # How many were interpolated
@@ -1385,35 +1391,56 @@ def save_nn_intervals(
         project_path: Project path (takes priority if provided)
 
     Returns:
-        Path to the saved file
+        Path to the CSV file
     """
     from datetime import datetime as dt
 
     # Determine save location
     processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
-    nn_file = processed_dir / f"{participant_id}_nn_intervals.yml"
 
-    # Load existing data or create new structure
-    if nn_file.exists():
-        with open(nn_file, "r", encoding="utf-8") as f:
-            file_data = yaml.safe_load(f) or {}
+    # Save CSV file with interval data
+    csv_file = processed_dir / f"{participant_id}_{section_name}_nn.csv"
+    intervals = nn_data.get("intervals", [])
+
+    with open(csv_file, "w", encoding="utf-8", newline="") as f:
+        f.write("beat_idx,timestamp_ms,nn_ms,was_corrected\n")
+        for i, interval in enumerate(intervals):
+            if len(interval) >= 3:
+                ts_ms, nn_ms, was_corrected = interval[0], interval[1], interval[2]
+                f.write(f"{i},{ts_ms},{nn_ms},{str(was_corrected).lower()}\n")
+
+    # Save/update metadata file
+    metadata_file = processed_dir / f"{participant_id}_nn_metadata.yml"
+
+    if metadata_file.exists():
+        with open(metadata_file, "r", encoding="utf-8") as f:
+            metadata = yaml.safe_load(f) or {}
     else:
-        file_data = {
+        metadata = {
             "participant_id": participant_id,
-            "format_version": "1.0",
+            "format_version": "2.0",
             "created_at": dt.now().isoformat(),
             "sections": {},
         }
 
-    # Update the section's NN data
-    file_data["sections"][section_name] = nn_data
-    file_data["last_modified"] = dt.now().isoformat()
+    # Store metadata for this section (without the intervals - those are in CSV)
+    section_metadata = {
+        "correction_method": nn_data.get("correction_method"),
+        "corrected_at": nn_data.get("corrected_at"),
+        "original_beat_count": nn_data.get("original_beat_count"),
+        "artifacts_removed": nn_data.get("artifacts_removed"),
+        "intervals_corrected": nn_data.get("intervals_corrected"),
+        "final_nn_count": nn_data.get("final_nn_count"),
+        "corrections": nn_data.get("corrections", []),
+        "csv_file": csv_file.name,
+    }
+    metadata["sections"][section_name] = section_metadata
+    metadata["last_modified"] = dt.now().isoformat()
 
-    # Save back to file
-    with open(nn_file, "w", encoding="utf-8") as f:
-        yaml.safe_dump(file_data, f, default_flow_style=False, allow_unicode=True)
+    with open(metadata_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(metadata, f, default_flow_style=False, allow_unicode=True)
 
-    return nn_file
+    return csv_file
 
 
 def load_nn_intervals(
@@ -1424,6 +1451,8 @@ def load_nn_intervals(
 ) -> dict[str, Any] | None:
     """Load corrected NN intervals for a participant.
 
+    Supports both v2.0 format (CSV + metadata) and legacy v1.0 format (single YAML).
+
     Args:
         participant_id: The participant ID
         section_name: If provided, returns only that section's data.
@@ -1433,7 +1462,7 @@ def load_nn_intervals(
 
     Returns:
         If section_name is provided:
-            Dict with the section's NN data (see save_nn_intervals), or None if not found.
+            Dict with the section's NN data (including 'intervals' list), or None if not found.
         If section_name is None:
             Dict with:
             - 'sections': dict mapping section_name -> NN data
@@ -1442,28 +1471,60 @@ def load_nn_intervals(
 
             Returns None if no saved NN intervals exist.
     """
-    # Primary location: processed directory
     processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
-    nn_file = processed_dir / f"{participant_id}_nn_intervals.yml"
 
-    # Also check legacy/fallback locations
-    search_paths = [
-        nn_file,
+    # Try v2.0 format first (metadata YAML + CSV files)
+    metadata_file = processed_dir / f"{participant_id}_nn_metadata.yml"
+    if metadata_file.exists():
+        try:
+            with open(metadata_file, "r", encoding="utf-8") as f:
+                metadata = yaml.safe_load(f) or {}
+
+            if section_name:
+                # Load specific section
+                section_meta = metadata.get("sections", {}).get(section_name)
+                if section_meta:
+                    # Load intervals from CSV
+                    csv_file = processed_dir / f"{participant_id}_{section_name}_nn.csv"
+                    if csv_file.exists():
+                        intervals = _load_nn_csv(csv_file)
+                        return {**section_meta, "intervals": intervals}
+                return None
+            else:
+                # Load all sections
+                sections = {}
+                for sec_name, sec_meta in metadata.get("sections", {}).items():
+                    csv_file = processed_dir / f"{participant_id}_{sec_name}_nn.csv"
+                    if csv_file.exists():
+                        intervals = _load_nn_csv(csv_file)
+                        sections[sec_name] = {**sec_meta, "intervals": intervals}
+                    else:
+                        sections[sec_name] = sec_meta
+
+                return {
+                    "sections": sections,
+                    "last_modified": metadata.get("last_modified"),
+                    "format_version": metadata.get("format_version", "2.0"),
+                }
+        except Exception:
+            pass
+
+    # Fall back to legacy v1.0 format (single YAML file)
+    legacy_paths = [
+        processed_dir / f"{participant_id}_nn_intervals.yml",
         CONFIG_DIR / f"{participant_id}_nn_intervals.yml",
     ]
 
-    for file_path in search_paths:
+    for file_path in legacy_paths:
         if file_path.exists():
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
 
                 if section_name:
-                    # Return specific section's data
                     sections = data.get("sections", {})
                     return sections.get(section_name)
                 else:
-                    # Return all sections
                     return {
                         "sections": data.get("sections", {}),
                         "last_modified": data.get("last_modified"),
@@ -1475,6 +1536,26 @@ def load_nn_intervals(
     return None
 
 
+def _load_nn_csv(csv_file: Path) -> list[list]:
+    """Load NN intervals from CSV file.
+
+    Returns:
+        List of [timestamp_ms, nn_ms, was_corrected] tuples.
+    """
+    intervals = []
+    with open(csv_file, "r", encoding="utf-8") as f:
+        next(f)  # Skip header
+        for line in f:
+            parts = line.strip().split(",")
+            if len(parts) >= 4:
+                # beat_idx, timestamp_ms, nn_ms, was_corrected
+                ts_ms = int(parts[1])
+                nn_ms = float(parts[2])
+                was_corrected = parts[3].lower() == "true"
+                intervals.append([ts_ms, nn_ms, was_corrected])
+    return intervals
+
+
 def delete_nn_intervals(
     participant_id: str,
     section_name: str | None = None,
@@ -1483,10 +1564,12 @@ def delete_nn_intervals(
 ) -> bool:
     """Delete saved NN intervals for a participant.
 
+    Handles both v2.0 format (CSV + metadata) and legacy v1.0 format (single YAML).
+
     Args:
         participant_id: The participant ID
         section_name: If provided, deletes only that section's NN data.
-                      If None, deletes the entire file.
+                      If None, deletes all NN interval files.
         data_dir: Optional data directory
         project_path: Project path (takes priority if provided)
 
@@ -1494,18 +1577,48 @@ def delete_nn_intervals(
         True if NN intervals were deleted, False if none existed.
     """
     deleted_any = False
-
-    # Check all possible locations
     processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
-    file_paths = [
+
+    # Handle v2.0 format (CSV + metadata)
+    metadata_file = processed_dir / f"{participant_id}_nn_metadata.yml"
+    if metadata_file.exists():
+        if section_name:
+            # Delete specific section's CSV and update metadata
+            csv_file = processed_dir / f"{participant_id}_{section_name}_nn.csv"
+            if csv_file.exists():
+                csv_file.unlink()
+                deleted_any = True
+
+            try:
+                with open(metadata_file, "r", encoding="utf-8") as f:
+                    metadata = yaml.safe_load(f) or {}
+
+                if section_name in metadata.get("sections", {}):
+                    del metadata["sections"][section_name]
+                    metadata["last_modified"] = __import__("datetime").datetime.now().isoformat()
+
+                    with open(metadata_file, "w", encoding="utf-8") as f:
+                        yaml.safe_dump(metadata, f, default_flow_style=False, allow_unicode=True)
+                    deleted_any = True
+            except Exception:
+                pass
+        else:
+            # Delete all CSV files for this participant
+            for csv_file in processed_dir.glob(f"{participant_id}_*_nn.csv"):
+                csv_file.unlink()
+                deleted_any = True
+            metadata_file.unlink()
+            deleted_any = True
+
+    # Also handle legacy v1.0 format
+    legacy_paths = [
         processed_dir / f"{participant_id}_nn_intervals.yml",
         CONFIG_DIR / f"{participant_id}_nn_intervals.yml",
     ]
 
-    for file_path in file_paths:
+    for file_path in legacy_paths:
         if file_path.exists():
             if section_name:
-                # Delete only the specific section
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
                         data = yaml.safe_load(f) or {}
@@ -1520,7 +1633,6 @@ def delete_nn_intervals(
                 except Exception:
                     pass
             else:
-                # Delete the entire file
                 file_path.unlink()
                 deleted_any = True
 
