@@ -428,9 +428,10 @@ def save_full_section_validations(participant_id: str):
     full_rr_key = f"full_rr_data_{participant_id}"
     full_rr_data = st.session_state.get(full_rr_key, {})
     if full_rr_data:
-        # Full RR data contains 'rr_with_timestamps' list of tuples (timestamp, rr_ms)
-        rr_with_ts = full_rr_data.get("rr_with_timestamps", [])
-        if rr_with_ts:
+        # Full RR data contains separate 'timestamps' and 'rr_values' lists
+        timestamps = full_rr_data.get("timestamps", [])
+        rr_values = full_rr_data.get("rr_values", [])
+        if timestamps and rr_values and len(timestamps) == len(rr_values):
             # Convert to simple objects for validation
             from dataclasses import dataclass
 
@@ -439,7 +440,7 @@ def save_full_section_validations(participant_id: str):
                 timestamp: object
                 rr_ms: float
 
-            rr_intervals = [RRPoint(timestamp=ts, rr_ms=rr) for ts, rr in rr_with_ts]
+            rr_intervals = [RRPoint(timestamp=ts, rr_ms=rr) for ts, rr in zip(timestamps, rr_values)]
 
     # Get validation results for this participant
     validation_results = get_validated_sections_for_participant(
