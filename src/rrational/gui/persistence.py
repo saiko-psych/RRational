@@ -1334,3 +1334,250 @@ def list_participants_with_section_validations(
                 participants.append(pid)
 
     return sorted(participants)
+
+
+# --- NN Intervals (corrected intervals per section) ---
+
+def save_nn_intervals(
+    participant_id: str,
+    section_name: str,
+    nn_data: dict[str, Any],
+    data_dir: str | None = None,
+    project_path: Path | None = None,
+) -> Path:
+    """Save corrected NN intervals for a participant's section.
+
+    This stores the artifact-corrected (interpolated) NN intervals that are
+    ready for HRV analysis. Each participant has one file containing all
+    their sections' NN intervals.
+
+    Storage location:
+    1. If project_path: project/data/processed/{participant_id}_nn_intervals.yml
+    2. If data_dir: {data_dir}/../processed/{participant_id}_nn_intervals.yml
+    3. Otherwise: ~/.rrational/{participant_id}_nn_intervals.yml
+
+    Args:
+        participant_id: The participant ID
+        section_name: The section name (e.g., "rest_pre", "music_1")
+        nn_data: Dict containing the NN interval data for this section:
+            {
+                "correction_method": "kubios",  # or "none" if no correction
+                "corrected_at": "2026-01-18T14:55:00",  # ISO timestamp
+                "source_beat_range": [352, 704],  # Start/end indices in raw RR
+                "original_beat_count": 352,
+                "artifacts_removed": 4,
+                "intervals_corrected": 3,  # How many were interpolated
+                "final_nn_count": 348,
+                "intervals": [
+                    # Compact format: [timestamp_ms_from_section_start, nn_ms, was_corrected]
+                    [0, 850, False],
+                    [850, 858, False],
+                    [1708, 855, True],  # This one was corrected
+                    # ...
+                ],
+                "corrections": [
+                    # Details for corrected intervals
+                    {"nn_idx": 35, "original_rr_ms": 1250, "corrected_nn_ms": 855},
+                    # ...
+                ],
+            }
+        data_dir: Optional data directory
+        project_path: Project path (takes priority if provided)
+
+    Returns:
+        Path to the saved file
+    """
+    from datetime import datetime as dt
+
+    # Determine save location
+    processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
+    nn_file = processed_dir / f"{participant_id}_nn_intervals.yml"
+
+    # Load existing data or create new structure
+    if nn_file.exists():
+        with open(nn_file, "r", encoding="utf-8") as f:
+            file_data = yaml.safe_load(f) or {}
+    else:
+        file_data = {
+            "participant_id": participant_id,
+            "format_version": "1.0",
+            "created_at": dt.now().isoformat(),
+            "sections": {},
+        }
+
+    # Update the section's NN data
+    file_data["sections"][section_name] = nn_data
+    file_data["last_modified"] = dt.now().isoformat()
+
+    # Save back to file
+    with open(nn_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(file_data, f, default_flow_style=False, allow_unicode=True)
+
+    return nn_file
+
+
+def load_nn_intervals(
+    participant_id: str,
+    section_name: str | None = None,
+    data_dir: str | None = None,
+    project_path: Path | None = None,
+) -> dict[str, Any] | None:
+    """Load corrected NN intervals for a participant.
+
+    Args:
+        participant_id: The participant ID
+        section_name: If provided, returns only that section's data.
+                      If None, returns all sections.
+        data_dir: Optional data directory
+        project_path: Project path (takes priority if provided)
+
+    Returns:
+        If section_name is provided:
+            Dict with the section's NN data (see save_nn_intervals), or None if not found.
+        If section_name is None:
+            Dict with:
+            - 'sections': dict mapping section_name -> NN data
+            - 'last_modified': str - ISO timestamp
+            - 'format_version': str
+
+            Returns None if no saved NN intervals exist.
+    """
+    # Primary location: processed directory
+    processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
+    nn_file = processed_dir / f"{participant_id}_nn_intervals.yml"
+
+    # Also check legacy/fallback locations
+    search_paths = [
+        nn_file,
+        CONFIG_DIR / f"{participant_id}_nn_intervals.yml",
+    ]
+
+    for file_path in search_paths:
+        if file_path.exists():
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+
+                if section_name:
+                    # Return specific section's data
+                    sections = data.get("sections", {})
+                    return sections.get(section_name)
+                else:
+                    # Return all sections
+                    return {
+                        "sections": data.get("sections", {}),
+                        "last_modified": data.get("last_modified"),
+                        "format_version": data.get("format_version", "1.0"),
+                    }
+            except Exception:
+                continue
+
+    return None
+
+
+def delete_nn_intervals(
+    participant_id: str,
+    section_name: str | None = None,
+    data_dir: str | None = None,
+    project_path: Path | None = None,
+) -> bool:
+    """Delete saved NN intervals for a participant.
+
+    Args:
+        participant_id: The participant ID
+        section_name: If provided, deletes only that section's NN data.
+                      If None, deletes the entire file.
+        data_dir: Optional data directory
+        project_path: Project path (takes priority if provided)
+
+    Returns:
+        True if NN intervals were deleted, False if none existed.
+    """
+    deleted_any = False
+
+    # Check all possible locations
+    processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
+    file_paths = [
+        processed_dir / f"{participant_id}_nn_intervals.yml",
+        CONFIG_DIR / f"{participant_id}_nn_intervals.yml",
+    ]
+
+    for file_path in file_paths:
+        if file_path.exists():
+            if section_name:
+                # Delete only the specific section
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f) or {}
+
+                    if section_name in data.get("sections", {}):
+                        del data["sections"][section_name]
+                        data["last_modified"] = __import__("datetime").datetime.now().isoformat()
+
+                        with open(file_path, "w", encoding="utf-8") as f:
+                            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+                        deleted_any = True
+                except Exception:
+                    pass
+            else:
+                # Delete the entire file
+                file_path.unlink()
+                deleted_any = True
+
+    return deleted_any
+
+
+def list_sections_with_nn_intervals(
+    participant_id: str,
+    data_dir: str | None = None,
+    project_path: Path | None = None,
+) -> list[str]:
+    """List all section names that have saved NN intervals for a participant.
+
+    Returns:
+        List of section names that have NN interval data
+    """
+    data = load_nn_intervals(participant_id, data_dir=data_dir, project_path=project_path)
+    if data and "sections" in data:
+        return list(data["sections"].keys())
+    return []
+
+
+def get_nn_intervals_summary(
+    participant_id: str,
+    data_dir: str | None = None,
+    project_path: Path | None = None,
+) -> dict[str, dict[str, Any]] | None:
+    """Get a summary of NN intervals status for all sections.
+
+    Returns:
+        Dict mapping section_name to summary:
+        {
+            "rest_pre": {
+                "has_nn": True,
+                "nn_count": 348,
+                "correction_method": "kubios",
+                "corrected_at": "2026-01-18T14:55:00",
+            },
+            "music_1": {
+                "has_nn": False,
+            },
+        }
+
+        Returns None if no NN intervals file exists.
+    """
+    data = load_nn_intervals(participant_id, data_dir=data_dir, project_path=project_path)
+    if not data:
+        return None
+
+    summary = {}
+    for section_name, section_data in data.get("sections", {}).items():
+        summary[section_name] = {
+            "has_nn": True,
+            "nn_count": section_data.get("final_nn_count", len(section_data.get("intervals", []))),
+            "correction_method": section_data.get("correction_method", "unknown"),
+            "corrected_at": section_data.get("corrected_at"),
+            "intervals_corrected": section_data.get("intervals_corrected", 0),
+        }
+
+    return summary
