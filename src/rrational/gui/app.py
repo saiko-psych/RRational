@@ -5999,25 +5999,95 @@ def render_rr_plot_fragment(participant_id: str):
             # Use saved/loaded artifacts (no new detection)
             saved_scope = saved_artifact_data.get("scope", {})
 
-            # Use saved corrected_rr if available
-            saved_corrected_rr = saved_artifact_data.get("corrected_rr")
-
             # Determine scoped timestamps based on scope offset
             scope_offset = 0
             if saved_scope:
                 scope_offset = saved_scope.get("offset", 0)
 
-            # If we have corrected_rr, use its length to determine scope size
-            if saved_corrected_rr and len(saved_corrected_rr) > 0:
-                scope_size = len(saved_corrected_rr)
-                scope_end = scope_offset + scope_size
-                scoped_timestamps = timestamps_list[scope_offset:scope_end] if scope_end <= len(timestamps_list) else timestamps_list
-                scoped_rr = rr_list[scope_offset:scope_end] if scope_end <= len(rr_list) else rr_list
-            else:
-                # No corrected_rr saved - use full recording
+            # Artifact file doesn't store corrected_rr - try to load from NN file
+            # This prevents the bug where re-saving from restored state overwrites NN with original values
+            saved_corrected_rr = None
+            corrected_rr_source = None
+
+            # Try to load corrected values from saved NN intervals
+            try:
+                from rrational.gui.persistence import load_nn_intervals, load_section_validations
+                nn_data = load_nn_intervals(
+                    participant_id,
+                    section_name=None,
+                    data_dir=st.session_state.get("data_dir"),
+                    project_path=st.session_state.get("project_path"),
+                )
+                section_vals = load_section_validations(
+                    participant_id,
+                    data_dir=st.session_state.get("data_dir"),
+                    project_path=st.session_state.get("project_path"),
+                )
+
+                if nn_data and nn_data.get("sections") and section_vals and section_vals.get("sections"):
+                    # Reconstruct corrected_rr from saved NN intervals
+                    # Start with original RR values and replace with saved NN values
+                    reconstructed_rr = list(rr_list)
+
+                    for section_name, nn_section in nn_data["sections"].items():
+                        val_section = section_vals["sections"].get(section_name)
+                        if not val_section:
+                            continue
+
+                        start_event = val_section.get("start_event", {})
+                        end_event = val_section.get("end_event", {})
+                        start_ts_str = start_event.get("timestamp")
+                        end_ts_str = end_event.get("timestamp")
+
+                        if not start_ts_str or not end_ts_str:
+                            continue
+
+                        # Parse timestamps
+                        from datetime import datetime as dt_parse
+                        try:
+                            section_start = dt_parse.fromisoformat(start_ts_str.replace('Z', '+00:00'))
+                            section_end = dt_parse.fromisoformat(end_ts_str.replace('Z', '+00:00'))
+                        except Exception:
+                            continue
+
+                        section_start_ms = section_start.timestamp() * 1000
+
+                        # Get NN intervals for this section
+                        nn_intervals = nn_section.get("intervals", [])
+                        if not nn_intervals:
+                            continue
+
+                        # Match NN values to plot indices
+                        for entry in nn_intervals:
+                            if len(entry) < 2:
+                                continue
+                            rel_ts_ms = entry[0]
+                            nn_ms = entry[1]
+                            abs_ts_ms = section_start_ms + rel_ts_ms
+
+                            # Find closest plot beat
+                            for i, ts in enumerate(timestamps_list):
+                                if hasattr(ts, 'timestamp'):
+                                    plot_ms = ts.timestamp() * 1000
+                                    if abs(plot_ms - abs_ts_ms) < 50:  # 50ms tolerance
+                                        reconstructed_rr[i] = nn_ms
+                                        break
+
+                    saved_corrected_rr = reconstructed_rr
+                    corrected_rr_source = "nn_file"
+            except Exception:
+                pass  # Continue without reconstructed corrected_rr
+
+            # Fallback to original RR if no NN data available
+            if saved_corrected_rr is None:
                 scoped_timestamps = timestamps_list
                 scoped_rr = rr_list
                 saved_corrected_rr = scoped_rr
+                corrected_rr_source = "original_fallback"
+            else:
+                # Use full recording scope since we reconstructed from NN
+                scoped_timestamps = timestamps_list
+                scoped_rr = rr_list
 
             artifact_result = {
                 "artifact_indices": saved_artifact_data.get("artifact_indices", []),
@@ -6034,6 +6104,7 @@ def render_rr_plot_fragment(participant_id: str):
                 "sections_results": saved_artifact_data.get("sections_results"),  # Per-section results for all_validated
                 "segment_beats": saved_artifact_data.get("segment_beats"),
                 "corrected_rr": saved_corrected_rr,
+                "corrected_rr_source": corrected_rr_source,  # Track where corrected values came from
                 "corrected_timestamps": scoped_timestamps,
                 "original_rr": scoped_rr,
                 "restored_from_save": True,
@@ -6523,7 +6594,18 @@ def render_rr_plot_fragment(participant_id: str):
                             ))
                             nn_displayed = True
                             nn_source = "saved"
-                            st.success(f"Showing **saved NN intervals**: {n_matched_sections} section(s), {n_matched_beats} beats matched, {n_corrected_total} corrected")
+
+                            # Check if NN values differ from RR values
+                            n_differences = sum(1 for nn, rr in zip(nn_values, rr_list) if abs(nn - rr) > 0.5)
+                            if n_differences == 0 and algo_count > 0:
+                                st.warning(f"⚠️ NN values are **identical to RR** despite {algo_count} artifacts. "
+                                          f"The NN file may have been saved incorrectly. "
+                                          f"Try running **Detect New Artifacts** and saving again.")
+                            elif n_corrected_total == 0 and algo_count > 0:
+                                st.info(f"Showing **saved NN intervals**: {n_matched_sections} section(s), {n_matched_beats} beats. "
+                                       f"Note: 0 beats marked as 'corrected' in file (corrections may be subtle).")
+                            else:
+                                st.success(f"Showing **saved NN intervals**: {n_matched_sections} section(s), {n_matched_beats} beats matched, {n_corrected_total} corrected")
                 except Exception as e:
                     # Log error but continue to fallback
                     import traceback
