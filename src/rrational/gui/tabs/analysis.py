@@ -58,6 +58,93 @@ from rrational.gui.rrational_export import (  # noqa: E402
 
 
 # =============================================================================
+# OVERLAPPING WINDOW ANALYSIS HELPERS
+# =============================================================================
+
+
+def generate_overlapping_windows(
+    rr_intervals: list,
+    window_duration_ms: float,
+    step_size_ms: float,
+) -> list[tuple[int, int, list]]:
+    """Generate overlapping windows from a list of RR intervals.
+
+    Args:
+        rr_intervals: List of RR interval values in ms (or RRInterval objects with .rr_ms)
+        window_duration_ms: Duration of each window in milliseconds
+        step_size_ms: Step size between window starts in milliseconds
+
+    Returns:
+        List of tuples: (window_idx, window_start_ms, window_rr_list)
+        Each window_rr_list contains the RR values that fall within that window.
+    """
+    if not rr_intervals:
+        return []
+
+    # Handle both raw values and RRInterval objects
+    if hasattr(rr_intervals[0], 'rr_ms'):
+        rr_values = [rr.rr_ms for rr in rr_intervals]
+    else:
+        rr_values = list(rr_intervals)
+
+    # Calculate cumulative time (elapsed time at start of each beat)
+    cumulative_time = [0.0]
+    for rr in rr_values[:-1]:
+        cumulative_time.append(cumulative_time[-1] + rr)
+
+    total_duration_ms = cumulative_time[-1] + rr_values[-1]
+
+    # Generate windows
+    windows = []
+    window_idx = 0
+    window_start = 0.0
+
+    while window_start + window_duration_ms <= total_duration_ms + step_size_ms / 2:
+        window_end = window_start + window_duration_ms
+
+        # Find RR intervals within this window
+        window_rr = []
+        for i, (elapsed, rr) in enumerate(zip(cumulative_time, rr_values)):
+            # Include beat if it starts within the window
+            if window_start <= elapsed < window_end:
+                window_rr.append(rr)
+
+        if window_rr:  # Only include non-empty windows
+            windows.append((window_idx, window_start, window_rr))
+            window_idx += 1
+
+        window_start += step_size_ms
+
+        # Safety: stop if we've generated too many windows
+        if window_idx > 100:
+            break
+
+    return windows
+
+
+def aggregate_hrv_results(window_results: list[pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Aggregate HRV results from multiple overlapping windows.
+
+    Args:
+        window_results: List of DataFrames, each containing HRV metrics for one window
+
+    Returns:
+        Tuple of (mean_results, std_results) DataFrames
+    """
+    if not window_results:
+        return pd.DataFrame(), pd.DataFrame()
+
+    # Concatenate all results
+    all_results = pd.concat(window_results, ignore_index=True)
+
+    # Calculate mean and std for each metric
+    mean_results = all_results.mean().to_frame().T
+    std_results = all_results.std().to_frame().T
+
+    return mean_results, std_results
+
+
+# =============================================================================
 # PROFESSIONAL HRV VISUALIZATION FUNCTIONS
 # =============================================================================
 
@@ -1947,6 +2034,53 @@ def _render_single_participant_analysis():
                 help="Recommended for data with known quality issues"
             )
 
+        # Overlapping window analysis options
+        with st.expander("Overlapping Window Analysis", expanded=False):
+            st.markdown("""
+            Split each section into **overlapping time windows** for more reliable HRV metrics.
+            Results are averaged across all windows within each section.
+
+            **Recommended settings:**
+            - 5-minute windows with 50% overlap (2.5 min step)
+            - Ensures each segment meets frequency-domain requirements (≥2 min, ≥300 beats)
+            """)
+            use_overlapping_windows = st.checkbox(
+                "Enable overlapping window analysis",
+                value=False,
+                key="use_overlapping_windows",
+                help="Analyze each section using multiple overlapping time windows"
+            )
+
+            if use_overlapping_windows:
+                col1, col2 = st.columns(2)
+                with col1:
+                    window_duration_min = st.slider(
+                        "Window duration (minutes)",
+                        min_value=1,
+                        max_value=10,
+                        value=5,
+                        step=1,
+                        key="overlap_window_duration",
+                        help="Duration of each analysis window"
+                    )
+                with col2:
+                    overlap_percent = st.slider(
+                        "Overlap (%)",
+                        min_value=0,
+                        max_value=75,
+                        value=50,
+                        step=25,
+                        key="overlap_percent",
+                        help="Percentage overlap between consecutive windows"
+                    )
+
+                # Show calculated step size
+                step_size_min = window_duration_min * (1 - overlap_percent / 100)
+                st.caption(f"Step size: {step_size_min:.1f} minutes between window starts")
+            else:
+                window_duration_min = 5
+                overlap_percent = 50
+
     if st.button("Analyze HRV", key="analyze_single_btn", type="primary"):
         # Validate inputs
         if use_ready_file:
@@ -2329,18 +2463,94 @@ def _render_single_participant_analysis():
 
                                 # Calculate HRV metrics
                                 nk = get_neurokit()
-                                peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
-                                hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
 
-                                section_results[section_name] = {
-                                    "hrv_results": hrv_results,
-                                    "rr_intervals": rr_ms,
-                                    "n_beats": len(rr_ms),
-                                    "label": section_def.get("label", section_name),
-                                    "artifact_info": artifact_info,
-                                }
+                                # Check if overlapping window analysis is enabled
+                                if use_overlapping_windows:
+                                    # Generate overlapping windows
+                                    window_duration_ms = window_duration_min * 60 * 1000
+                                    step_size_ms = window_duration_ms * (1 - overlap_percent / 100)
+
+                                    windows = generate_overlapping_windows(
+                                        rr_ms, window_duration_ms, step_size_ms
+                                    )
+
+                                    if len(windows) >= 1:
+                                        st.write(f"    Analyzing {len(windows)} overlapping windows ({window_duration_min}min, {overlap_percent}% overlap)...")
+
+                                        window_hrv_results = []
+                                        window_details = []
+
+                                        for win_idx, win_start_ms, win_rr in windows:
+                                            if len(win_rr) < 30:  # Skip windows with too few beats
+                                                continue
+
+                                            try:
+                                                win_peaks = nk.intervals_to_peaks(win_rr, sampling_rate=1000)
+                                                win_hrv_time = nk.hrv_time(win_peaks, sampling_rate=1000, show=False)
+                                                win_hrv_freq = nk.hrv_frequency(win_peaks, sampling_rate=1000, show=False)
+                                                win_hrv = pd.concat([win_hrv_time, win_hrv_freq], axis=1)
+
+                                                window_hrv_results.append(win_hrv)
+                                                window_details.append({
+                                                    "window_idx": win_idx,
+                                                    "start_ms": win_start_ms,
+                                                    "n_beats": len(win_rr),
+                                                    "duration_s": sum(win_rr) / 1000,
+                                                    "hrv_results": win_hrv,
+                                                })
+                                            except Exception as e:
+                                                st.write(f"      Window {win_idx + 1} failed: {e}")
+                                                continue
+
+                                        if window_hrv_results:
+                                            # Aggregate results across windows
+                                            hrv_results, hrv_std = aggregate_hrv_results(window_hrv_results)
+                                            st.write(f"    ✓ Aggregated results from {len(window_hrv_results)} valid windows")
+
+                                            section_results[section_name] = {
+                                                "hrv_results": hrv_results,
+                                                "hrv_std": hrv_std,
+                                                "rr_intervals": rr_ms,
+                                                "n_beats": len(rr_ms),
+                                                "label": section_def.get("label", section_name),
+                                                "artifact_info": artifact_info,
+                                                "overlapping_analysis": True,
+                                                "n_windows": len(window_hrv_results),
+                                                "window_duration_min": window_duration_min,
+                                                "overlap_percent": overlap_percent,
+                                                "window_details": window_details,
+                                            }
+                                        else:
+                                            st.warning(f"    No valid windows for section '{section_name}'")
+                                    else:
+                                        st.warning(f"    Section too short for overlapping windows, using single analysis")
+                                        # Fall back to single analysis
+                                        peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
+                                        hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
+                                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                                        hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
+
+                                        section_results[section_name] = {
+                                            "hrv_results": hrv_results,
+                                            "rr_intervals": rr_ms,
+                                            "n_beats": len(rr_ms),
+                                            "label": section_def.get("label", section_name),
+                                            "artifact_info": artifact_info,
+                                        }
+                                else:
+                                    # Standard single-window analysis
+                                    peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
+                                    hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
+                                    hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                                    hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
+
+                                    section_results[section_name] = {
+                                        "hrv_results": hrv_results,
+                                        "rr_intervals": rr_ms,
+                                        "n_beats": len(rr_ms),
+                                        "label": section_def.get("label", section_name),
+                                        "artifact_info": artifact_info,
+                                    }
                         else:
                             st.write(f"  Could not find events for section '{section_name}'")
 
