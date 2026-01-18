@@ -9019,11 +9019,11 @@ def main():
                                     st.info(f"{valid_count} valid, {issue_count} with issues")
 
                             with col_save:
-                                if st.button("💾 Save", key=f"save_section_validations_{selected_participant}",
+                                if st.button("Save", key=f"save_section_validations_{selected_participant}",
                                            help="Save section validations to disk"):
                                     save_full_section_validations(selected_participant)
                                     auto_save_config()
-                                    st.toast("Section validations saved!", icon="✅")
+                                    show_toast("Section validations saved", icon="success")
 
                         # RR+Gap Duration Validation (HRV Logger only)
                         # Compare event-based duration vs sum of RR intervals + gaps
