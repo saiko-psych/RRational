@@ -1088,7 +1088,7 @@ wheels = [
 
 [[package]]
 name = "rrational"
-version = "0.7.1"
+version = "0.7.6"
 source = { editable = "." }
 dependencies = [
     { name = "neurokit2" },
@@ -1115,7 +1115,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0" },
     { name = "plotly", specifier = ">=5.18" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "streamlit", specifier = ">=1.28" },
+    { name = "streamlit", specifier = ">=1.45.1" },
     { name = "streamlit-plotly-events", specifier = ">=0.0.6" },
     { name = "streamlit-shortcuts", specifier = ">=1.2.1" },
 ]
