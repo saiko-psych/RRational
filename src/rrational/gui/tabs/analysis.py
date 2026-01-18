@@ -6,6 +6,8 @@ Provides HRV metrics computation and visualization.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -53,8 +55,27 @@ from rrational.gui.rrational_export import (  # noqa: E402
     load_rrational_v2,
     get_rrational_version,
     RRATIONAL_VERSION_V2,
-    RRationalExportV2,
 )
+
+
+# =============================================================================
+# GROUP ANALYSIS DATA STRUCTURES
+# =============================================================================
+
+
+@dataclass
+class ParticipantSectionResult:
+    """Result of HRV analysis for one participant-section combination."""
+    participant_id: str
+    group: str
+    section_name: str
+    n_beats: int
+    duration_s: float
+    quality_grade: str
+    artifact_rate: float
+    hrv_metrics: dict  # All HRV metrics (RMSSD, SDNN, pNN50, MeanNN, MeanHR, LF, HF, LF/HF)
+    hrv_std: dict | None  # SD if overlapping windows used
+    n_windows: int  # Number of windows (1 if no overlapping)
 
 
 # =============================================================================
@@ -2449,7 +2470,7 @@ def _render_single_participant_analysis():
                                     else:
                                         st.warning(f"    No valid windows for section '{sec_name}', falling back to single analysis")
                                 else:
-                                    st.warning(f"    Section too short for overlapping windows, using single analysis")
+                                    st.warning("    Section too short for overlapping windows, using single analysis")
 
                             # Standard single analysis (fallback or when overlapping disabled)
                             peaks = nk.intervals_to_peaks(nn_intervals_ms, sampling_rate=1000)
@@ -2940,7 +2961,7 @@ def _render_single_participant_analysis():
                                         else:
                                             st.warning(f"    No valid windows for section '{section_name}'")
                                     else:
-                                        st.warning(f"    Section too short for overlapping windows, using single analysis")
+                                        st.warning("    Section too short for overlapping windows, using single analysis")
                                         # Fall back to single analysis
                                         peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
                                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
@@ -3257,229 +3278,795 @@ def _display_single_participant_results(selected_participant: str):
         display_documentation_panel(doc)
 
 
-def _render_group_analysis():
-    """Render group-level HRV analysis."""
-    from rrational.cleaning.rr import clean_rr_intervals, RRInterval
-    from rrational.io.hrv_logger import HRVLoggerRecording, EventMarker
+# =============================================================================
+# GROUP ANALYSIS HELPER FUNCTIONS
+# =============================================================================
 
-    # Group selection
-    group_list = list(st.session_state.groups.keys())
-    selected_group = st.selectbox(
-        "Select Group",
-        options=group_list,
-        key="analysis_group"
+
+def _collect_group_participants(selected_groups: list[str]) -> dict[str, list[str]]:
+    """Collect participants for each selected group.
+
+    Args:
+        selected_groups: List of group names to collect
+
+    Returns:
+        Dict mapping group name to list of participant IDs
+    """
+    result = {}
+    for group in selected_groups:
+        participants = [
+            pid for pid, gname in st.session_state.participant_groups.items()
+            if gname == group
+        ]
+        result[group] = participants
+    return result
+
+
+def _find_rrational_v2_file(
+    participant_id: str,
+    project_path: str | None = None,
+    data_dir: str | None = None,
+) -> str | None:
+    """Find the .rrational v2 file for a participant.
+
+    Args:
+        participant_id: The participant ID
+        project_path: Path to the project folder
+        data_dir: Alternative data directory
+
+    Returns:
+        Path to the .rrational v2 file, or None if not found
+    """
+    from pathlib import Path
+
+    files = find_rrational_files(
+        participant_id,
+        data_dir=data_dir,
+        project_path=Path(project_path) if project_path else None,
     )
 
-    # Section selection
+    # Find v2 file
+    for f in files:
+        try:
+            version = get_rrational_version(f)
+            if version == RRATIONAL_VERSION_V2:
+                return str(f)
+        except Exception:
+            continue
+
+    return None
+
+
+def _load_nn_from_rrational_v2(
+    file_path: str,
+    section_name: str,
+) -> tuple[list[float] | None, dict]:
+    """Load NN intervals from a v2 .rrational file for a specific section.
+
+    Args:
+        file_path: Path to the .rrational v2 file
+        section_name: Name of the section to load
+
+    Returns:
+        Tuple of (nn_ms_list, info_dict) where:
+        - nn_ms_list: List of NN interval values in ms, or None if not found
+        - info_dict: Contains quality_grade, artifact_rate, n_beats, duration_s
+    """
+    try:
+        export_data = load_rrational_v2(file_path)
+
+        if section_name not in export_data.sections:
+            return None, {"error": f"Section '{section_name}' not found in file"}
+
+        section = export_data.sections[section_name]
+        nn_data = section.nn_intervals.data
+
+        if not nn_data:
+            return None, {"error": "No NN intervals in section"}
+
+        # Extract NN values (format: [[timestamp_ms, nn_ms, was_corrected], ...])
+        nn_ms_list = [entry[1] for entry in nn_data]
+
+        # Get quality info
+        quality = section.quality
+        info = {
+            "quality_grade": quality.grade,
+            "artifact_rate": (
+                section.artifact_detection.artifact_rate
+                if section.artifact_detection else 0.0
+            ),
+            "n_beats": len(nn_ms_list),
+            "duration_s": quality.usable_duration_s,
+            "meets_time_domain": quality.meets_time_domain_min,
+            "meets_freq_domain": quality.meets_freq_domain_min,
+        }
+
+        return nn_ms_list, info
+
+    except Exception as e:
+        return None, {"error": str(e)}
+
+
+def _calculate_hrv_metrics(
+    nn_ms_list: list[float],
+    use_windows: bool = True,
+    window_beats: int = 150,
+    overlap_pct: float = 75.0,
+) -> tuple[dict, dict | None, int]:
+    """Calculate HRV metrics from NN intervals.
+
+    Args:
+        nn_ms_list: List of NN interval values in ms
+        use_windows: Whether to use overlapping windows
+        window_beats: Number of beats per window
+        overlap_pct: Overlap percentage (0-100)
+
+    Returns:
+        Tuple of (metrics_dict, std_dict, n_windows)
+        - metrics_dict: Mean HRV metrics
+        - std_dict: SD of metrics (None if no windows)
+        - n_windows: Number of windows used
+    """
+    nk = get_neurokit()
+
+    def compute_hrv(rr_list: list[float]) -> dict:
+        """Compute HRV for a single window."""
+        peaks = nk.intervals_to_peaks(rr_list, sampling_rate=1000)
+        hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
+        result = {
+            "RMSSD": hrv_time.get("HRV_RMSSD", [None])[0],
+            "SDNN": hrv_time.get("HRV_SDNN", [None])[0],
+            "pNN50": hrv_time.get("HRV_pNN50", [None])[0],
+            "MeanNN": hrv_time.get("HRV_MeanNN", [None])[0],
+        }
+        # Add MeanHR from MeanNN
+        if result["MeanNN"] and result["MeanNN"] > 0:
+            result["MeanHR"] = 60000 / result["MeanNN"]
+        else:
+            result["MeanHR"] = None
+
+        # Add frequency domain if enough beats
+        if len(rr_list) >= MIN_BEATS_FREQUENCY_DOMAIN:
+            try:
+                hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                result["LF"] = hrv_freq.get("HRV_LF", [None])[0]
+                result["HF"] = hrv_freq.get("HRV_HF", [None])[0]
+                lf_hf = hrv_freq.get("HRV_LFHF", [None])[0]
+                result["LF_HF"] = lf_hf
+            except Exception:
+                result["LF"] = None
+                result["HF"] = None
+                result["LF_HF"] = None
+        else:
+            result["LF"] = None
+            result["HF"] = None
+            result["LF_HF"] = None
+
+        return result
+
+    if not use_windows or len(nn_ms_list) < window_beats:
+        # Single analysis on full data
+        metrics = compute_hrv(nn_ms_list)
+        return metrics, None, 1
+
+    # Overlapping windows analysis
+    step_beats = int(window_beats * (1 - overlap_pct / 100))
+    if step_beats < 1:
+        step_beats = 1
+
+    windows = generate_overlapping_windows_beats(nn_ms_list, window_beats, step_beats)
+
+    if not windows:
+        # Fallback to single analysis
+        metrics = compute_hrv(nn_ms_list)
+        return metrics, None, 1
+
+    # Calculate HRV for each window
+    window_results = []
+    for _, _, window_rr in windows:
+        try:
+            window_hrv = compute_hrv(window_rr)
+            window_results.append(window_hrv)
+        except Exception:
+            continue
+
+    if not window_results:
+        metrics = compute_hrv(nn_ms_list)
+        return metrics, None, 1
+
+    # Aggregate results
+    metrics_df = pd.DataFrame(window_results)
+
+    mean_metrics = {}
+    std_metrics = {}
+    for col in metrics_df.columns:
+        values = metrics_df[col].dropna()
+        if len(values) > 0:
+            mean_metrics[col] = float(values.mean())
+            std_metrics[col] = float(values.std()) if len(values) > 1 else 0.0
+        else:
+            mean_metrics[col] = None
+            std_metrics[col] = None
+
+    return mean_metrics, std_metrics, len(window_results)
+
+
+# =============================================================================
+# GROUP ANALYSIS RESULT AGGREGATION FUNCTIONS
+# =============================================================================
+
+
+def _results_to_long_df(results: list[ParticipantSectionResult]) -> pd.DataFrame:
+    """Convert analysis results to long-format DataFrame.
+
+    Args:
+        results: List of ParticipantSectionResult objects
+
+    Returns:
+        DataFrame with one row per participant-section combination
+    """
+    rows = []
+    for r in results:
+        row = {
+            "participant_id": r.participant_id,
+            "group": r.group,
+            "section": r.section_name,
+            "n_beats": r.n_beats,
+            "duration_s": r.duration_s,
+            "quality": r.quality_grade,
+            "artifact_rate": r.artifact_rate,
+            "n_windows": r.n_windows,
+        }
+        # Add HRV metrics
+        for key, value in r.hrv_metrics.items():
+            row[key.lower()] = value
+        # Add SD columns if available
+        if r.hrv_std:
+            for key, value in r.hrv_std.items():
+                row[f"{key.lower()}_sd"] = value
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
+def _results_to_wide_df(results: list[ParticipantSectionResult]) -> pd.DataFrame:
+    """Convert analysis results to wide-format DataFrame.
+
+    Args:
+        results: List of ParticipantSectionResult objects
+
+    Returns:
+        DataFrame with one row per participant, columns like section_metric
+    """
+    # Group by participant
+    participants = {}
+    for r in results:
+        if r.participant_id not in participants:
+            participants[r.participant_id] = {"participant_id": r.participant_id, "group": r.group}
+
+        prefix = r.section_name.replace(" ", "_").lower()
+
+        # Add metrics with section prefix
+        for key, value in r.hrv_metrics.items():
+            col_name = f"{prefix}_{key.lower()}"
+            participants[r.participant_id][col_name] = value
+
+        # Add quality info
+        participants[r.participant_id][f"{prefix}_n_beats"] = r.n_beats
+        participants[r.participant_id][f"{prefix}_quality"] = r.quality_grade
+
+    return pd.DataFrame(list(participants.values()))
+
+
+def _calculate_group_stats(long_df: pd.DataFrame) -> pd.DataFrame:
+    """Calculate descriptive statistics per group and section.
+
+    Args:
+        long_df: Long-format DataFrame from _results_to_long_df
+
+    Returns:
+        DataFrame with columns: group, section, metric, n, mean, sd, min, max
+    """
+    metrics = ["rmssd", "sdnn", "pnn50", "meannn", "meanhr", "lf", "hf", "lf_hf"]
+    rows = []
+
+    for (group, section), group_df in long_df.groupby(["group", "section"]):
+        for metric in metrics:
+            if metric not in group_df.columns:
+                continue
+            values = group_df[metric].dropna()
+            if len(values) == 0:
+                continue
+
+            rows.append({
+                "group": group,
+                "section": section,
+                "metric": metric.upper(),
+                "n": len(values),
+                "mean": round(values.mean(), 2),
+                "sd": round(values.std(), 2) if len(values) > 1 else 0.0,
+                "min": round(values.min(), 2),
+                "max": round(values.max(), 2),
+            })
+
+    return pd.DataFrame(rows)
+
+
+# =============================================================================
+# GROUP ANALYSIS VISUALIZATION FUNCTIONS
+# =============================================================================
+
+
+def _create_group_bar_chart(
+    stats_df: pd.DataFrame,
+    metric: str,
+    sections: list[str] | None = None,
+):
+    """Create a grouped bar chart for HRV metrics.
+
+    Args:
+        stats_df: DataFrame from _calculate_group_stats
+        metric: Metric to plot (e.g., "RMSSD", "SDNN")
+        sections: Optional list of sections to include
+
+    Returns:
+        Plotly Figure object
+    """
+    go, _ = get_plotly_analysis()
+    if go is None:
+        return None
+
+    # Filter to specific metric
+    df = stats_df[stats_df["metric"] == metric.upper()].copy()
+    if df.empty:
+        return None
+
+    # Filter sections if specified
+    if sections:
+        df = df[df["section"].isin(sections)]
+
+    # Get unique groups and sections
+    groups = df["group"].unique().tolist()
+    section_list = df["section"].unique().tolist()
+
+    # Colors for sections
+    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745"]
+
+    fig = go.Figure()
+
+    for i, section in enumerate(section_list):
+        section_df = df[df["section"] == section]
+
+        # Align with groups (may have missing data)
+        means = []
+        sds = []
+        for group in groups:
+            group_row = section_df[section_df["group"] == group]
+            if not group_row.empty:
+                means.append(group_row["mean"].values[0])
+                sds.append(group_row["sd"].values[0])
+            else:
+                means.append(None)
+                sds.append(None)
+
+        fig.add_trace(
+            go.Bar(
+                name=section,
+                x=groups,
+                y=means,
+                error_y=dict(type="data", array=sds, visible=True),
+                marker_color=colors[i % len(colors)],
+            )
+        )
+
+    # Get theme colors
+    theme = get_theme_colors()
+
+    fig.update_layout(
+        title=dict(
+            text=f"{metric.upper()} by Group and Section",
+            font=dict(size=16),
+        ),
+        xaxis_title="Group",
+        yaxis_title=f"{metric.upper()} (ms)" if metric.upper() not in ["LF_HF", "PNN50"] else metric.upper(),
+        barmode="group",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        plot_bgcolor=theme["bg"],
+        paper_bgcolor=theme["bg"],
+        font=dict(color=theme["text"]),
+        margin=dict(l=60, r=20, t=80, b=60),
+    )
+
+    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+
+    return fig
+
+
+# =============================================================================
+# GROUP ANALYSIS MAIN PIPELINE
+# =============================================================================
+
+
+def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], dict, dict]:
+    """Run HRV analysis for multiple groups.
+
+    Args:
+        config: Configuration dict with keys:
+            - selected_groups: List of group names
+            - sections_per_group: Dict mapping group -> list of section names
+            - use_overlapping_windows: bool
+            - window_beats: int
+            - overlap_percent: float
+            - completeness_filter: bool
+
+    Returns:
+        Tuple of (results, missing, excluded)
+        - results: List of ParticipantSectionResult
+        - missing: Dict of {participant_id: {section: reason}}
+        - excluded: Dict of {participant_id: reason}
+    """
+    results = []
+    missing = {}
+    excluded = {}
+
+    project_path = st.session_state.get("project_path")
+    data_dir = st.session_state.get("data_dir")
+
+    group_participants = _collect_group_participants(config["selected_groups"])
+
+    for group in config["selected_groups"]:
+        sections = config["sections_per_group"].get(group, [])
+        participants = group_participants.get(group, [])
+
+        for pid in participants:
+            # Find .rrational v2 file
+            rrational_path = _find_rrational_v2_file(pid, project_path=project_path, data_dir=data_dir)
+
+            if not rrational_path:
+                missing[pid] = {"_all": "No .rrational v2 file found"}
+                continue
+
+            # Check which sections are available
+            available = []
+            for section in sections:
+                nn_data, info = _load_nn_from_rrational_v2(rrational_path, section)
+                if nn_data and len(nn_data) >= MIN_BEATS_TIME_DOMAIN:
+                    available.append((section, nn_data, info))
+                else:
+                    missing.setdefault(pid, {})[section] = info.get("error", "Insufficient data")
+
+            # Completeness filter
+            if config["completeness_filter"] and len(available) < len(sections):
+                excluded[pid] = f"Missing {len(sections) - len(available)} of {len(sections)} sections"
+                continue
+
+            # Calculate HRV for each available section
+            for section, nn_data, info in available:
+                metrics, std, n_win = _calculate_hrv_metrics(
+                    nn_data,
+                    config["use_overlapping_windows"],
+                    config["window_beats"],
+                    config["overlap_percent"],
+                )
+
+                results.append(ParticipantSectionResult(
+                    participant_id=pid,
+                    group=group,
+                    section_name=section,
+                    n_beats=info.get("n_beats", len(nn_data)),
+                    duration_s=info.get("duration_s", sum(nn_data) / 1000),
+                    quality_grade=info.get("quality_grade", "unknown"),
+                    artifact_rate=info.get("artifact_rate", 0.0),
+                    hrv_metrics=metrics,
+                    hrv_std=std,
+                    n_windows=n_win,
+                ))
+
+    return results, missing, excluded
+
+
+def _render_group_analysis():
+    """Render group-level HRV analysis with multi-group support."""
+    # Help expander
+    with st.expander("**Group Analysis Best Practices**", expanded=False):
+        st.markdown("""
+**Overview:**
+Group analysis allows you to compare HRV metrics across multiple groups and sections.
+This feature uses `.rrational` v2 files which contain pre-processed NN intervals.
+
+**Requirements:**
+- Participants must have `.rrational` v2 files exported (from the Participants tab)
+- At least 100 beats per section for time-domain metrics
+- At least 300 beats per section for frequency-domain metrics
+
+**Overlapping Windows:**
+Using overlapping windows improves the reliability of HRV estimates by providing:
+- Multiple measurements per participant per section
+- Standard deviation as a measure of within-participant variability
+- Reduced impact of transient artifacts
+
+**Recommended settings:** 150 beats/window, 75% overlap
+        """)
+
+    # Check prerequisites
     available_sections = list(st.session_state.sections.keys())
     if not available_sections:
         st.warning("No sections defined. Please define sections in the Sections tab first.")
         return
 
-    selected_sections = st.multiselect(
-        "Select Sections to Analyze",
-        options=available_sections,
-        default=[available_sections[0]] if available_sections else [],
-        key="analysis_sections_group"
+    group_list = list(st.session_state.groups.keys())
+    if not group_list:
+        st.warning("No groups defined. Please define groups in the Participants tab first.")
+        return
+
+    # -------------------------------------------------------------------------
+    # Step 1: Select Groups
+    # -------------------------------------------------------------------------
+    st.markdown("### Step 1: Select Groups")
+
+    # Count participants per group
+    group_counts = {}
+    for group in group_list:
+        count = sum(1 for g in st.session_state.participant_groups.values() if g == group)
+        group_counts[group] = count
+
+    # Multi-select with counts
+    group_options = [f"{g} ({group_counts[g]} participants)" for g in group_list]
+    group_map = {f"{g} ({group_counts[g]} participants)": g for g in group_list}
+
+    selected_group_labels = st.multiselect(
+        "Select groups to analyze",
+        options=group_options,
+        default=group_options,  # All groups selected by default
+        key="group_analysis_groups",
     )
+    selected_groups = [group_map[label] for label in selected_group_labels]
 
-    if st.button("Analyze Group HRV", key="analyze_group_btn", type="primary"):
-        if not selected_sections:
-            st.error("Please select at least one section")
+    if not selected_groups:
+        st.info("Please select at least one group to analyze.")
+        return
+
+    # -------------------------------------------------------------------------
+    # Step 2: Configure Sections per Group
+    # -------------------------------------------------------------------------
+    st.markdown("### Step 2: Configure Sections")
+
+    sections_per_group = {}
+    for group in selected_groups:
+        with st.expander(f"**{group}** - Select sections", expanded=True):
+            sections_per_group[group] = st.multiselect(
+                f"Sections for {group}",
+                options=available_sections,
+                default=available_sections,  # All sections by default
+                key=f"group_analysis_sections_{group}",
+                label_visibility="collapsed",
+            )
+
+    # Check if any sections selected
+    total_sections = sum(len(s) for s in sections_per_group.values())
+    if total_sections == 0:
+        st.info("Please select at least one section for at least one group.")
+        return
+
+    # -------------------------------------------------------------------------
+    # Step 3: Analysis Options
+    # -------------------------------------------------------------------------
+    st.markdown("### Step 3: Analysis Options")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        use_overlapping = st.checkbox(
+            "Use overlapping windows",
+            value=True,
+            key="group_analysis_overlapping",
+            help="Calculate HRV using overlapping windows for more reliable estimates",
+        )
+    with col2:
+        completeness_filter = st.checkbox(
+            "Only complete participants",
+            value=False,
+            key="group_analysis_completeness",
+            help="Exclude participants missing any selected sections",
+        )
+
+    if use_overlapping:
+        col1, col2 = st.columns(2)
+        with col1:
+            window_beats = st.number_input(
+                "Window size (beats)",
+                min_value=50,
+                max_value=500,
+                value=150,
+                step=10,
+                key="group_analysis_window_beats",
+            )
+        with col2:
+            overlap_pct = st.slider(
+                "Overlap (%)",
+                min_value=0,
+                max_value=90,
+                value=75,
+                step=5,
+                key="group_analysis_overlap",
+            )
+    else:
+        window_beats = 150
+        overlap_pct = 75
+
+    # -------------------------------------------------------------------------
+    # Run Analysis Button
+    # -------------------------------------------------------------------------
+    st.divider()
+
+    if st.button("**Analyze Groups**", key="run_group_analysis_btn", type="primary", use_container_width=True):
+        # Build configuration
+        config = {
+            "selected_groups": selected_groups,
+            "sections_per_group": sections_per_group,
+            "use_overlapping_windows": use_overlapping,
+            "window_beats": window_beats,
+            "overlap_percent": overlap_pct,
+            "completeness_filter": completeness_filter,
+        }
+
+        # Count total participants
+        total_participants = sum(
+            group_counts[g] for g in selected_groups
+        )
+
+        with st.status(f"Analyzing {total_participants} participants across {len(selected_groups)} groups...", expanded=True) as status:
+            st.write("Starting analysis...")
+
+            # Run the analysis
+            results, missing, excluded = _run_group_analysis(config)
+
+            status.update(label="Analysis complete!", state="complete")
+
+        # Store results in session state for persistence
+        st.session_state.group_analysis_results = {
+            "results": results,
+            "missing": missing,
+            "excluded": excluded,
+            "config": config,
+        }
+
+        show_toast(f"Analysis complete: {len(results)} participant-section results", icon="success")
+
+    # -------------------------------------------------------------------------
+    # Display Results
+    # -------------------------------------------------------------------------
+    if "group_analysis_results" not in st.session_state:
+        return
+
+    stored = st.session_state.group_analysis_results
+    results = stored["results"]
+    missing = stored["missing"]
+    excluded = stored["excluded"]
+    config = stored["config"]
+
+    if not results:
+        st.warning("No results available. Check the missing sections report below.")
+        # Show missing info
+        if missing or excluded:
+            with st.expander("**Missing / Excluded Participants**", expanded=True):
+                if excluded:
+                    st.markdown("**Excluded (completeness filter):**")
+                    for pid, reason in excluded.items():
+                        st.write(f"- `{pid}`: {reason}")
+                if missing:
+                    st.markdown("**Missing data:**")
+                    for pid, sections in missing.items():
+                        section_list = ", ".join(f"{s}: {r}" for s, r in sections.items())
+                        st.write(f"- `{pid}`: {section_list}")
+        return
+
+    # Summary
+    st.markdown("---")
+    n_participants = len(set(r.participant_id for r in results))
+    n_sections = len(set(r.section_name for r in results))
+    n_groups = len(set(r.group for r in results))
+
+    st.markdown(f"""
+### Results Summary
+- **{n_participants}** participants analyzed
+- **{n_groups}** groups
+- **{n_sections}** sections
+- **{len(results)}** total participant-section combinations
+    """)
+
+    # Missing sections (collapsible)
+    if missing or excluded:
+        with st.expander(f"**Missing / Excluded ({len(missing) + len(excluded)} participants)**", expanded=False):
+            if excluded:
+                st.markdown("**Excluded (completeness filter):**")
+                for pid, reason in excluded.items():
+                    st.write(f"- `{pid}`: {reason}")
+            if missing:
+                st.markdown("**Missing data:**")
+                for pid, sections in missing.items():
+                    section_list = ", ".join(f"{s}: {r}" for s, r in sections.items())
+                    st.write(f"- `{pid}`: {section_list}")
+
+    # Convert to DataFrames
+    long_df = _results_to_long_df(results)
+    wide_df = _results_to_wide_df(results)
+    stats_df = _calculate_group_stats(long_df)
+
+    # Tabs for different views
+    tab_data, tab_stats, tab_chart = st.tabs(["**Data**", "**Statistics**", "**Chart**"])
+
+    with tab_data:
+        # Format toggle
+        format_choice = st.radio(
+            "Data format",
+            options=["Long (one row per section)", "Wide (one row per participant)"],
+            horizontal=True,
+            key="group_analysis_format",
+        )
+
+        if "Long" in format_choice:
+            st.dataframe(long_df, use_container_width=True, height=400)
+            csv_data = long_df.to_csv(index=False)
+            filename = "hrv_group_results_long.csv"
         else:
-            # Get participants in selected group
-            group_participants = [
-                pid for pid, gname in st.session_state.participant_groups.items()
-                if gname == selected_group
-            ]
+            st.dataframe(wide_df, use_container_width=True, height=400)
+            csv_data = wide_df.to_csv(index=False)
+            filename = "hrv_group_results_wide.csv"
 
-            if not group_participants:
-                st.warning(f"No participants assigned to group '{selected_group}'")
+        st.download_button(
+            label="Download CSV",
+            data=csv_data,
+            file_name=filename,
+            mime="text/csv",
+            key="download_group_data",
+        )
+
+    with tab_stats:
+        st.markdown("**Descriptive Statistics by Group and Section**")
+        st.dataframe(stats_df, use_container_width=True, height=400)
+
+        stats_csv = stats_df.to_csv(index=False)
+        st.download_button(
+            label="Download Statistics CSV",
+            data=stats_csv,
+            file_name="hrv_group_statistics.csv",
+            mime="text/csv",
+            key="download_group_stats",
+        )
+
+    with tab_chart:
+        # Metric selector
+        available_metrics = ["RMSSD", "SDNN", "PNN50", "MEANNN", "MEANHR"]
+        if "lf" in long_df.columns and long_df["lf"].notna().any():
+            available_metrics.extend(["LF", "HF", "LF_HF"])
+
+        selected_metric = st.selectbox(
+            "Select metric to visualize",
+            options=available_metrics,
+            key="group_analysis_chart_metric",
+        )
+
+        # Section filter for chart
+        all_sections = sorted(long_df["section"].unique().tolist())
+        chart_sections = st.multiselect(
+            "Sections to include",
+            options=all_sections,
+            default=all_sections,
+            key="group_analysis_chart_sections",
+        )
+
+        if chart_sections:
+            fig = _create_group_bar_chart(stats_df, selected_metric, chart_sections)
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
             else:
-                # Use status context for group analysis
-                with st.status(f"Analyzing {len(group_participants)} participants...", expanded=True) as status:
-                    bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-
-                    # Results organized by section
-                    results_by_section = {section: [] for section in selected_sections}
-                    if len(selected_sections) > 1:
-                        results_by_section["_combined"] = []
-
-                    progress = st.progress(0)
-                    total_steps = len(group_participants)
-                    skipped_participants = []  # Track participants without saved events
-
-                    for idx, participant_id in enumerate(group_participants):
-                        st.write(f"Processing {participant_id} ({idx + 1}/{total_steps})")
-                        progress.progress(int((idx / total_steps) * 100))
-                        try:
-                            bundle = next(b for b in bundles if b.participant_id == participant_id)
-                            # Use CACHED loading
-                            recording_data = cached_load_recording(
-                                tuple(str(p) for p in bundle.rr_paths),
-                                tuple(str(p) for p in bundle.events_paths),
-                                participant_id
-                            )
-                            # Reconstruct recording object
-                            rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                                            for ts, rr, elapsed in recording_data['rr_intervals']]
-
-                            # Load stored/saved events from YAML - REQUIRED for analysis
-                            if participant_id not in st.session_state.participant_events:
-                                from rrational.gui.persistence import load_participant_events
-                                from rrational.prep.summaries import EventStatus
-                                from datetime import datetime as dt
-
-                                saved = load_participant_events(participant_id, st.session_state.data_dir)
-                                if saved:
-                                    # Convert dicts to EventStatus objects
-                                    def dict_to_event(d):
-                                        ts = d.get("first_timestamp")
-                                        if ts and isinstance(ts, str):
-                                            ts = dt.fromisoformat(ts)
-                                        last_ts = d.get("last_timestamp")
-                                        if last_ts and isinstance(last_ts, str):
-                                            last_ts = dt.fromisoformat(last_ts)
-                                        return EventStatus(
-                                            raw_label=d.get("raw_label", ""),
-                                            canonical=d.get("canonical"),
-                                            first_timestamp=ts,
-                                            last_timestamp=last_ts,
-                                        )
-
-                                    st.session_state.participant_events[participant_id] = {
-                                        'events': [dict_to_event(e) for e in saved.get('events', [])],
-                                        'manual': [dict_to_event(e) for e in saved.get('manual', [])],
-                                        'music_events': [dict_to_event(e) for e in saved.get('music_events', [])],
-                                        'exclusion_zones': saved.get('exclusion_zones', []),
-                                    }
-
-                            stored_events = st.session_state.participant_events.get(participant_id, {})
-                            all_stored = stored_events.get('events', []) + stored_events.get('manual', [])
-
-                            if not all_stored:
-                                # No saved events - skip this participant with warning
-                                skipped_participants.append(participant_id)
-                                continue
-
-                            # Use saved/processed events (with canonical labels)
-                            events = []
-                            for evt in all_stored:
-                                # Handle both dict (from YAML) and object formats
-                                if isinstance(evt, dict):
-                                    ts = evt.get('first_timestamp')
-                                    label = evt.get('canonical') or evt.get('raw_label', 'unknown')
-                                else:
-                                    ts = getattr(evt, 'first_timestamp', None)
-                                    label = getattr(evt, 'canonical', None) or getattr(evt, 'raw_label', 'unknown')
-
-                                if ts:
-                                    # Convert string timestamps from YAML to datetime
-                                    if isinstance(ts, str):
-                                        from datetime import datetime
-                                        ts = datetime.fromisoformat(ts)
-                                    events.append(EventMarker(label=label, timestamp=ts, offset_s=None))
-
-                            recording = HRVLoggerRecording(
-                                participant_id=participant_id,
-                                rr_intervals=rr_intervals,
-                                events=events
-                            )
-
-                            combined_rr = []
-
-                            # Analyze each section
-                            for section_name in selected_sections:
-                                section_def = st.session_state.sections[section_name]
-                                section_rr = extract_section_rr_intervals(
-                                    recording, section_def, st.session_state.normalizer,
-                                    saved_events=all_stored  # Use saved/edited events, not raw file events
-                                )
-
-                                if section_rr:
-                                    # Apply exclusion zone filtering
-                                    exclusion_zones = _get_exclusion_zones(participant_id)
-                                    if exclusion_zones:
-                                        section_rr, _ = filter_exclusion_zones(section_rr, exclusion_zones)
-
-                                    cleaned_rr, stats = clean_rr_intervals(
-                                        section_rr, st.session_state.cleaning_config
-                                    )
-
-                                    if cleaned_rr:
-                                        rr_ms = [rr.rr_ms for rr in cleaned_rr]
-                                        combined_rr.extend(rr_ms)
-
-                                        nk = get_neurokit()
-                                        peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
-                                        hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                        hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
-
-                                        if not hrv_results.empty:
-                                            result_row = {"participant_id": participant_id}
-                                            for col in hrv_results.columns:
-                                                result_row[col] = hrv_results[col].iloc[0]
-                                            results_by_section[section_name].append(result_row)
-
-                            # Combined analysis
-                            if len(selected_sections) > 1 and combined_rr:
-                                nk = get_neurokit()
-                                peaks = nk.intervals_to_peaks(combined_rr, sampling_rate=1000)
-                                hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                combined_hrv = pd.concat([hrv_time, hrv_freq], axis=1)
-
-                                if not combined_hrv.empty:
-                                    result_row = {"participant_id": participant_id}
-                                    for col in combined_hrv.columns:
-                                        result_row[col] = combined_hrv[col].iloc[0]
-                                    results_by_section["_combined"].append(result_row)
-
-                        except Exception as e:
-                            st.write(f"  Could not analyze {participant_id}: {e}")
-
-                    # Complete
-                    progress.progress(100)
-                    status.update(label="Group analysis complete!", state="complete")
-                    show_toast(f"Group analysis complete for {len(group_participants)} participants", icon="success")
-
-                    # Warn about skipped participants (no saved events)
-                    if skipped_participants:
-                        st.warning(
-                            f"**{len(skipped_participants)} participant(s) skipped** - no saved events:\n"
-                            f"`{', '.join(skipped_participants)}`\n\n"
-                            "Please review and save their data in the **Participants** tab first."
-                        )
-
-                    # Display results by section
-                    st.subheader(f"Group HRV Results - {selected_group}")
-
-                    for section_name, results in results_by_section.items():
-                        if results:
-                            section_label = (
-                                "Combined Sections"
-                                if section_name == "_combined"
-                                else st.session_state.sections[section_name].get("label", section_name)
-                            )
-
-                            with st.expander(f"{section_label} ({len(results)} participants)", expanded=True):
-                                df_results = pd.DataFrame(results)
-
-                                # Summary statistics
-                                st.markdown("**Summary Statistics:**")
-                                st.dataframe(df_results.describe(), width='stretch')
-
-                                # Individual results
-                                st.markdown("**Individual Results:**")
-                                st.dataframe(df_results, width='stretch')
-
-                                # Download
-                                csv_data = df_results.to_csv(index=False)
-                                st.download_button(
-                                    label=f"Download {section_label} Results",
-                                    data=csv_data,
-                                    file_name=f"hrv_group_{selected_group}_{section_name}.csv",
-                                    mime="text/csv",
-                                    key=f"download_group_{section_name}",
-                                )
+                st.info(f"No data available for {selected_metric} in selected sections.")
+        else:
+            st.info("Select at least one section to display the chart.")
