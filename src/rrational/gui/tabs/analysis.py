@@ -1944,7 +1944,7 @@ def _render_single_participant_analysis():
         ready_files = find_rrational_files(selected_participant, data_dir)
 
     if ready_files:
-        with st.expander(f"Ready Files ({len(ready_files)} found)", expanded=False):
+        with st.expander(f"Ready Files ({len(ready_files)} found)", expanded=True):  # Expanded by default
             st.info(
                 "Ready files contain pre-inspected data with artifact detection "
                 "and corrected NN intervals. Using a ready file provides the highest "
@@ -1953,8 +1953,8 @@ def _render_single_participant_analysis():
 
             data_source = st.radio(
                 "Data source",
-                options=["raw", "ready"],
-                format_func=lambda x: "Use raw data (extract from recording)" if x == "raw" else "Use ready file (.rrational)",
+                options=["ready", "raw"],  # Ready file is default when available
+                format_func=lambda x: "Use ready file (.rrational)" if x == "ready" else "Use raw data (extract from recording)",
                 key="analysis_data_source",
                 horizontal=True,
             )
@@ -2026,6 +2026,65 @@ def _render_single_participant_analysis():
                             with st.expander("Audit Trail"):
                                 for entry in ready_data_v2.audit_trail[-5:]:  # Last 5 entries
                                     st.write(f"**{entry.action}**: {entry.details}")
+
+                        # Overlapping window options for v2.0 ready files
+                        with st.expander("Overlapping Window Analysis", expanded=False):
+                            st.markdown("""
+                            Split each section into **overlapping windows** for more reliable HRV metrics.
+                            Results are averaged across all windows within each section.
+                            """)
+                            use_overlapping_windows = st.checkbox(
+                                "Enable overlapping window analysis",
+                                value=False,
+                                key="use_overlapping_windows_v2",
+                                help="Analyze each section using multiple overlapping windows"
+                            )
+
+                            if use_overlapping_windows:
+                                window_mode = st.radio(
+                                    "Window mode",
+                                    options=["time", "beats"],
+                                    format_func=lambda x: "Time-based (minutes)" if x == "time" else "Beat-based (number of beats)",
+                                    horizontal=True,
+                                    key="overlap_window_mode_v2",
+                                )
+
+                                if window_mode == "time":
+                                    st.caption("**Recommended:** 5-minute windows with 50% overlap")
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        window_duration_min = st.slider(
+                                            "Window duration (minutes)", 1, 10, 5, key="overlap_window_duration_v2"
+                                        )
+                                    with col2:
+                                        overlap_percent = st.slider(
+                                            "Overlap (%)", 0, 75, 50, step=25, key="overlap_percent_v2"
+                                        )
+                                    step_size_min = window_duration_min * (1 - overlap_percent / 100)
+                                    st.caption(f"Step size: {step_size_min:.1f} minutes")
+                                    window_beats = None
+                                    step_beats = None
+                                else:
+                                    st.caption("**Recommended:** 300 beats with 50% overlap")
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        window_beats = st.slider(
+                                            "Window size (beats)", 100, 1000, 300, step=50, key="overlap_window_beats_v2"
+                                        )
+                                    with col2:
+                                        overlap_beats_percent = st.slider(
+                                            "Overlap (%)", 0, 75, 50, step=25, key="overlap_beats_percent_v2"
+                                        )
+                                    step_beats = int(window_beats * (1 - overlap_beats_percent / 100))
+                                    st.caption(f"Step size: {step_beats} beats")
+                                    window_duration_min = None
+                                    overlap_percent = None
+                            else:
+                                window_mode = "time"
+                                window_duration_min = 5
+                                overlap_percent = 50
+                                window_beats = None
+                                step_beats = None
                     else:
                         # V1.0 file - original behavior
                         ready_data = load_rrational(selected_ready_file)
@@ -2042,6 +2101,65 @@ def _render_single_participant_analysis():
                             with st.expander("Audit Trail"):
                                 for step in ready_data.processing_steps:
                                     st.write(f"**{step.action}**: {step.details}")
+
+                        # Overlapping window options for v1.0 ready files
+                        with st.expander("Overlapping Window Analysis", expanded=False):
+                            st.markdown("""
+                            Split each section into **overlapping windows** for more reliable HRV metrics.
+                            Results are averaged across all windows within each section.
+                            """)
+                            use_overlapping_windows = st.checkbox(
+                                "Enable overlapping window analysis",
+                                value=False,
+                                key="use_overlapping_windows_v1",
+                                help="Analyze each section using multiple overlapping windows"
+                            )
+
+                            if use_overlapping_windows:
+                                window_mode = st.radio(
+                                    "Window mode",
+                                    options=["time", "beats"],
+                                    format_func=lambda x: "Time-based (minutes)" if x == "time" else "Beat-based (number of beats)",
+                                    horizontal=True,
+                                    key="overlap_window_mode_v1",
+                                )
+
+                                if window_mode == "time":
+                                    st.caption("**Recommended:** 5-minute windows with 50% overlap")
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        window_duration_min = st.slider(
+                                            "Window duration (minutes)", 1, 10, 5, key="overlap_window_duration_v1"
+                                        )
+                                    with col2:
+                                        overlap_percent = st.slider(
+                                            "Overlap (%)", 0, 75, 50, step=25, key="overlap_percent_v1"
+                                        )
+                                    step_size_min = window_duration_min * (1 - overlap_percent / 100)
+                                    st.caption(f"Step size: {step_size_min:.1f} minutes")
+                                    window_beats = None
+                                    step_beats = None
+                                else:
+                                    st.caption("**Recommended:** 300 beats with 50% overlap")
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        window_beats = st.slider(
+                                            "Window size (beats)", 100, 1000, 300, step=50, key="overlap_window_beats_v1"
+                                        )
+                                    with col2:
+                                        overlap_beats_percent = st.slider(
+                                            "Overlap (%)", 0, 75, 50, step=25, key="overlap_beats_percent_v1"
+                                        )
+                                    step_beats = int(window_beats * (1 - overlap_beats_percent / 100))
+                                    st.caption(f"Step size: {step_beats} beats")
+                                    window_duration_min = None
+                                    overlap_percent = None
+                            else:
+                                window_mode = "time"
+                                window_duration_min = 5
+                                overlap_percent = 50
+                                window_beats = None
+                                step_beats = None
                 except Exception as e:
                     st.error(f"Error loading ready file: {e}")
                     use_ready_file = False
