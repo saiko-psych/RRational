@@ -77,6 +77,24 @@ __all__ = [
     "init_session_state",
 ]
 
+def _normalize_timestamp(ts):
+    """Normalize a timestamp to naive datetime for safe comparison.
+
+    Handles mixed timezone-aware and timezone-naive datetimes from old saved data.
+    """
+    if ts is None:
+        return datetime.min
+    if isinstance(ts, str):
+        try:
+            ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return datetime.min
+    # Convert to naive datetime to avoid offset-naive vs offset-aware comparison errors
+    if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
+        ts = ts.replace(tzinfo=None)
+    return ts
+
+
 # Default canonical events for the Default Group
 DEFAULT_CANONICAL_EVENTS = {
     "rest_pre_start": [],
@@ -181,22 +199,8 @@ def find_event_candidates(
                 index=idx,
             ))
 
-    # Sort by timestamp (handle mixed types and timezone issues from old saved data)
-    def get_sort_key(c):
-        ts = c.timestamp
-        if ts is None:
-            return datetime.min
-        if isinstance(ts, str):
-            try:
-                ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
-                return datetime.min
-        # Convert to naive datetime to avoid offset-naive vs offset-aware comparison errors
-        if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
-            ts = ts.replace(tzinfo=None)
-        return ts
-
-    candidates.sort(key=get_sort_key)
+    # Sort by timestamp (use helper to handle mixed types and timezone issues)
+    candidates.sort(key=lambda c: _normalize_timestamp(c.timestamp))
     return candidates
 
 
@@ -278,8 +282,8 @@ def validate_section_for_participant(
     selected_start = start_candidates[start_idx]
     selected_end = end_candidates[end_idx]
 
-    # Validate that start comes before end
-    if selected_start.timestamp >= selected_end.timestamp:
+    # Validate that start comes before end (use normalized timestamps for safe comparison)
+    if _normalize_timestamp(selected_start.timestamp) >= _normalize_timestamp(selected_end.timestamp):
         return SectionValidationResult(
             section_name=section_name,
             is_valid=False,
@@ -293,9 +297,12 @@ def validate_section_for_participant(
     beat_count = 0
     duration_s = 0.0
     if rr_intervals:
+        start_ts_norm = _normalize_timestamp(selected_start.timestamp)
+        end_ts_norm = _normalize_timestamp(selected_end.timestamp)
         for rr in rr_intervals:
             ts = getattr(rr, "timestamp", None)
-            if ts and selected_start.timestamp <= ts <= selected_end.timestamp:
+            ts_norm = _normalize_timestamp(ts) if ts else None
+            if ts_norm and start_ts_norm <= ts_norm <= end_ts_norm:
                 beat_count += 1
                 duration_s += getattr(rr, "rr_ms", 0) / 1000.0
 
@@ -498,8 +505,10 @@ def save_full_section_validations(participant_id: str):
             # Calculate duration from timestamps (event-based) if RR-based is 0
             duration_s = vs.duration_s
             if duration_s == 0 and vs.start_event.timestamp and vs.end_event.timestamp:
-                # Calculate from event timestamps
-                duration_s = (vs.end_event.timestamp - vs.start_event.timestamp).total_seconds()
+                # Calculate from event timestamps (normalize to avoid timezone issues)
+                start_norm = _normalize_timestamp(vs.start_event.timestamp)
+                end_norm = _normalize_timestamp(vs.end_event.timestamp)
+                duration_s = (end_norm - start_norm).total_seconds()
 
             section_data["duration_s"] = duration_s
             section_data["beat_count"] = vs.beat_count
@@ -854,8 +863,11 @@ def extract_section_rr_intervals(recording, section_def, normalizer, saved_event
             )
             if start_ts and end_ts:
                 section_rr = []
+                start_ts_norm = _normalize_timestamp(start_ts)
+                end_ts_norm = _normalize_timestamp(end_ts)
                 for rr in recording.rr_intervals:
-                    if rr.timestamp and start_ts <= rr.timestamp <= end_ts:
+                    rr_ts_norm = _normalize_timestamp(rr.timestamp) if rr.timestamp else None
+                    if rr_ts_norm and start_ts_norm <= rr_ts_norm <= end_ts_norm:
                         section_rr.append(rr)
                 return section_rr if section_rr else None
 
@@ -925,8 +937,11 @@ def extract_section_rr_intervals(recording, section_def, normalizer, saved_event
         return None
 
     section_rr = []
+    start_ts_norm = _normalize_timestamp(start_ts)
+    end_ts_norm = _normalize_timestamp(end_ts)
     for rr in recording.rr_intervals:
-        if rr.timestamp and start_ts <= rr.timestamp <= end_ts:
+        rr_ts_norm = _normalize_timestamp(rr.timestamp) if rr.timestamp else None
+        if rr_ts_norm and start_ts_norm <= rr_ts_norm <= end_ts_norm:
             section_rr.append(rr)
 
     return section_rr if section_rr else None
