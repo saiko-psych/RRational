@@ -5759,6 +5759,41 @@ def render_rr_plot_fragment(participant_id: str):
                             sec_result["corrected_timestamps"] = sec_timestamps
                             sec_result["original_rr"] = sec_rr
 
+                            # Generate diagnostic plot for this section if requested
+                            if st.session_state.get(f"show_diagnostic_plots_{participant_id}", False):
+                                if artifact_method in ("kubios", "lipponen2019", "kubios_segmented", "lipponen2019_segmented"):
+                                    try:
+                                        # Check if this section has gap-separated segments
+                                        sec_gap_segments = sec_result.get("gap_segments", [])
+                                        if sec_gap_segments and len(sec_gap_segments) > 1:
+                                            # Generate diagnostic plot per gap-segment within this section
+                                            sec_diag_plots = []
+                                            for seg_idx, (seg_start, seg_end) in enumerate(sec_gap_segments):
+                                                seg_rr = sec_rr[seg_start:seg_end]
+                                                if len(seg_rr) >= 10:
+                                                    seg_diag = generate_artifact_diagnostic_plots(seg_rr)
+                                                    if seg_diag:
+                                                        sec_diag_plots.append({
+                                                            "section": sec_name,
+                                                            "segment": seg_idx + 1,
+                                                            "start": seg_start,
+                                                            "end": seg_end,
+                                                            "image": seg_diag,
+                                                        })
+                                            if sec_diag_plots:
+                                                sec_result["diagnostic_plots"] = sec_diag_plots
+                                        else:
+                                            # Single diagnostic plot for entire section
+                                            sec_diag = generate_artifact_diagnostic_plots(sec_rr)
+                                            if sec_diag:
+                                                sec_result["diagnostic_plots"] = [{
+                                                    "section": sec_name,
+                                                    "segment": None,
+                                                    "image": sec_diag,
+                                                }]
+                                    except Exception as e:
+                                        st.warning(f"Could not generate diagnostic plot for {sec_name}: {e}")
+
                             # Store section result
                             all_sections_results[sec_name] = sec_result
 
@@ -5784,6 +5819,16 @@ def render_rr_plot_fragment(participant_id: str):
                         "segment_beats": segment_beats,
                         "by_type": {},  # Aggregated type info would be complex, skip for now
                     }
+
+                    # Collect all diagnostic plots from all sections
+                    if st.session_state.get(f"show_diagnostic_plots_{participant_id}", False):
+                        all_diag_plots = []
+                        for sec_name, sec_result in all_sections_results.items():
+                            sec_plots = sec_result.get("diagnostic_plots", [])
+                            all_diag_plots.extend(sec_plots)
+                        if all_diag_plots:
+                            st.session_state[f"artifact_diagnostic_fig_{participant_id}"] = all_diag_plots
+                            st.success(f"Diagnostic plots generated for {len(all_diag_plots)} section(s)/segment(s)")
 
                     # Skip the normal detection flow below
                     scope_info = {"type": "all_validated", "offset": 0}
@@ -6173,24 +6218,52 @@ def render_rr_plot_fragment(participant_id: str):
             if diag_fig_key in st.session_state and st.session_state[diag_fig_key] is not None:
                 diag_data = st.session_state[diag_fig_key]
 
-                # Check if it's a list of segment plots or a single image
+                # Check if it's a list of segment/section plots or a single image
                 if isinstance(diag_data, list):
-                    # Multiple gap-segment plots
-                    with st.expander(f"NeuroKit2 Diagnostic Plots ({len(diag_data)} gap-segments)", expanded=True):
-                        st.caption(
-                            "Each gap-separated segment was analyzed independently. "
-                            "**Left column:** Artifact types (top), consecutive-difference criterion (middle), "
-                            "difference-from-median criterion (bottom). "
-                            "**Right column:** Subspace classification showing ectopic (red) and long/short (yellow/green) regions."
-                        )
-                        for plot_info in diag_data:
-                            st.markdown(f"**Gap Segment {plot_info['segment']}** (beats {plot_info['start']}-{plot_info['end']})")
-                            st.image(plot_info["image"], use_container_width=True)
-                            st.markdown("---")
-                        # Add button to close/clear the diagnostic plots
-                        if st.button("Close diagnostic plots", key=f"close_diag_plots_{participant_id}"):
-                            del st.session_state[diag_fig_key]
-                            st.rerun()
+                    # Check if it's section-based (all_validated) or gap-segment-based
+                    has_sections = any(p.get("section") for p in diag_data)
+
+                    if has_sections:
+                        # Section-based plots (from all_validated detection)
+                        with st.expander(f"NeuroKit2 Diagnostic Plots ({len(diag_data)} sections/segments)", expanded=True):
+                            st.caption(
+                                "Each section was analyzed independently. "
+                                "**Left column:** Artifact types (top), consecutive-difference criterion (middle), "
+                                "difference-from-median criterion (bottom). "
+                                "**Right column:** Subspace classification showing ectopic (red) and long/short (yellow/green) regions."
+                            )
+                            for plot_info in diag_data:
+                                section_name = plot_info.get('section', 'Unknown')
+                                segment_num = plot_info.get('segment')
+                                if segment_num:
+                                    # Section with gap segments
+                                    st.markdown(f"**{section_name}** - Gap Segment {segment_num} (beats {plot_info.get('start', '?')}-{plot_info.get('end', '?')})")
+                                else:
+                                    # Section without gaps
+                                    st.markdown(f"**{section_name}**")
+                                st.image(plot_info["image"], use_container_width=True)
+                                st.markdown("---")
+                            # Add button to close/clear the diagnostic plots
+                            if st.button("Close diagnostic plots", key=f"close_diag_plots_{participant_id}"):
+                                del st.session_state[diag_fig_key]
+                                st.rerun()
+                    else:
+                        # Multiple gap-segment plots (single-scope detection)
+                        with st.expander(f"NeuroKit2 Diagnostic Plots ({len(diag_data)} gap-segments)", expanded=True):
+                            st.caption(
+                                "Each gap-separated segment was analyzed independently. "
+                                "**Left column:** Artifact types (top), consecutive-difference criterion (middle), "
+                                "difference-from-median criterion (bottom). "
+                                "**Right column:** Subspace classification showing ectopic (red) and long/short (yellow/green) regions."
+                            )
+                            for plot_info in diag_data:
+                                st.markdown(f"**Gap Segment {plot_info['segment']}** (beats {plot_info['start']}-{plot_info['end']})")
+                                st.image(plot_info["image"], use_container_width=True)
+                                st.markdown("---")
+                            # Add button to close/clear the diagnostic plots
+                            if st.button("Close diagnostic plots", key=f"close_diag_plots_{participant_id}"):
+                                del st.session_state[diag_fig_key]
+                                st.rerun()
                 else:
                     # Single diagnostic plot (bytes)
                     with st.expander("NeuroKit2 Diagnostic Plots", expanded=True):
