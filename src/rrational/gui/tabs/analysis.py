@@ -4553,17 +4553,115 @@ Using overlapping windows improves the reliability of HRV estimates by providing
 
     # Summary
     st.markdown("---")
-    n_participants = len(set(r.participant_id for r in results))
-    n_sections = len(set(r.section_name for r in results))
-    n_groups = len(set(r.group for r in results))
+    st.markdown("### Results Summary")
 
-    st.markdown(f"""
-### Results Summary
-- **{n_participants}** participants analyzed
-- **{n_groups}** groups
-- **{n_sections}** sections
-- **{len(results)}** total participant-section combinations
-    """)
+    # Build participant count matrix (group x section)
+    count_data = {}
+    for r in results:
+        key = (r.group, r.section_name)
+        if key not in count_data:
+            count_data[key] = set()
+        count_data[key].add(r.participant_id)
+
+    # Get unique groups and sections
+    all_groups = sorted(set(r.group for r in results))
+    all_result_sections = sorted(set(r.section_name for r in results))
+
+    # Create count matrix
+    count_matrix = []
+    for group in all_groups:
+        row = {"Group": group}
+        group_total = set()
+        for section in all_result_sections:
+            participants = count_data.get((group, section), set())
+            row[section] = len(participants)
+            group_total.update(participants)
+        row["Total Participants"] = len(group_total)
+        count_matrix.append(row)
+
+    # Add totals row
+    totals_row = {"Group": "**TOTAL**"}
+    for section in all_result_sections:
+        totals_row[section] = sum(row[section] for row in count_matrix)
+    totals_row["Total Participants"] = len(set(r.participant_id for r in results))
+    count_matrix.append(totals_row)
+
+    count_df = pd.DataFrame(count_matrix)
+
+    # Display summary metrics
+    n_participants = len(set(r.participant_id for r in results))
+    n_groups = len(all_groups)
+    n_sections = len(all_result_sections)
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Participants", n_participants)
+    with col2:
+        st.metric("Groups", n_groups)
+    with col3:
+        st.metric("Sections", n_sections)
+    with col4:
+        st.metric("Data Points", len(results))
+
+    # Participant count table
+    st.markdown("**Participants Analyzed per Group & Section:**")
+    st.dataframe(
+        count_df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # Create visualization of counts
+    if n_groups > 0 and n_sections > 0:
+        go, _ = get_plotly_analysis()
+        if go is not None:
+            # Create grouped bar chart showing participant counts
+            theme = get_theme_colors()
+            colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745", "#17A2B8", "#FFC107"]
+
+            fig = go.Figure()
+
+            for i, section in enumerate(all_result_sections):
+                counts = [count_data.get((group, section), set()) for group in all_groups]
+                counts = [len(c) for c in counts]
+
+                fig.add_trace(
+                    go.Bar(
+                        name=section,
+                        x=all_groups,
+                        y=counts,
+                        marker_color=colors[i % len(colors)],
+                        text=counts,
+                        textposition="auto",
+                    )
+                )
+
+            fig.update_layout(
+                title=dict(
+                    text="Participant Count by Group and Section",
+                    font=dict(size=16),
+                ),
+                xaxis_title="Group",
+                yaxis_title="Number of Participants",
+                barmode="group",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1,
+                ),
+                plot_bgcolor=theme["bg"],
+                paper_bgcolor=theme["bg"],
+                font=dict(color=theme["text"]),
+                margin=dict(l=60, r=20, t=80, b=60),
+                height=350,
+            )
+
+            fig.update_xaxes(gridcolor=theme["grid"])
+            fig.update_yaxes(gridcolor=theme["grid"])
+
+            st.plotly_chart(fig, use_container_width=True)
 
     # Missing sections (collapsible)
     if missing or excluded:
