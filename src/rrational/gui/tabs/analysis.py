@@ -2342,96 +2342,97 @@ def _render_single_participant_analysis():
                 help="Recommended for data with known quality issues"
             )
 
-    # Overlapping window analysis options (available for BOTH raw data and ready files)
-    with st.expander("Overlapping Window Analysis", expanded=True):
-        st.markdown("""
-        Split each section into **overlapping windows** for more reliable HRV metrics.
-        Results are averaged across all windows within each section.
-        """)
-        use_overlapping_windows = st.checkbox(
-            "Enable overlapping window analysis",
-            value=True,
-            key="use_overlapping_windows",
-            help="Analyze each section using multiple overlapping windows"
-        )
-
-        if use_overlapping_windows:
-            # Mode selection: time-based or beat-based
-            window_mode = st.radio(
-                "Window mode",
-                options=["beats", "time"],
-                format_func=lambda x: "Beat-based (number of beats)" if x == "beats" else "Time-based (minutes)",
-                horizontal=True,
-                key="overlap_window_mode",
-                help="Choose whether to define windows by duration (time) or by number of beats"
+    # Overlapping window analysis options (only for raw data - ready files have their own controls)
+    if not use_ready_file:
+        with st.expander("Overlapping Window Analysis", expanded=True):
+            st.markdown("""
+            Split each section into **overlapping windows** for more reliable HRV metrics.
+            Results are averaged across all windows within each section.
+            """)
+            use_overlapping_windows = st.checkbox(
+                "Enable overlapping window analysis",
+                value=True,
+                key="use_overlapping_windows",
+                help="Analyze each section using multiple overlapping windows"
             )
 
-            if window_mode == "time":
-                st.caption("**Recommended:** 5-minute windows with 50% overlap for frequency-domain metrics")
-                col1, col2 = st.columns(2)
-                with col1:
-                    window_duration_min = st.slider(
-                        "Window duration (minutes)",
-                        min_value=1,
-                        max_value=10,
-                        value=5,
-                        step=1,
-                        key="overlap_window_duration",
-                        help="Duration of each analysis window"
-                    )
-                with col2:
-                    overlap_percent = st.slider(
-                        "Overlap (%)",
-                        min_value=0,
-                        max_value=75,
-                        value=50,
-                        step=25,
-                        key="overlap_percent",
-                        help="Percentage overlap between consecutive windows"
-                    )
+            if use_overlapping_windows:
+                # Mode selection: time-based or beat-based
+                window_mode = st.radio(
+                    "Window mode",
+                    options=["beats", "time"],
+                    format_func=lambda x: "Beat-based (number of beats)" if x == "beats" else "Time-based (minutes)",
+                    horizontal=True,
+                    key="overlap_window_mode",
+                    help="Choose whether to define windows by duration (time) or by number of beats"
+                )
 
-                # Show calculated step size
-                step_size_min = window_duration_min * (1 - overlap_percent / 100)
-                st.caption(f"Step size: {step_size_min:.1f} minutes between window starts")
-                # Set beat variables to None for time mode
-                window_beats = None
-                step_beats = None
+                if window_mode == "time":
+                    st.caption("**Recommended:** 5-minute windows with 50% overlap for frequency-domain metrics")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        window_duration_min = st.slider(
+                            "Window duration (minutes)",
+                            min_value=1,
+                            max_value=10,
+                            value=5,
+                            step=1,
+                            key="overlap_window_duration",
+                            help="Duration of each analysis window"
+                        )
+                    with col2:
+                        overlap_percent = st.slider(
+                            "Overlap (%)",
+                            min_value=0,
+                            max_value=75,
+                            value=50,
+                            step=25,
+                            key="overlap_percent",
+                            help="Percentage overlap between consecutive windows"
+                        )
+
+                    # Show calculated step size
+                    step_size_min = window_duration_min * (1 - overlap_percent / 100)
+                    st.caption(f"Step size: {step_size_min:.1f} minutes between window starts")
+                    # Set beat variables to None for time mode
+                    window_beats = None
+                    step_beats = None
+                else:
+                    st.caption("**Default:** 150 beats with 75% overlap (37-beat step)")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        window_beats = st.slider(
+                            "Window size (beats)",
+                            min_value=100,
+                            max_value=1000,
+                            value=150,
+                            step=50,
+                            key="overlap_window_beats",
+                            help="Number of beats in each analysis window"
+                        )
+                    with col2:
+                        overlap_beats_percent = st.slider(
+                            "Overlap (%)",
+                            min_value=0,
+                            max_value=75,
+                            value=75,
+                            step=25,
+                            key="overlap_beats_percent",
+                            help="Percentage overlap between consecutive windows"
+                        )
+
+                    # Calculate step size in beats
+                    step_beats = int(window_beats * (1 - overlap_beats_percent / 100))
+                    st.caption(f"Step size: {step_beats} beats between window starts")
+                    # Set time variables to None for beat mode
+                    window_duration_min = None
+                    overlap_percent = None
             else:
-                st.caption("**Default:** 150 beats with 75% overlap (37-beat step)")
-                col1, col2 = st.columns(2)
-                with col1:
-                    window_beats = st.slider(
-                        "Window size (beats)",
-                        min_value=100,
-                        max_value=1000,
-                        value=150,
-                        step=50,
-                        key="overlap_window_beats",
-                        help="Number of beats in each analysis window"
-                    )
-                with col2:
-                    overlap_beats_percent = st.slider(
-                        "Overlap (%)",
-                        min_value=0,
-                        max_value=75,
-                        value=75,
-                        step=25,
-                        key="overlap_beats_percent",
-                        help="Percentage overlap between consecutive windows"
-                    )
-
-                # Calculate step size in beats
-                step_beats = int(window_beats * (1 - overlap_beats_percent / 100))
-                st.caption(f"Step size: {step_beats} beats between window starts")
-                # Set time variables to None for beat mode
+                window_mode = "beats"
+                window_beats = 150
+                step_beats = 37
                 window_duration_min = None
                 overlap_percent = None
-        else:
-            window_mode = "beats"
-            window_beats = 150
-            step_beats = 37
-            window_duration_min = None
-            overlap_percent = None
 
     if st.button("Analyze HRV", key="analyze_single_btn", type="primary"):
         # Validate inputs
