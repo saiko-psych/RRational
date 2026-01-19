@@ -1123,8 +1123,11 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
         st.metric("Mean HR", f"{mean_hr_bpm:.0f} BPM")
     with sum_col4:
         if artifact_info:
-            artifact_pct = artifact_info.get('artifact_ratio', 0) * 100
-            st.metric("Artifacts", f"{artifact_pct:.1f}%")
+            # Support both 'artifact_rate' (v2) and 'artifact_ratio' (v1) keys
+            artifact_rate = artifact_info.get('artifact_rate', artifact_info.get('artifact_ratio', 0))
+            artifact_count = artifact_info.get('total_artifacts', 0)
+            artifact_pct = artifact_rate * 100
+            st.metric("Artifacts", f"{artifact_count} ({artifact_pct:.2f}%)")
         else:
             # Data quality indicator
             if not quality_issues:
