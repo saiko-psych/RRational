@@ -219,6 +219,24 @@ def _render_main_welcome() -> str | None:
 
         st.markdown("")
 
+        # Demo mode option
+        demo_path = Path(__file__).parent.parent.parent.parent / "data" / "demo"
+        if demo_path.exists():
+            if st.button(
+                "Try Demo",
+                key="btn_demo",
+                use_container_width=True,
+                help="Explore RRational with sample HRV data (12 participants)",
+            ):
+                # Set demo mode (session only - NOT persisted)
+                st.session_state.demo_mode = True
+                st.session_state.data_dir = str(demo_path / "hrv_logger")
+                st.session_state.id_pattern = r"(\d{4}[A-Z]{4})"  # Pattern for demo data
+                return ""  # Empty string signals temporary workspace
+
+            st.caption("Sample data with 12 participants (6 control, 6 experimental)")
+            st.markdown("")
+
         # Temporary workspace option
         if st.button(
             "Continue Without Project",

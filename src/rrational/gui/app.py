@@ -7511,6 +7511,9 @@ def main():
     if TEST_MODE:
         st.title("RRational [TEST MODE]")
         st.info("**Test mode active** - Using demo data from `data/demo/hrv_logger`")
+    elif st.session_state.get("demo_mode"):
+        st.title("RRational [DEMO]")
+        st.info("**Demo mode** - Exploring sample data (12 participants). Changes are not saved.")
     else:
         st.title("RRational")
 
@@ -7520,6 +7523,8 @@ def main():
         _pm = st.session_state.get("project_manager")
         _project_name = _pm.metadata.name if _pm and _pm.metadata else Path(_current_project).name
         st.markdown(f"#### Project: {_project_name}")
+    elif st.session_state.get("demo_mode"):
+        st.markdown("#### Demo Data")
     else:
         st.markdown("#### Temporary Workspace")
 
