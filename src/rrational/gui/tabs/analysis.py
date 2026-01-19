@@ -2465,6 +2465,21 @@ def _render_single_participant_analysis():
                             ready_data_v2 = load_rrational_v2(selected_ready_file)
                         progress.progress(10)
 
+                        # Load supplemental artifact data from _artifacts.yml if available
+                        import os
+                        participant_id = ready_data_v2.metadata.participant_id
+                        artifacts_dir = os.path.dirname(str(selected_ready_file))
+                        artifacts_file = os.path.join(artifacts_dir, f"{participant_id}_artifacts.yml")
+                        supplemental_artifacts = {}
+                        if os.path.exists(artifacts_file):
+                            try:
+                                import yaml
+                                with open(artifacts_file, 'r', encoding='utf-8') as f:
+                                    artifacts_data = yaml.safe_load(f) or {}
+                                supplemental_artifacts = artifacts_data.get("sections", {})
+                            except Exception:
+                                pass
+
                         section_results = {}
                         total_sections = len(selected_v2_sections)
                         nk = get_neurokit()
@@ -2488,6 +2503,24 @@ def _render_single_participant_analysis():
 
                             if quality_grade == "poor":
                                 st.warning(f"Section {sec_name} has poor quality - results may be unreliable")
+
+                            # Get artifact info - supplement from _artifacts.yml if count is 0
+                            artifact_count = sec_data.final_artifacts.count
+                            artifact_rate = sec_data.final_artifacts.rate
+                            if artifact_count == 0 and sec_name in supplemental_artifacts:
+                                sec_artifacts = supplemental_artifacts[sec_name]
+                                algo_count = len(sec_artifacts.get("algorithm_artifact_indices", []))
+                                manual_count = len(sec_artifacts.get("manual_artifacts", []))
+                                excluded_count = len(sec_artifacts.get("excluded_artifact_indices", []))
+                                artifact_count = algo_count + manual_count - excluded_count
+                                if len(nn_intervals_ms) > 0:
+                                    artifact_rate = artifact_count / len(nn_intervals_ms)
+
+                            section_artifact_info = {
+                                "total_artifacts": artifact_count,
+                                "artifact_rate": artifact_rate,
+                                "method": sec_data.artifact_detection.method if sec_data.artifact_detection else "manual",
+                            }
 
                             # Calculate HRV metrics - with optional overlapping windows
                             st.write(f"  Computing HRV for {len(nn_intervals_ms)} NN intervals...")
@@ -2552,11 +2585,7 @@ def _render_single_participant_analysis():
                                             "rr_intervals": nn_intervals_ms,
                                             "n_beats": len(nn_intervals_ms),
                                             "label": sec_data.definition.label or sec_name,
-                                            "artifact_info": {
-                                                "total_artifacts": sec_data.final_artifacts.count,
-                                                "artifact_rate": sec_data.final_artifacts.rate,
-                                                "method": sec_data.artifact_detection.method if sec_data.artifact_detection else "manual",
-                                            },
+                                            "artifact_info": section_artifact_info,
                                             "ready_file": str(selected_ready_file),
                                             "quality_grade": quality_grade,
                                             "quality": {
@@ -2601,11 +2630,7 @@ def _render_single_participant_analysis():
                                 "rr_intervals": nn_intervals_ms,
                                 "n_beats": len(nn_intervals_ms),
                                 "label": sec_data.definition.label or sec_name,
-                                "artifact_info": {
-                                    "total_artifacts": sec_data.final_artifacts.count,
-                                    "artifact_rate": sec_data.final_artifacts.rate,
-                                    "method": sec_data.artifact_detection.method if sec_data.artifact_detection else "manual",
-                                },
+                                "artifact_info": section_artifact_info,
                                 "ready_file": str(selected_ready_file),
                                 "quality_grade": quality_grade,
                                 "quality": {
