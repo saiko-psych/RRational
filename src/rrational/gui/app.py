@@ -1752,12 +1752,15 @@ if "default_device_settings" not in st.session_state:
         "sampling_rate": 1000  # Hz - Polar H10 native rate
     }
 # Music item labels (e.g., music_1 -> "Brandenburg Concerto")
+# Skip loading in demo mode - use empty defaults
 if "music_labels" not in st.session_state:
-    loaded_music_labels = load_music_labels()
+    _is_demo = st.session_state.get("demo_mode", False)
+    loaded_music_labels = None if _is_demo else load_music_labels()
     st.session_state.music_labels = loaded_music_labels if loaded_music_labels else {}
 # Load playlist groups at startup (defines valid randomization options)
 if "playlist_groups" not in st.session_state:
-    loaded_playlist = load_playlist_groups()
+    _is_demo = st.session_state.get("demo_mode", False)
+    loaded_playlist = None if _is_demo else load_playlist_groups()
     if loaded_playlist:
         st.session_state.playlist_groups = loaded_playlist
     else:
@@ -1774,9 +1777,12 @@ if "cleaning_config" not in st.session_state:
     st.session_state.cleaning_config = CleaningConfig()
 
 # Load persisted groups and events (use project path if available)
+# SKIP loading persisted config in demo mode - use fresh defaults
 _project_path = st.session_state.get("current_project")
+_is_demo_mode = st.session_state.get("demo_mode", False)
+
 if "groups" not in st.session_state:
-    loaded_groups = load_groups(_project_path)
+    loaded_groups = None if _is_demo_mode else load_groups(_project_path)
     if not loaded_groups:
         # Initialize Default Group with canonical events
         st.session_state.groups = {
@@ -1794,7 +1800,7 @@ if "groups" not in st.session_state:
         st.session_state.groups = loaded_groups
 
 if "all_events" not in st.session_state:
-    loaded_events = load_events(_project_path)
+    loaded_events = None if _is_demo_mode else load_events(_project_path)
     if not loaded_events:
         st.session_state.all_events = DEFAULT_CANONICAL_EVENTS.copy()
     else:
@@ -1802,7 +1808,7 @@ if "all_events" not in st.session_state:
 
 # Initialize sections at startup (so Analysis tab can use them before Setup is visited)
 if "sections" not in st.session_state:
-    loaded_sections = load_sections(_project_path)
+    loaded_sections = None if _is_demo_mode else load_sections(_project_path)
     if not loaded_sections:
         # Default sections - start_events/end_events are lists (any of these events can start/end the section)
         st.session_state.sections = {
@@ -1898,8 +1904,9 @@ if not st.session_state.summaries:
                     st.session_state.participant_groups[s.participant_id] = "Default"
 
 # Load participant-specific data (groups, playlists, labels, event orders, manual events)
+# Skip loading in demo mode - use fresh defaults
 if "participant_groups" not in st.session_state or "event_order" not in st.session_state:
-    loaded_participants = load_participants(_project_path)
+    loaded_participants = None if _is_demo_mode else load_participants(_project_path)
     if loaded_participants:
         # Extract randomization labels if present
         if "_randomization_labels" in loaded_participants:
