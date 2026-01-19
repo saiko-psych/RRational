@@ -1255,33 +1255,71 @@ def build_rrational_v2(
         final_artifacts = FinalArtifactsV2()
 
         if section_artifacts:
-            # Algorithm detection
+            # Algorithm detection - support both nested format and flat format from persistence.py
             algo = section_artifacts.get("algorithm", {})
+            algo_indices = []
             if algo:
+                # Nested format (v2)
+                algo_indices = algo.get("detected_indices", [])
                 artifact_detection = ArtifactDetectionV2(
                     method=algo.get("method", "unknown"),
                     threshold_pct=algo.get("threshold_pct"),
                     run_at=algo.get("run_at"),
-                    detected_count=algo.get("detected_count", len(algo.get("detected_indices", []))),
+                    detected_count=algo.get("detected_count", len(algo_indices)),
                     by_type=algo.get("by_type", {}),
                     artifact_rate_detected=algo.get("artifact_rate", 0.0),
                 )
+            elif "algorithm_artifact_indices" in section_artifacts:
+                # Flat format from persistence.py
+                algo_indices = section_artifacts.get("algorithm_artifact_indices", [])
+                artifact_detection = ArtifactDetectionV2(
+                    method=section_artifacts.get("algorithm_method", "unknown"),
+                    threshold_pct=section_artifacts.get("algorithm_threshold"),
+                    run_at=section_artifacts.get("saved_at"),
+                    detected_count=len(algo_indices),
+                    by_type=section_artifacts.get("indices_by_type", {}),
+                    artifact_rate_detected=0.0,  # Will be calculated below
+                )
 
-            # Manual artifacts
+            # Manual artifacts - support both nested format and flat format
             manual = section_artifacts.get("manual", {})
-            manual_artifacts = ManualArtifactsV2(
-                added_indices=manual.get("added_indices", []),
-                removed_indices=manual.get("removed_indices", []),
-                last_modified=manual.get("last_modified"),
-            )
+            manual_added = []
+            manual_removed = []
+            if manual:
+                # Nested format (v2)
+                manual_added = manual.get("added_indices", [])
+                manual_removed = manual.get("removed_indices", [])
+                manual_artifacts = ManualArtifactsV2(
+                    added_indices=manual_added,
+                    removed_indices=manual_removed,
+                    last_modified=manual.get("last_modified"),
+                )
+            elif "manual_artifacts" in section_artifacts:
+                # Flat format from persistence.py - manual_artifacts is a list of dicts
+                manual_list = section_artifacts.get("manual_artifacts", [])
+                manual_added = [m.get("original_idx", 0) for m in manual_list if isinstance(m, dict)]
+                manual_removed = section_artifacts.get("excluded_artifact_indices", [])
+                manual_artifacts = ManualArtifactsV2(
+                    added_indices=manual_added,
+                    removed_indices=manual_removed,
+                    last_modified=section_artifacts.get("saved_at"),
+                )
 
-            # Final artifacts
+            # Final artifacts - calculate from components if not pre-computed
             final_indices = section_artifacts.get("final_artifact_indices", [])
             final_rate = section_artifacts.get("final_artifact_rate", 0.0)
+
+            # If final_indices not saved, calculate from algorithm + manual - excluded
+            if not final_indices and (algo_indices or manual_added):
+                algo_set = set(algo_indices)
+                manual_set = set(manual_added)
+                excluded_set = set(manual_removed)
+                final_indices = sorted((algo_set | manual_set) - excluded_set)
+
             final_artifacts = FinalArtifactsV2(
                 indices=final_indices,
                 count=len(final_indices),
-                rate=final_rate,
+                rate=final_rate,  # Rate will be recalculated below with beat count
             )
 
         # Get NN intervals for this section
@@ -1375,6 +1413,15 @@ def build_rrational_v2(
                 usable_duration -= (excl_end - excl_start).total_seconds()
             except (ValueError, TypeError):
                 pass
+
+        # Recalculate artifact rate if we have beat count (rate may not be saved in file)
+        if usable_beats > 0 and final_artifacts.count > 0:
+            calculated_rate = final_artifacts.count / usable_beats
+            final_artifacts = FinalArtifactsV2(
+                indices=final_artifacts.indices,
+                count=final_artifacts.count,
+                rate=calculated_rate,
+            )
 
         quality = QualityV2(
             grade=get_quality_grade(final_artifacts.rate),

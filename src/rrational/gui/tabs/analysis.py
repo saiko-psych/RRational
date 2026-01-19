@@ -2094,12 +2094,14 @@ def _render_single_participant_analysis():
                         for sec_name, sec_data in ready_data_v2.sections.items():
                             nn_count = len(sec_data.nn_intervals.data)
                             quality = sec_data.quality.grade
+                            artifact_count = sec_data.final_artifacts.count
                             artifact_rate = sec_data.final_artifacts.rate * 100
                             section_info.append({
                                 "Section": sec_name,
-                                "NN Intervals": nn_count,
+                                "Beats": nn_count,
+                                "Artifacts": artifact_count,
+                                "Artifact %": f"{artifact_rate:.2f}%",
                                 "Quality": quality.capitalize(),
-                                "Artifact %": f"{artifact_rate:.1f}%",
                             })
 
                         if section_info:
