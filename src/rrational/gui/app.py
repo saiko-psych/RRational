@@ -5691,7 +5691,6 @@ def render_rr_plot_fragment(participant_id: str):
             elif detection_scope == "all_validated":
                 # Run SEPARATE artifact detection for each validated section
                 from rrational.gui.persistence import load_section_validations as load_vals_detect
-                from rrational.gui.shared import get_section_time_range
 
                 vals_detect = load_vals_detect(
                     participant_id,
@@ -5714,20 +5713,33 @@ def render_rr_plot_fragment(participant_id: str):
                     total_artifacts_all = 0
                     total_beats_all = 0
 
-                    sections_config = st.session_state.get("sections", {})
-                    normalizer = st.session_state.get("normalizer")
                     gap_handling_for_detection = st.session_state.get(f"frag_gap_handling_{participant_id}", "include")
                     all_gap_adjacent = plot_data.get('gap_adjacent_indices', set())
 
                     with st.spinner(f"Running artifact detection on {len(validated_sections_to_detect)} sections..."):
                         for sec_name, sec_data in sorted(validated_sections_to_detect, key=lambda x: x[0]):
-                            # Get section time range
-                            start_ts, end_ts = get_section_time_range(
-                                participant_id=participant_id,
-                                section_name=sec_name,
-                                sections_config=sections_config,
-                                normalizer=normalizer,
-                            )
+                            # Get section time range directly from saved validation data
+                            # This avoids relying on session state which may be stale
+                            start_ts = None
+                            end_ts = None
+
+                            start_evt = sec_data.get("start_event", {})
+                            end_evt = sec_data.get("end_event", {})
+
+                            # Parse timestamps from saved validation (ISO format strings)
+                            if start_evt.get("timestamp"):
+                                try:
+                                    from datetime import datetime
+                                    start_ts = datetime.fromisoformat(start_evt["timestamp"])
+                                except (ValueError, TypeError):
+                                    pass
+
+                            if end_evt.get("timestamp"):
+                                try:
+                                    from datetime import datetime
+                                    end_ts = datetime.fromisoformat(end_evt["timestamp"])
+                                except (ValueError, TypeError):
+                                    pass
 
                             if not start_ts or not end_ts:
                                 st.warning(f"Could not find boundaries for section '{sec_name}', skipping.")
