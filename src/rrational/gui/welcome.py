@@ -228,6 +228,18 @@ def _render_main_welcome() -> str | None:
                 use_container_width=True,
                 help="Explore RRational with sample HRV data (12 participants)",
             ):
+                # Clear any existing loaded data for clean demo experience
+                keys_to_clear = [
+                    "summaries", "participant_events", "participant_groups",
+                    "participant_randomizations", "participant_playlists",
+                    "participant_labels", "event_order", "groups", "all_events",
+                    "sections", "music_labels", "playlist_groups", "normalizer",
+                    "current_project", "project_manager",
+                ]
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
                 # Set demo mode (session only - NOT persisted)
                 st.session_state.demo_mode = True
                 st.session_state.data_dir = str(demo_path / "hrv_logger")
