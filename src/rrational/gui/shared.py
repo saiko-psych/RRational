@@ -262,6 +262,9 @@ def validate_section_for_participant(
             error_message=f"No end event found ({', '.join(end_event_names)})",
         )
 
+    # Determine if disambiguation is needed
+    needs_disambiguation = len(start_candidates) > 1 or len(end_candidates) > 1
+
     # Select which candidate to use
     if user_selection:
         # User has explicitly selected
@@ -270,38 +273,14 @@ def validate_section_for_participant(
         start_idx = min(start_idx, len(start_candidates) - 1)
         end_idx = min(end_idx, len(end_candidates) - 1)
         is_user_selected = True
-        selected_start = start_candidates[start_idx]
-        selected_end = end_candidates[end_idx]
     else:
-        # Default: use first start candidate, then find first end candidate AFTER it
-        # This is critical for sections where end_events includes multiple possible events
-        # (e.g., "B1 ends at whichever of B2, B3, ..., B12 comes next")
+        # Default: use first candidate
         start_idx = 0
-        selected_start = start_candidates[start_idx]
-        start_ts_norm = _normalize_timestamp(selected_start.timestamp)
-
-        # Filter end candidates to only those AFTER the start event
-        valid_end_candidates = [
-            (i, c) for i, c in enumerate(end_candidates)
-            if _normalize_timestamp(c.timestamp) > start_ts_norm
-        ]
-
-        if not valid_end_candidates:
-            return SectionValidationResult(
-                section_name=section_name,
-                is_valid=False,
-                start_candidates=start_candidates,
-                end_candidates=end_candidates,
-                needs_disambiguation=len(start_candidates) > 1 or len(end_candidates) > 1,
-                error_message=f"No end event found after start event '{selected_start.raw_label}'",
-            )
-
-        # Use the first valid end candidate (earliest one after start)
-        end_idx, selected_end = valid_end_candidates[0]
+        end_idx = 0
         is_user_selected = False
 
-    # Determine if disambiguation is needed
-    needs_disambiguation = len(start_candidates) > 1 or len(end_candidates) > 1
+    selected_start = start_candidates[start_idx]
+    selected_end = end_candidates[end_idx]
 
     # Validate that start comes before end (use normalized timestamps for safe comparison)
     if _normalize_timestamp(selected_start.timestamp) >= _normalize_timestamp(selected_end.timestamp):
