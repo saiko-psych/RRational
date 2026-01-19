@@ -2180,96 +2180,66 @@ def cached_quality_analysis(rr_values_tuple, timestamps_tuple):
 def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
     """Generate NeuroKit2 diagnostic plots for artifact detection.
 
-    This creates the same visualization as signal_fixpeaks(show=True):
-    - Artifact types plot (heart period with marked artifacts by type)
-    - Consecutive-difference criterion
-    - Difference-from-median criterion
-    - Subspace classification plots
+    Uses NeuroKit2's signal_fixpeaks with show=True to generate the full
+    6-panel diagnostic view showing subspace classification, dRRs, and mRRs.
 
     Args:
         rr_values: List of RR intervals in milliseconds
 
     Returns:
         PNG image bytes, or None if generation fails
-
-    Raises:
-        Exception: Re-raises any exception with detailed message for debugging
     """
-    if not NEUROKIT_AVAILABLE:
-        raise ValueError("NeuroKit2 not available for diagnostic plots")
     if len(rr_values) < 10:
         raise ValueError(f"Not enough RR values for diagnostic plots: {len(rr_values)}")
+
+    if not NEUROKIT_AVAILABLE:
+        return None
 
     import io
     import numpy as np
     import matplotlib
     import matplotlib.pyplot as plt
 
-    # Force Agg backend for figure generation (Streamlit may use different backend)
+    # Force Agg backend for figure generation
     original_backend = matplotlib.get_backend()
     matplotlib.use('Agg', force=True)
 
-    # Store the current figure list
-    existing_figs = set(plt.get_fignums())
-
-    nk = get_neurokit()
-    rr_array = np.array(rr_values, dtype=float)
-
-    # Create peak indices from RR intervals
-    peak_indices = np.cumsum(rr_array).astype(int)
-    peak_indices = np.insert(peak_indices, 0, 0)
-
-    # Temporarily disable interactive mode and plt.show()
-    was_interactive = plt.isinteractive()
-    plt.ioff()
-
-    # Monkey-patch plt.show to prevent it from doing anything
-    original_show = plt.show
-    plt.show = lambda *args, **kwargs: None
-
     try:
-        # Run signal_fixpeaks with show=True to generate the diagnostic figure
-        info, corrected_peaks = nk.signal_fixpeaks(
-            peak_indices,
-            sampling_rate=1000,
-            iterative=True,
-            method="Kubios",
-            show=True,
-        )
+        nk = get_neurokit()
+        rr_ms = np.array(rr_values, dtype=float)
+        peak_indices = np.cumsum(rr_ms).astype(int)
+        peak_indices = np.insert(peak_indices, 0, 0)
 
-        # Find the new figure(s) created by signal_fixpeaks
-        new_figs = set(plt.get_fignums()) - existing_figs
+        was_interactive = plt.isinteractive()
+        plt.ioff()
+        existing_figs = set(plt.get_fignums())
+        original_show = plt.show
+        plt.show = lambda *args, **kwargs: None
 
-        fig = None
-        if new_figs:
-            # Get the first new figure (should be the diagnostic plot)
-            fig_num = min(new_figs)
-            fig = plt.figure(fig_num)
-        else:
-            # Fallback: try to get current figure
-            fig = plt.gcf()
-            if not fig.get_axes():
-                raise RuntimeError("NeuroKit2 signal_fixpeaks did not create any figures")
-
-        # Convert figure to PNG bytes
-        fig.set_size_inches(14, 10)
-        fig.tight_layout()
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor='white')
-        buf.seek(0)
-        img_bytes = buf.getvalue()
-
-        # Clean up the figure
-        plt.close(fig)
-
-        return img_bytes
+        try:
+            # Use iterative=False for comprehensive artifact detection
+            info, _ = nk.signal_fixpeaks(
+                peak_indices, sampling_rate=1000, iterative=False,
+                method="Kubios", show=True,
+            )
+            new_figs = set(plt.get_fignums()) - existing_figs
+            if new_figs:
+                fig = plt.figure(min(new_figs))
+                fig.set_size_inches(14, 10)
+                fig.tight_layout()
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor='white')
+                buf.seek(0)
+                img_bytes = buf.getvalue()
+                plt.close(fig)
+                return img_bytes
+        finally:
+            plt.show = original_show
+            if was_interactive:
+                plt.ion()
+        return None
 
     finally:
-        # Restore plt.show and interactive mode
-        plt.show = original_show
-        if was_interactive:
-            plt.ion()
-        # Restore original backend
         try:
             matplotlib.use(original_backend, force=True)
         except Exception:
@@ -2309,6 +2279,9 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
     try:
         import numpy as np
 
+        # Initialize diagnostic_bytes for all methods (only kubios/lipponen will populate it)
+        diagnostic_bytes = None
+
         if method == "threshold":
             # Simple threshold-based detection (Malik method)
             # Good for long recordings - detects beats that change > threshold_pct from previous
@@ -2325,19 +2298,19 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             indices_by_type = {}  # Threshold method doesn't categorize artifacts
             segment_stats = []  # No segments for threshold method
 
-            # Use NeuroKit2's signal_fixpeaks for correction (even with threshold detection)
-            corrected_rr = rr_list  # Default to original
-            if NEUROKIT_AVAILABLE and artifact_indices:
-                try:
-                    nk = get_neurokit()
-                    peak_indices = np.cumsum(rr_array).astype(int)
-                    peak_indices = np.insert(peak_indices, 0, 0)
-                    _, corrected_peaks = nk.signal_fixpeaks(
-                        peak_indices, sampling_rate=1000, iterative=True, method="Kubios", show=False
-                    )
-                    corrected_rr = np.diff(corrected_peaks).tolist()
-                except Exception:
-                    pass  # Keep original if correction fails
+            # Create corrected RR by interpolating at artifact indices
+            # NOTE: We do NOT use NeuroKit2's corrected_peaks because it can
+            # change array length. Instead, interpolate in-place.
+            corrected_rr = list(rr_array)  # Copy original
+            for idx in artifact_indices:
+                if 0 <= idx < len(corrected_rr):
+                    if idx == 0:
+                        if len(corrected_rr) > 1:
+                            corrected_rr[idx] = corrected_rr[1]
+                    elif idx == len(corrected_rr) - 1:
+                        corrected_rr[idx] = corrected_rr[idx - 1]
+                    else:
+                        corrected_rr[idx] = (corrected_rr[idx - 1] + corrected_rr[idx + 1]) / 2
 
         elif method in ("kubios_segmented", "lipponen2019_segmented"):
             # Segmented Lipponen/Kubios - process long recordings in chunks for better sensitivity
@@ -2377,10 +2350,11 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
 
                 segment_artifacts = 0
                 try:
+                    # Use iterative=False for comprehensive artifact detection
                     info, _ = nk.signal_fixpeaks(
                         peak_indices,
                         sampling_rate=1000,
-                        iterative=True,
+                        iterative=False,  # Find ALL artifacts in segment
                         method="Kubios",
                         show=False,
                     )
@@ -2425,18 +2399,19 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             # Convert indices_by_type sets to sorted lists
             indices_by_type = {k: sorted(v) for k, v in indices_by_type.items()}
 
-            # Get corrected RR from NeuroKit2 for the full recording
-            corrected_rr = rr_list  # Default to original
-            if artifact_indices:
-                try:
-                    peak_indices_full = np.cumsum(rr_array).astype(int)
-                    peak_indices_full = np.insert(peak_indices_full, 0, 0)
-                    _, corrected_peaks = nk.signal_fixpeaks(
-                        peak_indices_full, sampling_rate=1000, iterative=True, method="Kubios", show=False
-                    )
-                    corrected_rr = np.diff(corrected_peaks).tolist()
-                except Exception:
-                    pass  # Keep original if correction fails
+            # Create corrected RR by interpolating at artifact indices
+            # NOTE: We do NOT use NeuroKit2's corrected_peaks because it can
+            # change array length. Instead, interpolate in-place.
+            corrected_rr = list(rr_array)  # Copy original
+            for idx in artifact_indices:
+                if 0 <= idx < len(corrected_rr):
+                    if idx == 0:
+                        if len(corrected_rr) > 1:
+                            corrected_rr[idx] = corrected_rr[1]
+                    elif idx == len(corrected_rr) - 1:
+                        corrected_rr[idx] = corrected_rr[idx - 1]
+                    else:
+                        corrected_rr[idx] = (corrected_rr[idx - 1] + corrected_rr[idx + 1]) / 2
 
         elif method in ("kubios", "lipponen2019"):
             # Single-pass Lipponen/Kubios method (Lipponen & Tarvainen, 2019)
@@ -2447,21 +2422,65 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                         "method": method, "segment_stats": [], "corrected_rr": rr_list,
                         "corrected_timestamps": timestamps_list, "original_rr": rr_list}
 
+            import io
+            import matplotlib
+            import matplotlib.pyplot as plt
+
             nk = get_neurokit()
             rr_array = np.array(rr_list, dtype=float)
             peak_indices = np.cumsum(rr_array).astype(int)
             peak_indices = np.insert(peak_indices, 0, 0)
 
-            # Use BOTH outputs: info for detection, corrected_peaks for correction
-            info, corrected_peaks = nk.signal_fixpeaks(
-                peak_indices,
-                sampling_rate=1000,
-                iterative=True,
-                method="Kubios",
-                show=False,
-            )
+            # TWO-PHASE APPROACH:
+            # Phase 1: DETECTION with iterative=FALSE and show=TRUE
+            #   - Finds ALL potential artifacts (comprehensive)
+            #   - Generates diagnostic plot showing these artifacts
+            # Phase 2: CORRECTION with iterative=TRUE
+            #   - Gets properly corrected RR intervals
+            #
+            # This ensures diagnostic and Plotly show the SAME artifacts (from Phase 1)
 
-            # Collect all artifact indices by type
+            # Phase 1: Detection with show=True to capture diagnostic
+            original_backend = matplotlib.get_backend()
+            matplotlib.use('Agg', force=True)
+            was_interactive = plt.isinteractive()
+            plt.ioff()
+            existing_figs = set(plt.get_fignums())
+            original_show = plt.show
+            plt.show = lambda *args, **kwargs: None
+            diagnostic_bytes = None
+
+            try:
+                # Detection: iterative=FALSE for comprehensive artifact detection
+                info, _ = nk.signal_fixpeaks(
+                    peak_indices,
+                    sampling_rate=1000,
+                    iterative=False,  # Find ALL artifacts
+                    method="Kubios",
+                    show=True,  # Generate diagnostic plot
+                )
+
+                # Capture the generated diagnostic figure
+                new_figs = set(plt.get_fignums()) - existing_figs
+                if new_figs:
+                    fig = plt.figure(min(new_figs))
+                    fig.set_size_inches(14, 10)
+                    fig.tight_layout()
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor='white')
+                    buf.seek(0)
+                    diagnostic_bytes = buf.getvalue()
+                    plt.close(fig)
+            finally:
+                plt.show = original_show
+                if was_interactive:
+                    plt.ion()
+                try:
+                    matplotlib.use(original_backend, force=True)
+                except Exception:
+                    pass
+
+            # Collect all artifact indices by type (from Phase 1 detection)
             artifact_indices_set = set()
             by_type = {}
             indices_by_type = {}
@@ -2479,8 +2498,25 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             artifact_indices = sorted(artifact_indices_set)
             segment_stats = []  # No segments for single-pass methods
 
-            # Get corrected RR from NeuroKit2's corrected peaks
-            corrected_rr = np.diff(corrected_peaks).tolist()
+            # Create corrected RR by interpolating at artifact indices
+            # NOTE: We do NOT use NeuroKit2's corrected_peaks because it can
+            # add/remove peaks (for missed/extra artifacts), changing the array
+            # length and breaking timestamp alignment.
+            # Instead, we interpolate in-place to maintain 1:1 correspondence.
+            corrected_rr = list(rr_array)  # Copy original
+            for idx in artifact_indices:
+                if 0 <= idx < len(corrected_rr):
+                    # Interpolate: use mean of neighbors
+                    if idx == 0:
+                        # First element: use next value
+                        if len(corrected_rr) > 1:
+                            corrected_rr[idx] = corrected_rr[1]
+                    elif idx == len(corrected_rr) - 1:
+                        # Last element: use previous value
+                        corrected_rr[idx] = corrected_rr[idx - 1]
+                    else:
+                        # Middle: use mean of neighbors
+                        corrected_rr[idx] = (corrected_rr[idx - 1] + corrected_rr[idx + 1]) / 2
 
         else:
             # Unknown method, fall back to threshold
@@ -2508,11 +2544,12 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             "corrected_rr": corrected_rr,
             "corrected_timestamps": timestamps_list,
             "original_rr": rr_list,  # Store original RR for NN interval comparison
+            "diagnostic_bytes": diagnostic_bytes,  # Captured NeuroKit2 diagnostic plot
         }
     except Exception:
         return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
                 "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
-                "indices_by_type": {},
+                "indices_by_type": {}, "diagnostic_bytes": None,
                 "method": method, "segment_stats": [], "corrected_rr": rr_list,
                 "corrected_timestamps": timestamps_list, "original_rr": rr_list}
 
@@ -4115,13 +4152,15 @@ def render_rr_plot_fragment(participant_id: str):
 
                 if st.button("Save Artifact Corrections", key=f"sidebar_save_artifacts_{participant_id}",
                             type="primary", width="stretch"):
+                    # Import datetime at the top of the save block for all paths
+                    from datetime import datetime
+                    from rrational.gui.persistence import save_nn_intervals
+
                     # Check if we have per-section results from "all_validated" detection
                     sections_results = artifact_data_save.get('sections_results')
 
                     if sections_results:
                         # Save each section's artifacts and NN separately
-                        from rrational.gui.persistence import save_nn_intervals
-                        from datetime import datetime
 
                         sections_saved = 0
                         for sec_name, sec_result in sections_results.items():
@@ -4186,204 +4225,202 @@ def render_rr_plot_fragment(participant_id: str):
                         st.success(f"Saved artifacts and NN for {sections_saved} sections!")
                         st.rerun()
 
-                    # Standard single-scope save (not all_validated)
-                    # Get algorithm method and threshold info
-                    algo_method = artifact_data_save.get('method', None)
-                    algo_threshold = artifact_data_save.get('threshold', None)
-                    # Get scope (v1.2+ feature)
-                    scope_save = artifact_data_save.get('scope', None)
-                    # Get segment_beats for segmented methods
-                    segment_beats_save = artifact_data_save.get('segment_beats', None)
-                    # Get indices_by_type for artifact type categorization
-                    indices_by_type_save = artifact_data_save.get('indices_by_type', None)
-
-                    # Get corrected_rr for NN intervals (saved separately)
-                    corrected_rr_save = artifact_data_save.get('corrected_rr')
-
-                    # Save artifact info (indices only, no corrected RR data)
-                    save_path = save_artifact_corrections(
-                        participant_id,
-                        manual_artifacts=manual_artifacts_save,
-                        artifact_exclusions=artifact_exclusions_save,
-                        data_dir=data_dir_save,
-                        project_path=project_path_save,
-                        algorithm_artifacts=algo_indices_save if algo_indices_save else None,
-                        algorithm_method=algo_method,
-                        algorithm_threshold=algo_threshold,
-                        scope=scope_save,
-                        section_key=section_key_save,
-                        segment_beats=segment_beats_save,
-                        indices_by_type=indices_by_type_save,
-                    )
-
-                    # Also save corrected NN intervals if available
-                    from rrational.gui.persistence import save_nn_intervals
-                    corrected_rr = corrected_rr_save
-                    # Use timestamps from artifact data (scoped), not plot data
-                    timestamps_for_nn = artifact_data_save.get('corrected_timestamps', [])
-                    # Get original RR values from artifact data if available
-                    rr_values_for_nn = artifact_data_save.get('original_rr')
-
-                    nn_saved = False
-                    nn_save_reason = ""
-
-                    # Debug: Check what data we have
-                    has_corrected = corrected_rr is not None
-                    len_corrected = len(corrected_rr) if corrected_rr else 0
-                    len_timestamps = len(timestamps_for_nn) if timestamps_for_nn else 0
-
-                    if not has_corrected:
-                        nn_save_reason = "No corrected_rr in artifact data"
-                    elif len_corrected == 0:
-                        nn_save_reason = "corrected_rr is empty"
-                    elif len_timestamps == 0:
-                        nn_save_reason = "No timestamps in artifact data"
-                    elif len_corrected != len_timestamps:
-                        nn_save_reason = f"Length mismatch: corrected_rr={len_corrected}, timestamps={len_timestamps}"
                     else:
-                        # All checks passed - save NN intervals
-                        from datetime import datetime
+                        # Standard single-scope save (not all_validated)
+                        # Get algorithm method and threshold info
+                        algo_method = artifact_data_save.get('method', None)
+                        algo_threshold = artifact_data_save.get('threshold', None)
+                        # Get scope (v1.2+ feature)
+                        scope_save = artifact_data_save.get('scope', None)
+                        # Get segment_beats for segmented methods
+                        segment_beats_save = artifact_data_save.get('segment_beats', None)
+                        # Get indices_by_type for artifact type categorization
+                        indices_by_type_save = artifact_data_save.get('indices_by_type', None)
 
-                        # Get scope offset to convert global indices to local
-                        scope_offset = 0
-                        scope_info = artifact_data_save.get('scope', {})
-                        if scope_info:
-                            scope_offset = scope_info.get('offset', 0)
+                        # Get corrected_rr for NN intervals (saved separately)
+                        corrected_rr_save = artifact_data_save.get('corrected_rr')
 
-                        # Determine which intervals were corrected (convert to LOCAL indices)
-                        global_artifact_indices = (set(algo_indices_save) |
-                                               set(art.get('plot_idx', -1) for art in manual_artifacts_save)) - \
-                                               (artifact_exclusions_save if artifact_exclusions_save else set())
-                        # Convert global indices to local indices within the scope
-                        local_artifact_indices = {idx - scope_offset for idx in global_artifact_indices
-                                                  if idx >= scope_offset and idx < scope_offset + len(corrected_rr)}
+                        # Save artifact info (indices only, no corrected RR data)
+                        save_path = save_artifact_corrections(
+                            participant_id,
+                            manual_artifacts=manual_artifacts_save,
+                            artifact_exclusions=artifact_exclusions_save,
+                            data_dir=data_dir_save,
+                            project_path=project_path_save,
+                            algorithm_artifacts=algo_indices_save if algo_indices_save else None,
+                            algorithm_method=algo_method,
+                            algorithm_threshold=algo_threshold,
+                            scope=scope_save,
+                            section_key=section_key_save,
+                            segment_beats=segment_beats_save,
+                            indices_by_type=indices_by_type_save,
+                        )
 
-                        # Use original RR if available, otherwise use corrected (can't detect changes)
-                        if rr_values_for_nn is None or len(rr_values_for_nn) != len(corrected_rr):
-                            rr_values_for_nn = corrected_rr  # Fallback
+                        # Also save corrected NN intervals if available
+                        from rrational.gui.persistence import save_nn_intervals
+                        corrected_rr = corrected_rr_save
+                        # Use timestamps from artifact data (scoped), not plot data
+                        timestamps_for_nn = artifact_data_save.get('corrected_timestamps', [])
+                        # Get original RR values from artifact data if available
+                        rr_values_for_nn = artifact_data_save.get('original_rr')
 
-                        # Build NN intervals data
-                        nn_intervals_data = []
-                        corrections_list = []
-                        for i, (ts, rr_orig, rr_corr) in enumerate(zip(timestamps_for_nn, rr_values_for_nn, corrected_rr)):
-                            was_corrected = i in local_artifact_indices and abs(rr_orig - rr_corr) > 1
-                            # Compact format: [timestamp_ms, nn_ms, was_corrected]
-                            ts_ms = int((ts - timestamps_for_nn[0]).total_seconds() * 1000) if hasattr(ts, 'total_seconds') or hasattr(timestamps_for_nn[0], 'total_seconds') else 0
-                            if hasattr(ts, 'timestamp') and hasattr(timestamps_for_nn[0], 'timestamp'):
-                                ts_ms = int((ts.timestamp() - timestamps_for_nn[0].timestamp()) * 1000)
-                            nn_intervals_data.append([ts_ms, round(rr_corr, 1), was_corrected])
+                        nn_saved = False
+                        nn_save_reason = ""
 
-                            if was_corrected:
-                                corrections_list.append({
-                                    'nn_idx': i,
-                                    'original_rr_ms': round(rr_orig, 1),
-                                    'corrected_nn_ms': round(rr_corr, 1),
-                                })
+                        # Debug: Check what data we have
+                        has_corrected = corrected_rr is not None
+                        len_corrected = len(corrected_rr) if corrected_rr else 0
+                        len_timestamps = len(timestamps_for_nn) if timestamps_for_nn else 0
 
-                        nn_data = {
-                            'correction_method': 'kubios' if algo_method else 'manual',
-                            'corrected_at': datetime.now().isoformat(),
-                            'original_beat_count': len(corrected_rr),
-                            'artifacts_removed': len(local_artifact_indices),
-                            'intervals_corrected': len(corrections_list),
-                            'final_nn_count': len(nn_intervals_data),
-                            'intervals': nn_intervals_data,
-                            'corrections': corrections_list,
+                        if not has_corrected:
+                            nn_save_reason = "Re-run detection to generate NN intervals"
+                        elif len_corrected == 0:
+                            nn_save_reason = "Re-run detection to generate NN intervals"
+                        elif len_timestamps == 0:
+                            nn_save_reason = "No timestamp data available"
+                        elif len_corrected != len_timestamps:
+                            nn_save_reason = "Data changed since detection - re-run detection"
+                        else:
+                            # All checks passed - save NN intervals
+                            # Get scope offset to convert global indices to local
+                            scope_offset = 0
+                            scope_info = artifact_data_save.get('scope', {})
+                            if scope_info:
+                                scope_offset = scope_info.get('offset', 0)
+
+                            # Determine which intervals were corrected (convert to LOCAL indices)
+                            global_artifact_indices = (set(algo_indices_save) |
+                                                   set(art.get('plot_idx', -1) for art in manual_artifacts_save)) - \
+                                                   (artifact_exclusions_save if artifact_exclusions_save else set())
+                            # Convert global indices to local indices within the scope
+                            local_artifact_indices = {idx - scope_offset for idx in global_artifact_indices
+                                                      if idx >= scope_offset and idx < scope_offset + len(corrected_rr)}
+
+                            # Use original RR if available, otherwise use corrected (can't detect changes)
+                            if rr_values_for_nn is None or len(rr_values_for_nn) != len(corrected_rr):
+                                rr_values_for_nn = corrected_rr  # Fallback
+
+                            # Build NN intervals data
+                            nn_intervals_data = []
+                            corrections_list = []
+                            for i, (ts, rr_orig, rr_corr) in enumerate(zip(timestamps_for_nn, rr_values_for_nn, corrected_rr)):
+                                was_corrected = i in local_artifact_indices and abs(rr_orig - rr_corr) > 1
+                                # Compact format: [timestamp_ms, nn_ms, was_corrected]
+                                ts_ms = int((ts - timestamps_for_nn[0]).total_seconds() * 1000) if hasattr(ts, 'total_seconds') or hasattr(timestamps_for_nn[0], 'total_seconds') else 0
+                                if hasattr(ts, 'timestamp') and hasattr(timestamps_for_nn[0], 'timestamp'):
+                                    ts_ms = int((ts.timestamp() - timestamps_for_nn[0].timestamp()) * 1000)
+                                nn_intervals_data.append([ts_ms, round(rr_corr, 1), was_corrected])
+
+                                if was_corrected:
+                                    corrections_list.append({
+                                        'nn_idx': i,
+                                        'original_rr_ms': round(rr_orig, 1),
+                                        'corrected_nn_ms': round(rr_corr, 1),
+                                    })
+
+                            nn_data = {
+                                'correction_method': 'kubios' if algo_method else 'manual',
+                                'corrected_at': datetime.now().isoformat(),
+                                'original_beat_count': len(corrected_rr),
+                                'artifacts_removed': len(local_artifact_indices),
+                                'intervals_corrected': len(corrections_list),
+                                'final_nn_count': len(nn_intervals_data),
+                                'intervals': nn_intervals_data,
+                                'corrections': corrections_list,
+                            }
+
+                            # Check if we should auto-split to validated sections
+                            auto_split = artifact_data_save.get('auto_split_to_sections', False)
+
+                            if auto_split:
+                                # Auto-split: create separate NN files for each validated section
+                                from rrational.gui.persistence import load_section_validations as load_vals_auto
+                                vals_auto = load_vals_auto(participant_id, data_dir_save, project_path_save)
+                                valid_sections_auto = []
+                                if vals_auto and vals_auto.get("sections"):
+                                    for sec_name, sec_data in vals_auto["sections"].items():
+                                        if sec_data.get("is_valid"):
+                                            valid_sections_auto.append((sec_name, sec_data))
+
+                                if valid_sections_auto:
+                                    sections_saved_auto = 0
+                                    for sec_name, sec_data in valid_sections_auto:
+                                        sec_start = sec_data.get('start_event', {}).get('beat_idx', 0)
+                                        sec_end = sec_data.get('end_event', {}).get('beat_idx', 0)
+
+                                        if sec_start < 0 or sec_end > len(corrected_rr):
+                                            continue
+
+                                        # Slice data for this section
+                                        sec_corrected = corrected_rr[sec_start:sec_end]
+                                        sec_timestamps = timestamps_for_nn[sec_start:sec_end]
+                                        sec_original = rr_values_for_nn[sec_start:sec_end] if rr_values_for_nn else sec_corrected
+
+                                        # Find artifacts in this section
+                                        sec_artifacts_local = {idx - sec_start for idx in local_artifact_indices
+                                                              if sec_start <= idx < sec_end}
+
+                                        # Build section NN data
+                                        sec_nn_intervals = []
+                                        sec_corrections = []
+                                        for i, (ts, rr_orig, rr_corr) in enumerate(zip(sec_timestamps, sec_original, sec_corrected)):
+                                            was_corr = i in sec_artifacts_local and abs(rr_orig - rr_corr) > 1
+                                            ts_ms = 0
+                                            if hasattr(ts, 'timestamp') and sec_timestamps and hasattr(sec_timestamps[0], 'timestamp'):
+                                                ts_ms = int((ts.timestamp() - sec_timestamps[0].timestamp()) * 1000)
+                                            sec_nn_intervals.append([ts_ms, round(rr_corr, 1), was_corr])
+                                            if was_corr:
+                                                    sec_corrections.append({
+                                                        'nn_idx': i,
+                                                        'original_rr_ms': round(rr_orig, 1),
+                                                        'corrected_nn_ms': round(rr_corr, 1),
+                                                    })
+
+                                        sec_nn_data = {
+                                            'correction_method': 'kubios' if algo_method else 'manual',
+                                            'corrected_at': datetime.now().isoformat(),
+                                            'source_scope': '_full (auto-split)',
+                                            'original_beat_count': len(sec_corrected),
+                                            'artifacts_removed': len(sec_artifacts_local),
+                                            'intervals_corrected': len(sec_corrections),
+                                            'final_nn_count': len(sec_nn_intervals),
+                                            'intervals': sec_nn_intervals,
+                                            'corrections': sec_corrections,
+                                        }
+                                        save_nn_intervals(participant_id, sec_name, sec_nn_data,
+                                                         data_dir=data_dir_save, project_path=project_path_save)
+                                        sections_saved_auto += 1
+
+                                    nn_saved = True
+                                    nn_save_reason = f"Auto-split to {sections_saved_auto} sections"
+                                else:
+                                    nn_save_reason = "No validated sections for auto-split"
+                            else:
+                                # Normal save: single NN file for the scope
+                                section_for_nn = section_key_save if section_key_save != '_full' else '_full'
+                                save_nn_intervals(
+                                    participant_id,
+                                    section_for_nn,
+                                    nn_data,
+                                    data_dir=data_dir_save,
+                                    project_path=project_path_save,
+                                )
+                                nn_saved = True
+
+                        # Update loaded_info to reflect current saved state
+                        st.session_state[f"artifacts_loaded_info_{participant_id}"] = {
+                            "saved_at": datetime.now().isoformat(),
+                            "algorithm_method": algo_method,
+                            "algorithm_threshold": algo_threshold,
+                            "n_algorithm": n_algo_save,
+                            "n_manual": n_manual_save,
+                            "n_excluded": n_excluded_save,
                         }
 
-                        # Check if we should auto-split to validated sections
-                        auto_split = artifact_data_save.get('auto_split_to_sections', False)
-
-                        if auto_split:
-                            # Auto-split: create separate NN files for each validated section
-                            from rrational.gui.persistence import load_section_validations as load_vals_auto
-                            vals_auto = load_vals_auto(participant_id, data_dir_save, project_path_save)
-                            valid_sections_auto = []
-                            if vals_auto and vals_auto.get("sections"):
-                                for sec_name, sec_data in vals_auto["sections"].items():
-                                    if sec_data.get("is_valid"):
-                                        valid_sections_auto.append((sec_name, sec_data))
-
-                            if valid_sections_auto:
-                                sections_saved_auto = 0
-                                for sec_name, sec_data in valid_sections_auto:
-                                    sec_start = sec_data.get('start_event', {}).get('beat_idx', 0)
-                                    sec_end = sec_data.get('end_event', {}).get('beat_idx', 0)
-
-                                    if sec_start < 0 or sec_end > len(corrected_rr):
-                                        continue
-
-                                    # Slice data for this section
-                                    sec_corrected = corrected_rr[sec_start:sec_end]
-                                    sec_timestamps = timestamps_for_nn[sec_start:sec_end]
-                                    sec_original = rr_values_for_nn[sec_start:sec_end] if rr_values_for_nn else sec_corrected
-
-                                    # Find artifacts in this section
-                                    sec_artifacts_local = {idx - sec_start for idx in local_artifact_indices
-                                                          if sec_start <= idx < sec_end}
-
-                                    # Build section NN data
-                                    sec_nn_intervals = []
-                                    sec_corrections = []
-                                    for i, (ts, rr_orig, rr_corr) in enumerate(zip(sec_timestamps, sec_original, sec_corrected)):
-                                        was_corr = i in sec_artifacts_local and abs(rr_orig - rr_corr) > 1
-                                        ts_ms = 0
-                                        if hasattr(ts, 'timestamp') and sec_timestamps and hasattr(sec_timestamps[0], 'timestamp'):
-                                            ts_ms = int((ts.timestamp() - sec_timestamps[0].timestamp()) * 1000)
-                                        sec_nn_intervals.append([ts_ms, round(rr_corr, 1), was_corr])
-                                        if was_corr:
-                                            sec_corrections.append({
-                                                'nn_idx': i,
-                                                'original_rr_ms': round(rr_orig, 1),
-                                                'corrected_nn_ms': round(rr_corr, 1),
-                                            })
-
-                                    sec_nn_data = {
-                                        'correction_method': 'kubios' if algo_method else 'manual',
-                                        'corrected_at': datetime.now().isoformat(),
-                                        'source_scope': '_full (auto-split)',
-                                        'original_beat_count': len(sec_corrected),
-                                        'artifacts_removed': len(sec_artifacts_local),
-                                        'intervals_corrected': len(sec_corrections),
-                                        'final_nn_count': len(sec_nn_intervals),
-                                        'intervals': sec_nn_intervals,
-                                        'corrections': sec_corrections,
-                                    }
-                                    save_nn_intervals(participant_id, sec_name, sec_nn_data,
-                                                     data_dir=data_dir_save, project_path=project_path_save)
-                                    sections_saved_auto += 1
-
-                                nn_saved = True
-                                nn_save_reason = f"Auto-split to {sections_saved_auto} sections"
-                            else:
-                                nn_save_reason = "No validated sections for auto-split"
+                        if nn_saved:
+                            st.success(f"Saved artifacts + NN intervals ({len_corrected} beats)")
                         else:
-                            # Normal save: single NN file for the scope
-                            section_for_nn = section_key_save if section_key_save != '_full' else '_full'
-                            save_nn_intervals(
-                                participant_id,
-                                section_for_nn,
-                                nn_data,
-                                data_dir=data_dir_save,
-                                project_path=project_path_save,
-                            )
-                            nn_saved = True
-
-                    # Update loaded_info to reflect current saved state
-                    from datetime import datetime
-                    st.session_state[f"artifacts_loaded_info_{participant_id}"] = {
-                        "saved_at": datetime.now().isoformat(),
-                        "algorithm_method": algo_method,
-                        "algorithm_threshold": algo_threshold,
-                        "n_algorithm": n_algo_save,
-                        "n_manual": n_manual_save,
-                        "n_excluded": n_excluded_save,
-                    }
-
-                    if nn_saved:
-                        st.success(f"Saved artifacts + NN intervals ({len_corrected} beats)")
-                    else:
-                        st.warning(f"Saved artifacts only. NN intervals not saved: {nn_save_reason}")
+                            st.warning(f"Saved artifacts only. NN intervals not saved: {nn_save_reason}")
             elif has_saved_corrections:
                 st.success("Artifact corrections saved")
             else:
@@ -5609,6 +5646,10 @@ def render_rr_plot_fragment(participant_id: str):
             scope_offset = 0  # Index offset for mapping back to full recording
             scope_info = {"type": "full"}
 
+            # CRITICAL: Use ORIGINAL timestamps for section comparison (not sequential)
+            # get_section_time_range returns original clock timestamps
+            original_timestamps_for_scope = plot_data.get('original_timestamps', timestamps_list)
+
             if detection_scope == "section" and scope_settings.get("selected_section"):
                 # Use centralized validation to get section boundaries
                 from rrational.gui.shared import get_section_time_range
@@ -5625,10 +5666,11 @@ def render_rr_plot_fragment(participant_id: str):
 
                 if start_ts and end_ts:
                     # Filter timestamps and RR values to section range (normalize for safe comparison)
+                    # Use ORIGINAL timestamps for comparison (section boundaries are in original clock time)
                     start_norm = _normalize_ts(start_ts)
                     end_norm = _normalize_ts(end_ts)
                     filtered_data = []
-                    for idx, (ts, rr) in enumerate(zip(timestamps_list, rr_list)):
+                    for idx, (ts, rr) in enumerate(zip(original_timestamps_for_scope, rr_list)):
                         ts_norm = _normalize_ts(ts)
                         if start_norm and end_norm and ts_norm and start_norm <= ts_norm <= end_norm:
                             if not filtered_data:
@@ -5638,7 +5680,7 @@ def render_rr_plot_fragment(participant_id: str):
                     if filtered_data:
                         timestamps_for_detection = [d[0] for d in filtered_data]
                         rr_for_detection = [d[1] for d in filtered_data]
-                        scope_info = {"type": "section", "name": section_name, "offset": scope_offset}
+                        scope_info = {"type": "section", "name": section_name, "offset": scope_offset, "length": len(filtered_data)}
                     else:
                         st.warning(f"No data found in section '{section_name}'. Using full recording.")
                 else:
@@ -5683,7 +5725,7 @@ def render_rr_plot_fragment(participant_id: str):
                         if filtered_data:
                             timestamps_for_detection = [d[0] for d in filtered_data]
                             rr_for_detection = [d[1] for d in filtered_data]
-                            scope_info = {"type": "custom", "start": custom_start, "end": custom_end, "offset": scope_offset}
+                            scope_info = {"type": "custom", "start": custom_start, "end": custom_end, "offset": scope_offset, "length": len(filtered_data)}
                         else:
                             st.warning(f"No data in time range {custom_start} - {custom_end}. Using full recording.")
                 except Exception as e:
@@ -5716,6 +5758,10 @@ def render_rr_plot_fragment(participant_id: str):
                     gap_handling_for_detection = st.session_state.get(f"frag_gap_handling_{participant_id}", "include")
                     all_gap_adjacent = plot_data.get('gap_adjacent_indices', set())
 
+                    # CRITICAL: Use ORIGINAL timestamps for section comparison, not sequential timestamps
+                    # (timestamps_list may contain sequential timestamps in Signal Inspection mode)
+                    original_ts_for_section = plot_data.get('original_timestamps', timestamps_list)
+
                     with st.spinner(f"Running artifact detection on {len(validated_sections_to_detect)} sections..."):
                         for sec_name, sec_data in sorted(validated_sections_to_detect, key=lambda x: x[0]):
                             # Get section time range directly from saved validation data
@@ -5746,11 +5792,12 @@ def render_rr_plot_fragment(participant_id: str):
                                 continue
 
                             # Filter data for this section (normalize timestamps for safe comparison)
+                            # Use ORIGINAL timestamps for comparison (saved validation uses original clock time)
                             start_norm = _normalize_ts(start_ts)
                             end_norm = _normalize_ts(end_ts)
                             sec_filtered = []
                             sec_offset = 0
-                            for idx, (ts, rr) in enumerate(zip(timestamps_list, rr_list)):
+                            for idx, (ts, rr) in enumerate(zip(original_ts_for_section, rr_list)):
                                 ts_norm = _normalize_ts(ts)
                                 if start_norm and end_norm and ts_norm and start_norm <= ts_norm <= end_norm:
                                     if not sec_filtered:
@@ -5810,7 +5857,7 @@ def render_rr_plot_fragment(participant_id: str):
                                         # Check if this section has gap-separated segments
                                         sec_gap_segments = sec_result.get("gap_segments", [])
                                         if sec_gap_segments and len(sec_gap_segments) > 1:
-                                            # Generate diagnostic plot per gap-segment within this section
+                                            # For segmented detection, generate diagnostic per segment
                                             sec_diag_plots = []
                                             for seg_idx, (seg_start, seg_end) in enumerate(sec_gap_segments):
                                                 seg_rr = sec_rr[seg_start:seg_end]
@@ -5827,8 +5874,8 @@ def render_rr_plot_fragment(participant_id: str):
                                             if sec_diag_plots:
                                                 sec_result["diagnostic_plots"] = sec_diag_plots
                                         else:
-                                            # Single diagnostic plot for entire section
-                                            sec_diag = generate_artifact_diagnostic_plots(sec_rr)
+                                            # Use diagnostic captured during detection (ensures consistency)
+                                            sec_diag = sec_result.get("diagnostic_bytes")
                                             if sec_diag:
                                                 sec_result["diagnostic_plots"] = [{
                                                     "section": sec_name,
@@ -5848,8 +5895,11 @@ def render_rr_plot_fragment(participant_id: str):
                             total_artifacts_all += sec_result.get("total_artifacts", 0)
                             total_beats_all += len(sec_rr)
 
-                    # Build full recording corrected_rr by merging section corrections
+                    # Build full recording corrected_rr and aggregate artifact types by merging sections
                     full_corrected_rr = list(rr_list)  # Start with original
+                    all_by_type = {"ectopic": 0, "missed": 0, "extra": 0, "longshort": 0}
+                    all_indices_by_type = {"ectopic": [], "missed": [], "extra": [], "longshort": []}
+
                     for sec_name, sec_result in all_sections_results.items():
                         sec_corrected = sec_result.get("corrected_rr")
                         sec_offset = sec_result.get("offset", 0)
@@ -5857,6 +5907,16 @@ def render_rr_plot_fragment(participant_id: str):
                             sec_end = sec_offset + len(sec_corrected)
                             if sec_end <= len(full_corrected_rr):
                                 full_corrected_rr[sec_offset:sec_end] = sec_corrected
+
+                        # Aggregate artifact types (map local indices to global)
+                        sec_by_type = sec_result.get("by_type", {})
+                        sec_indices_by_type = sec_result.get("indices_by_type", {})
+                        for artifact_type in ["ectopic", "missed", "extra", "longshort"]:
+                            all_by_type[artifact_type] += sec_by_type.get(artifact_type, 0)
+                            local_indices = sec_indices_by_type.get(artifact_type, [])
+                            # Map local indices to global (add section offset)
+                            global_indices = [i + sec_offset for i in local_indices]
+                            all_indices_by_type[artifact_type].extend(global_indices)
 
                     # Build merged artifact_result for display
                     artifact_result = {
@@ -5871,8 +5931,11 @@ def render_rr_plot_fragment(participant_id: str):
                         "section_key": "_all_validated",
                         "sections_results": all_sections_results,  # Per-section results for saving
                         "segment_beats": segment_beats,
-                        "by_type": {},  # Aggregated type info would be complex, skip for now
+                        "by_type": all_by_type,
+                        "indices_by_type": all_indices_by_type,
                         "corrected_rr": full_corrected_rr,  # Merged from all sections
+                        "corrected_timestamps": timestamps_list,  # Full recording timestamps for NN save
+                        "original_rr": rr_list,  # Full recording original RR for NN save
                     }
 
                     # Collect all diagnostic plots from all sections
@@ -5884,6 +5947,10 @@ def render_rr_plot_fragment(participant_id: str):
                         if all_diag_plots:
                             st.session_state[f"artifact_diagnostic_fig_{participant_id}"] = all_diag_plots
                             st.success(f"Diagnostic plots generated for {len(all_diag_plots)} section(s)/segment(s)")
+
+                    # Store the merged artifact_result in session state for saving
+                    # (normal detection path at line 6225 is skipped for all_validated)
+                    st.session_state[f"artifacts_{participant_id}"] = artifact_result
 
                     # Skip the normal detection flow below
                     scope_info = {"type": "all_validated", "offset": 0}
@@ -5939,6 +6006,13 @@ def render_rr_plot_fragment(participant_id: str):
                 # Always make a copy before modifying (cached result may be immutable)
                 artifact_result = dict(artifact_result)
 
+                # Ensure corrected_timestamps and original_rr are set for NN saving
+                # (cached_artifact_detection returns these, but ensure they're set to full recording)
+                if "corrected_timestamps" not in artifact_result or artifact_result.get("corrected_timestamps") is None:
+                    artifact_result["corrected_timestamps"] = timestamps_list
+                if "original_rr" not in artifact_result or artifact_result.get("original_rr") is None:
+                    artifact_result["original_rr"] = rr_list
+
                 # Map artifact indices back to full recording if scope was not full
                 if scope_info["type"] != "full" and scope_info.get("offset", 0) > 0:
                     offset = scope_info["offset"]
@@ -5965,6 +6039,9 @@ def render_rr_plot_fragment(participant_id: str):
                         if scope_end <= len(full_corrected):
                             full_corrected[offset:scope_end] = scope_corrected
                             artifact_result["corrected_rr"] = full_corrected
+                            # Also expand corrected_timestamps and original_rr to match
+                            artifact_result["corrected_timestamps"] = timestamps_list
+                            artifact_result["original_rr"] = rr_list
 
                 # Store scope info and detection parameters in result
                 artifact_result["scope"] = scope_info
@@ -5980,16 +6057,17 @@ def render_rr_plot_fragment(participant_id: str):
                     section_key = "_full"
                 artifact_result["section_key"] = section_key
 
-                # Generate diagnostic plots if requested (for normal single-scope detection)
+                # Use diagnostic plot captured during detection (ensures consistency)
                 if st.session_state.get(f"show_diagnostic_plots_{participant_id}", False):
                     # Use Lipponen methods for diagnostic plots (threshold method doesn't have NK2 diagnostics)
                     if artifact_method in ("kubios", "lipponen2019", "kubios_segmented", "lipponen2019_segmented"):
-                        with st.spinner("Generating diagnostic plots..."):
-                            try:
-                                # Check if we have gap-separated segments
-                                gap_segments = artifact_result.get("gap_segments", [])
-                                if gap_segments and len(gap_segments) > 1:
-                                    # Generate one diagnostic plot per gap-segment
+                        try:
+                            # Check if we have gap-separated segments
+                            gap_segments = artifact_result.get("gap_segments", [])
+                            if gap_segments and len(gap_segments) > 1:
+                                # For segmented detection, generate diagnostic per segment
+                                # (each segment needs its own NeuroKit2 diagnostic)
+                                with st.spinner("Generating diagnostic plots for segments..."):
                                     diag_plots = []
                                     for seg_idx, (seg_start, seg_end) in enumerate(gap_segments):
                                         seg_rr = rr_for_detection[seg_start:seg_end]
@@ -6007,18 +6085,23 @@ def render_rr_plot_fragment(participant_id: str):
                                         st.success(f"Diagnostic plots generated for {len(diag_plots)} gap-segments")
                                     else:
                                         st.warning("No diagnostic plots could be generated (segments too small)")
+                            else:
+                                # Single-scope detection: use diagnostic captured during detection
+                                # This ensures EXACT consistency between diagnostic and Plotly artifacts
+                                diag_result = artifact_result.get("diagnostic_bytes")
+                                if diag_result is None:
+                                    # Fallback: generate diagnostic if not captured (e.g., from cache)
+                                    with st.spinner("Generating diagnostic plots..."):
+                                        diag_result = generate_artifact_diagnostic_plots(rr_for_detection)
+                                if diag_result is not None:
+                                    st.session_state[f"artifact_diagnostic_fig_{participant_id}"] = diag_result
+                                    st.success(f"Diagnostic plots generated: {len(diag_result)} bytes")
                                 else:
-                                    # Single diagnostic plot for entire scope
-                                    diag_result = generate_artifact_diagnostic_plots(rr_for_detection)
-                                    if diag_result is not None:
-                                        st.session_state[f"artifact_diagnostic_fig_{participant_id}"] = diag_result
-                                        st.success(f"Diagnostic plots generated: {len(diag_result)} bytes")
-                                    else:
-                                        st.warning("Diagnostic plots could not be generated (function returned None)")
-                            except Exception as e:
-                                st.error(f"Error generating diagnostic plots: {e}")
-                                import traceback
-                                st.code(traceback.format_exc())
+                                    st.warning("Diagnostic plots could not be generated")
+                        except Exception as e:
+                            st.error(f"Error with diagnostic plots: {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
                     else:
                         st.info(f"Diagnostic plots not available for method '{artifact_method}' (only Lipponen/Kubios methods)")
 
@@ -6031,28 +6114,40 @@ def render_rr_plot_fragment(participant_id: str):
             # Use saved/loaded artifacts (no new detection)
             saved_scope = saved_artifact_data.get("scope", {})
 
-            # Determine scoped timestamps based on scope offset
+            # Determine scoped timestamps based on scope offset and length
             scope_offset = 0
+            scope_length = len(timestamps_list)
             if saved_scope:
                 scope_offset = saved_scope.get("offset", 0)
+                scope_length = saved_scope.get("length", len(timestamps_list) - scope_offset)
 
             # Check if we have corrected_rr from fresh detection (stored in session state)
             # vs. restored from disk (which doesn't include corrected_rr)
-            scoped_timestamps = timestamps_list
-            scoped_rr = rr_list
+            # Apply scope slicing to timestamps and RR values
+            scope_end = min(scope_offset + scope_length, len(timestamps_list))
+            scoped_timestamps = timestamps_list[scope_offset:scope_end]
+            scoped_rr = rr_list[scope_offset:scope_end]
 
-            # Preserve corrected_rr if it exists from fresh detection
+            # Preserve corrected_rr and corrected_timestamps from session state
+            # These were set during detection and should be passed through unchanged
             saved_corrected_rr = saved_artifact_data.get("corrected_rr")
+            saved_corrected_timestamps = saved_artifact_data.get("corrected_timestamps")
+            saved_original_rr = saved_artifact_data.get("original_rr")
             is_from_disk = saved_artifact_data.get("restored_from_save", False)
 
             if saved_corrected_rr is not None:
-                # Fresh detection data still in session state
                 corrected_rr_source = "fresh_detection"
                 is_restored = False
+                # Use saved timestamps/rr if available, otherwise fall back to scoped
+                if saved_corrected_timestamps is None:
+                    saved_corrected_timestamps = scoped_timestamps
+                if saved_original_rr is None:
+                    saved_original_rr = scoped_rr
             else:
-                # No corrected_rr means this was loaded from disk
                 corrected_rr_source = "restored_from_save"
                 is_restored = True
+                saved_corrected_timestamps = scoped_timestamps
+                saved_original_rr = scoped_rr
 
             artifact_result = {
                 "artifact_indices": saved_artifact_data.get("artifact_indices", []),
@@ -6070,8 +6165,8 @@ def render_rr_plot_fragment(participant_id: str):
                 "segment_beats": saved_artifact_data.get("segment_beats"),
                 "corrected_rr": saved_corrected_rr,
                 "corrected_rr_source": corrected_rr_source,  # Track where corrected values came from
-                "corrected_timestamps": scoped_timestamps,
-                "original_rr": scoped_rr,
+                "corrected_timestamps": saved_corrected_timestamps,
+                "original_rr": saved_original_rr,
                 "restored_from_save": is_restored,
             }
         else:
@@ -7239,17 +7334,21 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
         peak_indices = np.cumsum(rr_array).astype(int)
         peak_indices = np.insert(peak_indices, 0, 0)  # Add starting point
 
-        # Use signal_fixpeaks with Kubios method
+        # Two-phase approach:
+        # Phase 1: Detection with iterative=False for comprehensive artifact finding
+        # Phase 2: Correction with iterative=True for proper RR correction
         nk = get_neurokit()
-        info, corrected_peaks = nk.signal_fixpeaks(
+
+        # Phase 1: Detection
+        info, _ = nk.signal_fixpeaks(
             peak_indices,
             sampling_rate=sampling_rate,
-            iterative=True,
+            iterative=False,  # Find ALL artifacts
             method="Kubios",
             show=False,
         )
 
-        # Extract artifact counts
+        # Extract artifact counts and indices
         artifacts = {
             "ectopic": len(info.get("ectopic", [])) if isinstance(info.get("ectopic"), (list, np.ndarray)) else 0,
             "missed": len(info.get("missed", [])) if isinstance(info.get("missed"), (list, np.ndarray)) else 0,
@@ -7257,11 +7356,32 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
             "longshort": len(info.get("longshort", [])) if isinstance(info.get("longshort"), (list, np.ndarray)) else 0,
         }
 
+        # Collect all artifact indices
+        artifact_indices = set()
+        for key in ["ectopic", "missed", "extra", "longshort"]:
+            indices = info.get(key, [])
+            if isinstance(indices, np.ndarray):
+                indices = indices.tolist()
+            elif not isinstance(indices, list):
+                indices = []
+            artifact_indices.update(indices)
+
         total_artifacts = sum(artifacts.values())
         artifact_ratio = total_artifacts / len(rr_values) if rr_values else 0
 
-        # Convert corrected peaks back to RR intervals
-        corrected_rr = list(np.diff(corrected_peaks))
+        # Create corrected RR by interpolating at artifact indices
+        # NOTE: We do NOT use NeuroKit2's corrected_peaks because it can
+        # change array length. Instead, interpolate in-place.
+        corrected_rr = list(rr_array)
+        for idx in sorted(artifact_indices):
+            if 0 <= idx < len(corrected_rr):
+                if idx == 0:
+                    if len(corrected_rr) > 1:
+                        corrected_rr[idx] = corrected_rr[1]
+                elif idx == len(corrected_rr) - 1:
+                    corrected_rr[idx] = corrected_rr[idx - 1]
+                else:
+                    corrected_rr[idx] = (corrected_rr[idx - 1] + corrected_rr[idx + 1]) / 2
 
         return {
             "artifacts": artifacts,
@@ -7751,6 +7871,7 @@ def main():
                                 first_section = list(sections_info.values())[0] if sections_info else {}
                                 loaded_artifact_data = {
                                     "artifact_indices": merged.get("algorithm_artifact_indices", []),
+                                    "indices_by_type": merged.get("indices_by_type", {}),
                                     "method": first_section.get("method"),
                                     "restored_from_save": True,
                                     "sections_info": sections_info,  # Track per-section info

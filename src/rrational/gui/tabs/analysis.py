@@ -77,6 +77,7 @@ class ParticipantSectionResult:
     hrv_metrics: dict  # All HRV metrics
     hrv_std: dict | None  # SD if overlapping windows used
     n_windows: int  # Number of windows (1 if no overlapping)
+    data_source: str = "NN"  # "NN" for corrected intervals, "Raw" for uncorrected RR data
 
 
 # =============================================================================
@@ -2990,9 +2991,12 @@ def _render_single_participant_analysis():
                         end_evts = section_def.get("end_events", []) or [section_def.get("end_event")]
                         st.write(f"    Looking for: start='{start_evt}', end={end_evts}")
 
+                        # Add section name to def for centralized validation
+                        section_def_with_name = {**section_def, "name": section_name}
                         section_rr = extract_section_rr_intervals(
-                            recording, section_def, st.session_state.normalizer,
-                            saved_events=all_stored  # Use saved/edited events, not raw file events
+                            recording, section_def_with_name, st.session_state.normalizer,
+                            saved_events=all_stored,
+                            participant_id=selected_participant,  # Use centralized validation
                         )
 
                         if section_rr:
@@ -3751,6 +3755,7 @@ def _results_to_long_df(results: list[ParticipantSectionResult]) -> pd.DataFrame
             "participant_id": r.participant_id,
             "group": r.group,
             "section": r.section_name,
+            "data_source": r.data_source,
             "n_beats": r.n_beats,
             "duration_s": r.duration_s,
             "quality": r.quality_grade,
@@ -3794,6 +3799,7 @@ def _results_to_wide_df(results: list[ParticipantSectionResult]) -> pd.DataFrame
         # Add quality info
         participants[r.participant_id][f"{prefix}_n_beats"] = r.n_beats
         participants[r.participant_id][f"{prefix}_quality"] = r.quality_grade
+        participants[r.participant_id][f"{prefix}_data_source"] = r.data_source
 
     return pd.DataFrame(list(participants.values()))
 
@@ -3808,7 +3814,7 @@ def _calculate_group_stats(long_df: pd.DataFrame) -> pd.DataFrame:
         DataFrame with columns: group, section, metric, n, mean, sd, min, max
     """
     # Dynamically find all HRV metric columns (lowercase in dataframe)
-    exclude_cols = {"participant_id", "group", "section", "n_beats", "duration_s",
+    exclude_cols = {"participant_id", "group", "section", "data_source", "n_beats", "duration_s",
                     "quality", "artifact_rate", "n_windows"}
     # Also exclude _sd columns (standard deviation columns)
     metrics = [col for col in long_df.columns
@@ -4277,6 +4283,114 @@ def _create_raincloud_plot(
 # =============================================================================
 
 
+def _load_raw_section_data(
+    pid: str,
+    section_name: str,
+    rrational_path: str,
+    project_path,
+    data_dir,
+) -> tuple[list[float] | None, dict]:
+    """Load raw RR data for a section by using validation timestamps.
+
+    This is a fallback when NN intervals are not available. It loads the
+    original recording and extracts the section using validation timestamps.
+
+    Returns:
+        Tuple of (rr_ms_list, info_dict) where:
+        - rr_ms_list: List of raw RR interval values in ms, or None if not found
+        - info_dict: Contains n_beats, duration_s, data_source info
+    """
+    from datetime import datetime
+    from rrational.gui.rrational_export import load_rrational_v2
+
+    try:
+        # Load .rrational to get section validation timestamps
+        export_data = load_rrational_v2(rrational_path)
+
+        if section_name not in export_data.sections:
+            return None, {"error": f"Section '{section_name}' not in .rrational file"}
+
+        section = export_data.sections[section_name]
+        validation = section.validation
+
+        if not validation or not validation.start_event or not validation.end_event:
+            return None, {"error": "No validation timestamps for section"}
+
+        start_ts_str = validation.start_event.timestamp
+        end_ts_str = validation.end_event.timestamp
+
+        if not start_ts_str or not end_ts_str:
+            return None, {"error": "Missing start/end timestamps in validation"}
+
+        # Parse timestamps
+        try:
+            start_ts = datetime.fromisoformat(start_ts_str.replace("Z", "+00:00"))
+            end_ts = datetime.fromisoformat(end_ts_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError) as e:
+            return None, {"error": f"Invalid timestamp format: {e}"}
+
+        # Load the participant's raw data from summaries
+        summaries = st.session_state.get("summaries", [])
+        participant_summary = None
+        for s in summaries:
+            if s.participant_id == pid:
+                participant_summary = s
+                break
+
+        if not participant_summary:
+            return None, {"error": "Participant not found in loaded data"}
+
+        # Get raw RR data with timestamps
+        rr_intervals = participant_summary.rr_intervals
+        if not rr_intervals:
+            return None, {"error": "No RR intervals in participant data"}
+
+        # Normalize timestamps for comparison
+        def normalize_ts(ts):
+            if ts is None:
+                return None
+            if isinstance(ts, str):
+                try:
+                    ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    return None
+            if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+            return ts
+
+        start_norm = normalize_ts(start_ts)
+        end_norm = normalize_ts(end_ts)
+
+        if not start_norm or not end_norm:
+            return None, {"error": "Could not normalize timestamps"}
+
+        # Extract RR values within the section's time range
+        rr_values = []
+        for rr in rr_intervals:
+            ts = getattr(rr, "timestamp", None)
+            ts_norm = normalize_ts(ts)
+            if ts_norm and start_norm <= ts_norm <= end_norm:
+                rr_ms = getattr(rr, "rr_ms", None)
+                if rr_ms is not None:
+                    rr_values.append(float(rr_ms))
+
+        if not rr_values:
+            return None, {"error": "No RR data found in section time range"}
+
+        duration_s = sum(rr_values) / 1000.0
+
+        return rr_values, {
+            "n_beats": len(rr_values),
+            "duration_s": duration_s,
+            "quality_grade": "raw",
+            "artifact_rate": 0.0,  # Unknown for raw data
+            "data_source": "Raw",
+        }
+
+    except Exception as e:
+        return None, {"error": f"Error loading raw data: {e}"}
+
+
 def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], dict, dict]:
     """Run HRV analysis for multiple groups.
 
@@ -4289,6 +4403,7 @@ def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], d
             - overlap_percent: float
             - completeness_filter: bool
             - selected_metrics: List of metric names to calculate
+            - allow_raw_fallback: bool - If True, use raw RR data when NN is unavailable
 
     Returns:
         Tuple of (results, missing, excluded)
@@ -4303,6 +4418,7 @@ def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], d
     project_path = st.session_state.get("project_path")
     data_dir = st.session_state.get("data_dir")
     selected_metrics = config.get("selected_metrics")
+    allow_raw_fallback = config.get("allow_raw_fallback", True)
 
     group_participants = _collect_group_participants(config["selected_groups"])
 
@@ -4318,12 +4434,26 @@ def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], d
                 missing[pid] = {"_all": "No .rrational v2 file found"}
                 continue
 
-            # Check which sections are available
+            # Check which sections are available (try NN first, then raw fallback)
             available = []
             for section in sections:
+                # Try NN data first
                 nn_data, info = _load_nn_from_rrational_v2(rrational_path, section)
                 if nn_data and len(nn_data) >= MIN_BEATS_TIME_DOMAIN:
+                    info["data_source"] = "NN"
                     available.append((section, nn_data, info))
+                elif allow_raw_fallback:
+                    # Fallback to raw RR data
+                    raw_data, raw_info = _load_raw_section_data(
+                        pid, section, rrational_path, project_path, data_dir
+                    )
+                    if raw_data and len(raw_data) >= MIN_BEATS_TIME_DOMAIN:
+                        available.append((section, raw_data, raw_info))
+                    else:
+                        # Both NN and raw failed
+                        nn_error = info.get("error", "No NN data")
+                        raw_error = raw_info.get("error", "No raw data") if raw_info else "Raw fallback failed"
+                        missing.setdefault(pid, {})[section] = f"NN: {nn_error}; Raw: {raw_error}"
                 else:
                     missing.setdefault(pid, {})[section] = info.get("error", "Insufficient data")
 
@@ -4333,9 +4463,9 @@ def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], d
                 continue
 
             # Calculate HRV for each available section
-            for section, nn_data, info in available:
+            for section, rr_data, info in available:
                 metrics, std, n_win = _calculate_hrv_metrics(
-                    nn_data,
+                    rr_data,
                     config["use_overlapping_windows"],
                     config["window_beats"],
                     config["overlap_percent"],
@@ -4346,13 +4476,14 @@ def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], d
                     participant_id=pid,
                     group=group,
                     section_name=section,
-                    n_beats=info.get("n_beats", len(nn_data)),
-                    duration_s=info.get("duration_s", sum(nn_data) / 1000),
+                    n_beats=info.get("n_beats", len(rr_data)),
+                    duration_s=info.get("duration_s", sum(rr_data) / 1000),
                     quality_grade=info.get("quality_grade", "unknown"),
                     artifact_rate=info.get("artifact_rate", 0.0),
                     hrv_metrics=metrics,
                     hrv_std=std,
                     n_windows=n_win,
+                    data_source=info.get("data_source", "NN"),
                 ))
 
     return results, missing, excluded
@@ -4502,7 +4633,7 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         return
 
     st.markdown("**Analysis Settings**")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         use_overlapping = st.checkbox(
             "Use overlapping windows",
@@ -4516,6 +4647,13 @@ Using overlapping windows improves the reliability of HRV estimates by providing
             value=False,
             key="group_analysis_completeness",
             help="Exclude participants missing any selected sections",
+        )
+    with col3:
+        allow_raw_fallback = st.checkbox(
+            "Allow raw data fallback",
+            value=True,
+            key="group_analysis_raw_fallback",
+            help="When NN intervals are unavailable, use raw (uncorrected) RR data. Results will be marked as 'Raw' in the output.",
         )
 
     if use_overlapping:
@@ -4557,6 +4695,7 @@ Using overlapping windows improves the reliability of HRV estimates by providing
             "overlap_percent": overlap_pct,
             "completeness_filter": completeness_filter,
             "selected_metrics": selected_metrics,
+            "allow_raw_fallback": allow_raw_fallback,
         }
 
         # Count total participants
@@ -4662,6 +4801,12 @@ Using overlapping windows improves the reliability of HRV estimates by providing
     with col4:
         st.metric("Data Points", len(results))
 
+    # Data source breakdown
+    nn_count = sum(1 for r in results if r.data_source == "NN")
+    raw_count = sum(1 for r in results if r.data_source == "Raw")
+    if raw_count > 0:
+        st.info(f"Data sources: **{nn_count} NN** (artifact-corrected) | **{raw_count} Raw** (uncorrected)")
+
     # Participant count table
     st.markdown("**Participants Analyzed per Group & Section:**")
     st.dataframe(
@@ -4722,18 +4867,77 @@ Using overlapping windows improves the reliability of HRV estimates by providing
 
             st.plotly_chart(fig, use_container_width=True)
 
-    # Missing sections (collapsible)
+    # Missing sections (collapsible) - with actionable feedback
     if missing or excluded:
         with st.expander(f"**Missing / Excluded ({len(missing) + len(excluded)} participants)**", expanded=False):
             if excluded:
-                st.markdown("**Excluded (completeness filter):**")
+                st.markdown("### Excluded (completeness filter)")
+                st.caption("These participants were excluded because they don't have all selected sections.")
                 for pid, reason in excluded.items():
                     st.write(f"- `{pid}`: {reason}")
+                st.info("**Fix:** Uncheck 'Only complete participants' to include partial data, or validate the missing sections in the Sections tab.")
+
             if missing:
-                st.markdown("**Missing data:**")
+                st.markdown("### Missing Data")
+                st.caption("These sections could not be analyzed. Common reasons and fixes:")
+
+                # Categorize missing issues
+                no_rrational = {}
+                no_nn_data = {}
+                no_validation = {}
+                too_few_beats = {}
+                other_issues = {}
+
                 for pid, sections in missing.items():
-                    section_list = ", ".join(f"{s}: {r}" for s, r in sections.items())
-                    st.write(f"- `{pid}`: {section_list}")
+                    for section, reason in sections.items():
+                        reason_lower = reason.lower() if isinstance(reason, str) else ""
+                        key = (pid, section)
+                        if "no .rrational" in reason_lower or "rrational v2 file" in reason_lower:
+                            no_rrational[key] = reason
+                        elif "not found in file" in reason_lower or "not in .rrational" in reason_lower:
+                            no_validation[key] = reason
+                        elif "no validation" in reason_lower or "no validation timestamps" in reason_lower or "missing start/end" in reason_lower:
+                            no_validation[key] = reason
+                        elif "no nn" in reason_lower or "nn intervals" in reason_lower:
+                            no_nn_data[key] = reason
+                        elif "too few" in reason_lower or "< 100" in reason_lower or "insufficient" in reason_lower:
+                            too_few_beats[key] = reason
+                        elif "no rr data" in reason_lower or "no rr intervals" in reason_lower:
+                            no_nn_data[key] = reason
+                        else:
+                            other_issues[key] = reason
+
+                if no_rrational:
+                    st.markdown("**No .rrational file found:**")
+                    for (pid, section), reason in no_rrational.items():
+                        st.write(f"  - `{pid}` / {section}")
+                    st.info("**Fix:** Process this participant in the Data tab first, then validate sections.")
+
+                if no_validation:
+                    st.markdown("**Section not validated:**")
+                    for (pid, section), reason in no_validation.items():
+                        st.write(f"  - `{pid}` / {section}")
+                    st.info("**Fix:** Go to Sections tab, select participant, validate section boundaries.")
+
+                if no_nn_data:
+                    st.markdown("**No NN intervals saved:**")
+                    for (pid, section), reason in no_nn_data.items():
+                        st.write(f"  - `{pid}` / {section}")
+                    if config.get("allow_raw_fallback"):
+                        st.info("Raw fallback is enabled but these sections still couldn't be loaded. Check if the section has been validated and saved.")
+                    else:
+                        st.info("**Fix:** Enable 'Allow raw data fallback' checkbox, OR go to Analysis tab, select participant, save NN intervals.")
+
+                if too_few_beats:
+                    st.markdown("**Too few beats (< 100):**")
+                    for (pid, section), reason in too_few_beats.items():
+                        st.write(f"  - `{pid}` / {section}")
+                    st.info("**Note:** Sections with < 100 beats cannot produce reliable HRV metrics. Consider using longer recording segments.")
+
+                if other_issues:
+                    st.markdown("**Other issues:**")
+                    for (pid, section), reason in other_issues.items():
+                        st.write(f"  - `{pid}` / {section}: {reason}")
 
     # Convert to DataFrames
     long_df = _results_to_long_df(results)

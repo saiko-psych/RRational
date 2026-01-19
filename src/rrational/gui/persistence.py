@@ -49,6 +49,33 @@ DEFAULT_SETTINGS = {
 }
 
 
+def _convert_numpy_types(obj: Any) -> Any:
+    """Recursively convert numpy types to native Python types for YAML serialization.
+
+    Args:
+        obj: Any object that may contain numpy types
+
+    Returns:
+        Object with all numpy types converted to native Python types
+    """
+    import numpy as np
+
+    if isinstance(obj, dict):
+        return {k: _convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(_convert_numpy_types(item) for item in obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    else:
+        return obj
+
+
 def ensure_config_dir() -> None:
     """Create config directory if it doesn't exist."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1044,6 +1071,7 @@ def get_merged_artifacts_for_display(
     all_algo = []
     all_manual = []
     all_excluded = []
+    all_indices_by_type = {}  # Merge indices_by_type from all sections
     sections_info = {}
 
     # v1.3+ format with sections
@@ -1052,10 +1080,17 @@ def get_merged_artifacts_for_display(
             algo_indices = section_data.get("algorithm_artifact_indices", [])
             manual = section_data.get("manual_artifacts", [])
             excluded = section_data.get("excluded_artifact_indices", [])
+            indices_by_type = section_data.get("indices_by_type", {})
 
             all_algo.extend(algo_indices)
             all_manual.extend(manual)
             all_excluded.extend(excluded)
+
+            # Merge indices_by_type
+            for artifact_type, indices in indices_by_type.items():
+                if artifact_type not in all_indices_by_type:
+                    all_indices_by_type[artifact_type] = []
+                all_indices_by_type[artifact_type].extend(indices)
 
             sections_info[section_key] = {
                 "algorithm_count": len(algo_indices),
@@ -1070,6 +1105,7 @@ def get_merged_artifacts_for_display(
         all_algo = data.get("algorithm_artifact_indices", [])
         all_manual = data.get("manual_artifacts", [])
         all_excluded = data.get("excluded_artifact_indices", [])
+        all_indices_by_type = data.get("indices_by_type", {})
         sections_info["_full"] = {
             "algorithm_count": len(all_algo),
             "manual_count": len(all_manual),
@@ -1083,6 +1119,7 @@ def get_merged_artifacts_for_display(
         "algorithm_artifact_indices": all_algo,
         "manual_artifacts": all_manual,
         "excluded_artifact_indices": all_excluded,
+        "indices_by_type": all_indices_by_type,
         "sections_info": sections_info,
     }
 
@@ -1415,6 +1452,9 @@ def save_nn_intervals(
     if metadata_file.exists():
         with open(metadata_file, "r", encoding="utf-8") as f:
             metadata = yaml.safe_load(f) or {}
+        # Ensure required keys exist (handle older/malformed files)
+        if "sections" not in metadata:
+            metadata["sections"] = {}
     else:
         metadata = {
             "participant_id": participant_id,
@@ -1434,6 +1474,8 @@ def save_nn_intervals(
         "corrections": nn_data.get("corrections", []),
         "csv_file": csv_file.name,
     }
+    # Convert numpy types to native Python types for YAML serialization
+    section_metadata = _convert_numpy_types(section_metadata)
     metadata["sections"][section_name] = section_metadata
     metadata["last_modified"] = dt.now().isoformat()
 
