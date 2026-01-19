@@ -2092,18 +2092,43 @@ def _render_single_participant_analysis():
                         ready_data_v2 = load_rrational_v2(selected_ready_file)
                         st.success(f"**v2.0 Export** - {len(ready_data_v2.sections)} section(s) available")
 
+                        # Try to supplement artifact data from _artifacts.yml if missing
+                        # This handles old .rrational files that didn't save artifact counts
+                        participant_id = ready_data_v2.metadata.participant_id
+                        artifacts_file = Path(selected_ready_file).parent / f"{participant_id}_artifacts.yml"
+                        supplemental_artifacts = {}
+                        if artifacts_file.exists():
+                            try:
+                                import yaml
+                                with open(artifacts_file, 'r', encoding='utf-8') as f:
+                                    artifacts_data = yaml.safe_load(f) or {}
+                                supplemental_artifacts = artifacts_data.get("sections", {})
+                            except Exception:
+                                pass
+
                         # Show available sections with quality info
                         section_info = []
                         for sec_name, sec_data in ready_data_v2.sections.items():
                             nn_count = len(sec_data.nn_intervals.data)
                             quality = sec_data.quality.grade
                             artifact_count = sec_data.final_artifacts.count
-                            artifact_rate = sec_data.final_artifacts.rate * 100
+                            artifact_rate = sec_data.final_artifacts.rate
+
+                            # Supplement from _artifacts.yml if count is 0 but file has data
+                            if artifact_count == 0 and sec_name in supplemental_artifacts:
+                                sec_artifacts = supplemental_artifacts[sec_name]
+                                algo_count = len(sec_artifacts.get("algorithm_artifact_indices", []))
+                                manual_count = len(sec_artifacts.get("manual_artifacts", []))
+                                excluded_count = len(sec_artifacts.get("excluded_artifact_indices", []))
+                                artifact_count = algo_count + manual_count - excluded_count
+                                if nn_count > 0:
+                                    artifact_rate = artifact_count / nn_count
+
                             section_info.append({
                                 "Section": sec_name,
                                 "Beats": nn_count,
                                 "Artifacts": artifact_count,
-                                "Artifact %": f"{artifact_rate:.2f}%",
+                                "Artifact %": f"{artifact_rate * 100:.2f}%",
                                 "Quality": quality.capitalize(),
                             })
 
