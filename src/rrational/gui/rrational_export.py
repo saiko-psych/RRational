@@ -857,6 +857,29 @@ def _dict_to_section_export(data: dict) -> SectionExportV2:
         rate=fa.get("rate", 0.0),
     )
 
+    # Backward compatibility: recalculate final_artifacts from artifact_detection if missing
+    # This handles old .rrational files that didn't save the final_artifacts correctly
+    if final_artifacts.count == 0 and artifact_detection and artifact_detection.detected_count > 0:
+        # Calculate final = detected + manual_added - manual_removed
+        detected_count = artifact_detection.detected_count
+        added_count = len(manual_artifacts.added_indices)
+        removed_count = len(manual_artifacts.removed_indices)
+        final_count = detected_count + added_count - removed_count
+
+        # Get beat count from nn_intervals or validation for rate calculation
+        nn = data.get("nn_intervals", {})
+        nn_count = len(nn.get("data", []))
+        if nn_count == 0:
+            nn_count = validation.total_beat_count if validation else 0
+
+        final_rate = final_count / nn_count if nn_count > 0 else 0.0
+
+        final_artifacts = FinalArtifactsV2(
+            indices=[],  # We don't have indices in old format, just count
+            count=final_count,
+            rate=final_rate,
+        )
+
     q = data.get("quality", {})
     quality = QualityV2(
         grade=q.get("grade", "unknown"),
