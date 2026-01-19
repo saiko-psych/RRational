@@ -2095,10 +2095,12 @@ def _render_single_participant_analysis():
 
                         # Try to supplement artifact data from _artifacts.yml if missing
                         # This handles old .rrational files that didn't save artifact counts
+                        import os
                         participant_id = ready_data_v2.metadata.participant_id
-                        artifacts_file = Path(selected_ready_file).parent / f"{participant_id}_artifacts.yml"
+                        artifacts_dir = os.path.dirname(str(selected_ready_file))
+                        artifacts_file = os.path.join(artifacts_dir, f"{participant_id}_artifacts.yml")
                         supplemental_artifacts = {}
-                        if artifacts_file.exists():
+                        if os.path.exists(artifacts_file):
                             try:
                                 import yaml
                                 with open(artifacts_file, 'r', encoding='utf-8') as f:
