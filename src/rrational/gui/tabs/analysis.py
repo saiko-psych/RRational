@@ -4444,6 +4444,29 @@ def _create_raincloud_plot(
 # =============================================================================
 
 
+def _format_duration(seconds: float) -> str:
+    """Format duration in seconds to human-readable string.
+
+    Examples:
+        5.2 -> "5s"
+        65.0 -> "1m 5s"
+        3665.0 -> "1h 1m 5s"
+    """
+    if seconds < 0:
+        return "0s"
+
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+
+    if hours > 0:
+        return f"{hours}h {minutes}m {secs}s"
+    elif minutes > 0:
+        return f"{minutes}m {secs}s"
+    else:
+        return f"{secs}s"
+
+
 def _load_raw_section_data(
     pid: str,
     section_name: str,
@@ -4451,10 +4474,11 @@ def _load_raw_section_data(
     project_path,
     data_dir,
 ) -> tuple[list[float] | None, dict]:
-    """Load raw RR data for a section by using validation timestamps.
+    """Load raw RR data for a section using on-demand recording loading.
 
     This is a fallback when NN intervals are not available. It loads the
-    original recording and extracts the section using validation timestamps.
+    original recording on-demand and extracts the section using section definitions.
+    Uses the same approach as "Use raw data" mode in single participant analysis.
 
     Returns:
         Tuple of (rr_ms_list, info_dict) where:
@@ -4462,82 +4486,126 @@ def _load_raw_section_data(
         - info_dict: Contains n_beats, duration_s, data_source info
     """
     from datetime import datetime
+    from rrational.io.hrv_logger import HRVLoggerRecording, RRInterval, EventMarker
+    from rrational.gui.persistence import load_participant_events
+    from rrational.cleaning.rr import clean_rr_intervals
     from rrational.gui.rrational_export import load_rrational_v2
 
     try:
-        # Load .rrational to get section validation timestamps
+        # Load .rrational to get section definition
         export_data = load_rrational_v2(rrational_path)
 
         if section_name not in export_data.sections:
             return None, {"error": f"Section '{section_name}' not in .rrational file"}
 
         section = export_data.sections[section_name]
-        validation = section.validation
 
-        if not validation or not validation.start_event or not validation.end_event:
-            return None, {"error": "No validation timestamps for section"}
+        # Get section definition for extraction
+        if not section.definition:
+            return None, {"error": "No section definition in .rrational file"}
 
-        start_ts_str = validation.start_event.timestamp
-        end_ts_str = validation.end_event.timestamp
+        # Load recording data on-demand (same as single participant analysis)
+        summary = get_summary_dict().get(pid)
+        source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
+        is_vns = (source_app == "VNS Analyse")
 
-        if not start_ts_str or not end_ts_str:
-            return None, {"error": "Missing start/end timestamps in validation"}
+        recording_data = None
+        if is_vns:
+            # Load VNS Analyse recording
+            vns_paths = getattr(summary, 'vns_paths', None)
+            if vns_paths:
+                recording_data = cached_load_vns_recording(
+                    tuple(str(p) for p in vns_paths),
+                    pid,
+                    use_corrected=st.session_state.get("vns_use_corrected", False),
+                )
+            elif getattr(summary, 'vns_path', None):
+                recording_data = cached_load_vns_recording(
+                    (str(summary.vns_path),),
+                    pid,
+                    use_corrected=st.session_state.get("vns_use_corrected", False),
+                )
+            else:
+                # Re-discover VNS recordings
+                from rrational.io.vns_analyse import discover_vns_recordings
+                vns_bundles = discover_vns_recordings(
+                    Path(st.session_state.data_dir),
+                    pattern=st.session_state.id_pattern
+                )
+                vns_bundle = next((b for b in vns_bundles if b.participant_id == pid), None)
+                if vns_bundle:
+                    recording_data = cached_load_vns_recording(
+                        tuple(str(p) for p in vns_bundle.file_paths),
+                        pid,
+                        use_corrected=st.session_state.get("vns_use_corrected", False),
+                    )
+        else:
+            # Load HRV Logger recording
+            bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
+            bundle = next((b for b in bundles if b.participant_id == pid), None)
+            if bundle:
+                recording_data = cached_load_recording(
+                    tuple(str(p) for p in bundle.rr_paths),
+                    tuple(str(p) for p in bundle.events_paths),
+                    pid
+                )
 
-        # Parse timestamps
-        try:
-            start_ts = datetime.fromisoformat(start_ts_str.replace("Z", "+00:00"))
-            end_ts = datetime.fromisoformat(end_ts_str.replace("Z", "+00:00"))
-        except (ValueError, TypeError) as e:
-            return None, {"error": f"Invalid timestamp format: {e}"}
+        if not recording_data:
+            return None, {"error": "Could not load raw recording data"}
 
-        # Load the participant's raw data from summaries
-        summaries = st.session_state.get("summaries", [])
-        participant_summary = None
-        for s in summaries:
-            if s.participant_id == pid:
-                participant_summary = s
-                break
+        # Reconstruct recording object
+        rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
+                        for ts, rr, elapsed in recording_data['rr_intervals']]
 
-        if not participant_summary:
-            return None, {"error": "Participant not found in loaded data"}
+        # Load saved events for this participant
+        saved_events = load_participant_events(pid, st.session_state.data_dir)
+        all_stored = []
+        if saved_events:
+            all_stored = saved_events.get('events', []) + saved_events.get('manual', [])
 
-        # Get raw RR data with timestamps
-        rr_intervals = participant_summary.rr_intervals
-        if not rr_intervals:
-            return None, {"error": "No RR intervals in participant data"}
+        # Convert to EventMarker objects
+        events = []
+        for evt in all_stored:
+            ts = evt.get('first_timestamp') if isinstance(evt, dict) else getattr(evt, 'first_timestamp', None)
+            label = (evt.get('canonical') or evt.get('raw_label', 'unknown')) if isinstance(evt, dict) else (getattr(evt, 'canonical', None) or getattr(evt, 'raw_label', 'unknown'))
+            if ts:
+                if isinstance(ts, str):
+                    ts = datetime.fromisoformat(ts)
+                events.append(EventMarker(label=label, timestamp=ts, offset_s=None))
 
-        # Normalize timestamps for comparison
-        def normalize_ts(ts):
-            if ts is None:
-                return None
-            if isinstance(ts, str):
-                try:
-                    ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-                except (ValueError, TypeError):
-                    return None
-            if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
-                ts = ts.replace(tzinfo=None)
-            return ts
+        recording = HRVLoggerRecording(
+            participant_id=pid,
+            rr_intervals=rr_intervals,
+            events=events
+        )
 
-        start_norm = normalize_ts(start_ts)
-        end_norm = normalize_ts(end_ts)
+        # Build section definition from .rrational data
+        # Note: end_event is singular in v2 format, convert to end_events list
+        section_def = {
+            "name": section_name,
+            "start_event": section.definition.start_event,
+            "end_events": [section.definition.end_event],
+            "label": section.definition.label,
+        }
 
-        if not start_norm or not end_norm:
-            return None, {"error": "Could not normalize timestamps"}
+        # Extract section using same logic as "Use raw data" mode
+        section_rr = extract_section_rr_intervals(
+            recording, section_def, st.session_state.normalizer,
+            saved_events=all_stored,
+            participant_id=pid,
+        )
 
-        # Extract RR values within the section's time range
-        rr_values = []
-        for rr in rr_intervals:
-            ts = getattr(rr, "timestamp", None)
-            ts_norm = normalize_ts(ts)
-            if ts_norm and start_norm <= ts_norm <= end_norm:
-                rr_ms = getattr(rr, "rr_ms", None)
-                if rr_ms is not None:
-                    rr_values.append(float(rr_ms))
+        if not section_rr:
+            return None, {"error": "Could not extract section from raw data (check event markers)"}
 
-        if not rr_values:
-            return None, {"error": "No RR data found in section time range"}
+        # Clean RR intervals
+        cleaning_config = st.session_state.get("cleaning_config", {})
+        cleaned_rr, stats = clean_rr_intervals(section_rr, cleaning_config)
 
+        if not cleaned_rr:
+            return None, {"error": "No valid RR intervals after cleaning"}
+
+        rr_values = [rr.rr_ms for rr in cleaned_rr]
         duration_s = sum(rr_values) / 1000.0
 
         return rr_values, {
@@ -4552,7 +4620,10 @@ def _load_raw_section_data(
         return None, {"error": f"Error loading raw data: {e}"}
 
 
-def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], dict, dict]:
+def _run_group_analysis(
+    config: dict,
+    progress_callback: callable | None = None,
+) -> tuple[list[ParticipantSectionResult], dict, dict]:
     """Run HRV analysis for multiple groups.
 
     Args:
@@ -4565,6 +4636,7 @@ def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], d
             - completeness_filter: bool
             - selected_metrics: List of metric names to calculate
             - allow_raw_fallback: bool - If True, use raw RR data when NN is unavailable
+        progress_callback: Optional callback function(current, total, message) for progress updates
 
     Returns:
         Tuple of (results, missing, excluded)
@@ -4583,48 +4655,83 @@ def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], d
 
     group_participants = _collect_group_participants(config["selected_groups"])
 
+    # Calculate total work units for progress tracking
+    # Work units per participant: 1 (find file) + sections × 2 (load + calculate per section)
+    total_sections_per_participant = {
+        g: len(config["sections_per_group"].get(g, []))
+        for g in config["selected_groups"]
+    }
+    total_work = sum(
+        len(group_participants.get(g, [])) * (1 + total_sections_per_participant[g] * 2)
+        for g in config["selected_groups"]
+    )
+    current_work = 0
+
+    def update_progress(increment: int, message: str):
+        nonlocal current_work
+        current_work += increment
+        if progress_callback:
+            progress_callback(current_work, total_work, message)
+
     for group in config["selected_groups"]:
         sections = config["sections_per_group"].get(group, [])
         participants = group_participants.get(group, [])
 
         for pid in participants:
+            update_progress(0, f"[{pid}] Finding .rrational file...")
+
             # Find .rrational v2 file
             rrational_path = _find_rrational_v2_file(pid, project_path=project_path, data_dir=data_dir)
 
             if not rrational_path:
                 missing[pid] = {"_all": "No .rrational v2 file found"}
+                # Skip all work for this participant
+                update_progress(1 + len(sections) * 2, f"[{pid}] Skipped (no file)")
                 continue
+
+            update_progress(1, f"[{pid}] Loading sections...")
 
             # Check which sections are available (try NN first, then raw fallback)
             available = []
             for section in sections:
+                update_progress(0, f"[{pid}] Loading {section}...")
+
                 # Try NN data first
                 nn_data, info = _load_nn_from_rrational_v2(rrational_path, section)
                 if nn_data and len(nn_data) >= MIN_BEATS_TIME_DOMAIN:
                     info["data_source"] = "NN"
                     available.append((section, nn_data, info))
+                    update_progress(1, f"[{pid}] Loaded {section} (NN)")
                 elif allow_raw_fallback:
+                    update_progress(0, f"[{pid}] Loading {section} (raw fallback)...")
                     # Fallback to raw RR data
                     raw_data, raw_info = _load_raw_section_data(
                         pid, section, rrational_path, project_path, data_dir
                     )
                     if raw_data and len(raw_data) >= MIN_BEATS_TIME_DOMAIN:
                         available.append((section, raw_data, raw_info))
+                        update_progress(1, f"[{pid}] Loaded {section} (Raw)")
                     else:
                         # Both NN and raw failed
                         nn_error = info.get("error", "No NN data")
                         raw_error = raw_info.get("error", "No raw data") if raw_info else "Raw fallback failed"
                         missing.setdefault(pid, {})[section] = f"NN: {nn_error}; Raw: {raw_error}"
+                        update_progress(1, f"[{pid}] {section} failed")
                 else:
                     missing.setdefault(pid, {})[section] = info.get("error", "Insufficient data")
+                    update_progress(1, f"[{pid}] {section} failed")
 
             # Completeness filter
             if config["completeness_filter"] and len(available) < len(sections):
                 excluded[pid] = f"Missing {len(sections) - len(available)} of {len(sections)} sections"
+                # Skip HRV calculation work
+                update_progress(len(sections), f"[{pid}] Excluded (incomplete)")
                 continue
 
             # Calculate HRV for each available section
             for section, rr_data, info in available:
+                update_progress(0, f"[{pid}] Calculating HRV for {section}...")
+
                 metrics, std, n_win = _calculate_hrv_metrics(
                     rr_data,
                     config["use_overlapping_windows"],
@@ -4647,6 +4754,12 @@ def _run_group_analysis(config: dict) -> tuple[list[ParticipantSectionResult], d
                     data_source=info.get("data_source", "NN"),
                 ))
 
+                update_progress(1, f"[{pid}] Completed {section}")
+
+            # Account for skipped sections (already counted during loading)
+            # No need to add more - skipped sections already counted in loading phase
+
+    update_progress(0, "Analysis complete!")
     return results, missing, excluded
 
 
@@ -4847,6 +4960,8 @@ Using overlapping windows improves the reliability of HRV estimates by providing
     st.divider()
 
     if st.button("**Analyze Groups**", key="run_group_analysis_btn", type="primary", use_container_width=True):
+        import time
+
         # Build configuration
         config = {
             "selected_groups": selected_groups,
@@ -4863,14 +4978,62 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         total_participants = sum(
             group_counts[g] for g in selected_groups
         )
+        total_sections_count = sum(len(sections_per_group.get(g, [])) for g in selected_groups)
 
-        with st.status(f"Analyzing {total_participants} participants across {len(selected_groups)} groups...", expanded=True) as status:
-            st.write("Starting analysis...")
+        # Create progress UI elements
+        progress_bar = st.progress(0, text="Starting analysis...")
+        status_container = st.empty()
 
-            # Run the analysis
-            results, missing, excluded = _run_group_analysis(config)
+        start_time = time.time()
+        last_update_time = [start_time]  # Use list to allow modification in closure
 
-            status.update(label="Analysis complete!", state="complete")
+        def progress_callback(current: int, total: int, message: str):
+            """Update progress bar with elapsed/remaining time estimation."""
+            try:
+                if total <= 0:
+                    return
+
+                progress_pct = min(current / total, 1.0)
+
+                # Calculate time estimates
+                now = time.time()
+                elapsed = now - start_time
+
+                # Build status text
+                if progress_pct > 0.05 and current < total:
+                    estimated_total = elapsed / progress_pct
+                    remaining = estimated_total - elapsed
+                    elapsed_str = _format_duration(elapsed)
+                    remaining_str = _format_duration(remaining)
+                    time_info = f"⏱️ {elapsed_str} elapsed · ~{remaining_str} remaining"
+                elif current >= total:
+                    elapsed_str = _format_duration(elapsed)
+                    time_info = f"✅ Completed in {elapsed_str}"
+                else:
+                    elapsed_str = _format_duration(elapsed)
+                    time_info = f"⏱️ {elapsed_str} elapsed · estimating..."
+
+                # Update UI (throttled to avoid flicker)
+                if now - last_update_time[0] >= 0.1 or current >= total or current == 0:
+                    last_update_time[0] = now
+                    # Use progress bar text parameter for cleaner display
+                    pct_display = int(progress_pct * 100)
+                    progress_bar.progress(progress_pct, text=f"{pct_display}% — {message}")
+                    status_container.caption(time_info)
+            except Exception:
+                # Silently ignore UI update errors to prevent crashes
+                pass
+
+        # Run the analysis with progress tracking
+        results, missing, excluded = _run_group_analysis(config, progress_callback)
+
+        # Final progress update
+        elapsed_total = time.time() - start_time
+        try:
+            progress_bar.progress(1.0, text="100% — Analysis complete!")
+            status_container.caption(f"✅ Completed in {_format_duration(elapsed_total)}")
+        except Exception:
+            pass  # Ignore UI errors
 
         # Store results in session state for persistence
         st.session_state.group_analysis_results = {
