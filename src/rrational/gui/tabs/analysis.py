@@ -2092,7 +2092,18 @@ def _render_single_participant_analysis():
                     if ready_file_version == RRATIONAL_VERSION_V2:
                         # V2.0 file - load and show sections
                         ready_data_v2 = load_rrational_v2(selected_ready_file)
-                        st.success(f"**v2.0 Export** - {len(ready_data_v2.sections)} section(s) available")
+
+                        # Count sections with NN data
+                        sections_with_nn = sum(1 for s in ready_data_v2.sections.values()
+                                               if len(s.nn_intervals.data) > 0)
+                        total_sections = len(ready_data_v2.sections)
+
+                        if sections_with_nn == total_sections:
+                            st.success(f"**v2.0 Export** - {total_sections} section(s) with NN data")
+                        elif sections_with_nn > 0:
+                            st.success(f"**v2.0 Export** - {sections_with_nn}/{total_sections} sections with NN data")
+                        else:
+                            st.warning(f"**v2.0 Export** - {total_sections} sections validated, but no NN data saved")
 
                         # Try to supplement artifact data from _artifacts.yml if missing
                         # This handles old .rrational files that didn't save artifact counts
@@ -2128,12 +2139,16 @@ def _render_single_participant_analysis():
                                 if nn_count > 0:
                                     artifact_rate = artifact_count / nn_count
 
+                            # Determine data source status
+                            data_status = "✓ NN" if nn_count > 0 else "— (needs raw)"
+
                             section_info.append({
                                 "Section": sec_name,
-                                "Beats": nn_count,
-                                "Artifacts": artifact_count,
-                                "Artifact %": f"{artifact_rate * 100:.2f}%",
-                                "Quality": quality.capitalize(),
+                                "Data": data_status,
+                                "Beats": nn_count if nn_count > 0 else "—",
+                                "Artifacts": artifact_count if nn_count > 0 else "—",
+                                "Artifact %": f"{artifact_rate * 100:.2f}%" if nn_count > 0 else "—",
+                                "Quality": quality.capitalize() if nn_count > 0 else "—",
                             })
 
                         if section_info:
@@ -2152,8 +2167,24 @@ def _render_single_participant_analysis():
                             key="analysis_v2_sections",
                         )
 
+                        # Check which sections have no NN intervals
+                        sections_without_nn = [s for s in available_sections
+                                               if len(ready_data_v2.sections[s].nn_intervals.data) == 0]
+
+                        # Option to use raw data fallback for sections without NN
+                        allow_raw_fallback_v2 = False
+                        if sections_without_nn:
+                            st.info(f"ℹ️ Sections without NN intervals: {', '.join(sections_without_nn)}")
+                            allow_raw_fallback_v2 = st.checkbox(
+                                "Use raw RR data for sections without NN intervals",
+                                value=True,
+                                key="allow_raw_fallback_v2",
+                                help="When enabled, sections without corrected NN intervals will be analyzed using raw RR data from the recording"
+                            )
+
                         # Store the loaded data for later use
                         st.session_state._analysis_ready_v2_data = ready_data_v2
+                        st.session_state._analysis_allow_raw_fallback = allow_raw_fallback_v2
 
                         if ready_data_v2.audit_trail:
                             with st.expander("Audit Trail"):
@@ -2486,6 +2517,9 @@ def _render_single_participant_analysis():
                         total_sections = len(selected_v2_sections)
                         nk = get_neurokit()
 
+                        # Get raw data fallback setting (read directly from checkbox key)
+                        allow_raw_fallback_v2 = st.session_state.get("allow_raw_fallback_v2", False)
+
                         for idx, sec_name in enumerate(selected_v2_sections):
                             st.write(f"Analyzing section: {sec_name}")
                             sec_data = ready_data_v2.sections[sec_name]
@@ -2493,15 +2527,140 @@ def _render_single_participant_analysis():
                             # Extract NN intervals from v2.0 format
                             # Data format: [[timestamp_ms, nn_ms, was_corrected], ...]
                             nn_intervals_ms = [item[1] for item in sec_data.nn_intervals.data]
+                            data_source_label = "NN"  # Track whether using NN or raw
 
                             if not nn_intervals_ms:
-                                st.warning(f"Section {sec_name} has no NN intervals, skipping")
-                                continue
+                                # Try raw data fallback if enabled
+                                # Uses same approach as "Use raw data" mode: load recording, extract section
+                                if allow_raw_fallback_v2:
+                                    try:
+                                        from rrational.io.hrv_logger import HRVLoggerRecording, RRInterval, EventMarker
+                                        from rrational.gui.persistence import load_participant_events
+                                        from rrational.cleaning.rr import clean_rr_intervals
+
+                                        # Get participant ID from metadata
+                                        pid = ready_data_v2.metadata.participant_id
+
+                                        # Get summary to determine source type
+                                        summary = get_summary_dict().get(pid)
+                                        source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
+                                        is_vns = (source_app == "VNS Analyse")
+
+                                        recording_data = None
+                                        if is_vns:
+                                            # Load VNS Analyse recording
+                                            vns_paths = getattr(summary, 'vns_paths', None)
+                                            if vns_paths:
+                                                recording_data = cached_load_vns_recording(
+                                                    tuple(str(p) for p in vns_paths),
+                                                    pid,
+                                                    use_corrected=st.session_state.get("vns_use_corrected", False),
+                                                )
+                                            elif getattr(summary, 'vns_path', None):
+                                                recording_data = cached_load_vns_recording(
+                                                    (str(summary.vns_path),),
+                                                    pid,
+                                                    use_corrected=st.session_state.get("vns_use_corrected", False),
+                                                )
+                                            else:
+                                                # Re-discover VNS recordings
+                                                from rrational.io.vns_analyse import discover_vns_recordings
+                                                vns_bundles = discover_vns_recordings(
+                                                    Path(st.session_state.data_dir),
+                                                    pattern=st.session_state.id_pattern
+                                                )
+                                                vns_bundle = next((b for b in vns_bundles if b.participant_id == pid), None)
+                                                if vns_bundle:
+                                                    recording_data = cached_load_vns_recording(
+                                                        tuple(str(p) for p in vns_bundle.file_paths),
+                                                        pid,
+                                                        use_corrected=st.session_state.get("vns_use_corrected", False),
+                                                    )
+                                        else:
+                                            # Load HRV Logger recording
+                                            bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
+                                            bundle = next((b for b in bundles if b.participant_id == pid), None)
+                                            if bundle:
+                                                recording_data = cached_load_recording(
+                                                    tuple(str(p) for p in bundle.rr_paths),
+                                                    tuple(str(p) for p in bundle.events_paths),
+                                                    pid
+                                                )
+
+                                        if recording_data:
+                                            # Reconstruct recording object (same as "Use raw data" mode)
+                                            rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
+                                                            for ts, rr, elapsed in recording_data['rr_intervals']]
+
+                                            # Load saved events for this participant
+                                            saved_events = load_participant_events(pid, st.session_state.data_dir)
+                                            all_stored = []
+                                            if saved_events:
+                                                all_stored = saved_events.get('events', []) + saved_events.get('manual', [])
+
+                                            # Convert to EventMarker objects
+                                            events = []
+                                            for evt in all_stored:
+                                                ts = evt.get('first_timestamp') if isinstance(evt, dict) else getattr(evt, 'first_timestamp', None)
+                                                label = (evt.get('canonical') or evt.get('raw_label', 'unknown')) if isinstance(evt, dict) else (getattr(evt, 'canonical', None) or getattr(evt, 'raw_label', 'unknown'))
+                                                if ts:
+                                                    if isinstance(ts, str):
+                                                        from datetime import datetime
+                                                        ts = datetime.fromisoformat(ts)
+                                                    events.append(EventMarker(label=label, timestamp=ts, offset_s=None))
+
+                                            recording = HRVLoggerRecording(
+                                                participant_id=pid,
+                                                rr_intervals=rr_intervals,
+                                                events=events
+                                            )
+
+                                            # Build section definition from .rrational data
+                                            # Note: end_event is singular in v2 format, convert to end_events list
+                                            section_def = {
+                                                "name": sec_name,
+                                                "start_event": sec_data.definition.start_event,
+                                                "end_events": [sec_data.definition.end_event],
+                                                "label": sec_data.definition.label,
+                                            }
+
+                                            # Extract section using same logic as "Use raw data" mode
+                                            section_rr = extract_section_rr_intervals(
+                                                recording, section_def, st.session_state.normalizer,
+                                                saved_events=all_stored,
+                                                participant_id=pid,
+                                            )
+
+                                            if section_rr:
+                                                # Clean RR intervals
+                                                cleaned_rr, stats = clean_rr_intervals(
+                                                    section_rr, st.session_state.cleaning_config
+                                                )
+                                                if cleaned_rr:
+                                                    nn_intervals_ms = [rr.rr_ms for rr in cleaned_rr]
+                                                    data_source_label = "Raw"
+                                                    st.info(f"Section {sec_name}: Using raw RR data ({len(nn_intervals_ms)} intervals)")
+                                                else:
+                                                    st.warning(f"Section {sec_name}: No valid RR intervals after cleaning")
+                                            else:
+                                                st.warning(f"Section {sec_name}: Could not extract section from raw data (check event markers)")
+                                        else:
+                                            st.warning(f"Section {sec_name}: Could not load raw recording data")
+                                    except Exception as e:
+                                        st.warning(f"Section {sec_name}: Failed to load raw data fallback: {e}")
+
+                                if not nn_intervals_ms:
+                                    st.warning(f"Section {sec_name} has no NN intervals and raw data fallback failed, skipping...")
+                                    continue
 
                             # Quality check
                             quality_grade = sec_data.quality.grade
                             meets_time = sec_data.quality.meets_time_domain_min
                             meets_freq = sec_data.quality.meets_freq_domain_min
+                            # Update quality thresholds for raw data
+                            if data_source_label == "Raw":
+                                meets_time = len(nn_intervals_ms) >= 100
+                                meets_freq = len(nn_intervals_ms) >= 300 and sum(nn_intervals_ms) / 1000 >= 120
 
                             if quality_grade == "poor":
                                 st.warning(f"Section {sec_name} has poor quality - results may be unreliable")
@@ -2590,11 +2749,12 @@ def _render_single_participant_analysis():
                                             "artifact_info": section_artifact_info,
                                             "ready_file": str(selected_ready_file),
                                             "quality_grade": quality_grade,
+                                            "data_source": data_source_label,  # "NN" or "Raw"
                                             "quality": {
                                                 "meets_time_domain": meets_time,
                                                 "meets_freq_domain": meets_freq,
-                                                "usable_beats": sec_data.quality.usable_beats,
-                                                "usable_duration_s": sec_data.quality.usable_duration_s,
+                                                "usable_beats": sec_data.quality.usable_beats if data_source_label == "NN" else len(nn_intervals_ms),
+                                                "usable_duration_s": sec_data.quality.usable_duration_s if data_source_label == "NN" else sum(nn_intervals_ms) / 1000,
                                             },
                                             "overlapping_analysis": True,
                                             "n_windows": len(window_hrv_results),
@@ -2635,11 +2795,12 @@ def _render_single_participant_analysis():
                                 "artifact_info": section_artifact_info,
                                 "ready_file": str(selected_ready_file),
                                 "quality_grade": quality_grade,
+                                "data_source": data_source_label,  # "NN" or "Raw"
                                 "quality": {
                                     "meets_time_domain": meets_time,
                                     "meets_freq_domain": meets_freq,
-                                    "usable_beats": sec_data.quality.usable_beats,
-                                    "usable_duration_s": sec_data.quality.usable_duration_s,
+                                    "usable_beats": sec_data.quality.usable_beats if data_source_label == "NN" else len(nn_intervals_ms),
+                                    "usable_duration_s": sec_data.quality.usable_duration_s if data_source_label == "NN" else sum(nn_intervals_ms) / 1000,
                                 },
                                 "analysis_segments": [
                                     {

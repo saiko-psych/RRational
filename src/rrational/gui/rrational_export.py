@@ -1131,6 +1131,7 @@ def build_rrational_v2(
     sections_to_export: list[str],
     data_dir: str | None = None,
     project_path: Path | None = None,
+    raw_rr_fallback: dict[str, list] | None = None,
 ) -> tuple[RRationalExportV2, list[str]]:
     """Build a v2.0 export by consolidating data from intermediate files.
 
@@ -1145,6 +1146,9 @@ def build_rrational_v2(
         sections_to_export: List of section names to include
         data_dir: Optional data directory
         project_path: Project path (takes priority if provided)
+        raw_rr_fallback: Optional dict mapping section names to raw RR intervals
+            (list of [timestamp_ms, rr_ms] pairs). Used when no corrected NN
+            intervals are available for a section.
 
     Returns:
         Tuple of (RRationalExportV2, list of warnings/errors)
@@ -1423,7 +1427,28 @@ def build_rrational_v2(
                         break
 
             if not nn_source:
-                warnings.append(f"Section '{section_name}' has no NN intervals - analysis may use raw data")
+                # Try raw RR fallback if provided
+                if raw_rr_fallback and section_name in raw_rr_fallback:
+                    raw_rr_data = raw_rr_fallback[section_name]
+                    if raw_rr_data:
+                        # Convert raw RR to NN format: [[timestamp_ms, nn_ms, was_corrected], ...]
+                        # raw_rr_data is expected to be [[timestamp_ms, rr_ms], ...]
+                        nn_data_from_raw = []
+                        for item in raw_rr_data:
+                            if len(item) >= 2:
+                                ts_ms = item[0]
+                                rr_ms = item[1]
+                                nn_data_from_raw.append([ts_ms, rr_ms, False])  # was_corrected=False
+                        if nn_data_from_raw:
+                            nn_intervals = NNIntervalsDataV2(
+                                data=nn_data_from_raw,
+                                corrections=[],  # No corrections for raw data
+                            )
+                            nn_source = "raw_rr_fallback"
+                            warnings.append(f"Section '{section_name}' using raw RR intervals (no artifact correction)")
+
+                if not nn_source:
+                    warnings.append(f"Section '{section_name}' has no NN intervals - analysis may use raw data")
 
         # Calculate quality
         usable_beats = len(nn_intervals.data) if nn_intervals.data else validation.total_beat_count

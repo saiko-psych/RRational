@@ -4781,6 +4781,36 @@ def render_rr_plot_fragment(participant_id: str):
                             st.warning(f"Sections without NN intervals: {', '.join(missing_nn)}. "
                                       "Run artifact detection on these sections first.")
 
+                        # Extract raw RR data for sections without NN intervals
+                        raw_rr_fallback = {}
+                        if missing_nn:
+                            recording = st.session_state.get("recording") or st.session_state.get(f"recording_{participant_id}")
+                            if recording:
+                                # Get section validations for timestamps
+                                validations_export = load_section_validations(participant_id, data_dir, project_path)
+                                if validations_export and validations_export.get("sections"):
+                                    for sec_name in missing_nn:
+                                        sec_validation = validations_export["sections"].get(sec_name, {})
+                                        if sec_validation.get("is_valid"):
+                                            start_beat = sec_validation.get("start_event", {}).get("beat_idx", 0)
+                                            end_beat = sec_validation.get("end_event", {}).get("beat_idx", 0)
+                                            if end_beat > start_beat:
+                                                # Extract raw RR for this section
+                                                rr_list = recording.rr_values[start_beat:end_beat]
+                                                ts_list = recording.timestamps[start_beat:end_beat]
+                                                if rr_list and ts_list:
+                                                    # Calculate timestamps relative to section start
+                                                    section_start_ts = ts_list[0] if ts_list else None
+                                                    raw_rr_data = []
+                                                    for i, (ts, rr) in enumerate(zip(ts_list, rr_list)):
+                                                        if section_start_ts:
+                                                            ts_ms = int((ts - section_start_ts).total_seconds() * 1000)
+                                                        else:
+                                                            ts_ms = i * int(rr)  # Fallback: cumulative RR
+                                                        raw_rr_data.append([ts_ms, round(rr, 1)])
+                                                    if raw_rr_data:
+                                                        raw_rr_fallback[sec_name] = raw_rr_data
+
                         # Build v2.0 export
                         with st.spinner("Building export..."):
                             export, warnings = build_rrational_v2(
@@ -4788,6 +4818,7 @@ def render_rr_plot_fragment(participant_id: str):
                                 sections_to_export,
                                 data_dir=data_dir,
                                 project_path=project_path,
+                                raw_rr_fallback=raw_rr_fallback if raw_rr_fallback else None,
                             )
 
                         # Show warnings
