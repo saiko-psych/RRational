@@ -3450,13 +3450,13 @@ def render_participant_table_fragment():
 def show_toast(message, icon="success"):
     """Show a toast notification with auto-dismiss."""
     if icon == "success":
-        st.toast(f"{message}", icon="✅")
+        st.toast(f"{message}", icon=":material/check:")
     elif icon == "info":
-        st.toast(f"{message}", icon="ℹ️")
+        st.toast(f"{message}", icon=":material/info:")
     elif icon == "warning":
-        st.toast(f"{message}", icon="⚠️")
+        st.toast(f"{message}", icon=":material/warning:")
     elif icon == "error":
-        st.toast(f"{message}", icon="❌")
+        st.toast(f"{message}", icon=":material/error:")
     else:
         st.toast(message)
 
@@ -5246,7 +5246,7 @@ def render_rr_plot_fragment(participant_id: str):
                 # Run detection button with warning for saved corrections
                 if has_saved_corrections and not st.session_state.get(confirm_key, False):
                     # Show warning and require confirmation
-                    st.warning("⚠️ You have saved artifact corrections. Running new detection will **replace** them.")
+                    st.warning("You have saved artifact corrections. Running new detection will **replace** them.")
                     col_confirm, col_cancel = st.columns(2)
                     with col_confirm:
                         if st.button("Replace & Detect", key=f"confirm_detection_{participant_id}", type="primary"):
@@ -7059,11 +7059,11 @@ def render_rr_plot_fragment(participant_id: str):
                     if is_excluded:
                         # Re-include detected artifact (was excluded, now re-mark it)
                         artifact_exclusions.discard(original_idx)
-                        st.toast(f"✓ Re-enabled detected artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
+                        st.toast(f"Re-enabled detected artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
                     else:
                         # Exclude detected artifact (unmark it)
                         artifact_exclusions.add(original_idx)
-                        st.toast(f"✗ Excluded detected artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
+                        st.toast(f"Excluded detected artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
                     st.session_state[artifact_exclusions_key] = artifact_exclusions
                 elif existing_manual_entry:
                     # Remove from manual artifacts (toggle off)
@@ -8896,7 +8896,7 @@ def main():
                             st.write(" | ".join(corr_parts))
 
                             if has_saved:
-                                st.success("Saved ✓")
+                                st.success("Saved")
                             else:
                                 st.caption("Use **Save Artifact Corrections** in sidebar to save")
 

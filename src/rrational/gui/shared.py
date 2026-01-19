@@ -808,13 +808,13 @@ def update_normalizer():
 def show_toast(message, icon="success"):
     """Show a toast notification with auto-dismiss."""
     if icon == "success":
-        st.toast(f"{message}", icon="✅")
+        st.toast(f"{message}", icon=":material/check:")
     elif icon == "info":
-        st.toast(f"{message}", icon="ℹ️")
+        st.toast(f"{message}", icon=":material/info:")
     elif icon == "warning":
-        st.toast(f"{message}", icon="⚠️")
+        st.toast(f"{message}", icon=":material/warning:")
     elif icon == "error":
-        st.toast(f"{message}", icon="❌")
+        st.toast(f"{message}", icon=":material/error:")
     else:
         st.toast(message)
 

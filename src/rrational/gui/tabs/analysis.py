@@ -2140,15 +2140,15 @@ def _render_single_participant_analysis():
                                     artifact_rate = artifact_count / nn_count
 
                             # Determine data source status
-                            data_status = "✓ NN" if nn_count > 0 else "— (needs raw)"
+                            data_status = "NN" if nn_count > 0 else "(needs raw)"
 
                             section_info.append({
                                 "Section": sec_name,
                                 "Data": data_status,
-                                "Beats": nn_count if nn_count > 0 else "—",
-                                "Artifacts": artifact_count if nn_count > 0 else "—",
-                                "Artifact %": f"{artifact_rate * 100:.2f}%" if nn_count > 0 else "—",
-                                "Quality": quality.capitalize() if nn_count > 0 else "—",
+                                "Beats": nn_count if nn_count > 0 else "-",
+                                "Artifacts": artifact_count if nn_count > 0 else "-",
+                                "Artifact %": f"{artifact_rate * 100:.2f}%" if nn_count > 0 else "-",
+                                "Quality": quality.capitalize() if nn_count > 0 else "-",
                             })
 
                         if section_info:
@@ -2738,7 +2738,7 @@ def _render_single_participant_analysis():
 
                                     if window_hrv_results:
                                         hrv_results, hrv_std = aggregate_hrv_results(window_hrv_results)
-                                        st.write(f"    ✓ Aggregated results from {len(window_hrv_results)} valid windows")
+                                        st.write(f"    Aggregated results from {len(window_hrv_results)} valid windows")
 
                                         section_results[sec_name] = {
                                             "hrv_results": hrv_results,
@@ -2921,7 +2921,7 @@ def _render_single_participant_analysis():
 
                                 if window_hrv_results:
                                     hrv_results, hrv_std = aggregate_hrv_results(window_hrv_results)
-                                    st.write(f"  ✓ Aggregated results from {len(window_hrv_results)} valid windows")
+                                    st.write(f"  Aggregated results from {len(window_hrv_results)} valid windows")
                                     progress.progress(80)
 
                                     section_results = {
@@ -3242,7 +3242,7 @@ def _render_single_participant_analysis():
                                         if window_hrv_results:
                                             # Aggregate results across windows
                                             hrv_results, hrv_std = aggregate_hrv_results(window_hrv_results)
-                                            st.write(f"    ✓ Aggregated results from {len(window_hrv_results)} valid windows")
+                                            st.write(f"    Aggregated results from {len(window_hrv_results)} valid windows")
 
                                             section_results[section_name] = {
                                                 "hrv_results": hrv_results,
@@ -5006,20 +5006,20 @@ Using overlapping windows improves the reliability of HRV estimates by providing
                     remaining = estimated_total - elapsed
                     elapsed_str = _format_duration(elapsed)
                     remaining_str = _format_duration(remaining)
-                    time_info = f"⏱️ {elapsed_str} elapsed · ~{remaining_str} remaining"
+                    time_info = f"Elapsed: {elapsed_str} | Remaining: ~{remaining_str}"
                 elif current >= total:
                     elapsed_str = _format_duration(elapsed)
-                    time_info = f"✅ Completed in {elapsed_str}"
+                    time_info = f"Completed in {elapsed_str}"
                 else:
                     elapsed_str = _format_duration(elapsed)
-                    time_info = f"⏱️ {elapsed_str} elapsed · estimating..."
+                    time_info = f"Elapsed: {elapsed_str} | Estimating..."
 
                 # Update UI (throttled to avoid flicker)
                 if now - last_update_time[0] >= 0.1 or current >= total or current == 0:
                     last_update_time[0] = now
                     # Use progress bar text parameter for cleaner display
                     pct_display = int(progress_pct * 100)
-                    progress_bar.progress(progress_pct, text=f"{pct_display}% — {message}")
+                    progress_bar.progress(progress_pct, text=f"{pct_display}% - {message}")
                     status_container.caption(time_info)
             except Exception:
                 # Silently ignore UI update errors to prevent crashes
@@ -5031,8 +5031,8 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         # Final progress update
         elapsed_total = time.time() - start_time
         try:
-            progress_bar.progress(1.0, text="100% — Analysis complete!")
-            status_container.caption(f"✅ Completed in {_format_duration(elapsed_total)}")
+            progress_bar.progress(1.0, text="100% - Analysis complete!")
+            status_container.caption(f"Completed in {_format_duration(elapsed_total)}")
         except Exception:
             pass  # Ignore UI errors
 
