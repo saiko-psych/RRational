@@ -2229,7 +2229,7 @@ def _render_single_participant_analysis():
                                     window_beats = None
                                     step_beats = None
                                 else:
-                                    st.caption("**Default:** 150 beats with 75% overlap")
+                                    st.caption("**Default:** 300 beats with 75% overlap")
                                     col1, col2 = st.columns(2)
                                     with col1:
                                         window_beats = st.slider(
@@ -2245,8 +2245,8 @@ def _render_single_participant_analysis():
                                     overlap_percent = None
                             else:
                                 window_mode = "beats"
-                                window_beats = 150
-                                step_beats = 37
+                                window_beats = 300
+                                step_beats = 75
                                 window_duration_min = None
                                 overlap_percent = None
                     else:
@@ -2304,7 +2304,7 @@ def _render_single_participant_analysis():
                                     window_beats = None
                                     step_beats = None
                                 else:
-                                    st.caption("**Default:** 150 beats with 75% overlap")
+                                    st.caption("**Default:** 300 beats with 75% overlap")
                                     col1, col2 = st.columns(2)
                                     with col1:
                                         window_beats = st.slider(
@@ -2320,8 +2320,8 @@ def _render_single_participant_analysis():
                                     overlap_percent = None
                             else:
                                 window_mode = "beats"
-                                window_beats = 150
-                                step_beats = 37
+                                window_beats = 300
+                                step_beats = 75
                                 window_duration_min = None
                                 overlap_percent = None
                 except Exception as e:
@@ -2430,17 +2430,17 @@ def _render_single_participant_analysis():
                     window_beats = None
                     step_beats = None
                 else:
-                    st.caption("**Default:** 150 beats with 75% overlap (37-beat step)")
+                    st.caption("**Default:** 300 beats with 75% overlap (75-beat step)")
                     col1, col2 = st.columns(2)
                     with col1:
                         window_beats = st.slider(
                             "Window size (beats)",
                             min_value=100,
                             max_value=1000,
-                            value=150,
+                            value=300,
                             step=50,
                             key="overlap_window_beats",
-                            help="Number of beats in each analysis window"
+                            help="Number of beats in each analysis window. Use 300+ for frequency domain metrics."
                         )
                     with col2:
                         overlap_beats_percent = st.slider(
@@ -2461,8 +2461,8 @@ def _render_single_participant_analysis():
                     overlap_percent = None
             else:
                 window_mode = "beats"
-                window_beats = 150
-                step_beats = 37
+                window_beats = 300
+                step_beats = 75
                 window_duration_min = None
                 overlap_percent = None
 
@@ -3692,7 +3692,7 @@ def _load_nn_from_rrational_v2(
 def _calculate_hrv_metrics(
     nn_ms_list: list[float],
     use_windows: bool = True,
-    window_beats: int = 150,
+    window_beats: int = 300,
     overlap_pct: float = 75.0,
     selected_metrics: list[str] | None = None,
 ) -> tuple[dict, dict | None, int]:
@@ -4783,7 +4783,7 @@ Using overlapping windows improves the reliability of HRV estimates by providing
 - Standard deviation as a measure of within-participant variability
 - Reduced impact of transient artifacts
 
-**Recommended settings:** 150 beats/window, 75% overlap
+**Recommended settings:** 300 beats/window, 75% overlap (for frequency domain metrics)
         """)
 
     # Check prerequisites
@@ -4935,11 +4935,12 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         with col1:
             window_beats = st.number_input(
                 "Window size (beats)",
-                min_value=50,
-                max_value=500,
-                value=150,
-                step=10,
+                min_value=100,
+                max_value=1000,
+                value=300,
+                step=50,
                 key="group_analysis_window_beats",
+                help="Use 300+ beats for frequency domain metrics",
             )
         with col2:
             overlap_pct = st.slider(
@@ -4951,7 +4952,7 @@ Using overlapping windows improves the reliability of HRV estimates by providing
                 key="group_analysis_overlap",
             )
     else:
-        window_beats = 150
+        window_beats = 300
         overlap_pct = 75
 
     # -------------------------------------------------------------------------
