@@ -33,6 +33,12 @@ from rrational.gui.help_text import (
     ARTIFACT_CORRECTION_HELP,
     VNS_DATA_HELP,
 )
+from rrational.cleaning.quality import (
+    detect_quality_changepoints,
+    get_quality_badge,
+    detect_time_gaps,
+    detect_artifacts_fixpeaks,
+)
 
 # Helper function to normalize timestamps for safe comparison
 # Handles mixed timezone-aware and timezone-naive datetimes from old saved data
@@ -7234,23 +7240,8 @@ def render_rr_plot_fragment(participant_id: str):
                         st.toast(f"Added '{event_label}' at {clicked_time_str} - click 'Refresh Plot' or interact with plot to see marker")
 
 
-def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") -> dict:
-    """Detect quality changepoints in RR interval data using NeuroKit2.
-
-    Uses signal_changepoints() to find where signal properties change,
-    which can indicate measurement issues, electrode problems, etc.
-
-    Args:
-        rr_values: List of RR interval values in ms
-        change_type: Type of change to detect ("var", "mean", or "meanvar")
-
-    Returns:
-        dict with:
-            - changepoint_indices: list of indices where changes occur
-            - n_segments: number of segments detected
-            - segment_stats: list of dicts with stats per segment
-            - quality_score: 0-100 score (100 = no changepoints = stable)
-    """
+def _OLD_detect_quality_changepoints(rr_values: list[int], change_type: str = "var") -> dict:
+    """DEPRECATED: Use rrational.cleaning.quality.detect_quality_changepoints."""
     if not NEUROKIT_AVAILABLE or len(rr_values) < 10:
         return {
             "changepoint_indices": [],
@@ -7313,16 +7304,8 @@ def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") 
         }
 
 
-def get_quality_badge(quality_score: float, artifact_ratio: float) -> str:
-    """Return a quality badge emoji based on quality score and artifact ratio.
-
-    Args:
-        quality_score: 0-100 from changepoint detection
-        artifact_ratio: 0-1 ratio of removed artifacts
-
-    Returns:
-        Emoji badge: [OK] (good), (moderate), [X] (poor)
-    """
+def _OLD_get_quality_badge(quality_score: float, artifact_ratio: float) -> str:
+    """DEPRECATED: Use rrational.cleaning.quality.get_quality_badge."""
     # Combine changepoint quality and artifact ratio
     # Artifact ratio > 10% is concerning, > 20% is poor
     artifact_score = 100 - (artifact_ratio * 200)  # 10% artifacts = 80, 20% = 60
@@ -7338,25 +7321,8 @@ def get_quality_badge(quality_score: float, artifact_ratio: float) -> str:
         return "[X]"
 
 
-def detect_time_gaps(timestamps: list, rr_values: list = None, gap_threshold_s: float = 2.0) -> dict:
-    """Detect time gaps (missing data) between consecutive RR intervals.
-
-    HRV Logger Note: Timestamps are per-packet (~1s), not per-beat. Multiple RR
-    intervals can share the same timestamp. A real gap is when the timestamp
-    difference significantly exceeds what the RR intervals would predict.
-
-    Detection method:
-    - If RR values provided: gap = (timestamp_diff - expected_rr_sum) > threshold
-    - If no RR values: gap = timestamp_diff > threshold (fallback)
-
-    Args:
-        timestamps: List of datetime timestamps for each RR interval
-        rr_values: List of RR interval values in ms (optional, improves detection)
-        gap_threshold_s: Minimum unexplained gap duration to flag (default: 2s)
-
-    Returns:
-        dict with gap details and statistics
-    """
+def _OLD_detect_time_gaps(timestamps: list, rr_values: list = None, gap_threshold_s: float = 2.0) -> dict:
+    """DEPRECATED: Use rrational.cleaning.quality.detect_time_gaps."""
     import numpy as np
 
     if len(timestamps) < 2:
@@ -7418,24 +7384,8 @@ def detect_time_gaps(timestamps: list, rr_values: list = None, gap_threshold_s: 
         return {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0}
 
 
-def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -> dict:
-    """Detect and optionally correct artifacts using NeuroKit2's signal_fixpeaks.
-
-    Uses the Kubios algorithm to identify ectopic beats, missed beats,
-    extra beats, and long/short intervals.
-
-    Args:
-        rr_values: List of RR interval values in ms
-        sampling_rate: Sampling rate (1000 for ms intervals)
-
-    Returns:
-        dict with:
-            - artifacts: dict with counts by type (ectopic, missed, extra, longshort)
-            - total_artifacts: total number of artifacts
-            - artifact_ratio: ratio of artifacts to total beats
-            - corrected_rr: corrected RR values (if correction was successful)
-            - correction_applied: whether correction was applied
-    """
+def _OLD_detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -> dict:
+    """DEPRECATED: Use rrational.cleaning.quality.detect_artifacts_fixpeaks."""
     if not NEUROKIT_AVAILABLE or len(rr_values) < 10:
         return {
             "artifacts": {"ectopic": 0, "missed": 0, "extra": 0, "longshort": 0},

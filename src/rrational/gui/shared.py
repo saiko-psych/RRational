@@ -947,7 +947,20 @@ def extract_section_rr_intervals(recording, section_def, normalizer, saved_event
     return section_rr if section_rr else None
 
 
-def filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[list, dict]:
+# =============================================================================
+# Signal quality functions — canonical implementations in rrational.cleaning.quality
+# Re-exported here for backward compatibility.
+# =============================================================================
+from rrational.cleaning.quality import (  # noqa: E402, F811
+    detect_quality_changepoints,
+    get_quality_badge,
+    detect_time_gaps,
+    detect_artifacts_fixpeaks,
+    filter_exclusion_zones,
+)
+
+
+def _REMOVED_filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[list, dict]:
     """Filter RR intervals to exclude specified time zones.
 
     Args:
@@ -1039,8 +1052,8 @@ def filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[l
     }
 
 
-def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") -> dict:
-    """Detect quality changepoints in RR interval data using NeuroKit2."""
+def _OLD_detect_quality_changepoints(rr_values: list[int], change_type: str = "var") -> dict:
+    """DEPRECATED: Use rrational.cleaning.quality.detect_quality_changepoints."""
     if not NEUROKIT_AVAILABLE or len(rr_values) < 10:
         return {
             "changepoint_indices": [],
@@ -1099,7 +1112,7 @@ def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") 
         }
 
 
-def get_quality_badge(quality_score: float, artifact_ratio: float) -> str:
+def _OLD_get_quality_badge(quality_score: float, artifact_ratio: float) -> str:
     """Return a quality badge emoji based on quality score and artifact ratio."""
     artifact_score = 100 - (artifact_ratio * 200)
     artifact_score = max(0, min(100, artifact_score))
@@ -1114,7 +1127,7 @@ def get_quality_badge(quality_score: float, artifact_ratio: float) -> str:
         return "[X]"
 
 
-def detect_time_gaps(timestamps: list, rr_values: list = None, gap_threshold_s: float = 2.0) -> dict:
+def _OLD_detect_time_gaps(timestamps: list, rr_values: list = None, gap_threshold_s: float = 2.0) -> dict:
     """Detect time gaps (missing data) between consecutive RR intervals."""
     import numpy as np
 
@@ -1169,7 +1182,7 @@ def detect_time_gaps(timestamps: list, rr_values: list = None, gap_threshold_s: 
         return {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0}
 
 
-def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -> dict:
+def _OLD_detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -> dict:
     """Detect and optionally correct artifacts using NeuroKit2's signal_fixpeaks."""
     if not NEUROKIT_AVAILABLE or len(rr_values) < 10:
         return {

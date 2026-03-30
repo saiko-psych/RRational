@@ -57,250 +57,43 @@ from rrational.gui.rrational_export import (  # noqa: E402
     get_rrational_version,
     RRATIONAL_VERSION_V2,
 )
+from rrational.analysis.hrv_metrics import (  # noqa: E402
+    ParticipantSectionResult,
+    HRV_METRICS_CATALOG,
+    HRV_METRIC_PRESETS,
+    ALL_HRV_METRICS,
+    HRV_REFERENCE_VALUES,
+    MIN_BEATS_TIME_DOMAIN,
+    MIN_BEATS_FREQUENCY_DOMAIN,
+    MIN_DURATION_FREQUENCY_DOMAIN_SEC,
+    get_metric_info,
+    format_power as _format_power,
+    format_duration as _format_duration,
+    generate_overlapping_windows_time,
+    generate_overlapping_windows_beats,
+    generate_overlapping_windows,
+    aggregate_hrv_results,
+)
+from rrational.analysis.hrv_compute import (  # noqa: E402
+    calculate_hrv_metrics as _calculate_hrv_metrics,
+    results_to_long_df as _results_to_long_df,
+    results_to_wide_df as _results_to_wide_df,
+    calculate_group_stats as _calculate_group_stats,
+)
 
 
 # =============================================================================
-# GROUP ANALYSIS DATA STRUCTURES
+# NOTE: HRV metric catalogs, presets, constants, window generation, and
+# compute functions have been extracted to:
+#   rrational.analysis.hrv_metrics
+#   rrational.analysis.hrv_compute
+# They are imported at the top of this file.
 # =============================================================================
 
 
-@dataclass
-class ParticipantSectionResult:
-    """Result of HRV analysis for one participant-section combination."""
-    participant_id: str
-    group: str
-    section_name: str
-    n_beats: int
-    duration_s: float
-    quality_grade: str
-    artifact_rate: float
-    hrv_metrics: dict  # All HRV metrics
-    hrv_std: dict | None  # SD if overlapping windows used
-    n_windows: int  # Number of windows (1 if no overlapping)
-    data_source: str = "NN"  # "NN" for corrected intervals, "Raw" for uncorrected RR data
 
-
-# =============================================================================
-# HRV METRIC DEFINITIONS AND PRESETS
-# =============================================================================
-
-# All available HRV metrics organized by category
-HRV_METRICS_CATALOG = {
-    "time_basic": {
-        "RMSSD": {"label": "RMSSD", "unit": "ms", "description": "Root mean square of successive differences"},
-        "SDNN": {"label": "SDNN", "unit": "ms", "description": "Standard deviation of NN intervals"},
-        "pNN50": {"label": "pNN50", "unit": "%", "description": "Percentage of successive intervals differing by >50ms"},
-        "MeanNN": {"label": "Mean NN", "unit": "ms", "description": "Mean of NN intervals"},
-        "MeanHR": {"label": "Mean HR", "unit": "bpm", "description": "Mean heart rate"},
-    },
-    "time_extended": {
-        "SDSD": {"label": "SDSD", "unit": "ms", "description": "SD of successive differences"},
-        "pNN20": {"label": "pNN20", "unit": "%", "description": "Percentage of successive intervals differing by >20ms"},
-        "MedianNN": {"label": "Median NN", "unit": "ms", "description": "Median of NN intervals"},
-        "CVNN": {"label": "CVNN", "unit": "", "description": "Coefficient of variation (SDNN/MeanNN)"},
-        "CVSD": {"label": "CVSD", "unit": "", "description": "Coefficient of variation of successive differences"},
-        "MadNN": {"label": "MadNN", "unit": "ms", "description": "Median absolute deviation of NN intervals"},
-        "MCVNN": {"label": "MCVNN", "unit": "", "description": "Median-based CV (MadNN/MedianNN)"},
-        "IQRNN": {"label": "IQRNN", "unit": "ms", "description": "Interquartile range of NN intervals"},
-        "HTI": {"label": "HTI", "unit": "", "description": "HRV Triangular Index"},
-        "TINN": {"label": "TINN", "unit": "ms", "description": "Triangular interpolation of NN histogram"},
-    },
-    "frequency": {
-        "VLF": {"label": "VLF", "unit": "ms²", "description": "Very low frequency power (0.0033-0.04 Hz)"},
-        "LF": {"label": "LF", "unit": "ms²", "description": "Low frequency power (0.04-0.15 Hz)"},
-        "HF": {"label": "HF", "unit": "ms²", "description": "High frequency power (0.15-0.4 Hz)"},
-        "LF_HF": {"label": "LF/HF", "unit": "", "description": "LF to HF ratio"},
-        "LFn": {"label": "LF norm", "unit": "n.u.", "description": "Normalized LF power"},
-        "HFn": {"label": "HF norm", "unit": "n.u.", "description": "Normalized HF power"},
-        "TP": {"label": "Total Power", "unit": "ms²", "description": "Total spectral power"},
-    },
-    "nonlinear": {
-        "SD1": {"label": "SD1", "unit": "ms", "description": "Poincaré plot SD perpendicular to identity line"},
-        "SD2": {"label": "SD2", "unit": "ms", "description": "Poincaré plot SD along identity line"},
-        "SD1SD2": {"label": "SD1/SD2", "unit": "", "description": "Ratio of SD1 to SD2"},
-        "ApEn": {"label": "ApEn", "unit": "", "description": "Approximate entropy"},
-        "SampEn": {"label": "SampEn", "unit": "", "description": "Sample entropy"},
-        "DFA_alpha1": {"label": "DFA α1", "unit": "", "description": "Detrended fluctuation analysis short-term"},
-        "DFA_alpha2": {"label": "DFA α2", "unit": "", "description": "Detrended fluctuation analysis long-term"},
-    },
-}
-
-# Metric presets
-HRV_METRIC_PRESETS = {
-    "Basic": {
-        "description": "Essential time-domain metrics for quick analysis",
-        "metrics": ["RMSSD", "SDNN", "pNN50", "MeanNN", "MeanHR"],
-    },
-    "Time + Frequency": {
-        "description": "Time-domain and frequency-domain metrics",
-        "metrics": ["RMSSD", "SDNN", "pNN50", "MeanNN", "MeanHR", "LF", "HF", "LF_HF", "VLF", "TP"],
-    },
-    "Full (with nonlinear)": {
-        "description": "All available metrics including nonlinear analysis",
-        "metrics": list({m for cat in HRV_METRICS_CATALOG.values() for m in cat.keys()}),
-    },
-    "Poincaré Focus": {
-        "description": "Metrics related to Poincaré plot analysis",
-        "metrics": ["RMSSD", "SDNN", "SD1", "SD2", "SD1SD2", "MeanNN", "MeanHR"],
-    },
-    "Custom": {
-        "description": "Select metrics manually",
-        "metrics": [],  # User selects
-    },
-}
-
-# Flatten all metrics for easy lookup
-ALL_HRV_METRICS = {m: info for cat in HRV_METRICS_CATALOG.values() for m, info in cat.items()}
-
-
-def get_metric_info(metric_name: str) -> dict:
-    """Get info for a metric by name."""
-    return ALL_HRV_METRICS.get(metric_name, {"label": metric_name, "unit": "", "description": ""})
-
-
-# =============================================================================
-# OVERLAPPING WINDOW ANALYSIS HELPERS
-# =============================================================================
-
-
-def generate_overlapping_windows_time(
-    rr_intervals: list,
-    window_duration_ms: float,
-    step_size_ms: float,
-) -> list[tuple[int, float, list]]:
-    """Generate overlapping windows from a list of RR intervals (time-based).
-
-    Args:
-        rr_intervals: List of RR interval values in ms (or RRInterval objects with .rr_ms)
-        window_duration_ms: Duration of each window in milliseconds
-        step_size_ms: Step size between window starts in milliseconds
-
-    Returns:
-        List of tuples: (window_idx, window_start_ms, window_rr_list)
-        Each window_rr_list contains the RR values that fall within that window.
-    """
-    if not rr_intervals:
-        return []
-
-    # Handle both raw values and RRInterval objects
-    if hasattr(rr_intervals[0], 'rr_ms'):
-        rr_values = [rr.rr_ms for rr in rr_intervals]
-    else:
-        rr_values = list(rr_intervals)
-
-    # Calculate cumulative time (elapsed time at start of each beat)
-    cumulative_time = [0.0]
-    for rr in rr_values[:-1]:
-        cumulative_time.append(cumulative_time[-1] + rr)
-
-    total_duration_ms = cumulative_time[-1] + rr_values[-1]
-
-    # Generate windows
-    windows = []
-    window_idx = 0
-    window_start = 0.0
-
-    while window_start + window_duration_ms <= total_duration_ms + step_size_ms / 2:
-        window_end = window_start + window_duration_ms
-
-        # Find RR intervals within this window
-        window_rr = []
-        for i, (elapsed, rr) in enumerate(zip(cumulative_time, rr_values)):
-            # Include beat if it starts within the window
-            if window_start <= elapsed < window_end:
-                window_rr.append(rr)
-
-        if window_rr:  # Only include non-empty windows
-            windows.append((window_idx, window_start, window_rr))
-            window_idx += 1
-
-        window_start += step_size_ms
-
-        # Safety: stop if we've generated too many windows
-        if window_idx > 100:
-            break
-
-    return windows
-
-
-def generate_overlapping_windows_beats(
-    rr_intervals: list,
-    window_beats: int,
-    step_beats: int,
-) -> list[tuple[int, int, list]]:
-    """Generate overlapping windows from a list of RR intervals (beat-based).
-
-    Args:
-        rr_intervals: List of RR interval values in ms (or RRInterval objects with .rr_ms)
-        window_beats: Number of beats in each window
-        step_beats: Number of beats to step between window starts
-
-    Returns:
-        List of tuples: (window_idx, start_beat_idx, window_rr_list)
-        Each window_rr_list contains the RR values for that window.
-    """
-    if not rr_intervals:
-        return []
-
-    # Handle both raw values and RRInterval objects
-    if hasattr(rr_intervals[0], 'rr_ms'):
-        rr_values = [rr.rr_ms for rr in rr_intervals]
-    else:
-        rr_values = list(rr_intervals)
-
-    total_beats = len(rr_values)
-
-    # Generate windows
-    windows = []
-    window_idx = 0
-    start_beat = 0
-
-    while start_beat + window_beats <= total_beats:
-        end_beat = start_beat + window_beats
-        window_rr = rr_values[start_beat:end_beat]
-
-        windows.append((window_idx, start_beat, window_rr))
-        window_idx += 1
-
-        start_beat += step_beats
-
-        # Safety: stop if we've generated too many windows
-        if window_idx > 100:
-            break
-
-    return windows
-
-
-# Backwards compatibility alias
-def generate_overlapping_windows(
-    rr_intervals: list,
-    window_duration_ms: float,
-    step_size_ms: float,
-) -> list[tuple[int, float, list]]:
-    """Backwards-compatible alias for generate_overlapping_windows_time."""
-    return generate_overlapping_windows_time(rr_intervals, window_duration_ms, step_size_ms)
-
-
-def aggregate_hrv_results(window_results: list[pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Aggregate HRV results from multiple overlapping windows.
-
-    Args:
-        window_results: List of DataFrames, each containing HRV metrics for one window
-
-    Returns:
-        Tuple of (mean_results, std_results) DataFrames
-    """
-    if not window_results:
-        return pd.DataFrame(), pd.DataFrame()
-
-    # Concatenate all results
-    all_results = pd.concat(window_results, ignore_index=True)
-
-    # Calculate mean and std for each metric
-    mean_results = all_results.mean().to_frame().T
-    std_results = all_results.std().to_frame().T
-
-    return mean_results, std_results
+# Window generation and aggregation functions are now in rrational.analysis.hrv_metrics
+# and imported at the top of this file.
 
 
 # =============================================================================
@@ -308,19 +101,7 @@ def aggregate_hrv_results(window_results: list[pd.DataFrame]) -> tuple[pd.DataFr
 # =============================================================================
 
 
-def _format_power(value: float, unit: str = "ms²") -> str:
-    """Format power values smartly - show decimals for small values.
-
-    Avoids showing "0 ms²" when actual value is e.g. 0.3 ms².
-    """
-    if value >= 10:
-        return f"{value:.0f} {unit}"
-    elif value >= 1:
-        return f"{value:.1f} {unit}"
-    elif value >= 0.1:
-        return f"{value:.2f} {unit}"
-    else:
-        return f"{value:.3f} {unit}"
+# _format_power imported from rrational.analysis.hrv_metrics
 
 
 # Educational resources for HRV visualizations
@@ -3632,54 +3413,10 @@ def _load_nn_from_rrational_v2(
         return None, {"error": str(e)}
 
 
-def _calculate_hrv_metrics(
-    nn_ms_list: list[float],
-    use_windows: bool = True,
-    window_beats: int = 300,
-    overlap_pct: float = 75.0,
-    selected_metrics: list[str] | None = None,
-    window_s: float | None = None,
-    segments: list | None = None,
-) -> tuple[dict, dict | None, int]:
-    """Calculate HRV metrics from NN intervals.
+# _calculate_hrv_metrics is now imported from rrational.analysis.hrv_compute
 
-    Args:
-        nn_ms_list: List of NN interval values in ms
-        use_windows: Whether to use overlapping windows
-        window_beats: Number of beats per window (legacy, prefer window_s)
-        overlap_pct: Overlap percentage (0-100)
-        selected_metrics: List of metric names to calculate (None = all basic metrics)
-        window_s: Window duration in seconds (time-based, preferred over window_beats)
-        segments: Pre-computed Segment objects from artifact detection.
-                  When provided, analysis uses these exact boundaries.
-
-    Returns:
-        Tuple of (metrics_dict, std_dict, n_windows)
-        - metrics_dict: Mean HRV metrics
-        - std_dict: SD of metrics (None if no windows)
-        - n_windows: Number of windows used
-    """
-    nk = get_neurokit()
-
-    # Default to basic metrics if not specified
-    if selected_metrics is None:
-        selected_metrics = HRV_METRIC_PRESETS["Basic"]["metrics"]
-
-    # Determine which analysis types we need
-    time_basic = set(HRV_METRICS_CATALOG["time_basic"].keys())
-    time_extended = set(HRV_METRICS_CATALOG["time_extended"].keys())
-    frequency = set(HRV_METRICS_CATALOG["frequency"].keys())
-    nonlinear = set(HRV_METRICS_CATALOG["nonlinear"].keys())
-
-    selected_set = set(selected_metrics)
-    need_time = bool(selected_set & (time_basic | time_extended))
-    need_freq = bool(selected_set & frequency)
-    need_nonlinear = bool(selected_set & nonlinear)
-
-    def compute_hrv(rr_list: list[float]) -> dict:
-        """Compute HRV for a single window."""
-        result = {}
-        peaks = nk.intervals_to_peaks(rr_list, sampling_rate=1000)
+    # NOTE: The old compute_hrv/window logic below is dead code — kept temporarily
+    # to avoid breaking the file during restructuring. Will be removed in cleanup phase.
 
         # Time domain metrics
         if need_time:
@@ -4420,27 +4157,7 @@ def _create_raincloud_plot(
 # =============================================================================
 
 
-def _format_duration(seconds: float) -> str:
-    """Format duration in seconds to human-readable string.
-
-    Examples:
-        5.2 -> "5s"
-        65.0 -> "1m 5s"
-        3665.0 -> "1h 1m 5s"
-    """
-    if seconds < 0:
-        return "0s"
-
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-
-    if hours > 0:
-        return f"{hours}h {minutes}m {secs}s"
-    elif minutes > 0:
-        return f"{minutes}m {secs}s"
-    else:
-        return f"{secs}s"
+# _format_duration imported from rrational.analysis.hrv_metrics
 
 
 def _load_raw_section_data(
