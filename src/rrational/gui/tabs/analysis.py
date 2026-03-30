@@ -80,6 +80,20 @@ from rrational.analysis.hrv_compute import (  # noqa: E402
     results_to_wide_df as _results_to_wide_df,
     calculate_group_stats as _calculate_group_stats,
 )
+from rrational.gui.plots.analysis_plots import (  # noqa: E402
+    PLOT_COLORS,
+    get_theme_colors,
+    create_professional_tachogram,
+    create_poincare_plot,
+    create_frequency_domain_plot,
+    create_hr_distribution_plot,
+)
+from rrational.gui.plots.group_plots import (  # noqa: E402
+    _create_group_bar_chart,
+    _create_box_violin_plot,
+    _create_sd1_sd2_scatter,
+    _create_raincloud_plot,
+)
 
 
 # =============================================================================

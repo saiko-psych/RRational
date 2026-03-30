@@ -1,0 +1,451 @@
+"""Group analysis visualization functions.
+
+Returns Plotly figures — no Streamlit dependency.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+_go = None
+
+
+def get_plotly_analysis():
+    """Lazily import plotly."""
+    global _go
+    if _go is None:
+        import plotly.graph_objects as go
+        _go = go
+    return _go, None
+
+
+def _create_group_bar_chart(
+    stats_df: pd.DataFrame,
+    metric: str,
+    sections: list[str] | None = None,
+):
+    """Create a grouped bar chart for HRV metrics.
+
+    Args:
+        stats_df: DataFrame from _calculate_group_stats
+        metric: Metric to plot (e.g., "RMSSD", "SDNN")
+        sections: Optional list of sections to include
+
+    Returns:
+        Plotly Figure object
+    """
+    go, _ = get_plotly_analysis()
+    if go is None:
+        return None
+
+    # Filter to specific metric
+    df = stats_df[stats_df["metric"] == metric.upper()].copy()
+    if df.empty:
+        return None
+
+    # Filter sections if specified
+    if sections:
+        df = df[df["section"].isin(sections)]
+
+    # Get unique groups and sections
+    groups = df["group"].unique().tolist()
+    section_list = df["section"].unique().tolist()
+
+    # Colors for sections
+    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745"]
+
+    fig = go.Figure()
+
+    for i, section in enumerate(section_list):
+        section_df = df[df["section"] == section]
+
+        # Align with groups (may have missing data)
+        means = []
+        sds = []
+        for group in groups:
+            group_row = section_df[section_df["group"] == group]
+            if not group_row.empty:
+                means.append(group_row["mean"].values[0])
+                sds.append(group_row["sd"].values[0])
+            else:
+                means.append(None)
+                sds.append(None)
+
+        fig.add_trace(
+            go.Bar(
+                name=section,
+                x=groups,
+                y=means,
+                error_y=dict(type="data", array=sds, visible=True),
+                marker_color=colors[i % len(colors)],
+            )
+        )
+
+    # Get theme colors
+    theme = get_theme_colors()
+
+    fig.update_layout(
+        title=dict(
+            text=f"{metric.upper()} by Group and Section",
+            font=dict(size=16),
+        ),
+        xaxis_title="Group",
+        yaxis_title=f"{metric.upper()} (ms)" if metric.upper() not in ["LF_HF", "PNN50"] else metric.upper(),
+        barmode="group",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        plot_bgcolor=theme["bg"],
+        paper_bgcolor=theme["bg"],
+        font=dict(color=theme["text"]),
+        margin=dict(l=60, r=20, t=80, b=60),
+    )
+
+    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+
+    return fig
+
+
+def _create_box_violin_plot(
+    long_df: pd.DataFrame,
+    metric: str,
+    plot_type: str = "box",
+    group_by: str = "group",
+    color_by: str = "section",
+):
+    """Create a box plot or violin plot for HRV metrics.
+
+    Args:
+        long_df: Long-format DataFrame from _results_to_long_df
+        metric: Metric column name (lowercase)
+        plot_type: "box" or "violin"
+        group_by: Column to use for x-axis grouping
+        color_by: Column to use for color grouping
+
+    Returns:
+        Plotly Figure object
+    """
+    go, _ = get_plotly_analysis()
+    if go is None:
+        return None
+
+    metric_lower = metric.lower()
+    if metric_lower not in long_df.columns:
+        return None
+
+    # Filter out NaN values
+    df = long_df[long_df[metric_lower].notna()].copy()
+    if df.empty:
+        return None
+
+    theme = get_theme_colors()
+    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745", "#17A2B8", "#FFC107"]
+
+    fig = go.Figure()
+
+    color_categories = df[color_by].unique().tolist()
+
+    for i, color_cat in enumerate(color_categories):
+        subset = df[df[color_by] == color_cat]
+
+        if plot_type == "violin":
+            fig.add_trace(
+                go.Violin(
+                    x=subset[group_by],
+                    y=subset[metric_lower],
+                    name=str(color_cat),
+                    legendgroup=str(color_cat),
+                    scalegroup=str(color_cat),
+                    line_color=colors[i % len(colors)],
+                    fillcolor=colors[i % len(colors)],
+                    opacity=0.6,
+                    box_visible=True,
+                    meanline_visible=True,
+                    points="all",
+                    pointpos=0,
+                    jitter=0.05,
+                )
+            )
+        else:  # box plot
+            fig.add_trace(
+                go.Box(
+                    x=subset[group_by],
+                    y=subset[metric_lower],
+                    name=str(color_cat),
+                    legendgroup=str(color_cat),
+                    marker_color=colors[i % len(colors)],
+                    line_color=colors[i % len(colors)],
+                    boxpoints="all",
+                    jitter=0.3,
+                    pointpos=-1.8,
+                )
+            )
+
+    # Get metric info for labels
+    metric_info = get_metric_info(metric.upper())
+    unit_str = f" ({metric_info['unit']})" if metric_info.get("unit") else ""
+
+    fig.update_layout(
+        title=dict(
+            text=f"{metric.upper()} Distribution by {group_by.title()}",
+            font=dict(size=16),
+        ),
+        xaxis_title=group_by.title(),
+        yaxis_title=f"{metric.upper()}{unit_str}",
+        boxmode="group" if plot_type == "box" else None,
+        violinmode="group" if plot_type == "violin" else None,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        plot_bgcolor=theme["bg"],
+        paper_bgcolor=theme["bg"],
+        font=dict(color=theme["text"]),
+        margin=dict(l=60, r=20, t=80, b=60),
+    )
+
+    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+
+    return fig
+
+
+def _create_sd1_sd2_scatter(
+    long_df: pd.DataFrame,
+    color_by: str = "group",
+):
+    """Create SD1 vs SD2 scatter plot (Poincaré-derived measures).
+
+    Args:
+        long_df: Long-format DataFrame from _results_to_long_df
+        color_by: Column to use for color grouping ("group" or "section")
+
+    Returns:
+        Plotly Figure object
+    """
+    go, _ = get_plotly_analysis()
+    if go is None:
+        return None
+
+    # Check if SD1 and SD2 are available
+    if "sd1" not in long_df.columns or "sd2" not in long_df.columns:
+        return None
+
+    # Filter out NaN values
+    df = long_df[long_df["sd1"].notna() & long_df["sd2"].notna()].copy()
+    if df.empty:
+        return None
+
+    theme = get_theme_colors()
+    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745", "#17A2B8", "#FFC107"]
+
+    fig = go.Figure()
+
+    categories = df[color_by].unique().tolist()
+
+    for i, cat in enumerate(categories):
+        subset = df[df[color_by] == cat]
+
+        fig.add_trace(
+            go.Scatter(
+                x=subset["sd2"],
+                y=subset["sd1"],
+                mode="markers",
+                name=str(cat),
+                marker=dict(
+                    size=10,
+                    color=colors[i % len(colors)],
+                    opacity=0.7,
+                    line=dict(width=1, color="white"),
+                ),
+                text=subset["participant_id"],
+                hovertemplate=(
+                    "<b>%{text}</b><br>"
+                    "SD1: %{y:.2f} ms<br>"
+                    "SD2: %{x:.2f} ms<br>"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+    # Add reference line (SD1 = SD2 means circular Poincaré)
+    max_val = max(df["sd1"].max(), df["sd2"].max()) * 1.1
+    fig.add_trace(
+        go.Scatter(
+            x=[0, max_val],
+            y=[0, max_val],
+            mode="lines",
+            name="SD1 = SD2",
+            line=dict(color="gray", dash="dash", width=1),
+            showlegend=True,
+        )
+    )
+
+    fig.update_layout(
+        title=dict(
+            text="Poincaré Plot Measures: SD1 vs SD2",
+            font=dict(size=16),
+        ),
+        xaxis_title="SD2 (ms) - Long-term variability",
+        yaxis_title="SD1 (ms) - Short-term variability",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        plot_bgcolor=theme["bg"],
+        paper_bgcolor=theme["bg"],
+        font=dict(color=theme["text"]),
+        margin=dict(l=60, r=20, t=80, b=60),
+    )
+
+    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"], scaleanchor="x")
+
+    return fig
+
+
+def _create_raincloud_plot(
+    long_df: pd.DataFrame,
+    metric: str,
+    group_by: str = "group",
+    color_by: str = "section",
+):
+    """Create a raincloud plot (half-violin + box + strip).
+
+    Raincloud plots combine:
+    - Half-violin showing distribution
+    - Box plot showing quartiles
+    - Individual points (strip/jitter)
+
+    Args:
+        long_df: Long-format DataFrame from _results_to_long_df
+        metric: Metric column name (lowercase)
+        group_by: Column for x-axis grouping
+        color_by: Column for color grouping
+
+    Returns:
+        Plotly Figure object
+    """
+    go, _ = get_plotly_analysis()
+    if go is None:
+        return None
+
+    metric_lower = metric.lower()
+    if metric_lower not in long_df.columns:
+        return None
+
+    # Filter out NaN values
+    df = long_df[long_df[metric_lower].notna()].copy()
+    if df.empty:
+        return None
+
+    theme = get_theme_colors()
+    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745", "#17A2B8", "#FFC107"]
+
+    fig = go.Figure()
+
+    color_categories = df[color_by].unique().tolist()
+
+    for i, color_cat in enumerate(color_categories):
+        subset = df[df[color_by] == color_cat]
+        color = colors[i % len(colors)]
+
+        # Half violin (positive side only)
+        fig.add_trace(
+            go.Violin(
+                x=subset[group_by],
+                y=subset[metric_lower],
+                name=str(color_cat),
+                legendgroup=str(color_cat),
+                side="positive",
+                line_color=color,
+                fillcolor=color,
+                opacity=0.5,
+                meanline_visible=False,
+                points=False,
+                width=0.8,
+            )
+        )
+
+        # Box plot (narrow, on left side)
+        fig.add_trace(
+            go.Box(
+                x=subset[group_by],
+                y=subset[metric_lower],
+                name=str(color_cat),
+                legendgroup=str(color_cat),
+                marker_color=color,
+                line_color=color,
+                boxpoints=False,
+                width=0.15,
+                showlegend=False,
+            )
+        )
+
+        # Individual points (strip with jitter)
+        fig.add_trace(
+            go.Scatter(
+                x=[f"{g}" for g in subset[group_by]],
+                y=subset[metric_lower],
+                mode="markers",
+                name=str(color_cat),
+                legendgroup=str(color_cat),
+                marker=dict(
+                    size=5,
+                    color=color,
+                    opacity=0.6,
+                ),
+                showlegend=False,
+                # Add jitter
+                hovertemplate=(
+                    f"<b>{color_cat}</b><br>"
+                    f"{metric.upper()}: %{{y:.2f}}<br>"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+    # Get metric info for labels
+    metric_info = get_metric_info(metric.upper())
+    unit_str = f" ({metric_info['unit']})" if metric_info.get("unit") else ""
+
+    fig.update_layout(
+        title=dict(
+            text=f"{metric.upper()} Raincloud Plot by {group_by.title()}",
+            font=dict(size=16),
+        ),
+        xaxis_title=group_by.title(),
+        yaxis_title=f"{metric.upper()}{unit_str}",
+        violinmode="group",
+        boxmode="group",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        plot_bgcolor=theme["bg"],
+        paper_bgcolor=theme["bg"],
+        font=dict(color=theme["text"]),
+        margin=dict(l=60, r=20, t=80, b=60),
+    )
+
+    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+
+    return fig
+
+
