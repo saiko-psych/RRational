@@ -2255,7 +2255,8 @@ def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
 
 @st.cache_data(show_spinner=False, ttl=300)
 def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "threshold",
-                               threshold_pct: float = 0.20, segment_beats: int = 300):
+                               threshold_pct: float = 0.20, segment_beats: int = 300,
+                               window_s: float | None = None):
     """Cache artifact detection results with indices AND corrected RR from NeuroKit2.
 
     Args:
@@ -2264,14 +2265,12 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
         method: Detection method - "threshold" (simple), "kubios"/"lipponen2019" (single pass),
                 or "kubios_segmented"/"lipponen2019_segmented" (segmented for long recordings)
         threshold_pct: For threshold method - max allowed change between beats (0.20 = 20%)
-        segment_beats: For segmented methods - number of beats per segment (default: 300 = ~5 min)
+        segment_beats: DEPRECATED - use window_s instead. Kept for backward compatibility.
+        window_s: For segmented methods - window duration in seconds (default: 300 = 5 min).
+                  If None, falls back to segment_beats converted to approximate time.
 
     Returns dict with artifact indices mapped to timestamps for plotting.
-    Note: "lipponen2019" uses NeuroKit2's Kubios method which implements
-          Lipponen & Tarvainen (2019) artifact detection algorithm.
-
-    The corrected_rr field contains RR intervals corrected by NeuroKit2's signal_fixpeaks
-    (Kubios algorithm), NOT custom interpolation.
+    Includes 'segments' key with Segment objects for use by analysis.
     """
     rr_list = list(rr_values_tuple)
     timestamps_list = list(timestamps_tuple)
@@ -2329,9 +2328,16 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                         "method": method, "segment_stats": [], "corrected_rr": rr_list,
                         "corrected_timestamps": timestamps_list, "original_rr": rr_list}
 
+            from rrational.gui.segmentation import generate_segments, assess_segment_quality
+
             nk = get_neurokit()
             rr_array = np.array(rr_list, dtype=float)
-            n_beats = len(rr_array)
+
+            # Determine window size: prefer window_s, fall back to segment_beats estimate
+            effective_window_s = window_s if window_s is not None else segment_beats * 0.8
+
+            # Generate time-based segments (no overlap for artifact detection)
+            time_segments = generate_segments(rr_array, window_s=effective_window_s, overlap_pct=0.0)
 
             # Initialize combined results
             artifact_indices_set = set()
@@ -2339,17 +2345,11 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             indices_by_type = {"ectopic": set(), "missed": set(), "extra": set(), "longshort": set()}
             segment_stats = []  # Track per-segment artifact percentages
 
-            # Process in overlapping segments for continuity
-            overlap = min(30, segment_beats // 10)  # 10% overlap or 30 beats
-            start_idx = 0
-            segment_num = 0
-
-            while start_idx < n_beats:
-                end_idx = min(start_idx + segment_beats, n_beats)
-                segment_rr = rr_array[start_idx:end_idx]
+            for seg in time_segments:
+                segment_rr = rr_array[seg.beat_start:seg.beat_end]
 
                 if len(segment_rr) < 10:
-                    break
+                    continue
 
                 # Create peak indices for this segment
                 peak_indices = np.cumsum(segment_rr).astype(int)
@@ -2357,11 +2357,10 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
 
                 segment_artifacts = 0
                 try:
-                    # Use iterative=False for comprehensive artifact detection
                     info, _ = nk.signal_fixpeaks(
                         peak_indices,
                         sampling_rate=1000,
-                        iterative=False,  # Find ALL artifacts in segment
+                        iterative=False,
                         method="Kubios",
                         show=False,
                     )
@@ -2375,8 +2374,7 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                         elif not isinstance(indices, list):
                             indices = []
 
-                        # Adjust indices to global position
-                        global_indices = [i + start_idx for i in indices if 0 <= i < len(segment_rr)]
+                        global_indices = [i + seg.beat_start for i in indices if 0 <= i < len(segment_rr)]
                         by_type[artifact_type] += len(global_indices)
                         indices_by_type[artifact_type].update(global_indices)
                         artifact_indices_set.update(global_indices)
@@ -2385,22 +2383,27 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                     segment_artifacts = len(segment_artifact_indices)
 
                 except Exception:
-                    pass  # Skip failed segments
+                    pass
 
-                # Record segment statistics
-                segment_num += 1
-                segment_pct = (segment_artifacts / len(segment_rr) * 100) if len(segment_rr) > 0 else 0.0
+                # Update segment with artifact info
+                seg.artifact_count = segment_artifacts
+                seg.artifact_pct = round(segment_artifacts / seg.n_beats * 100, 2) if seg.n_beats > 0 else 0.0
+                seg.quality_grade = assess_segment_quality(seg)
+                seg.included = seg.quality_grade != "exclude"
+
+                # Backward-compatible segment stats
                 segment_stats.append({
-                    "segment": segment_num,
-                    "start_beat": start_idx,
-                    "end_beat": end_idx,
-                    "n_beats": len(segment_rr),
+                    "segment": seg.idx + 1,
+                    "start_beat": seg.beat_start,
+                    "end_beat": seg.beat_end,
+                    "n_beats": seg.n_beats,
                     "n_artifacts": segment_artifacts,
-                    "artifact_pct": round(segment_pct, 2),
+                    "artifact_pct": seg.artifact_pct,
+                    "start_ms": seg.start_ms,
+                    "end_ms": seg.end_ms,
+                    "duration_s": seg.duration_s,
+                    "quality_grade": seg.quality_grade,
                 })
-
-                # Move to next segment (with overlap)
-                start_idx = end_idx - overlap if end_idx < n_beats else n_beats
 
             artifact_indices = sorted(artifact_indices_set)
             # Convert indices_by_type sets to sorted lists
@@ -2548,10 +2551,12 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             "indices_by_type": indices_by_type,
             "method": method,
             "segment_stats": segment_stats,
+            "segments": time_segments if method in ("kubios_segmented", "lipponen2019_segmented") else [],
             "corrected_rr": corrected_rr,
             "corrected_timestamps": timestamps_list,
-            "original_rr": rr_list,  # Store original RR for NN interval comparison
-            "diagnostic_bytes": diagnostic_bytes,  # Captured NeuroKit2 diagnostic plot
+            "original_rr": rr_list,
+            "diagnostic_bytes": diagnostic_bytes,
+            "window_s": window_s,
         }
     except Exception:
         return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
@@ -2568,6 +2573,7 @@ def run_segmented_artifact_detection_at_gaps(
     method: str = "lipponen2019_segmented",
     threshold_pct: float = 0.20,
     segment_beats: int = 300,
+    window_s: float | None = None,
 ) -> dict:
     """Run artifact detection independently on each gap-separated segment.
 
@@ -2576,18 +2582,14 @@ def run_segmented_artifact_detection_at_gaps(
     2. Runs artifact detection on each segment independently
     3. Merges results with correct index mapping back to the original data
 
-    This is more scientifically rigorous than post-filtering because:
-    - Each segment's median/statistics are computed independently
-    - Artifacts near segment start/end don't influence other segments
-    - The Lipponen algorithm uses local patterns which should be segment-specific
-
     Args:
         rr_values: List of RR intervals in ms
         timestamps: List of corresponding timestamps
         gap_adjacent_indices: Set of indices marking first beat after each gap
         method: Detection method (passed to cached_artifact_detection)
         threshold_pct: Threshold for threshold method
-        segment_beats: Segment size for segmented methods
+        segment_beats: DEPRECATED - use window_s instead
+        window_s: Window duration in seconds for segmented methods
 
     Returns:
         Merged artifact result dict with all indices in original coordinate system
@@ -2596,7 +2598,8 @@ def run_segmented_artifact_detection_at_gaps(
         # No gaps - run normal detection
         return cached_artifact_detection(
             tuple(rr_values), tuple(timestamps),
-            method=method, threshold_pct=threshold_pct, segment_beats=segment_beats
+            method=method, threshold_pct=threshold_pct,
+            segment_beats=segment_beats, window_s=window_s
         )
 
     # Sort gap boundary indices
@@ -2650,7 +2653,8 @@ def run_segmented_artifact_detection_at_gaps(
         # Run detection on this segment
         seg_result = cached_artifact_detection(
             tuple(seg_rr), tuple(seg_ts),
-            method=method, threshold_pct=threshold_pct, segment_beats=segment_beats
+            method=method, threshold_pct=threshold_pct,
+            segment_beats=segment_beats, window_s=window_s
         )
 
         # Map indices back to original coordinates
@@ -4944,17 +4948,18 @@ def render_rr_plot_fragment(participant_id: str):
                         help="Max allowed RR change between beats (20% = Malik method)"
                     ) / 100.0
                     segment_beats = 300  # Default, not used for threshold
+                    window_s = None  # Not used for threshold
                     is_segmented_method = False
                 elif artifact_method in ("kubios_segmented", "lipponen2019_segmented"):
-                    # For segmented methods, we need segment_beats - will be set after scope selection
                     artifact_threshold = 0.20  # Not used
-                    # Placeholder - will be set after scope selection below
-                    segment_beats = 300
+                    segment_beats = 300  # Legacy fallback
+                    window_s = 300.0  # 5 min default, will be set after scope selection
                     is_segmented_method = True
                 else:
                     # kubios or lipponen2019 single-pass methods
                     artifact_threshold = 0.20  # Not used
                     segment_beats = 300  # Not used
+                    window_s = None  # Not used
                     is_segmented_method = False
 
                 # Gap-adjacent beat handling (only for HRV Logger data with gaps)
@@ -5179,7 +5184,7 @@ def render_rr_plot_fragment(participant_id: str):
                 # Segment sizing (only for segmented methods, now with scope-aware adaptive)
                 if is_segmented_method:
                     st.markdown("---")
-                    st.markdown("**Segment Sizing**")
+                    st.markdown("**Segment Duration**")
 
                     segment_mode = st.radio(
                         "Mode",
@@ -5194,24 +5199,23 @@ def render_rr_plot_fragment(participant_id: str):
                     scoped_minutes = scoped_duration_min if scoped_duration_min else (n_beats_scoped / 60)
 
                     if segment_mode == "adaptive":
-                        # Adaptive segment size based on scoped data length
                         if scoped_minutes < 15:
-                            segment_beats = 150
+                            window_s = 120.0  # 2 min
                             adaptive_label = "Fine"
                         elif scoped_minutes < 60:
-                            segment_beats = 250
+                            window_s = 300.0  # 5 min
                             adaptive_label = "Standard"
                         else:
-                            segment_beats = 350
+                            window_s = 420.0  # 7 min
                             adaptive_label = "Robust"
 
-                        st.info(f"**{adaptive_label}**: {segment_beats} beats/segment (~{segment_beats/60:.1f} min) for {n_beats_scoped} beats ({scoped_minutes:.0f} min {scope_label})")
+                        st.info(f"**{adaptive_label}**: {window_s/60:.0f} min/segment for {scoped_minutes:.0f} min data ({scope_label})")
 
                     elif segment_mode == "preset":
                         preset_options = {
-                            "fine": ("Fine (150 beats)", 150, "More sensitive, for noisy data or short sections"),
-                            "standard": ("Standard (300 beats)", 300, "Balanced sensitivity, recommended for most data"),
-                            "robust": ("Robust (500 beats)", 500, "Less sensitive, for clean data with stable baseline"),
+                            "fine": ("Fine (2 min)", 120.0, "More sensitive, for noisy data or short sections"),
+                            "standard": ("Standard (5 min)", 300.0, "Balanced sensitivity, recommended for most data"),
+                            "robust": ("Robust (7 min)", 420.0, "Less sensitive, for clean data with stable baseline"),
                         }
                         preset_choice = st.selectbox(
                             "Preset",
@@ -5221,17 +5225,18 @@ def render_rr_plot_fragment(participant_id: str):
                             key=f"frag_segment_preset_{participant_id}",
                             help="\n".join([f"**{v[0]}**: {v[2]}" for v in preset_options.values()])
                         )
-                        segment_beats = preset_options[preset_choice][1]
-                        st.caption(f"{preset_options[preset_choice][2]} | {n_beats_scoped} beats in {scope_label}")
+                        window_s = preset_options[preset_choice][1]
+                        st.caption(f"{preset_options[preset_choice][2]} | {scoped_minutes:.0f} min data in {scope_label}")
 
                     else:  # manual
-                        segment_beats = st.slider(
-                            "Segment size (beats)",
-                            min_value=100, max_value=600, value=300, step=25,
-                            key=f"frag_segment_beats_{participant_id}",
-                            help="Number of beats per segment. Lower = more sensitive, Higher = more robust."
+                        window_min = st.slider(
+                            "Segment duration (min)",
+                            min_value=1.0, max_value=10.0, value=5.0, step=0.5,
+                            key=f"frag_segment_duration_{participant_id}",
+                            help="Duration per segment in minutes. Lower = more sensitive, Higher = more robust."
                         )
-                        st.caption(f"~{segment_beats/60:.1f} min per segment | {n_beats_scoped} beats in {scope_label}")
+                        window_s = window_min * 60.0
+                        st.caption(f"{window_min:.1f} min per segment | {scoped_minutes:.0f} min data in {scope_label}")
 
                 # Option to show diagnostic plots (like NeuroKit2's signal_fixpeaks visualization)
                 # Use session state to persist checkbox value across reruns
@@ -5292,6 +5297,7 @@ def render_rr_plot_fragment(participant_id: str):
             artifact_method = "threshold"
             artifact_threshold = 0.20
             segment_beats = 300  # Default
+            window_s = None
             show_corrected = False  # Not available without artifacts
             gap_handling = "include"  # Default
         show_variability = st.checkbox("Show variability segments", value=plot_defaults.get("show_variability", False),
@@ -5863,13 +5869,13 @@ def render_rr_plot_fragment(participant_id: str):
                                     sec_rr, sec_timestamps,
                                     gap_adjacent_for_sec,
                                     method=artifact_method, threshold_pct=artifact_threshold,
-                                    segment_beats=segment_beats
+                                    segment_beats=segment_beats, window_s=window_s
                                 )
                             else:
                                 sec_result = cached_artifact_detection(
                                     tuple(sec_rr), tuple(sec_timestamps),
                                     method=artifact_method, threshold_pct=artifact_threshold,
-                                    segment_beats=segment_beats
+                                    segment_beats=segment_beats, window_s=window_s
                                 )
                                 if gap_handling_for_detection == "boundary":
                                     sec_result = dict(sec_result)
@@ -5968,7 +5974,8 @@ def render_rr_plot_fragment(participant_id: str):
                         "scope": {"type": "all_validated", "sections": list(all_sections_results.keys())},
                         "section_key": "_all_validated",
                         "sections_results": all_sections_results,  # Per-section results for saving
-                        "segment_beats": segment_beats,
+                        "segment_beats": segment_beats,  # legacy
+                        "window_s": window_s,
                         "by_type": all_by_type,
                         "indices_by_type": all_indices_by_type,
                         "corrected_rr": full_corrected_rr,  # Merged from all sections
@@ -6027,13 +6034,13 @@ def render_rr_plot_fragment(participant_id: str):
                         rr_for_detection, timestamps_for_detection,
                         gap_adjacent_for_scope,
                         method=artifact_method, threshold_pct=artifact_threshold,
-                        segment_beats=segment_beats
+                        segment_beats=segment_beats, window_s=window_s
                     )
                 else:
                     artifact_result = cached_artifact_detection(
                         tuple(rr_for_detection), tuple(timestamps_for_detection),
                         method=artifact_method, threshold_pct=artifact_threshold,
-                        segment_beats=segment_beats
+                        segment_beats=segment_beats, window_s=window_s
                     )
                     # If boundary mode but no gaps in scope, mark as handled to skip legacy fallback
                     if gap_handling_for_detection == "boundary":
@@ -6083,7 +6090,8 @@ def render_rr_plot_fragment(participant_id: str):
 
                 # Store scope info and detection parameters in result
                 artifact_result["scope"] = scope_info
-                artifact_result["segment_beats"] = segment_beats  # Store for segmented methods
+                artifact_result["segment_beats"] = segment_beats  # legacy
+                artifact_result["window_s"] = window_s
 
                 # Derive section_key from scope for section-scoped storage
                 if scope_info["type"] == "section":
@@ -6384,35 +6392,108 @@ def render_rr_plot_fragment(participant_id: str):
                         hide_index=True,
                     )
 
-            # Display per-segment artifact percentages for segmented methods (Lipponen internal segments)
+            # Display segment assessment table for segmented methods
             segment_stats = artifact_result.get("segment_stats", [])
+            detection_segments = artifact_result.get("segments", [])
             if segment_stats:
-                with st.expander(f"Lipponen Method Segment Details ({len(segment_stats)} segments)"):
-                    # Filter to only the expected columns (remove extra fields like global_offset)
-                    expected_keys = ["segment", "start_beat", "end_beat", "n_beats", "n_artifacts", "artifact_pct"]
-                    filtered_stats = [{k: s.get(k) for k in expected_keys if k in s} for s in segment_stats]
-                    df = get_pandas().DataFrame(filtered_stats)
-                    df.columns = ["Segment", "Start Beat", "End Beat", "N Beats", "N Artifacts", "Artifact %"]
+                from rrational.gui.segmentation import format_ms_as_time
 
-                    # Highlight segments with high artifact rates
-                    def highlight_high_artifacts(row):
-                        if row["Artifact %"] > 10:
-                            return ["background-color: #ffcccc"] * len(row)  # Red for >10%
-                        elif row["Artifact %"] > 5:
-                            return ["background-color: #fff3cd"] * len(row)  # Yellow for >5%
-                        return [""] * len(row)
+                with st.expander(f"Segment Assessment ({len(segment_stats)} segments)", expanded=True):
+                    st.caption("Assess each segment individually. Excluded segments will be skipped in analysis.")
+
+                    pd_mod = get_pandas()
+
+                    # Build display data with time info
+                    seg_df_data = []
+                    for s in segment_stats:
+                        start_ms = s.get("start_ms", 0)
+                        end_ms = s.get("end_ms", 0)
+                        duration_s = s.get("duration_s", 0)
+                        quality = s.get("quality_grade", "")
+                        time_range = f"{format_ms_as_time(start_ms)} - {format_ms_as_time(end_ms)}" if start_ms or end_ms else f"{s.get('start_beat', 0)}-{s.get('end_beat', 0)}"
+
+                        seg_df_data.append({
+                            "#": s["segment"],
+                            "Time": time_range,
+                            "Duration": f"{duration_s:.0f}s" if duration_s else "",
+                            "Beats": s["n_beats"],
+                            "Artifacts": s["n_artifacts"],
+                            "Rate %": s["artifact_pct"],
+                            "Quality": quality,
+                        })
+
+                    seg_df = pd_mod.DataFrame(seg_df_data)
+
+                    # Color-coded display
+                    quality_colors = {
+                        "good": "#d4edda",    # green
+                        "fair": "#fff3cd",    # yellow
+                        "poor": "#f8d7da",    # light red
+                        "exclude": "#ffcccc", # red
+                    }
+
+                    def highlight_quality(row):
+                        color = quality_colors.get(row.get("Quality", ""), "")
+                        return [f"background-color: {color}" if color else ""] * len(row)
 
                     st.dataframe(
-                        df.style.apply(highlight_high_artifacts, axis=1).format({"Artifact %": "{:.1f}"}),
-                        width="stretch",
+                        seg_df.style.apply(highlight_quality, axis=1).format({"Rate %": "{:.1f}"}),
+                        use_container_width=True,
                         hide_index=True,
                     )
 
-                    # Summary statistics
-                    avg_pct = df["Artifact %"].mean()
-                    max_pct = df["Artifact %"].max()
-                    high_segments = len(df[df["Artifact %"] > 10])
-                    st.caption(f"Avg: {avg_pct:.1f}% | Max: {max_pct:.1f}% | Segments >10%: {high_segments}")
+                    # Include/exclude controls
+                    if detection_segments:
+                        seg_inclusion_key = f"segment_inclusion_{participant_id}"
+                        if seg_inclusion_key not in st.session_state:
+                            # Initialize from quality grades
+                            st.session_state[seg_inclusion_key] = {
+                                seg.idx: seg.included for seg in detection_segments
+                            }
+
+                        col_all, col_none, col_auto = st.columns(3)
+                        with col_all:
+                            if st.button("Include All", key=f"seg_include_all_{participant_id}"):
+                                st.session_state[seg_inclusion_key] = {seg.idx: True for seg in detection_segments}
+                                st.rerun()
+                        with col_none:
+                            if st.button("Exclude All", key=f"seg_exclude_all_{participant_id}"):
+                                st.session_state[seg_inclusion_key] = {seg.idx: False for seg in detection_segments}
+                                st.rerun()
+                        with col_auto:
+                            if st.button("Auto (Quigley)", key=f"seg_auto_{participant_id}",
+                                         help="Exclude segments with >10% artifacts or <50 beats"):
+                                st.session_state[seg_inclusion_key] = {
+                                    seg.idx: seg.quality_grade != "exclude" for seg in detection_segments
+                                }
+                                st.rerun()
+
+                        # Per-segment toggles
+                        inclusion = st.session_state[seg_inclusion_key]
+                        changed = False
+                        for seg in detection_segments:
+                            label = f"Seg {seg.idx + 1}: {format_ms_as_time(seg.start_ms)}-{format_ms_as_time(seg.end_ms)} ({seg.quality_grade})"
+                            new_val = st.checkbox(
+                                label, value=inclusion.get(seg.idx, True),
+                                key=f"seg_incl_{participant_id}_{seg.idx}",
+                            )
+                            if new_val != inclusion.get(seg.idx, True):
+                                inclusion[seg.idx] = new_val
+                                seg.included = new_val
+                                changed = True
+                        if changed:
+                            st.session_state[seg_inclusion_key] = inclusion
+
+                        # Summary
+                        n_included = sum(1 for v in inclusion.values() if v)
+                        st.caption(f"{n_included}/{len(detection_segments)} segments included for analysis")
+
+                    else:
+                        # Legacy fallback: no Segment objects, just show summary
+                        avg_pct = seg_df["Rate %"].mean()
+                        max_pct = seg_df["Rate %"].max()
+                        high_segments = len(seg_df[seg_df["Rate %"] > 10])
+                        st.caption(f"Avg: {avg_pct:.1f}% | Max: {max_pct:.1f}% | Segments >10%: {high_segments}")
 
             # Display NeuroKit2 diagnostic plots if generated
             diag_fig_key = f"artifact_diagnostic_fig_{participant_id}"

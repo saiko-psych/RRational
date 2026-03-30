@@ -2192,63 +2192,46 @@ def _render_single_participant_analysis():
                                     st.write(f"**{entry.action}**: {entry.details}")
 
                         # Overlapping window options for v2.0 ready files
-                        with st.expander("Overlapping Window Analysis", expanded=True):
-                            st.markdown("""
-                            Split each section into **overlapping windows** for more reliable HRV metrics.
-                            Results are averaged across all windows within each section.
-                            """)
-                            use_overlapping_windows = st.checkbox(
-                                "Enable overlapping window analysis",
-                                value=True,
-                                key="use_overlapping_windows_v2",
-                                help="Analyze each section using multiple overlapping windows"
+                        with st.expander("Window Analysis Settings", expanded=True):
+                            # Analysis mode selection
+                            analysis_mode = st.radio(
+                                "Analysis mode",
+                                options=["aggregated", "per_segment"],
+                                format_func=lambda x: {
+                                    "aggregated": "Aggregated (mean across windows)",
+                                    "per_segment": "Per-segment (individual results)",
+                                }[x],
+                                horizontal=True,
+                                key="analysis_mode_v2",
+                                help="Aggregated: average across all windows. Per-segment: individual HRV results per segment."
                             )
 
-                            if use_overlapping_windows:
-                                window_mode = st.radio(
-                                    "Window mode",
-                                    options=["beats", "time"],
-                                    format_func=lambda x: "Beat-based (number of beats)" if x == "beats" else "Time-based (minutes)",
-                                    horizontal=True,
-                                    key="overlap_window_mode_v2",
-                                )
+                            use_overlapping_windows = True  # always use windowing
 
-                                if window_mode == "time":
-                                    st.caption("**Recommended:** 5-minute windows with 50% overlap")
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        window_duration_min = st.slider(
-                                            "Window duration (minutes)", 1, 10, 5, key="overlap_window_duration_v2"
-                                        )
-                                    with col2:
-                                        overlap_percent = st.slider(
-                                            "Overlap (%)", 0, 75, 50, step=25, key="overlap_percent_v2"
-                                        )
-                                    step_size_min = window_duration_min * (1 - overlap_percent / 100)
-                                    st.caption(f"Step size: {step_size_min:.1f} minutes")
-                                    window_beats = None
-                                    step_beats = None
-                                else:
-                                    st.caption("**Default:** 300 beats with 75% overlap")
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        window_beats = st.slider(
-                                            "Window size (beats)", 100, 1000, 150, step=50, key="overlap_window_beats_v2"
-                                        )
-                                    with col2:
-                                        overlap_beats_percent = st.slider(
-                                            "Overlap (%)", 0, 75, 75, step=25, key="overlap_beats_percent_v2"
-                                        )
-                                    step_beats = int(window_beats * (1 - overlap_beats_percent / 100))
-                                    st.caption(f"Step size: {step_beats} beats")
-                                    window_duration_min = None
-                                    overlap_percent = None
-                            else:
-                                window_mode = "beats"
-                                window_beats = 300
-                                step_beats = 75
+                            if analysis_mode == "per_segment":
+                                st.caption("Each segment from artifact detection is analyzed individually.")
+                                # Use segments from artifact detection
+                                window_mode = "time"
                                 window_duration_min = None
                                 overlap_percent = None
+                                window_beats = None
+                                step_beats = None
+                            else:
+                                st.caption("**Recommended:** 5-minute time-based windows with 50% overlap")
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    window_duration_min = st.slider(
+                                        "Window duration (minutes)", 1, 10, 5, key="overlap_window_duration_v2"
+                                    )
+                                with col2:
+                                    overlap_percent = st.slider(
+                                        "Overlap (%)", 0, 75, 50, step=25, key="overlap_percent_v2"
+                                    )
+                                step_size_min = window_duration_min * (1 - overlap_percent / 100)
+                                st.caption(f"Step size: {step_size_min:.1f} minutes")
+                                window_mode = "time"
+                                window_beats = None
+                                step_beats = None
                     else:
                         # V1.0 file - original behavior
                         ready_data = load_rrational(selected_ready_file)
@@ -2376,95 +2359,37 @@ def _render_single_participant_analysis():
 
     # Overlapping window analysis options (only for raw data - ready files have their own controls)
     if not use_ready_file:
-        with st.expander("Overlapping Window Analysis", expanded=True):
-            st.markdown("""
-            Split each section into **overlapping windows** for more reliable HRV metrics.
-            Results are averaged across all windows within each section.
-            """)
-            use_overlapping_windows = st.checkbox(
-                "Enable overlapping window analysis",
-                value=True,
-                key="use_overlapping_windows",
-                help="Analyze each section using multiple overlapping windows"
-            )
+        with st.expander("Window Analysis Settings", expanded=True):
+            use_overlapping_windows = True  # always use windowing
 
-            if use_overlapping_windows:
-                # Mode selection: time-based or beat-based
-                window_mode = st.radio(
-                    "Window mode",
-                    options=["beats", "time"],
-                    format_func=lambda x: "Beat-based (number of beats)" if x == "beats" else "Time-based (minutes)",
-                    horizontal=True,
-                    key="overlap_window_mode",
-                    help="Choose whether to define windows by duration (time) or by number of beats"
+            st.caption("**Recommended:** 5-minute time-based windows with 50% overlap")
+            col1, col2 = st.columns(2)
+            with col1:
+                window_duration_min = st.slider(
+                    "Window duration (minutes)",
+                    min_value=1,
+                    max_value=10,
+                    value=5,
+                    step=1,
+                    key="overlap_window_duration",
+                    help="Duration of each analysis window"
+                )
+            with col2:
+                overlap_percent = st.slider(
+                    "Overlap (%)",
+                    min_value=0,
+                    max_value=75,
+                    value=50,
+                    step=25,
+                    key="overlap_percent",
+                    help="Percentage overlap between consecutive windows"
                 )
 
-                if window_mode == "time":
-                    st.caption("**Recommended:** 5-minute windows with 50% overlap for frequency-domain metrics")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        window_duration_min = st.slider(
-                            "Window duration (minutes)",
-                            min_value=1,
-                            max_value=10,
-                            value=5,
-                            step=1,
-                            key="overlap_window_duration",
-                            help="Duration of each analysis window"
-                        )
-                    with col2:
-                        overlap_percent = st.slider(
-                            "Overlap (%)",
-                            min_value=0,
-                            max_value=75,
-                            value=50,
-                            step=25,
-                            key="overlap_percent",
-                            help="Percentage overlap between consecutive windows"
-                        )
-
-                    # Show calculated step size
-                    step_size_min = window_duration_min * (1 - overlap_percent / 100)
-                    st.caption(f"Step size: {step_size_min:.1f} minutes between window starts")
-                    # Set beat variables to None for time mode
-                    window_beats = None
-                    step_beats = None
-                else:
-                    st.caption("**Default:** 300 beats with 75% overlap (75-beat step)")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        window_beats = st.slider(
-                            "Window size (beats)",
-                            min_value=100,
-                            max_value=1000,
-                            value=300,
-                            step=50,
-                            key="overlap_window_beats",
-                            help="Number of beats in each analysis window. Use 300+ for frequency domain metrics."
-                        )
-                    with col2:
-                        overlap_beats_percent = st.slider(
-                            "Overlap (%)",
-                            min_value=0,
-                            max_value=75,
-                            value=75,
-                            step=25,
-                            key="overlap_beats_percent",
-                            help="Percentage overlap between consecutive windows"
-                        )
-
-                    # Calculate step size in beats
-                    step_beats = int(window_beats * (1 - overlap_beats_percent / 100))
-                    st.caption(f"Step size: {step_beats} beats between window starts")
-                    # Set time variables to None for beat mode
-                    window_duration_min = None
-                    overlap_percent = None
-            else:
-                window_mode = "beats"
-                window_beats = 300
-                step_beats = 75
-                window_duration_min = None
-                overlap_percent = None
+            step_size_min = window_duration_min * (1 - overlap_percent / 100)
+            st.caption(f"Step size: {step_size_min:.1f} minutes between window starts")
+            window_mode = "time"
+            window_beats = None
+            step_beats = None
 
     if st.button("Analyze HRV", key="analyze_single_btn", type="primary"):
         # Validate inputs
@@ -2687,19 +2612,47 @@ def _render_single_participant_analysis():
                             st.write(f"  Computing HRV for {len(nn_intervals_ms)} NN intervals...")
 
                             if use_overlapping_windows:
-                                # Generate overlapping windows based on mode
-                                if window_mode == "beats":
+                                import numpy as np
+                                from rrational.gui.segmentation import generate_segments as gen_segs
+
+                                analysis_mode_v2 = st.session_state.get("analysis_mode_v2", "aggregated")
+
+                                if analysis_mode_v2 == "per_segment":
+                                    # Use segments from artifact detection
+                                    artifact_data = st.session_state.get(f"artifacts_{selected_participant}", {})
+                                    det_segments = artifact_data.get("segments", [])
+                                    seg_inclusion = st.session_state.get(f"segment_inclusion_{selected_participant}", {})
+
+                                    if det_segments:
+                                        # Filter to included segments
+                                        nn_arr = np.asarray(nn_intervals_ms, dtype=np.float64)
+                                        windows = []
+                                        for seg in det_segments:
+                                            if seg_inclusion.get(seg.idx, seg.included):
+                                                sliced = nn_arr[seg.beat_start:seg.beat_end].tolist()
+                                                if len(sliced) >= 30:
+                                                    windows.append((seg.idx, seg.start_ms, sliced))
+                                        window_info_str = f"per-segment ({len(windows)} included)"
+                                    else:
+                                        # No segments from artifact detection, fall back to time-based
+                                        w_s = 300.0
+                                        segs = gen_segs(np.asarray(nn_intervals_ms), window_s=w_s, overlap_pct=0.0)
+                                        windows = [(s.idx, s.start_ms, list(np.asarray(nn_intervals_ms)[s.beat_start:s.beat_end])) for s in segs if s.n_beats >= 30]
+                                        window_info_str = f"5min segments, no overlap"
+
+                                elif window_mode == "beats" and window_beats is not None:
                                     windows = generate_overlapping_windows_beats(
                                         nn_intervals_ms, window_beats, step_beats
                                     )
                                     window_info_str = f"{window_beats} beats, {step_beats}-beat step"
                                 else:
-                                    window_duration_ms = window_duration_min * 60 * 1000
-                                    step_size_ms = window_duration_ms * (1 - overlap_percent / 100)
-                                    windows = generate_overlapping_windows_time(
-                                        nn_intervals_ms, window_duration_ms, step_size_ms
-                                    )
-                                    window_info_str = f"{window_duration_min}min, {overlap_percent}% overlap"
+                                    # Time-based windows (default)
+                                    w_dur_min = window_duration_min if window_duration_min else 5
+                                    o_pct = overlap_percent if overlap_percent is not None else 50
+                                    nn_arr = np.asarray(nn_intervals_ms, dtype=np.float64)
+                                    segs = gen_segs(nn_arr, window_s=w_dur_min * 60.0, overlap_pct=float(o_pct))
+                                    windows = [(s.idx, s.start_ms, nn_arr[s.beat_start:s.beat_end].tolist()) for s in segs if s.n_beats >= 30]
+                                    window_info_str = f"{w_dur_min}min, {o_pct}% overlap"
 
                                 if len(windows) >= 1:
                                     st.write(f"    Analyzing {len(windows)} overlapping windows ({window_info_str})...")
@@ -2873,19 +2826,16 @@ def _render_single_participant_analysis():
                         nk = get_neurokit()
 
                         if use_overlapping_windows:
-                            # Generate overlapping windows based on mode
-                            if window_mode == "beats":
-                                windows = generate_overlapping_windows_beats(
-                                    clean_rr_ms, window_beats, step_beats
-                                )
-                                window_info_str = f"{window_beats} beats, {step_beats}-beat step"
-                            else:
-                                window_duration_ms = window_duration_min * 60 * 1000
-                                step_size_ms = window_duration_ms * (1 - overlap_percent / 100)
-                                windows = generate_overlapping_windows_time(
-                                    clean_rr_ms, window_duration_ms, step_size_ms
-                                )
-                                window_info_str = f"{window_duration_min}min, {overlap_percent}% overlap"
+                            import numpy as np
+                            from rrational.gui.segmentation import generate_segments as gen_segs
+
+                            # Time-based windows (default)
+                            w_dur_min = window_duration_min if window_duration_min else 5
+                            o_pct = overlap_percent if overlap_percent is not None else 50
+                            nn_arr = np.asarray(clean_rr_ms, dtype=np.float64)
+                            segs = gen_segs(nn_arr, window_s=w_dur_min * 60.0, overlap_pct=float(o_pct))
+                            windows = [(s.idx, s.start_ms, nn_arr[s.beat_start:s.beat_end].tolist()) for s in segs if s.n_beats >= 30]
+                            window_info_str = f"{w_dur_min}min, {o_pct}% overlap"
 
                             if len(windows) >= 1:
                                 st.write(f"  Analyzing {len(windows)} overlapping windows ({window_info_str})...")
@@ -2910,10 +2860,7 @@ def _render_single_participant_analysis():
                                             "duration_s": sum(win_rr) / 1000,
                                             "hrv_results": win_hrv,
                                         }
-                                        if window_mode == "beats":
-                                            detail["start_beat"] = win_start
-                                        else:
-                                            detail["start_ms"] = win_start
+                                        detail["start_ms"] = win_start
                                         window_details.append(detail)
                                     except Exception as e:
                                         st.write(f"    Window {win_idx + 1} failed: {e}")
@@ -2941,7 +2888,7 @@ def _render_single_participant_analysis():
                                             "audit_trail": ready_data.processing_steps,
                                             "overlapping_analysis": True,
                                             "n_windows": len(window_hrv_results),
-                                            "window_mode": window_mode,
+                                            "window_mode": "time",
                                             "window_duration_min": window_duration_min,
                                             "overlap_percent": overlap_percent,
                                             "window_beats": window_beats,
@@ -3193,19 +3140,15 @@ def _render_single_participant_analysis():
 
                                 # Check if overlapping window analysis is enabled
                                 if use_overlapping_windows:
-                                    # Generate overlapping windows based on mode
-                                    if window_mode == "beats":
-                                        windows = generate_overlapping_windows_beats(
-                                            rr_ms, window_beats, step_beats
-                                        )
-                                        window_info_str = f"{window_beats} beats, {step_beats}-beat step"
-                                    else:
-                                        window_duration_ms = window_duration_min * 60 * 1000
-                                        step_size_ms = window_duration_ms * (1 - overlap_percent / 100)
-                                        windows = generate_overlapping_windows_time(
-                                            rr_ms, window_duration_ms, step_size_ms
-                                        )
-                                        window_info_str = f"{window_duration_min}min, {overlap_percent}% overlap"
+                                    import numpy as np
+                                    from rrational.gui.segmentation import generate_segments as gen_segs
+
+                                    w_dur_min = window_duration_min if window_duration_min else 5
+                                    o_pct = overlap_percent if overlap_percent is not None else 50
+                                    nn_arr = np.asarray(rr_ms, dtype=np.float64)
+                                    segs = gen_segs(nn_arr, window_s=w_dur_min * 60.0, overlap_pct=float(o_pct))
+                                    windows = [(s.idx, s.start_ms, nn_arr[s.beat_start:s.beat_end].tolist()) for s in segs if s.n_beats >= 30]
+                                    window_info_str = f"{w_dur_min}min, {o_pct}% overlap"
 
                                     if len(windows) >= 1:
                                         st.write(f"    Analyzing {len(windows)} overlapping windows ({window_info_str})...")
@@ -3695,15 +3638,20 @@ def _calculate_hrv_metrics(
     window_beats: int = 300,
     overlap_pct: float = 75.0,
     selected_metrics: list[str] | None = None,
+    window_s: float | None = None,
+    segments: list | None = None,
 ) -> tuple[dict, dict | None, int]:
     """Calculate HRV metrics from NN intervals.
 
     Args:
         nn_ms_list: List of NN interval values in ms
         use_windows: Whether to use overlapping windows
-        window_beats: Number of beats per window
+        window_beats: Number of beats per window (legacy, prefer window_s)
         overlap_pct: Overlap percentage (0-100)
         selected_metrics: List of metric names to calculate (None = all basic metrics)
+        window_s: Window duration in seconds (time-based, preferred over window_beats)
+        segments: Pre-computed Segment objects from artifact detection.
+                  When provided, analysis uses these exact boundaries.
 
     Returns:
         Tuple of (metrics_dict, std_dict, n_windows)
@@ -3849,29 +3797,57 @@ def _calculate_hrv_metrics(
 
         return result
 
-    if not use_windows or len(nn_ms_list) < window_beats:
-        # Single analysis on full data
+    if not use_windows:
         metrics = compute_hrv(nn_ms_list)
         return metrics, None, 1
 
-    # Overlapping windows analysis
-    step_beats = int(window_beats * (1 - overlap_pct / 100))
-    if step_beats < 1:
-        step_beats = 1
+    import numpy as np
 
-    windows = generate_overlapping_windows_beats(nn_ms_list, window_beats, step_beats)
+    # Build window slices from one of three sources (priority order):
+    # 1. Pre-computed segments from artifact detection
+    # 2. Time-based windows (window_s)
+    # 3. Beat-based windows (legacy)
+    window_slices = []  # list of (rr_values_for_window,)
 
-    if not windows:
-        # Fallback to single analysis
+    if segments is not None:
+        # Use segments from artifact detection (same boundaries!)
+        nn_array = np.asarray(nn_ms_list, dtype=np.float64)
+        for seg in segments:
+            if getattr(seg, 'included', True):
+                sliced = nn_array[seg.beat_start:seg.beat_end]
+                if len(sliced) >= 30:
+                    window_slices.append(sliced.tolist())
+
+    elif window_s is not None:
+        # Time-based windowing
+        from rrational.gui.segmentation import generate_segments
+        nn_array = np.asarray(nn_ms_list, dtype=np.float64)
+        segs = generate_segments(nn_array, window_s=window_s, overlap_pct=overlap_pct)
+        for seg in segs:
+            sliced = nn_array[seg.beat_start:seg.beat_end]
+            if len(sliced) >= 30:
+                window_slices.append(sliced.tolist())
+
+    else:
+        # Legacy beat-based windowing
+        min_beats = min(window_beats, len(nn_ms_list))
+        if len(nn_ms_list) < min_beats:
+            metrics = compute_hrv(nn_ms_list)
+            return metrics, None, 1
+
+        step_beats = max(1, int(window_beats * (1 - overlap_pct / 100)))
+        windows = generate_overlapping_windows_beats(nn_ms_list, window_beats, step_beats)
+        window_slices = [w_rr for _, _, w_rr in windows]
+
+    if not window_slices:
         metrics = compute_hrv(nn_ms_list)
         return metrics, None, 1
 
     # Calculate HRV for each window
     window_results = []
-    for _, _, window_rr in windows:
+    for w_rr in window_slices:
         try:
-            window_hrv = compute_hrv(window_rr)
-            window_results.append(window_hrv)
+            window_results.append(compute_hrv(w_rr))
         except Exception:
             continue
 
