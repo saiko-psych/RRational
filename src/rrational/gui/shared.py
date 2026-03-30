@@ -108,12 +108,22 @@ DEFAULT_CANONICAL_EVENTS = {
 }
 
 
-# ================== ValidatedSection System ==================
-# Centralized section validation to ensure consistent boundaries across all features
+# =============================================================================
+# ValidatedSection System — canonical implementations in rrational.segments.section_validation
+# Re-exported here for backward compatibility.
+# =============================================================================
+from rrational.segments.section_validation import (  # noqa: E402, F811
+    EventCandidate,
+    ValidatedSection,
+    SectionValidationResult,
+    find_event_candidates,
+    validate_section_for_participant,
+    _normalize_timestamp,
+)
 
 
 @dataclass
-class EventCandidate:
+class _OLD_EventCandidate:
     """A candidate event that could be used as a section boundary."""
     canonical_name: str
     raw_label: str
@@ -127,12 +137,8 @@ class EventCandidate:
 
 
 @dataclass
-class ValidatedSection:
-    """A validated section with explicit event references.
-
-    This is the single source of truth for section boundaries.
-    All features (Analysis, Artifact Detection, Signal Inspection) should use this.
-    """
+class _OLD_ValidatedSection:
+    """DEPRECATED: Use rrational.segments.section_validation.ValidatedSection."""
     section_name: str  # e.g., "rest_pre", "measurement"
     start_event: EventCandidate  # The selected start event
     end_event: EventCandidate  # The selected end event
@@ -142,8 +148,8 @@ class ValidatedSection:
 
 
 @dataclass
-class SectionValidationResult:
-    """Result of attempting to validate a section for a participant."""
+class _OLD_SectionValidationResult:
+    """DEPRECATED: Use rrational.segments.section_validation.SectionValidationResult."""
     section_name: str
     is_valid: bool
     validated_section: Optional[ValidatedSection] = None
@@ -154,12 +160,12 @@ class SectionValidationResult:
     error_message: Optional[str] = None
 
 
-def find_event_candidates(
+def _OLD_find_event_candidates(
     events: list,
     target_canonical_names: list[str],
     normalizer,
 ) -> list[EventCandidate]:
-    """Find all events that match the target canonical names.
+    """DEPRECATED: Use rrational.segments.section_validation.find_event_candidates.
 
     Args:
         events: List of event objects (EventStatus, dict, or raw Event)
@@ -204,17 +210,14 @@ def find_event_candidates(
     return candidates
 
 
-def validate_section_for_participant(
+def _OLD_validate_section_for_participant(
     section_def: dict,
     events: list,
     normalizer,
     rr_intervals: list = None,
     user_selection: dict = None,
 ) -> SectionValidationResult:
-    """Validate a section for a participant, finding matching events.
-
-    This is the SINGLE centralized function for determining section boundaries.
-    All features should use this instead of implementing their own logic.
+    """DEPRECATED: Use rrational.segments.section_validation.validate_section_for_participant.
 
     Args:
         section_def: Section definition with start_events/end_events lists

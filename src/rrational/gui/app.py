@@ -155,7 +155,14 @@ def get_plotly():
     return _go, _plotly_events
 
 
-def get_current_theme_colors():
+from rrational.gui.theme import (  # noqa: E402
+    get_current_theme_colors,
+    get_plot_colors,
+    apply_custom_css,
+)
+
+
+def _OLD_get_current_theme_colors():
     """Get Plotly-compatible colors based on current theme setting.
 
     Reads from app_settings to determine if dark mode is enabled.
@@ -183,7 +190,7 @@ def get_current_theme_colors():
         }
 
 
-def get_plot_colors():
+def _OLD_get_plot_colors():
     """Get custom plot colors from settings.
 
     Returns dict with colors for RR line, artifacts, etc.
@@ -228,8 +235,8 @@ if "show_welcome" not in st.session_state:
     st.session_state.show_welcome = True  # Show welcome screen on first load
 
 
-def apply_custom_css():
-    """Apply CSS-only theme system with instant switching.
+def _OLD_apply_custom_css():
+    """DEPRECATED: Use rrational.gui.theme.apply_custom_css.
 
     Uses CSS custom properties for colors and a class toggle for theme switching.
     No page reload required - themes switch instantly via JavaScript.
