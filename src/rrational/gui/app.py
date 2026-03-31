@@ -39,6 +39,15 @@ from rrational.cleaning.quality import (
     detect_time_gaps,
     detect_artifacts_fixpeaks,
 )
+from rrational.gui.shared import (
+    create_gui_normalizer,
+    save_all_config,
+    save_participant_data,
+    update_normalizer,
+    show_toast,
+    auto_save_config,
+    validate_regex_pattern,
+)
 
 # Helper function to normalize timestamps for safe comparison
 # Handles mixed timezone-aware and timezone-naive datetimes from old saved data
@@ -1690,10 +1699,8 @@ DEFAULT_CANONICAL_EVENTS = {
 }
 
 
-def create_gui_normalizer(gui_events_dict):
-    """Create a custom SectionNormalizer that ONLY uses GUI-defined events.
-
-    This function creates a normalizer that:
+def _OLD_create_gui_normalizer(gui_events_dict):
+    """DEPRECATED: Use rrational.gui.shared.create_gui_normalizer.
     - ONLY checks against events defined in the GUI (st.session_state.all_events)
     - Does NOT load from config/sections.yml
     - Returns None if no match found (strict mode)
@@ -1966,8 +1973,8 @@ if "participant_groups" not in st.session_state or "event_order" not in st.sessi
         st.session_state.manual_events = {}
 
 
-def save_all_config():
-    """Save all configuration to persistent storage."""
+def _OLD_save_all_config():
+    """DEPRECATED: Use rrational.gui.shared.save_all_config."""
     project_path = st.session_state.get("current_project")
     save_groups(st.session_state.groups, project_path)
     save_events(st.session_state.all_events, project_path)
@@ -1976,8 +1983,8 @@ def save_all_config():
     save_participant_data()
 
 
-def save_participant_data():
-    """Save participant-specific data (groups, randomizations, event orders, manual events)."""
+def _OLD_save_participant_data():
+    """DEPRECATED: Use rrational.gui.shared.save_participant_data."""
     project_path = st.session_state.get("current_project")
     participants_data = {}
     all_participant_ids = set(
@@ -2002,10 +2009,8 @@ def save_participant_data():
     save_participants(participants_data, project_path)
 
 
-def update_normalizer():
-    """Update the normalizer when events are added/removed in GUI.
-
-    ISSUE 1 FIX: This ensures the normalizer always uses current GUI events.
+def _OLD_update_normalizer():
+    """DEPRECATED: Use rrational.gui.shared.update_normalizer.
     """
     st.session_state.normalizer = create_gui_normalizer(st.session_state.all_events)
     # Clear cache to force reloading with new normalizer
@@ -2849,85 +2854,16 @@ def cached_gap_detection(timestamps_tuple, rr_values_tuple, gap_threshold_s: flo
 @st.cache_data(show_spinner=False, ttl=600)
 def cached_build_participant_table(summaries_data: tuple, participant_groups: dict, participant_randomizations: dict,
                                    group_labels: dict, randomization_labels: dict, loaded_participants_keys: tuple):
-    """Cache the participant table data to avoid rebuilding on every rerun.
-
-    Args:
-        summaries_data: Tuple of tuples (serialized from RecordingSummary objects for hashing)
-        participant_groups: Dict of participant -> group assignments
-        participant_randomizations: Dict of participant -> randomization assignments
-        group_labels: Dict of group_id -> label
-        randomization_labels: Dict of rand_value -> label
-        loaded_participants_keys: Tuple of saved participant IDs
-
-    Returns:
-        Tuple of (participants_data list, issues list)
-    """
-    # Convert tuples back to dicts for easier access
-    summaries_data = [dict(t) for t in summaries_data]
-    loaded_set = set(loaded_participants_keys)
-
-    # Build status issues
-    issues = []
-    high_artifact = sum(1 for s in summaries_data if s["artifact_ratio"] > 0.15)
-    if high_artifact:
-        issues.append(f"[X] **{high_artifact}** participant(s) with high artifact rates (>15%)")
-
-    with_duplicates = sum(1 for s in summaries_data if s["duplicate_rr_intervals"] > 0)
-    if with_duplicates:
-        issues.append(f"**{with_duplicates}** participant(s) with duplicate RR intervals")
-
-    with_multi_files = sum(1 for s in summaries_data
-                          if s["rr_file_count"] > 1 or s["events_file_count"] > 1)
-    if with_multi_files:
-        issues.append(f"**{with_multi_files}** participant(s) with multiple files (merged)")
-
-    no_events = sum(1 for s in summaries_data if s["events_detected"] == 0)
-    if no_events:
-        issues.append(f"? **{no_events}** participant(s) with no events detected")
-
-    # Build participant table data
-    participants_data = []
-    for s in summaries_data:
-        recording_dt_str = s["recording_datetime_str"]
-
-        rr_count = s["rr_file_count"]
-        ev_count = s["events_file_count"]
-        files_str = f"{rr_count}RR/{ev_count}Ev"
-        if rr_count > 1 or ev_count > 1:
-            files_str = f"{files_str}"
-
-        quality_badge = get_quality_badge(100, s["artifact_ratio"])
-
-        # Get group with label
-        group_id = participant_groups.get(s["participant_id"], "Default")
-        group_display = group_labels.get(group_id, group_id)
-
-        # Get randomization with label
-        rand_id = participant_randomizations.get(s["participant_id"], "")
-        rand_display = randomization_labels.get(rand_id, rand_id) if rand_id else ""
-
-        participants_data.append({
-            "Participant": s["participant_id"],
-            "Quality": quality_badge,
-            "Saved": "Y" if s["participant_id"] in loaded_set else "N",
-            "Files": files_str,
-            "Date/Time": recording_dt_str,
-            "Group": group_display,
-            "_group_id": group_id,  # Hidden: actual group ID for saving
-            "Randomization": rand_display,
-            "_rand_id": rand_id,  # Hidden: actual rand ID for saving
-            "Total Beats": s["total_beats"],
-            "Retained": s["retained_beats"],
-            "Duplicates": s["duplicate_rr_intervals"],
-            "Duration (min)": f"{s['duration_s'] / 60:.1f}",
-            "Events": s["events_detected"],
-            "Total Events": s["events_detected"] + s["duplicate_events"],
-            "Duplicate Events": s["duplicate_events"],
-            "RR Range (ms)": f"{int(s['rr_min_ms'])}-{int(s['rr_max_ms'])}",
-            "Mean RR (ms)": f"{s['rr_mean_ms']:.0f}",
-        })
-
-    return participants_data, issues
+    """Cache the participant table data to avoid rebuilding on every rerun."""
+    from rrational.prep.participant_table import build_participant_table
+    return build_participant_table(
+        summaries_data=[dict(t) for t in summaries_data],
+        participant_groups=participant_groups,
+        participant_randomizations=participant_randomizations,
+        group_labels=group_labels,
+        randomization_labels=randomization_labels,
+        loaded_participants=set(loaded_participants_keys),
+    )
 
 
 def serialize_summaries_for_cache():
@@ -3471,7 +3407,7 @@ def render_participant_table_fragment():
     st.caption("Group and randomization assignments save automatically when changed in the table.")
 
 
-def show_toast(message, icon="success"):
+def _OLD_show_toast(message, icon="success"):
     """Show a toast notification with auto-dismiss."""
     if icon == "success":
         st.toast(f"{message}", icon=":material/check:")
@@ -3485,14 +3421,14 @@ def show_toast(message, icon="success"):
         st.toast(message)
 
 
-def auto_save_config():
+def _OLD_auto_save_config():
     """Auto-save configuration with non-intrusive feedback."""
     save_all_config()
     # Store save timestamp for UI feedback
     st.session_state.last_save_time = time.time()
 
 
-def validate_regex_pattern(pattern):
+def _OLD_validate_regex_pattern(pattern):
     """Validate regex pattern and return error message if invalid."""
     try:
         re.compile(pattern)
