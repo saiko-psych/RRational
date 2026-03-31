@@ -3155,9 +3155,12 @@ def _display_single_participant_results(selected_participant: str):
                     step_beats = result_data.get("step_beats", 150)
                     window_info = f"{window_beats} beats, {step_beats}-beat step"
                 else:
-                    window_duration = result_data.get("window_duration_min", 5)
-                    overlap_pct = result_data.get("overlap_percent", 50)
-                    window_info = f"{window_duration}min, {overlap_pct}% overlap"
+                    window_duration = result_data.get("window_duration_min")
+                    overlap_pct = result_data.get("overlap_percent")
+                    if window_duration is not None and overlap_pct is not None:
+                        window_info = f"{window_duration}min, {overlap_pct}% overlap"
+                    else:
+                        window_info = "per-segment"
 
                 # Get segment info from analysis_segments if available
                 analysis_segments = result_data.get("analysis_segments", [])
