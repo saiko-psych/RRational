@@ -21,7 +21,9 @@ PREDEFINED_PATTERNS = {
     "Letters + digits (e.g., P001, SUB123)": r"(?P<participant>[A-Za-z]+\d+)",
     "Underscore separated (e.g., sub_001)": r"(?P<participant>[A-Za-z]+_\d+)",
 }
-_RR_REQUIRED_COLUMNS = ("rr",)  # "date" or "timestamp" handled below
+_RR_REQUIRED_COLUMNS = ("date", "rr")
+# Known alternative column names from newer HRV Logger versions
+_RR_ALT_DATE_COLUMN = "timestamp"  # Unix ms instead of datetime string
 _EVENT_REQUIRED_COLUMNS = ("annotation", "timestamp")
 
 
@@ -157,13 +159,6 @@ def discover_recordings(
 def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
-    # Try Unix timestamp in milliseconds (new HRV Logger format: e.g. "1742229480012")
-    if value.isdigit() and len(value) >= 10:
-        try:
-            return datetime.fromtimestamp(int(value) / 1000)
-        except (ValueError, OSError):
-            pass
-    # Try standard format: "2025-04-25 06:37:37 +0000"
     try:
         return datetime.strptime(value, "%Y-%m-%d %H:%M:%S %z")
     except ValueError:
@@ -182,6 +177,40 @@ def _parse_int(value: str | None) -> int | None:
         return None
 
 
+def validate_rr_csv_format(rr_path: Path) -> tuple[bool, str]:
+    """Check if a CSV file has the expected HRV Logger RR format.
+
+    Returns:
+        (is_valid, message) — message explains the issue if invalid.
+    """
+    reader = _prepare_reader(rr_path)
+    if not reader.fieldnames:
+        return False, f"Empty or unreadable CSV: {rr_path.name}"
+
+    columns = {(c.strip().lower() if c else "") for c in reader.fieldnames}
+    has_date = "date" in columns
+    has_rr = "rr" in columns
+    has_alt_timestamp = _RR_ALT_DATE_COLUMN in columns and not has_date
+
+    if has_alt_timestamp and has_rr:
+        return False, (
+            f"Unsupported CSV format in {rr_path.name}: "
+            f"found columns {sorted(columns)} — uses 'timestamp' instead of 'date'. "
+            f"This appears to be a newer HRV Logger version that is not yet supported."
+        )
+    if not has_date or not has_rr:
+        missing = []
+        if not has_date:
+            missing.append("date")
+        if not has_rr:
+            missing.append("rr")
+        return False, (
+            f"Missing required columns in {rr_path.name}: {missing}. "
+            f"Found: {sorted(columns)}. Expected HRV Logger format with 'date, rr, since start'."
+        )
+    return True, ""
+
+
 def load_rr_intervals(rr_path: Path) -> tuple[list[RRInterval], int, list[DuplicateInfo]]:
     """Parse RR CSV rows and detect exact duplicate rows.
 
@@ -190,12 +219,21 @@ def load_rr_intervals(rr_path: Path) -> tuple[list[RRInterval], int, list[Duplic
 
     Returns:
         tuple: (list of unique RR intervals, count of duplicates removed, list of duplicate details)
+
+    Raises:
+        ValueError: If the CSV format is not recognized as HRV Logger output.
     """
+    # Validate format first
+    is_valid, message = validate_rr_csv_format(rr_path)
+    if not is_valid:
+        import warnings
+        warnings.warn(message, stacklevel=2)
+        return [], 0, []
 
     intervals: list[RRInterval] = []
-    seen_rows: dict[tuple, int] = {}  # (timestamp_str, rr_str, elapsed_str) -> line number
+    seen_rows: dict[tuple, int] = {}
     duplicates_list: list[DuplicateInfo] = []
-    line_num = 0  # Track CSV line number (including header)
+    line_num = 0
 
     for row in _prepare_reader(rr_path):
         line_num += 1
@@ -204,8 +242,7 @@ def load_rr_intervals(rr_path: Path) -> tuple[list[RRInterval], int, list[Duplic
         if not all(col in cleaned for col in _RR_REQUIRED_COLUMNS):
             continue
 
-        # Parse values — support both "date" (old format) and "timestamp" (new format)
-        date_str = cleaned.get("date", "") or cleaned.get("timestamp", "")
+        date_str = cleaned.get("date", "")
         rr_str = cleaned.get("rr", "")
         elapsed_str = cleaned.get("since start") or cleaned.get("since_start", "")
 
@@ -249,6 +286,20 @@ def load_rr_intervals(rr_path: Path) -> tuple[list[RRInterval], int, list[Duplic
 
 def load_events(events_path: Path) -> list[EventMarker]:
     """Parse HRV Logger Events CSV rows."""
+
+    # Validate format
+    reader = _prepare_reader(events_path)
+    if reader.fieldnames:
+        columns = {(c.strip().lower() if c else "") for c in reader.fieldnames}
+        if not all(col in columns for col in _EVENT_REQUIRED_COLUMNS):
+            import warnings
+            warnings.warn(
+                f"Unsupported Events CSV format in {events_path.name}: "
+                f"found columns {sorted(columns)}. "
+                f"Expected HRV Logger format with 'annotation, timestamp'.",
+                stacklevel=2,
+            )
+            return []
 
     markers: list[EventMarker] = []
     for row in _prepare_reader(events_path):
