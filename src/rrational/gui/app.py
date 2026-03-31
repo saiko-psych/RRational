@@ -2365,6 +2365,8 @@ def render_rr_plot_fragment(participant_id: str):
 
         current = st.session_state.get(plot_mode_key, "Add Events")
 
+        pan_key = f"inspection_pan_offset_{pid}"
+
         if current != "Signal Inspection":
             # Switch to Signal Inspection mode AND enable zoom
             st.session_state[plot_mode_key] = "Signal Inspection"
@@ -2374,6 +2376,7 @@ def render_rr_plot_fragment(participant_id: str):
                 'x_window_seconds': 60,
                 'center_on_mean': True
             }
+            st.session_state[pan_key] = 0
             st.toast("Signal Inspection + Zoom ON")
         else:
             # Toggle zoom
@@ -2395,14 +2398,36 @@ def render_rr_plot_fragment(participant_id: str):
         if not pid:
             return
         zoom_key = f"inspection_zoom_{pid}"
+        pan_key = f"inspection_pan_offset_{pid}"
         if zoom_key in st.session_state:
             del st.session_state[zoom_key]
-            st.toast("Zoom reset to auto")
+        st.session_state[pan_key] = 0
+        st.toast("Zoom reset to auto")
 
-    # Hidden shortcut buttons - use components.html with JS to hide them
+    def handle_pan_left():
+        """Handle Left arrow - pan view 15 seconds earlier."""
+        pid = st.session_state.get("_inspection_participant_id", "")
+        if not pid:
+            return
+        pan_key = f"inspection_pan_offset_{pid}"
+        st.session_state[pan_key] = st.session_state.get(pan_key, 0) - 15
+
+    def handle_pan_right():
+        """Handle Right arrow - pan view 15 seconds later."""
+        pid = st.session_state.get("_inspection_participant_id", "")
+        if not pid:
+            return
+        pan_key = f"inspection_pan_offset_{pid}"
+        st.session_state[pan_key] = st.session_state.get(pan_key, 0) + 15
+
+    # Hidden shortcut buttons
     reset_zoom_key = f"reset_zoom_{participant_id}"
+    pan_left_key = f"pan_left_{participant_id}"
+    pan_right_key = f"pan_right_{participant_id}"
     shortcut_button("I", "i", key=inspection_action_key, on_click=handle_inspection_shortcut)
     shortcut_button("R", "r", key=reset_zoom_key, on_click=handle_reset_zoom)
+    shortcut_button("Left", "arrowleft", key=pan_left_key, on_click=handle_pan_left)
+    shortcut_button("Right", "arrowright", key=pan_right_key, on_click=handle_pan_right)
 
     # Use components.html to inject JS that hides the buttons in the parent window
     import streamlit.components.v1 as components
@@ -2418,7 +2443,7 @@ def render_rr_plot_fragment(participant_id: str):
         function hideShortcutButtons() {
             doc.querySelectorAll('button').forEach(function(btn) {
                 var text = btn.textContent.trim();
-                if (text === 'I i' || text === 'R r') {
+                if (text === 'I i' || text === 'R r' || text === 'Left arrowleft' || text === 'Right arrowright') {
                     var el = btn;
                     // Walk up to find the stButton container
                     while (el && el.parentElement) {
@@ -3887,21 +3912,23 @@ def render_rr_plot_fragment(participant_id: str):
         yaxis_config['range'] = [inspection_zoom['y_min'], inspection_zoom['y_max']]
         yaxis_config['autorange'] = False
 
-        # X-axis: Always 60s window when inspection zoom is active
+        # X-axis: 60s window with pan offset from arrow keys
         ts_for_zoom = plot_data.get('timestamps', [])
         if inspection_zoom.get('x_window_seconds') and ts_for_zoom:
             pd = get_pandas()
             half_window = pd.Timedelta(seconds=inspection_zoom['x_window_seconds'] / 2)
+            pan_offset_s = st.session_state.get(f"inspection_pan_offset_{participant_id}", 0)
+            pan_delta = pd.Timedelta(seconds=pan_offset_s)
 
             if section_selected and section_seq_start and section_seq_end:
-                # Center 60s window within the section
                 section_mid = pd.to_datetime(section_seq_start) + (pd.to_datetime(section_seq_end) - pd.to_datetime(section_seq_start)) / 2
-                xaxis_config['range'] = [section_mid - half_window, section_mid + half_window]
+                center = section_mid + pan_delta
+                xaxis_config['range'] = [center - half_window, center + half_window]
             else:
-                # Center 60s window on full data
                 mid_idx = len(ts_for_zoom) // 2
                 mid_time = pd.to_datetime(ts_for_zoom[mid_idx])
-                xaxis_config['range'] = [mid_time - half_window, mid_time + half_window]
+                center = mid_time + pan_delta
+                xaxis_config['range'] = [center - half_window, center + half_window]
             xaxis_config['autorange'] = False
     else:
         # No inspection zoom: Y = auto
