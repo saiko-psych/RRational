@@ -5449,10 +5449,10 @@ def render_rr_plot_fragment(participant_id: str):
                     display_time = clicked_ts.strftime("%H:%M:%S")
                     st.toast(f"Exclusion point {len(st.session_state[exclusion_click_key])}: {display_time}")
 
-                    # Only rerun for second point (to show confirmation form)
-                    # First point: don't rerun to avoid zoom reset - marker shows on next interaction
+                    # Full rerun for second point so the confirmation form
+                    # and exclusion zones list (outside fragment) update immediately
                     if len(st.session_state[exclusion_click_key]) >= 2:
-                        st.rerun(scope="fragment")
+                        st.rerun()
 
                 # Always return early in exclusion mode (don't show event form)
                 return
