@@ -67,7 +67,8 @@
       "Bash(end event\" for any section whose start event wasn''t the first event\nin the recording.\n\nFix: When auto-selecting \\(no user disambiguation\\), filter end\ncandidates to only include events that occur AFTER the selected\nstart event, then pick the first one.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git revert:*)",
       "Bash(/tmp/function_comparison.txt:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(uv run python -c \":*)"
     ],
     "deny": [],
     "ask": []

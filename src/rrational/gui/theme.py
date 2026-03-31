@@ -6,7 +6,6 @@ Extracted from app.py.
 from __future__ import annotations
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 def get_current_theme_colors():

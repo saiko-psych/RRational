@@ -5,8 +5,10 @@ Returns Plotly figures — no Streamlit dependency.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
+
+from rrational.analysis.hrv_metrics import get_metric_info
+from rrational.gui.plots.analysis_plots import get_theme_colors
 
 _go = None
 

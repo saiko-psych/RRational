@@ -21,10 +21,18 @@ def get_plotly_analysis():
         _make_subplots = make_subplots
     return _go, _make_subplots
 
-from rrational.analysis.hrv_metrics import (
-    HRV_REFERENCE_VALUES,
-    format_power,
+from rrational.analysis.hrv_metrics import (  # noqa: E402
+    format_power as _format_power,
 )
+
+
+def get_neurokit():
+    """Lazy import NeuroKit2."""
+    try:
+        import neurokit2 as nk
+        return nk
+    except ImportError:
+        return None
 
 PLOT_COLORS = {
     "primary": "#2E86AB",
@@ -522,8 +530,7 @@ def create_frequency_domain_plot(rr_intervals: list, section_label: str,
 
         return fig, stats
 
-    except Exception as e:
-        st.warning(f"Could not create frequency plot: {e}")
+    except Exception:
         return None, None
 
 
