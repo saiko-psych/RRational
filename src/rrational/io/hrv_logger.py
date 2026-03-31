@@ -21,7 +21,7 @@ PREDEFINED_PATTERNS = {
     "Letters + digits (e.g., P001, SUB123)": r"(?P<participant>[A-Za-z]+\d+)",
     "Underscore separated (e.g., sub_001)": r"(?P<participant>[A-Za-z]+_\d+)",
 }
-_RR_REQUIRED_COLUMNS = ("date", "rr")
+_RR_REQUIRED_COLUMNS = ("rr",)  # "date" or "timestamp" handled below
 _EVENT_REQUIRED_COLUMNS = ("annotation", "timestamp")
 
 
@@ -157,6 +157,13 @@ def discover_recordings(
 def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
+    # Try Unix timestamp in milliseconds (new HRV Logger format: e.g. "1742229480012")
+    if value.isdigit() and len(value) >= 10:
+        try:
+            return datetime.fromtimestamp(int(value) / 1000)
+        except (ValueError, OSError):
+            pass
+    # Try standard format: "2025-04-25 06:37:37 +0000"
     try:
         return datetime.strptime(value, "%Y-%m-%d %H:%M:%S %z")
     except ValueError:
@@ -197,8 +204,8 @@ def load_rr_intervals(rr_path: Path) -> tuple[list[RRInterval], int, list[Duplic
         if not all(col in cleaned for col in _RR_REQUIRED_COLUMNS):
             continue
 
-        # Parse values
-        date_str = cleaned.get("date", "")
+        # Parse values — support both "date" (old format) and "timestamp" (new format)
+        date_str = cleaned.get("date", "") or cleaned.get("timestamp", "")
         rr_str = cleaned.get("rr", "")
         elapsed_str = cleaned.get("since start") or cleaned.get("since_start", "")
 
