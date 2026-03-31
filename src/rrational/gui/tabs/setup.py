@@ -815,7 +815,7 @@ def _render_sections_section():
     with st.expander("Create New Section"):
         available_events = list(st.session_state.all_events.keys())
 
-        with st.form("create_section_form", clear_on_submit=True):
+        with st.form("create_section_form", clear_on_submit=True, enter_to_submit=False):
             new_section_name = st.text_input("Section Code (internal ID)",
                                              help="e.g., music_01, rest_pre")
             new_section_label = st.text_input("Section Label (short name)",
