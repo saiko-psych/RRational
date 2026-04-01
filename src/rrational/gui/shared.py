@@ -565,7 +565,7 @@ def save_all_config():
 
 
 def save_participant_data():
-    """Save participant-specific data (groups, playlists, labels, event orders, manual events).
+    """Save participant-specific data (groups, sequences, labels, event orders, manual events).
 
     Note: Section selections are stored separately in {participant_id}_section_validations.yml
     via save_full_section_validations().
@@ -576,7 +576,7 @@ def save_participant_data():
     # Collect all participant IDs that have any data
     all_participant_ids = set(
         list(st.session_state.participant_groups.keys()) +
-        list(st.session_state.get("participant_playlists", {}).keys()) +
+        list(st.session_state.get("participant_sequences", {}).keys()) +
         list(st.session_state.get("participant_labels", {}).keys()) +
         list(st.session_state.event_order.keys()) +
         list(st.session_state.manual_events.keys())

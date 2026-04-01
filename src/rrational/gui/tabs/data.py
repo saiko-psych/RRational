@@ -1063,7 +1063,7 @@ def _render_participants_table():
                 except Exception as e:
                     st.error(f"Error reading CSV: {e}")
 
-    st.info("**Tip:** Group and Playlist assignments save automatically when you change them in the table above.")
+    st.info("**Tip:** Group and Sequence assignments save automatically when you change them in the table above.")
 
 
 def _render_batch_processing():

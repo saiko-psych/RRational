@@ -40,7 +40,6 @@ def _open_folder_dialog(title: str = "Select Folder", initial_dir: str | None = 
     """
     import subprocess
     import sys
-    import platform
 
     # Set initial directory - use home folder as default (works on all OS)
     if initial_dir is None or not Path(initial_dir).exists():
@@ -231,9 +230,10 @@ def _render_main_welcome() -> str | None:
                 # Clear any existing loaded data for clean demo experience
                 keys_to_clear = [
                     "summaries", "participant_events", "participant_groups",
-                    "participant_randomizations", "participant_playlists",
+                    "participant_randomizations", "participant_sequences", "participant_playlists",
                     "participant_labels", "event_order", "groups", "all_events",
-                    "sections", "music_labels", "playlist_groups", "normalizer",
+                    "sections", "condition_labels", "event_sequences",
+                    "music_labels", "playlist_groups", "normalizer",
                     "current_project", "project_manager",
                 ]
                 for key in keys_to_clear:

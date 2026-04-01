@@ -1628,7 +1628,7 @@ def render_participant_table_fragment():
         st.markdown("""
         **Import group and randomization assignments** from your study's master CSV file.
 
-        Default column names: `code` (participant ID), `group`, `playlist` (randomization)
+        Default column names: `code` (participant ID), `group`, `sequence` (randomization)
         """)
 
         uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], key="assignment_csv_upload")
@@ -1649,7 +1649,7 @@ def render_participant_table_fragment():
 
                 default_id = find_default(columns, ["code", "id", "participant", "participant_id", "subject"])
                 default_group = find_default(columns, ["group", "condition", "gruppe"])
-                default_rand = find_default(columns, ["playlist", "randomization", "randomisation", "rand"])
+                default_rand = find_default(columns, ["sequence", "playlist", "randomization", "randomisation", "rand"])
 
                 col1, col2, col3 = st.columns(3)
                 with col1:
