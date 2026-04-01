@@ -437,8 +437,8 @@ RRational provides multiple artifact detection methods:
 #### Segmented Mode Explained
 
 For long recordings, artifact characteristics may change over time (fatigue, movement, electrode drift).
-Segmented mode divides the recording into ~5-minute chunks (300 beats) and runs detection independently
-on each segment. This provides:
+Segmented mode divides the recording into time-based segments (default 5 minutes) and runs detection independently
+on each segment. Segments are always time-based, not beat-based. This provides:
 
 - **Better sensitivity**: Local thresholds adapt to each segment
 - **Per-segment statistics**: See artifact % for each 5-min chunk (expand "Segment Artifact Details")

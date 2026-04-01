@@ -68,7 +68,9 @@
       "Bash(git revert:*)",
       "Bash(/tmp/function_comparison.txt:*)",
       "Read(//tmp/**)",
-      "Bash(uv run python -c \":*)"
+      "Bash(uv run python -c \":*)",
+      "Bash(pip show:*)",
+      "Bash(gh issue:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,6 +1,6 @@
 # RRational Quick Start Guide
 
-**Version: v0.7.2** | **Last Updated: January 2026**
+**Version: v0.8.1** | **Last Updated: March 2026**
 
 ---
 
