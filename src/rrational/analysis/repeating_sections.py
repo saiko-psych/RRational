@@ -1,7 +1,8 @@
-"""Music section analysis module.
+"""Repeating section analysis module.
 
-Handles protocol-based music section extraction, validation, and analysis.
-Supports both HRV Logger (real timestamps) and VNS Analyse (synthetic timestamps).
+Handles protocol-based repeating section extraction, validation, and analysis.
+Supports any cyclic experimental conditions (e.g., music pieces, treatments, stimuli).
+Works with both HRV Logger (real timestamps) and VNS Analyse (synthetic timestamps).
 """
 
 from __future__ import annotations
@@ -15,16 +16,16 @@ from rrational.io.hrv_logger import RRInterval
 
 @dataclass(slots=True)
 class ProtocolConfig:
-    """Protocol configuration for music section analysis.
+    """Protocol configuration for repeating section analysis.
 
     Defines the expected structure of a recording session.
     """
-    expected_duration_min: float = 90.0  # Total expected duration in minutes
-    section_length_min: float = 5.0  # Length of each music section
-    pre_pause_sections: int = 9  # Number of sections before pause
-    post_pause_sections: int = 9  # Number of sections after pause
-    min_section_duration_min: float = 4.0  # Minimum valid section duration
-    min_section_beats: int = 100  # Minimum beats for valid section
+    expected_duration_min: float = 90.0
+    section_length_min: float = 5.0
+    pre_pause_sections: int = 9
+    post_pause_sections: int = 9
+    min_section_duration_min: float = 4.0
+    min_section_beats: int = 100
 
     @property
     def total_sections(self) -> int:
@@ -40,10 +41,10 @@ class ProtocolConfig:
 
 
 @dataclass(slots=True)
-class MusicSection:
-    """A single music section with its data and validation status."""
-    index: int  # 0-based index (0-8 pre-pause, 9-17 post-pause)
-    music_type: str  # e.g., "music_1", "music_2", "music_3"
+class RepeatingSection:
+    """A single repeating section with its data and validation status."""
+    index: int  # 0-based index
+    condition_type: str  # e.g., "condition_a", "treatment_1"
     phase: str  # "pre_pause" or "post_pause"
 
     # Time boundaries
@@ -56,7 +57,7 @@ class MusicSection:
     rr_intervals: list[RRInterval] = field(default_factory=list)
 
     # Validation
-    expected_duration_s: float = 300.0  # 5 min default
+    expected_duration_s: float = 300.0
     actual_duration_s: float = 0.0
     beat_count: int = 0
     artifact_count: int = 0
@@ -82,14 +83,14 @@ class MusicSection:
         """Human-readable label for this section."""
         phase_label = "Pre" if self.phase == "pre_pause" else "Post"
         section_num = self.index + 1 if self.phase == "pre_pause" else self.index - 8
-        return f"{phase_label}-{section_num}: {self.music_type}"
+        return f"{phase_label}-{section_num}: {self.condition_type}"
 
 
 @dataclass(slots=True)
-class MusicSectionAnalysis:
-    """Results of music section extraction and validation."""
+class RepeatingSectionAnalysis:
+    """Results of repeating section extraction and validation."""
     protocol: ProtocolConfig
-    sections: list[MusicSection] = field(default_factory=list)
+    sections: list[RepeatingSection] = field(default_factory=list)
 
     # Duration analysis
     expected_total_duration_s: float = 0.0
@@ -108,32 +109,32 @@ class MusicSectionAnalysis:
 
 class DurationMismatchStrategy:
     """Strategy for handling duration mismatches."""
-    STRICT = "strict"  # Exclude incomplete sections
-    PROPORTIONAL = "proportional"  # Scale all sections equally
-    FLAG_ONLY = "flag_only"  # Include all, mark incomplete
+    STRICT = "strict"
+    PROPORTIONAL = "proportional"
+    FLAG_ONLY = "flag_only"
 
 
-def extract_music_sections(
+def extract_repeating_sections(
     rr_intervals: Sequence[RRInterval],
-    events: dict[str, datetime],  # canonical_name -> timestamp
-    music_order: list[str],  # e.g., ["music_1", "music_2", "music_3"]
+    events: dict[str, datetime],
+    condition_order: list[str],
     protocol: ProtocolConfig | None = None,
     mismatch_strategy: str = DurationMismatchStrategy.FLAG_ONLY,
-) -> MusicSectionAnalysis:
-    """Extract music sections from RR intervals based on protocol and events.
+) -> RepeatingSectionAnalysis:
+    """Extract repeating sections from RR intervals based on protocol and events.
 
     Args:
         rr_intervals: List of RR intervals with timestamps
         events: Dictionary mapping canonical event names to timestamps
-        music_order: Order of music types for this participant's playlist
+        condition_order: Order of condition types for this participant's sequence
         protocol: Protocol configuration (uses defaults if None)
         mismatch_strategy: How to handle duration mismatches
 
     Returns:
-        MusicSectionAnalysis with extracted sections and validation info
+        RepeatingSectionAnalysis with extracted sections and validation info
     """
     protocol = protocol or ProtocolConfig()
-    analysis = MusicSectionAnalysis(protocol=protocol)
+    analysis = RepeatingSectionAnalysis(protocol=protocol)
 
     if not rr_intervals:
         analysis.warnings.append("No RR intervals provided")
@@ -167,29 +168,27 @@ def extract_music_sections(
 
     # Determine section boundaries based on strategy
     if mismatch_strategy == DurationMismatchStrategy.PROPORTIONAL:
-        # Scale sections proportionally
         pre_section_duration = actual_pre_pause_duration / protocol.pre_pause_sections
         post_section_duration = actual_post_pause_duration / protocol.post_pause_sections
     else:
-        # Use expected duration (strict or flag_only)
         pre_section_duration = protocol.section_length_min * 60
         post_section_duration = protocol.section_length_min * 60
 
+    n_conditions = len(condition_order)
+
     # Extract pre-pause sections
     for i in range(protocol.pre_pause_sections):
-        music_idx = i % len(music_order)
-        music_type = music_order[music_idx]
+        condition_type = condition_order[i % n_conditions]
 
         expected_start = pre_pause_start + timedelta(seconds=i * pre_section_duration)
         expected_end = expected_start + timedelta(seconds=pre_section_duration)
 
-        # Clamp to actual boundaries
         actual_start = max(expected_start, pre_pause_start)
         actual_end = min(expected_end, pre_pause_end)
 
-        section = MusicSection(
+        section = RepeatingSection(
             index=i,
-            music_type=music_type,
+            condition_type=condition_type,
             phase="pre_pause",
             expected_start=expected_start,
             expected_end=expected_end,
@@ -198,7 +197,6 @@ def extract_music_sections(
             expected_duration_s=pre_section_duration,
         )
 
-        # Extract RR intervals for this section
         section.rr_intervals = [
             rr for rr in rr_intervals
             if rr.timestamp and actual_start <= rr.timestamp <= actual_end
@@ -206,26 +204,22 @@ def extract_music_sections(
         section.beat_count = len(section.rr_intervals)
         section.actual_duration_s = sum(rr.rr_ms for rr in section.rr_intervals) / 1000
 
-        # Validate section
         _validate_section(section, protocol, mismatch_strategy)
-
         analysis.sections.append(section)
 
     # Extract post-pause sections
     for i in range(protocol.post_pause_sections):
-        music_idx = i % len(music_order)
-        music_type = music_order[music_idx]
+        condition_type = condition_order[i % n_conditions]
 
         expected_start = post_pause_start + timedelta(seconds=i * post_section_duration)
         expected_end = expected_start + timedelta(seconds=post_section_duration)
 
-        # Clamp to actual boundaries
         actual_start = max(expected_start, post_pause_start)
         actual_end = min(expected_end, post_pause_end)
 
-        section = MusicSection(
+        section = RepeatingSection(
             index=protocol.pre_pause_sections + i,
-            music_type=music_type,
+            condition_type=condition_type,
             phase="post_pause",
             expected_start=expected_start,
             expected_end=expected_end,
@@ -234,7 +228,6 @@ def extract_music_sections(
             expected_duration_s=post_section_duration,
         )
 
-        # Extract RR intervals for this section
         section.rr_intervals = [
             rr for rr in rr_intervals
             if rr.timestamp and actual_start <= rr.timestamp <= actual_end
@@ -242,16 +235,14 @@ def extract_music_sections(
         section.beat_count = len(section.rr_intervals)
         section.actual_duration_s = sum(rr.rr_ms for rr in section.rr_intervals) / 1000
 
-        # Validate section
         _validate_section(section, protocol, mismatch_strategy)
-
         analysis.sections.append(section)
 
     # Summarize validation
     analysis.valid_sections = sum(1 for s in analysis.sections if s.is_valid)
     analysis.incomplete_sections = len(analysis.sections) - analysis.valid_sections
 
-    if analysis.duration_mismatch_s > 120:  # More than 2 min mismatch
+    if analysis.duration_mismatch_s > 120:
         analysis.warnings.append(
             f"Duration mismatch: expected {protocol.expected_duration_min:.1f} min, "
             f"actual {analysis.actual_total_duration_s/60:.1f} min "
@@ -262,15 +253,14 @@ def extract_music_sections(
 
 
 def _validate_section(
-    section: MusicSection,
+    section: RepeatingSection,
     protocol: ProtocolConfig,
     strategy: str,
 ) -> None:
-    """Validate a single music section."""
+    """Validate a single repeating section."""
     section.validation_warnings = []
     section.is_valid = True
 
-    # Check duration
     min_duration_s = protocol.min_section_duration_min * 60
     if section.actual_duration_s < min_duration_s:
         section.validation_warnings.append(
@@ -279,7 +269,6 @@ def _validate_section(
         if strategy == DurationMismatchStrategy.STRICT:
             section.is_valid = False
 
-    # Check beat count
     if section.beat_count < protocol.min_section_beats:
         section.validation_warnings.append(
             f"Only {section.beat_count} beats < {protocol.min_section_beats} minimum"
@@ -287,52 +276,51 @@ def _validate_section(
         if strategy == DurationMismatchStrategy.STRICT:
             section.is_valid = False
 
-    # Check if section is completely empty
     if section.beat_count == 0:
         section.validation_warnings.append("No RR intervals in section")
         section.is_valid = False
 
 
-def get_sections_by_music_type(
-    analysis: MusicSectionAnalysis,
+def get_sections_by_condition(
+    analysis: RepeatingSectionAnalysis,
     valid_only: bool = True,
-) -> dict[str, list[MusicSection]]:
-    """Group sections by music type for comparison analysis.
+) -> dict[str, list[RepeatingSection]]:
+    """Group sections by condition type for comparison analysis.
 
     Args:
-        analysis: The music section analysis results
+        analysis: The repeating section analysis results
         valid_only: If True, only include valid sections
 
     Returns:
-        Dictionary mapping music_type -> list of sections
+        Dictionary mapping condition_type -> list of sections
     """
-    result: dict[str, list[MusicSection]] = {}
+    result: dict[str, list[RepeatingSection]] = {}
 
     for section in analysis.sections:
         if valid_only and not section.is_valid:
             continue
 
-        if section.music_type not in result:
-            result[section.music_type] = []
-        result[section.music_type].append(section)
+        if section.condition_type not in result:
+            result[section.condition_type] = []
+        result[section.condition_type].append(section)
 
     return result
 
 
 def get_sections_by_phase(
-    analysis: MusicSectionAnalysis,
+    analysis: RepeatingSectionAnalysis,
     valid_only: bool = True,
-) -> dict[str, list[MusicSection]]:
+) -> dict[str, list[RepeatingSection]]:
     """Group sections by phase (pre/post pause) for comparison.
 
     Args:
-        analysis: The music section analysis results
+        analysis: The repeating section analysis results
         valid_only: If True, only include valid sections
 
     Returns:
         Dictionary mapping phase -> list of sections
     """
-    result = {"pre_pause": [], "post_pause": []}
+    result: dict[str, list[RepeatingSection]] = {"pre_pause": [], "post_pause": []}
 
     for section in analysis.sections:
         if valid_only and not section.is_valid:
@@ -340,3 +328,10 @@ def get_sections_by_phase(
         result[section.phase].append(section)
 
     return result
+
+
+# Backward compatibility aliases
+MusicSection = RepeatingSection
+MusicSectionAnalysis = RepeatingSectionAnalysis
+extract_music_sections = extract_repeating_sections
+get_sections_by_music_type = get_sections_by_condition

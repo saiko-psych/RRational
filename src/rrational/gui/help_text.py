@@ -244,8 +244,8 @@ on the source (HRV Logger vs VNS Analyse).
 - **Show artifacts (NeuroKit2)**: Detect ectopic/missed/extra beats using Kubios algorithm
 - **Show variability segments**: Detect high-variance regions (potential movement artifacts)
 - **Show time gaps**: Highlight recording interruptions (HRV Logger only)
-- **Show music sections**: Display defined section boundaries
-- **Show music events**: Display individual event markers
+- **Show condition sections**: Display defined repeating condition boundaries
+- **Show condition events**: Display individual condition event markers
 
 ---
 
@@ -611,7 +611,7 @@ SECTIONS_HELP = """
 ### Sections and Events
 
 #### How Sections Work:
-1. **Events** mark time points (e.g., "music_start", "music_end")
+1. **Events** mark time points (e.g., "rest_start", "rest_end")
 2. **Sections** define time ranges between events
 3. **Analysis** processes RR intervals within section boundaries
 
@@ -624,7 +624,7 @@ SECTIONS_HELP = """
 #### Event Mapping (Events Tab):
 - Define canonical event names
 - Add synonyms for fuzzy matching
-- Example: "music_start" matches "Musik Start", "music starts", etc.
+- Example: "rest_start" matches "Ruhe Start", "rest starts", etc.
 
 #### Analyzing Sections:
 1. Go to **Analysis** tab

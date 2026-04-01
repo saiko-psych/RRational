@@ -17,8 +17,10 @@ GROUPS_FILE = CONFIG_DIR / "groups.yml"
 EVENTS_FILE = CONFIG_DIR / "events.yml"
 SECTIONS_FILE = CONFIG_DIR / "sections.yml"
 PARTICIPANTS_FILE = CONFIG_DIR / "participants.yml"
-PLAYLIST_GROUPS_FILE = CONFIG_DIR / "playlist_groups.yml"
-MUSIC_LABELS_FILE = CONFIG_DIR / "music_labels.yml"
+PLAYLIST_GROUPS_FILE = CONFIG_DIR / "playlist_groups.yml"  # Legacy
+MUSIC_LABELS_FILE = CONFIG_DIR / "music_labels.yml"  # Legacy
+EVENT_SEQUENCES_FILE = CONFIG_DIR / "event_sequences.yml"
+CONDITION_LABELS_FILE = CONFIG_DIR / "condition_labels.yml"
 PROTOCOL_FILE = CONFIG_DIR / "protocol.yml"
 PARTICIPANT_EVENTS_FILE = CONFIG_DIR / "participant_events.yml"
 SETTINGS_FILE = CONFIG_DIR / "settings.yml"
@@ -32,8 +34,8 @@ DEFAULT_SETTINGS = {
     "plot_options": {
         "show_events": True,
         "show_exclusions": True,
-        "show_music_sections": True,
-        "show_music_events": False,
+        "show_condition_sections": True,
+        "show_condition_events": False,
         "show_artifacts": False,
         "show_variability": False,
         "show_gaps": True,
@@ -299,92 +301,104 @@ def load_participants(project_path: Path | None = None) -> dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
-# --- Playlist Groups ---
+# --- Event Sequences (formerly Playlist Groups) ---
 
-def save_playlist_groups(playlist_groups: dict[str, Any], project_path: Path | None = None) -> None:
-    """Save playlist/randomization groups configuration to YAML.
+def _migrate_sequence_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Migrate legacy playlist_groups data: rename music_order -> condition_order."""
+    migrated = {}
+    for key, value in data.items():
+        if isinstance(value, dict) and "music_order" in value and "condition_order" not in value:
+            value = {**value, "condition_order": value.pop("music_order")}
+        migrated[key] = value
+    return migrated
+
+
+def save_event_sequences(event_sequences: dict[str, Any], project_path: Path | None = None) -> None:
+    """Save event sequence configuration to YAML.
 
     Args:
-        playlist_groups: Playlist groups configuration dict
-        project_path: If provided, saves to project/config/playlist_groups.yml
-
-    Format:
-    {
-        "R1": {
-            "label": "Randomization 1",
-            "music_order": ["music_1", "music_3", "music_2"]
-        },
-        "R2": {
-            "label": "Randomization 2",
-            "music_order": ["music_2", "music_1", "music_3"]
-        }
-    }
+        event_sequences: Event sequence configuration dict
+        project_path: If provided, saves to project/config/event_sequences.yml
     """
     if not project_path:
         ensure_config_dir()
-    target = _get_config_path("playlist_groups.yml", project_path)
+    target = _get_config_path("event_sequences.yml", project_path)
     with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(playlist_groups, f, default_flow_style=False, allow_unicode=True)
+        yaml.safe_dump(event_sequences, f, default_flow_style=False, allow_unicode=True)
 
 
-def load_playlist_groups(project_path: Path | None = None) -> dict[str, Any]:
-    """Load playlist/randomization groups configuration from YAML.
+def load_event_sequences(project_path: Path | None = None) -> dict[str, Any]:
+    """Load event sequence configuration from YAML.
 
-    Args:
-        project_path: If provided, loads from project/config/playlist_groups.yml
+    Tries event_sequences.yml first, falls back to legacy playlist_groups.yml.
+    Migrates music_order -> condition_order on load from legacy files.
 
     Returns:
-        Playlist groups configuration dict, or empty dict if not found
+        Event sequence configuration dict, or empty dict if not found
     """
-    target = _get_config_path("playlist_groups.yml", project_path)
-    if not target.exists():
-        return {}
-    with open(target, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    # Try new filename first
+    target = _get_config_path("event_sequences.yml", project_path)
+    if target.exists():
+        with open(target, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return _migrate_sequence_data(data)
+
+    # Fallback to legacy filename
+    legacy = _get_config_path("playlist_groups.yml", project_path)
+    if legacy.exists():
+        with open(legacy, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return _migrate_sequence_data(data)
+
+    return {}
 
 
-# --- Music Labels ---
+# Backward compatibility aliases
+save_playlist_groups = save_event_sequences
+load_playlist_groups = load_event_sequences
 
-def save_music_labels(music_labels: dict[str, Any], project_path: Path | None = None) -> None:
-    """Save music labels configuration to YAML.
+
+# --- Condition Labels (formerly Music Labels) ---
+
+def save_condition_labels(condition_labels: dict[str, Any], project_path: Path | None = None) -> None:
+    """Save condition labels configuration to YAML.
 
     Args:
-        music_labels: Music labels configuration dict
-        project_path: If provided, saves to project/config/music_labels.yml
-
-    Format:
-    {
-        "music_1": {
-            "label": "Music 1",
-            "description": "Brandenburg Concerto No. 3 - Bach"
-        },
-        "music_2": {
-            "label": "Music 2",
-            "description": "Moonlight Sonata - Beethoven"
-        }
-    }
+        condition_labels: Condition labels configuration dict
+        project_path: If provided, saves to project/config/condition_labels.yml
     """
     if not project_path:
         ensure_config_dir()
-    target = _get_config_path("music_labels.yml", project_path)
+    target = _get_config_path("condition_labels.yml", project_path)
     with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(music_labels, f, default_flow_style=False, allow_unicode=True)
+        yaml.safe_dump(condition_labels, f, default_flow_style=False, allow_unicode=True)
 
 
-def load_music_labels(project_path: Path | None = None) -> dict[str, Any]:
-    """Load music labels configuration from YAML.
+def load_condition_labels(project_path: Path | None = None) -> dict[str, Any]:
+    """Load condition labels configuration from YAML.
 
-    Args:
-        project_path: If provided, loads from project/config/music_labels.yml
+    Tries condition_labels.yml first, falls back to legacy music_labels.yml.
 
     Returns:
-        Music labels configuration dict, or empty dict if not found
+        Condition labels configuration dict, or empty dict if not found
     """
-    target = _get_config_path("music_labels.yml", project_path)
-    if not target.exists():
-        return {}
-    with open(target, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    target = _get_config_path("condition_labels.yml", project_path)
+    if target.exists():
+        with open(target, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+
+    # Fallback to legacy filename
+    legacy = _get_config_path("music_labels.yml", project_path)
+    if legacy.exists():
+        with open(legacy, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+
+    return {}
+
+
+# Backward compatibility aliases
+save_music_labels = save_condition_labels
+load_music_labels = load_condition_labels
 
 
 # --- Protocol ---

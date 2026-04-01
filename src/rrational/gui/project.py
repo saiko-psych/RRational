@@ -45,8 +45,8 @@ class ProjectManager:
         │   ├── events.yml
         │   ├── sections.yml
         │   ├── participants.yml
-        │   ├── playlist_groups.yml
-        │   ├── music_labels.yml
+        │   ├── event_sequences.yml
+        │   ├── condition_labels.yml
         │   └── protocol.yml
         └── analysis/              # Analysis results (future)
     """
@@ -58,8 +58,8 @@ class ProjectManager:
         "events.yml",
         "sections.yml",
         "participants.yml",
-        "playlist_groups.yml",
-        "music_labels.yml",
+        "event_sequences.yml",
+        "condition_labels.yml",
         "protocol.yml",
     ]
 

@@ -11,9 +11,9 @@ import streamlit as st
 
 from rrational.gui.persistence import (
     load_sections,
-    load_playlist_groups,
-    save_playlist_groups,
-    save_music_labels,
+    load_event_sequences,
+    save_event_sequences,
+    save_condition_labels,
 )
 from rrational.gui.shared import (
     auto_save_config,
@@ -37,7 +37,7 @@ def render_setup_tab():
     with col_radio:
         selected_subtab = st.radio(
             "Select section:",
-            ["Events", "Groups", "Playlists", "Sections"],
+            ["Events", "Groups", "Sequences", "Sections"],
             key="setup_subtab",
             horizontal=True,
             label_visibility="collapsed"
@@ -49,8 +49,8 @@ def render_setup_tab():
         _render_events_section()
     elif selected_subtab == "Groups":
         _render_groups_section()
-    elif selected_subtab == "Playlists":
-        _render_playlists_section()
+    elif selected_subtab == "Sequences":
+        _render_event_sequences_section()
     elif selected_subtab == "Sections":
         _render_sections_section()
 
@@ -555,209 +555,207 @@ def _render_groups_section():
     st.info("**All changes save automatically** when you modify group settings or select events.")
 
 
-def _render_playlists_section():
-    """Render the Playlists sub-section for music randomization."""
-    st.subheader("Playlist Groups (Music Randomization)")
+def _render_event_sequences_section():
+    """Render the Event Sequences sub-section for condition randomization."""
+    st.subheader("Event Sequences (Condition Randomization)")
 
-    with st.expander("Help - Playlist Groups", expanded=False):
+    with st.expander("Help - Event Sequences", expanded=False):
         st.markdown("""
-        ### What are Playlist Groups?
+        ### What are Event Sequences?
 
-        Playlist groups define the **music order** for randomization conditions in your study.
-        Each participant can be assigned to a playlist group, which determines the order of
-        music pieces they experience.
+        Event sequences define the **condition order** for randomization in your study.
+        Each participant can be assigned to a sequence, which determines the order of
+        conditions they experience (e.g., treatments, stimuli, music pieces).
 
         ### Example
 
-        If your study has 3 music pieces and 6 randomization conditions:
-        - **playlist_01**: music_1 -> music_2 -> music_3
-        - **playlist_02**: music_1 -> music_3 -> music_2
-        - **playlist_03**: music_2 -> music_1 -> music_3
+        If your study has 3 conditions and 6 randomization sequences:
+        - **sequence_01**: condition_a -> condition_b -> condition_c
+        - **sequence_02**: condition_a -> condition_c -> condition_b
+        - **sequence_03**: condition_b -> condition_a -> condition_c
         - etc.
 
         ### How to Use
 
-        1. Define playlist groups here with their music order
-        2. Assign participants to playlist groups in the Data tab
-        3. Use Music Section Analysis to analyze HRV by music type
+        1. Define event sequences here with their condition order
+        2. Assign participants to sequences in the Data tab
+        3. Use Repeating Section Analysis to analyze HRV by condition type
         """)
 
     st.markdown("""
-    Define music order for each randomization group. Participants assigned to a playlist group
-    will have music events generated in the specified order.
+    Define condition order for each randomization group. Participants assigned to a sequence
+    will have condition events generated in the specified order.
     """)
 
-    # Initialize playlist groups (already done at app startup, but ensure present)
-    if "playlist_groups" not in st.session_state:
-        loaded_playlist = load_playlist_groups()
-        if loaded_playlist:
-            st.session_state.playlist_groups = loaded_playlist
+    # Initialize event sequences (already done at app startup, but ensure present)
+    if "event_sequences" not in st.session_state:
+        loaded = load_event_sequences()
+        if loaded:
+            st.session_state.event_sequences = loaded
         else:
-            st.session_state.playlist_groups = {}
+            st.session_state.event_sequences = {}
 
-    if "participant_playlists" not in st.session_state:
-        st.session_state.participant_playlists = {}
+    if "participant_sequences" not in st.session_state:
+        st.session_state.participant_sequences = {}
 
-    # Create new playlist group
-    with st.expander("Create New Playlist Group"):
-        new_playlist_name = st.text_input(
-            "Playlist Group ID (e.g., playlist_06)",
-            key="new_playlist_name"
+    # Create new event sequence
+    with st.expander("Create New Event Sequence"):
+        new_seq_name = st.text_input(
+            "Sequence ID (e.g., sequence_01)",
+            key="new_sequence_name"
         )
-        new_playlist_label = st.text_input("Playlist Group Label", key="new_playlist_label")
-        new_playlist_order = st.text_input(
-            "Music Order (comma-separated, e.g., music_2, music_1, music_3)",
-            key="new_playlist_order"
+        new_seq_label = st.text_input("Sequence Label", key="new_sequence_label")
+        new_seq_order = st.text_input(
+            "Condition Order (comma-separated, e.g., condition_a, condition_b, condition_c)",
+            key="new_sequence_order"
         )
 
-        def create_playlist_group():
-            if new_playlist_name and new_playlist_name not in st.session_state.playlist_groups:
-                order_list = [m.strip() for m in new_playlist_order.split(",") if m.strip()]
+        def create_event_sequence():
+            if new_seq_name and new_seq_name not in st.session_state.event_sequences:
+                order_list = [m.strip() for m in new_seq_order.split(",") if m.strip()]
                 if not order_list:
-                    order_list = ["music_1", "music_2", "music_3"]
-                st.session_state.playlist_groups[new_playlist_name] = {
-                    "label": new_playlist_label or new_playlist_name,
-                    "music_order": order_list
+                    order_list = ["condition_a", "condition_b", "condition_c"]
+                st.session_state.event_sequences[new_seq_name] = {
+                    "label": new_seq_label or new_seq_name,
+                    "condition_order": order_list
                 }
-                save_playlist_groups(st.session_state.playlist_groups)
-                show_toast(f"Created playlist group '{new_playlist_name}'", icon="success")
-            elif new_playlist_name in st.session_state.playlist_groups:
-                show_toast(f"Playlist group '{new_playlist_name}' already exists", icon="error")
+                save_event_sequences(st.session_state.event_sequences)
+                show_toast(f"Created event sequence '{new_seq_name}'", icon="success")
+            elif new_seq_name in st.session_state.event_sequences:
+                show_toast(f"Event sequence '{new_seq_name}' already exists", icon="error")
 
-        st.button("Create Playlist Group", key="create_playlist_btn", on_click=create_playlist_group)
+        st.button("Create Event Sequence", key="create_sequence_btn", on_click=create_event_sequence)
 
-    # Show existing playlist groups
+    # Show existing event sequences
     st.markdown("---")
-    st.subheader("Existing Playlist Groups")
+    st.subheader("Existing Event Sequences")
 
-    if not st.session_state.playlist_groups:
-        st.info("No playlist groups defined yet. Create one above.")
+    if not st.session_state.event_sequences:
+        st.info("No event sequences defined yet. Create one above.")
     else:
-        for playlist_name, playlist_data in list(st.session_state.playlist_groups.items()):
-            with st.expander(f"{playlist_name} - {playlist_data['label']}"):
+        for seq_name, seq_data in list(st.session_state.event_sequences.items()):
+            condition_order = seq_data.get('condition_order', seq_data.get('music_order', []))
+            with st.expander(f"{seq_name} - {seq_data.get('label', seq_name)}"):
                 # Edit label
                 new_label = st.text_input(
                     "Label",
-                    value=playlist_data.get('label', playlist_name),
-                    key=f"edit_playlist_label_{playlist_name}"
+                    value=seq_data.get('label', seq_name),
+                    key=f"edit_seq_label_{seq_name}"
                 )
 
-                st.markdown(f"**Music Order:** {' -> '.join(playlist_data['music_order'])}")
+                st.markdown(f"**Condition Order:** {' -> '.join(condition_order)}")
 
                 new_order = st.text_input(
-                    "Edit Music Order (comma-separated)",
-                    value=", ".join(playlist_data['music_order']),
-                    key=f"edit_playlist_order_{playlist_name}"
+                    "Edit Condition Order (comma-separated)",
+                    value=", ".join(condition_order),
+                    key=f"edit_seq_order_{seq_name}"
                 )
 
-                col_pl1, col_pl2, col_pl3 = st.columns(3)
-                with col_pl1:
-                    def save_playlist_changes(pl_name, new_ord, new_lbl):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    def save_sequence_changes(s_name, new_ord, new_lbl):
                         order_list = [m.strip() for m in new_ord.split(",") if m.strip()]
                         if order_list:
-                            st.session_state.playlist_groups[pl_name]["music_order"] = order_list
-                        st.session_state.playlist_groups[pl_name]["label"] = new_lbl
-                        save_playlist_groups(st.session_state.playlist_groups)
-                        show_toast(f"Updated '{pl_name}'", icon="success")
+                            st.session_state.event_sequences[s_name]["condition_order"] = order_list
+                        st.session_state.event_sequences[s_name]["label"] = new_lbl
+                        save_event_sequences(st.session_state.event_sequences)
+                        show_toast(f"Updated '{s_name}'", icon="success")
 
                     st.button(
                         "Save Changes",
-                        key=f"save_playlist_{playlist_name}",
-                        on_click=save_playlist_changes,
-                        args=(playlist_name, new_order, new_label)
+                        key=f"save_seq_{seq_name}",
+                        on_click=save_sequence_changes,
+                        args=(seq_name, new_order, new_label)
                     )
 
-                with col_pl3:
-                    def delete_playlist(pl_name):
-                        del st.session_state.playlist_groups[pl_name]
-                        for pid in list(st.session_state.participant_playlists.keys()):
-                            if st.session_state.participant_playlists.get(pid) == pl_name:
-                                del st.session_state.participant_playlists[pid]
-                        # Also remove from participant_randomizations
+                with col3:
+                    def delete_sequence(s_name):
+                        del st.session_state.event_sequences[s_name]
+                        for pid in list(st.session_state.participant_sequences.keys()):
+                            if st.session_state.participant_sequences.get(pid) == s_name:
+                                del st.session_state.participant_sequences[pid]
                         for pid in list(st.session_state.get("participant_randomizations", {}).keys()):
-                            if st.session_state.participant_randomizations.get(pid) == pl_name:
+                            if st.session_state.participant_randomizations.get(pid) == s_name:
                                 del st.session_state.participant_randomizations[pid]
-                        save_playlist_groups(st.session_state.playlist_groups)
-                        show_toast(f"Deleted playlist group '{pl_name}'", icon="success")
+                        save_event_sequences(st.session_state.event_sequences)
+                        show_toast(f"Deleted event sequence '{s_name}'", icon="success")
 
                     st.button(
                         "Delete",
-                        key=f"delete_playlist_{playlist_name}",
-                        on_click=delete_playlist,
-                        args=(playlist_name,),
+                        key=f"delete_seq_{seq_name}",
+                        on_click=delete_sequence,
+                        args=(seq_name,),
                         type="secondary"
                     )
 
-                # Show participants assigned to this playlist
+                # Show participants assigned to this sequence
                 participants_in_group = [
-                    pid for pid, pl in st.session_state.get("participant_randomizations", {}).items()
-                    if pl == playlist_name
+                    pid for pid, s in st.session_state.get("participant_randomizations", {}).items()
+                    if s == seq_name
                 ]
                 if participants_in_group:
                     st.markdown(f"**Participants:** {', '.join(participants_in_group)}")
                 else:
                     st.caption("No participants assigned yet")
 
-    # Music Item Labels Section
+    # Condition Labels Section
     st.markdown("---")
-    st.subheader("Music Item Labels")
+    st.subheader("Condition Labels")
     st.markdown("""
-    Define labels and descriptions for your music items (e.g., `music_1`, `music_2`).
+    Define labels and descriptions for your conditions (e.g., `condition_a`, `treatment_1`).
     These labels will appear in exports and the codebook.
     """)
 
-    # Collect all unique music items from playlist orders
-    all_music_items = set()
-    for pl_data in st.session_state.get("playlist_groups", {}).values():
-        all_music_items.update(pl_data.get("music_order", []))
-    all_music_items = sorted(all_music_items)
+    # Collect all unique conditions from sequence orders
+    all_conditions = set()
+    for s_data in st.session_state.get("event_sequences", {}).values():
+        all_conditions.update(s_data.get("condition_order", s_data.get("music_order", [])))
+    all_conditions = sorted(all_conditions)
 
-    if all_music_items:
-        # Initialize music_labels if not present
-        if "music_labels" not in st.session_state:
-            st.session_state.music_labels = {}
+    if all_conditions:
+        if "condition_labels" not in st.session_state:
+            st.session_state.condition_labels = {}
 
-        music_data = []
-        for music_item in all_music_items:
-            current_data = st.session_state.music_labels.get(music_item, {})
-            music_data.append({
-                "Code": music_item,
-                "Label": current_data.get("label", music_item.replace("_", " ").title()),
+        label_data = []
+        for condition in all_conditions:
+            current_data = st.session_state.condition_labels.get(condition, {})
+            label_data.append({
+                "Code": condition,
+                "Label": current_data.get("label", condition.replace("_", " ").title()),
                 "Description": current_data.get("description", ""),
             })
 
-        df_music = pd.DataFrame(music_data)
+        df_labels = pd.DataFrame(label_data)
 
-        edited_music = st.data_editor(
-            df_music,
+        edited_labels = st.data_editor(
+            df_labels,
             width='stretch',
             hide_index=True,
-            key="music_labels_table",
+            key="condition_labels_table",
             column_config={
                 "Code": st.column_config.TextColumn("Code", disabled=True, help="Internal identifier"),
                 "Label": st.column_config.TextColumn("Label", help="Short display name"),
-                "Description": st.column_config.TextColumn("Description", help="Full description (e.g., composer, piece name)", width="large"),
+                "Description": st.column_config.TextColumn("Description", help="Full description", width="large"),
             }
         )
 
-        def save_music_labels_callback():
-            """Save music labels from the edited table."""
-            for _, row in edited_music.iterrows():
+        def save_condition_labels_callback():
+            """Save condition labels from the edited table."""
+            for _, row in edited_labels.iterrows():
                 code = row["Code"]
-                st.session_state.music_labels[code] = {
+                st.session_state.condition_labels[code] = {
                     "label": row["Label"],
                     "description": row["Description"],
                 }
-            # Save to persistence (dedicated music_labels file)
-            save_music_labels(st.session_state.music_labels)
-            show_toast("Music labels saved", icon="success")
+            save_condition_labels(st.session_state.condition_labels)
+            show_toast("Condition labels saved", icon="success")
 
-        st.button("Save Music Labels", key="save_music_labels_btn", on_click=save_music_labels_callback, type="primary")
+        st.button("Save Condition Labels", key="save_condition_labels_btn", on_click=save_condition_labels_callback, type="primary")
     else:
-        st.info("No music items defined yet. Add them to playlist groups above.")
+        st.info("No conditions defined yet. Add them to event sequences above.")
 
     st.markdown("---")
-    st.info("**All changes save automatically.** Playlist labels are used in the Data tab.")
+    st.info("**All changes save automatically.** Condition labels are used in the Data tab.")
 
 
 def _render_sections_section():

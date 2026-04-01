@@ -1,13 +1,12 @@
-"""Tests for music section extraction and validation."""
+"""Tests for repeating section extraction and validation."""
 
 from datetime import datetime, timedelta
 
-
-from rrational.analysis import (
+from rrational.analysis.repeating_sections import (
     ProtocolConfig,
     DurationMismatchStrategy,
-    extract_music_sections,
-    get_sections_by_music_type,
+    extract_repeating_sections,
+    get_sections_by_condition,
 )
 from rrational.io.hrv_logger import RRInterval
 
@@ -35,11 +34,9 @@ def create_test_rr_intervals(
     return intervals
 
 
-def test_extract_music_sections_basic():
-    """Test basic music section extraction."""
+def test_extract_repeating_sections_basic():
+    """Test basic repeating section extraction."""
     start = datetime(2024, 1, 1, 10, 0, 0)
-
-    # Create 90 minutes of RR data
     rr_intervals = create_test_rr_intervals(start, 90)
 
     events = {
@@ -56,10 +53,10 @@ def test_extract_music_sections_basic():
         post_pause_sections=9,
     )
 
-    analysis = extract_music_sections(
+    analysis = extract_repeating_sections(
         rr_intervals=rr_intervals,
         events=events,
-        condition_order=["music_1", "music_2", "music_3"],
+        condition_order=["condition_a", "condition_b", "condition_c"],
         protocol=protocol,
     )
 
@@ -68,11 +65,9 @@ def test_extract_music_sections_basic():
     assert analysis.incomplete_sections == 0
 
 
-def test_extract_music_sections_short_recording():
+def test_extract_repeating_sections_short_recording():
     """Test extraction with shorter than expected recording."""
     start = datetime(2024, 1, 1, 10, 0, 0)
-
-    # Create only 80 minutes of RR data (10 min short)
     rr_intervals = create_test_rr_intervals(start, 80)
 
     events = {
@@ -90,21 +85,20 @@ def test_extract_music_sections_short_recording():
         min_section_duration_min=4.0,
     )
 
-    analysis = extract_music_sections(
+    analysis = extract_repeating_sections(
         rr_intervals=rr_intervals,
         events=events,
-        condition_order=["music_1", "music_2", "music_3"],
-        protocol=protocol,
+        condition_order=["condition_a", "condition_b", "condition_c"],
         mismatch_strategy=DurationMismatchStrategy.FLAG_ONLY,
+        protocol=protocol,
     )
 
-    # Should have warnings about duration mismatch
     assert len(analysis.warnings) > 0
     assert analysis.duration_mismatch_s > 0
 
 
-def test_sections_by_music_type():
-    """Test grouping sections by music type."""
+def test_sections_by_condition():
+    """Test grouping sections by condition type."""
     start = datetime(2024, 1, 1, 10, 0, 0)
     rr_intervals = create_test_rr_intervals(start, 30)
 
@@ -120,22 +114,21 @@ def test_sections_by_music_type():
         post_pause_sections=0,
     )
 
-    analysis = extract_music_sections(
+    analysis = extract_repeating_sections(
         rr_intervals=rr_intervals,
         events=events,
-        condition_order=["music_1", "music_2", "music_3"],
+        condition_order=["condition_a", "condition_b", "condition_c"],
         protocol=protocol,
     )
 
-    by_type = get_sections_by_music_type(analysis)
+    by_condition = get_sections_by_condition(analysis)
 
-    # Should have 2 sections of each type (6 sections / 3 types)
-    assert "music_1" in by_type
-    assert "music_2" in by_type
-    assert "music_3" in by_type
-    assert len(by_type["music_1"]) == 2
-    assert len(by_type["music_2"]) == 2
-    assert len(by_type["music_3"]) == 2
+    assert "condition_a" in by_condition
+    assert "condition_b" in by_condition
+    assert "condition_c" in by_condition
+    assert len(by_condition["condition_a"]) == 2
+    assert len(by_condition["condition_b"]) == 2
+    assert len(by_condition["condition_c"]) == 2
 
 
 def test_protocol_config_properties():
@@ -150,3 +143,41 @@ def test_protocol_config_properties():
     assert protocol.total_sections == 18
     assert protocol.expected_pre_pause_min == 45.0
     assert protocol.expected_post_pause_min == 45.0
+
+
+def test_backward_compat_imports():
+    """Test that old import paths still work via aliases."""
+    from rrational.analysis.repeating_sections import (
+        MusicSection,
+        MusicSectionAnalysis,
+        extract_music_sections,
+        get_sections_by_music_type,
+    )
+
+    # Verify aliases point to new classes
+    from rrational.analysis.repeating_sections import (
+        RepeatingSection,
+        RepeatingSectionAnalysis,
+        extract_repeating_sections,
+        get_sections_by_condition,
+    )
+
+    assert MusicSection is RepeatingSection
+    assert MusicSectionAnalysis is RepeatingSectionAnalysis
+    assert extract_music_sections is extract_repeating_sections
+    assert get_sections_by_music_type is get_sections_by_condition
+
+
+def test_backward_compat_via_init():
+    """Test that old imports via analysis __init__ still work."""
+    from rrational.analysis import (
+        MusicSection,
+        MusicSectionAnalysis,
+        extract_music_sections,
+        get_sections_by_music_type,
+    )
+
+    assert MusicSection is not None
+    assert MusicSectionAnalysis is not None
+    assert extract_music_sections is not None
+    assert get_sections_by_music_type is not None

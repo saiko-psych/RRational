@@ -1,13 +1,18 @@
-"""Analysis modules for Music HRV."""
+"""Analysis modules for RRational HRV."""
 
-from rrational.analysis.music_sections import (
+from rrational.analysis.repeating_sections import (
     ProtocolConfig,
+    RepeatingSection,
+    RepeatingSectionAnalysis,
+    DurationMismatchStrategy,
+    extract_repeating_sections,
+    get_sections_by_condition,
+    get_sections_by_phase,
+    # Backward compatibility aliases
     MusicSection,
     MusicSectionAnalysis,
-    DurationMismatchStrategy,
     extract_music_sections,
     get_sections_by_music_type,
-    get_sections_by_phase,
 )
 
 from rrational.analysis.hrv_metrics import (
@@ -36,14 +41,19 @@ from rrational.analysis.hrv_compute import (
 )
 
 __all__ = [
-    # music_sections
+    # repeating_sections (new names)
     "ProtocolConfig",
+    "RepeatingSection",
+    "RepeatingSectionAnalysis",
+    "DurationMismatchStrategy",
+    "extract_repeating_sections",
+    "get_sections_by_condition",
+    "get_sections_by_phase",
+    # repeating_sections (backward compat)
     "MusicSection",
     "MusicSectionAnalysis",
-    "DurationMismatchStrategy",
     "extract_music_sections",
     "get_sections_by_music_type",
-    "get_sections_by_phase",
     # hrv_metrics
     "ParticipantSectionResult",
     "HRV_METRICS_CATALOG",

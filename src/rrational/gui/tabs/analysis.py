@@ -6,7 +6,6 @@ Provides HRV metrics computation and visualization.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -69,9 +68,7 @@ from rrational.analysis.hrv_metrics import (  # noqa: E402
     get_metric_info,
     format_power as _format_power,
     format_duration as _format_duration,
-    generate_overlapping_windows_time,
     generate_overlapping_windows_beats,
-    generate_overlapping_windows,
     aggregate_hrv_results,
 )
 from rrational.analysis.hrv_compute import (  # noqa: E402
@@ -1326,21 +1323,21 @@ def _get_exclusion_zones(participant_id: str) -> list[dict]:
     return participant_data.get('exclusion_zones', [])
 
 
-def _render_music_section_analysis():
-    """Render the Music Section Analysis UI.
+def _render_repeating_section_analysis():
+    """Render the Repeating Section Analysis UI.
 
-    Protocol-based analysis of 5-minute music sections with validation.
+    Protocol-based analysis of repeating condition sections with validation.
     """
-    from rrational.analysis.music_sections import (
+    from rrational.analysis.repeating_sections import (
         ProtocolConfig,
         DurationMismatchStrategy,
-        extract_music_sections,
-        get_sections_by_music_type,
+        extract_repeating_sections,
+        get_sections_by_condition,
     )
     from rrational.gui.persistence import load_protocol, save_protocol
 
     st.markdown("""
-    Analyze HRV metrics for each **5-minute music section** based on your protocol.
+    Analyze HRV metrics for each **repeating condition section** based on your protocol.
     This mode automatically extracts sections using measurement events and validates data quality.
     """)
 
@@ -1364,7 +1361,7 @@ def _render_music_section_analysis():
                 value=float(protocol_data.get("section_length_min", 5.0)),
                 step=1.0,
                 key="protocol_section_length",
-                help="Duration of each music section"
+                help="Duration of each condition section"
             )
             pre_pause_sections = st.number_input(
                 "Pre-pause sections",
@@ -1372,7 +1369,7 @@ def _render_music_section_analysis():
                 value=int(protocol_data.get("pre_pause_sections", 9)),
                 step=1,
                 key="protocol_pre_pause",
-                help="Number of music sections before the pause"
+                help="Number of condition sections before the pause"
             )
 
         with col_p2:
@@ -1382,7 +1379,7 @@ def _render_music_section_analysis():
                 value=int(protocol_data.get("post_pause_sections", 9)),
                 step=1,
                 key="protocol_post_pause",
-                help="Number of music sections after the pause"
+                help="Number of condition sections after the pause"
             )
             min_section_duration = st.number_input(
                 "Minimum valid section duration (min)",
@@ -1446,7 +1443,7 @@ def _render_music_section_analysis():
 
     st.markdown("---")
 
-    # Participant/Playlist selection
+    # Participant/Sequence selection
     col_sel1, col_sel2 = st.columns(2)
 
     with col_sel1:
@@ -1454,35 +1451,36 @@ def _render_music_section_analysis():
         selected_participant = st.selectbox(
             "Select Participant",
             options=participant_list,
-            key="music_analysis_participant"
+            key="repeating_analysis_participant"
         )
 
     with col_sel2:
-        # Get participant's playlist
-        participant_playlist = st.session_state.get("participant_playlists", {}).get(selected_participant, "")
-        playlist_groups = st.session_state.get("playlist_groups", {})
+        # Get participant's event sequence
+        participant_seq = st.session_state.get("participant_sequences", {}).get(selected_participant, "") or \
+                          st.session_state.get("participant_randomizations", {}).get(selected_participant, "")
+        event_sequences = st.session_state.get("event_sequences", {})
 
-        if participant_playlist and participant_playlist in playlist_groups:
-            playlist_data = playlist_groups[participant_playlist]
-            music_order = playlist_data.get("music_order", ["music_1", "music_2", "music_3"])
-            playlist_label = playlist_data.get("label", participant_playlist)
-            st.info(f"**Playlist:** {playlist_label}")
-            st.caption(f"Music order: {' → '.join(music_order)}")
+        if participant_seq and participant_seq in event_sequences:
+            seq_data = event_sequences[participant_seq]
+            condition_order = seq_data.get("condition_order", seq_data.get("music_order", ["condition_a", "condition_b", "condition_c"]))
+            seq_label = seq_data.get("label", participant_seq)
+            st.info(f"**Sequence:** {seq_label}")
+            st.caption(f"Condition order: {' → '.join(condition_order)}")
         else:
-            st.warning("No playlist assigned. Using default music order.")
-            music_order = ["music_1", "music_2", "music_3"]
+            st.warning("No event sequence assigned. Using default condition order.")
+            condition_order = ["condition_a", "condition_b", "condition_c"]
 
     # Artifact correction option
     apply_correction = st.checkbox(
         "Apply artifact correction (NeuroKit2 Kubios)",
         value=False,
-        key="music_analysis_correction",
+        key="repeating_analysis_correction",
         help="Recommended for data with quality issues"
     )
 
     # Analyze button
-    if st.button("Analyze Music Sections", key="analyze_music_btn", type="primary"):
-        with st.status("Extracting music sections...", expanded=True) as status:
+    if st.button("Analyze Repeating Sections", key="analyze_repeating_btn", type="primary"):
+        with st.status("Extracting repeating sections...", expanded=True) as status:
             try:
                 st.write("Loading recording data...")
 
@@ -1560,17 +1558,17 @@ def _render_music_section_analysis():
                 st.write(f"Found {len(rr_intervals)} RR intervals")
                 st.write(f"Events: {', '.join(events_dict.keys()) or 'None'}")
 
-                # Extract music sections
-                st.write("Extracting music sections...")
+                # Extract repeating sections
+                st.write("Extracting repeating sections...")
                 mismatch_strategy_value = mismatch_options.get(
                     st.session_state.get("protocol_mismatch_strategy", "Flag only (include all, mark incomplete)"),
                     DurationMismatchStrategy.FLAG_ONLY
                 )
 
-                analysis = extract_music_sections(
+                analysis = extract_repeating_sections(
                     rr_intervals=rr_intervals,
                     events=events_dict,
-                    music_order=music_order,
+                    condition_order=condition_order,
                     protocol=protocol,
                     mismatch_strategy=mismatch_strategy_value,
                 )
@@ -1587,7 +1585,7 @@ def _render_music_section_analysis():
 
                 # Display results
                 st.markdown("---")
-                st.subheader("Music Section Analysis Results")
+                st.subheader("Repeating Section Analysis Results")
 
                 # Duration overview
                 col_dur1, col_dur2, col_dur3 = st.columns(3)
@@ -1618,7 +1616,7 @@ def _render_music_section_analysis():
                     section_data.append({
                         "Status": status_icon,
                         "Section": section.label,
-                        "Music": section.music_type,
+                        "Condition": section.condition_type,
                         "Phase": section.phase.replace("_", " ").title(),
                         "Duration (min)": f"{section.actual_duration_s/60:.1f}",
                         "Beats": section.beat_count,
@@ -1676,7 +1674,7 @@ def _render_music_section_analysis():
 
                         hrv_results.append({
                             "Section": section.label,
-                            "Music": section.music_type,
+                            "Condition": section.condition_type,
                             "Phase": section.phase.replace("_", " ").title(),
                             "Beats": section.beat_count,
                             "RMSSD": f"{hrv_time['HRV_RMSSD'].values[0]:.1f}",
@@ -1698,17 +1696,17 @@ def _render_music_section_analysis():
                     st.download_button(
                         "Download HRV Results (CSV)",
                         data=csv_hrv,
-                        file_name=f"music_sections_hrv_{selected_participant}.csv",
+                        file_name=f"repeating_sections_hrv_{selected_participant}.csv",
                         mime="text/csv"
                     )
 
-                    # Summary by music type
-                    st.markdown("### Summary by Music Type")
-                    sections_by_type = get_sections_by_music_type(analysis, valid_only=True)
+                    # Summary by condition type
+                    st.markdown("### Summary by Condition")
+                    sections_by_type = get_sections_by_condition(analysis, valid_only=True)
 
-                    for music_type, sections in sections_by_type.items():
-                        with st.expander(f"{music_type} ({len(sections)} sections)", expanded=False):
-                            type_results = [r for r in hrv_results if r["Music"] == music_type]
+                    for cond_type, sections in sections_by_type.items():
+                        with st.expander(f"{cond_type} ({len(sections)} sections)", expanded=False):
+                            type_results = [r for r in hrv_results if r["Condition"] == cond_type]
                             if type_results:
                                 df_type = pd.DataFrame(type_results)
                                 st.dataframe(df_type, width='stretch', hide_index=True)
@@ -1761,15 +1759,15 @@ def render_analysis_tab():
         # Selection mode
         analysis_mode = st.radio(
             "Analysis Mode",
-            options=["Single Participant", "Music Section Analysis", "Group Analysis"],
+            options=["Single Participant", "Repeating Section Analysis", "Group Analysis"],
             horizontal=True,
         )
 
         if analysis_mode == "Single Participant":
             _render_single_participant_analysis()
 
-        elif analysis_mode == "Music Section Analysis":
-            _render_music_section_analysis()
+        elif analysis_mode == "Repeating Section Analysis":
+            _render_repeating_section_analysis()
 
         else:  # Group Analysis
             _render_group_analysis()
@@ -2368,7 +2366,7 @@ def _render_single_participant_analysis():
                                         w_s = 300.0
                                         segs = gen_segs(np.asarray(nn_intervals_ms), window_s=w_s, overlap_pct=0.0)
                                         windows = [(s.idx, s.start_ms, list(np.asarray(nn_intervals_ms)[s.beat_start:s.beat_end])) for s in segs if s.n_beats >= 30]
-                                        window_info_str = f"5min segments, no overlap"
+                                        window_info_str = "5min segments, no overlap"
 
                                 elif window_mode == "beats" and window_beats is not None:
                                     windows = generate_overlapping_windows_beats(
@@ -2895,7 +2893,7 @@ def _render_single_participant_analysis():
                                             # No segments from artifact detection — generate fresh
                                             segs = gen_segs(nn_arr, window_s=300.0, overlap_pct=0.0)
                                             windows = [(s.idx, s.start_ms, nn_arr[s.beat_start:s.beat_end].tolist()) for s in segs if s.n_beats >= 30]
-                                            window_info_str = f"5min segments, no overlap"
+                                            window_info_str = "5min segments, no overlap"
                                     else:
                                         w_dur_min = window_duration_min if window_duration_min else 5
                                         o_pct = overlap_percent if overlap_percent is not None else 50

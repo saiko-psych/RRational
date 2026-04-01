@@ -54,6 +54,7 @@ This is a **scientific research tool**. Follow HRV guidelines:
 - `gui/theme.py` - CSS/HTML/JS theming (extracted from app.py)
 - `gui/plots/` - analysis_plots.py, group_plots.py (extracted from analysis.py)
 - `gui/shared.py` - GUI utilities, caching
+- `analysis/repeating_sections.py` - Repeating section extraction (formerly music_sections)
 - `analysis/hrv_metrics.py` - Metric catalogs, presets, windowing
 - `analysis/hrv_compute.py` - HRV calculation, result transforms
 - `cleaning/quality.py` - Quality detection, artifact fixpeaks, gap detection
@@ -65,8 +66,8 @@ This is a **scientific research tool**. Follow HRV guidelines:
 ## TODOs
 
 **High Priority:**
-- [ ] Playlist group comparison
-- [ ] Setup section rework (#17)
+- [ ] Event sequence group comparison
+- [x] Setup section rework (#17) - Playlists → Event Sequences
 - [ ] R-R power spectrum plot
 - [x] Batch processing / groupwise analysis (v0.7.9)
 - [x] Unified time-based segmentation (v0.8.1)

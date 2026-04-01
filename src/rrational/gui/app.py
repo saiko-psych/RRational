@@ -5,25 +5,19 @@ from __future__ import annotations
 import streamlit as st
 from pathlib import Path
 import time
-import re
 
 from rrational.cleaning.rr import CleaningConfig
 from rrational.io import DEFAULT_ID_PATTERN, load_recording, discover_recordings
 from rrational.prep import load_hrv_logger_preview
-from rrational.segments.section_normalizer import SectionNormalizer
-from rrational.config.sections import SectionsConfig, SectionDefinition
 from rrational.gui.persistence import (
-    save_groups,
     load_groups,
     save_events,
     load_events,
-    save_sections,
     load_sections,
-    save_participants,
     load_participants,
-    load_playlist_groups,
-    save_playlist_groups,
-    load_music_labels,
+    load_event_sequences,
+    save_event_sequences,
+    load_condition_labels,
     load_settings,
     save_settings,
     DEFAULT_SETTINGS,
@@ -35,18 +29,13 @@ from rrational.gui.help_text import (
 )
 from rrational.cleaning.quality import (
     detect_quality_changepoints,
-    get_quality_badge,
-    detect_time_gaps,
-    detect_artifacts_fixpeaks,
 )
 from rrational.gui.shared import (
     create_gui_normalizer,
-    save_all_config,
     save_participant_data,
     update_normalizer,
     show_toast,
     auto_save_config,
-    validate_regex_pattern,
 )
 
 # Helper function to normalize timestamps for safe comparison
@@ -187,7 +176,7 @@ if "legacy_migration_done" not in st.session_state:
     if migrate_legacy_config():
         st.toast("Migrated settings from previous version", icon="info")
         # Clear session state keys so migrated data will be loaded fresh
-        for key in ["groups", "all_events", "sections", "playlist_groups"]:
+        for key in ["groups", "all_events", "sections", "event_sequences", "playlist_groups"]:
             if key in st.session_state:
                 del st.session_state[key]
     st.session_state.legacy_migration_done = True
@@ -264,27 +253,26 @@ if "default_device_settings" not in st.session_state:
         "device": "Polar H10",
         "sampling_rate": 1000  # Hz - Polar H10 native rate
     }
-# Music item labels (e.g., music_1 -> "Brandenburg Concerto")
+# Condition labels (e.g., condition_a -> "Treatment Alpha")
 # Skip loading in demo mode - use empty defaults
-if "music_labels" not in st.session_state:
+if "condition_labels" not in st.session_state:
     _is_demo = st.session_state.get("demo_mode", False)
-    loaded_music_labels = None if _is_demo else load_music_labels()
-    st.session_state.music_labels = loaded_music_labels if loaded_music_labels else {}
-# Load playlist groups at startup (defines valid randomization options)
-if "playlist_groups" not in st.session_state:
+    loaded_cond_labels = None if _is_demo else load_condition_labels()
+    st.session_state.condition_labels = loaded_cond_labels if loaded_cond_labels else {}
+# Migrate legacy session state keys
+if "music_labels" in st.session_state and "condition_labels" not in st.session_state:
+    st.session_state.condition_labels = st.session_state.music_labels
+# Load event sequences at startup (defines valid randomization options)
+if "event_sequences" not in st.session_state:
     _is_demo = st.session_state.get("demo_mode", False)
-    loaded_playlist = None if _is_demo else load_playlist_groups()
-    if loaded_playlist:
-        st.session_state.playlist_groups = loaded_playlist
+    loaded_sequences = None if _is_demo else load_event_sequences()
+    if loaded_sequences:
+        st.session_state.event_sequences = loaded_sequences
     else:
-        # Default playlist groups (playlist_01-05)
-        st.session_state.playlist_groups = {
-            "playlist_01": {"label": "Playlist 1", "music_order": ["music_1", "music_2", "music_3"]},
-            "playlist_02": {"label": "Playlist 2", "music_order": ["music_1", "music_3", "music_2"]},
-            "playlist_03": {"label": "Playlist 3", "music_order": ["music_2", "music_1", "music_3"]},
-            "playlist_04": {"label": "Playlist 4", "music_order": ["music_2", "music_3", "music_1"]},
-            "playlist_05": {"label": "Playlist 5", "music_order": ["music_3", "music_1", "music_2"]},
-        }
+        st.session_state.event_sequences = {}
+# Migrate legacy session state keys
+if "playlist_groups" in st.session_state and "event_sequences" not in st.session_state:
+    st.session_state.event_sequences = st.session_state.playlist_groups
 # Note: normalizer will be created after all_events is loaded
 if "cleaning_config" not in st.session_state:
     st.session_state.cleaning_config = CleaningConfig()
@@ -435,8 +423,8 @@ if "participant_groups" not in st.session_state or "event_order" not in st.sessi
             for pid, data in loaded_participants.items()
             if not pid.startswith("_")
         }
-        st.session_state.participant_playlists = {
-            pid: data.get("playlist", "")
+        st.session_state.participant_sequences = {
+            pid: data.get("sequence", "") or data.get("playlist", "")
             for pid, data in loaded_participants.items()
             if not pid.startswith("_")
         }
@@ -460,7 +448,7 @@ if "participant_groups" not in st.session_state or "event_order" not in st.sessi
     else:
         st.session_state.participant_groups = {}
         st.session_state.participant_randomizations = {}
-        st.session_state.participant_playlists = {}
+        st.session_state.participant_sequences = {}
         st.session_state.participant_labels = {}
         st.session_state.event_order = {}
         st.session_state.manual_events = {}
@@ -1469,12 +1457,12 @@ def render_participant_table_fragment():
     # Build group labels dict (group_id -> label)
     group_labels = {gid: gdata.get("label", gid) for gid, gdata in st.session_state.groups.items()}
 
-    # Build randomization labels from playlist_groups (primary source)
-    # Merge with any custom labels in randomization_labels (fallback for non-playlist values)
+    # Build randomization labels from event_sequences (primary source)
+    # Merge with any custom labels in randomization_labels (fallback for non-sequence values)
     randomization_labels = {}
-    for pl_id, pl_data in st.session_state.get("playlist_groups", {}).items():
-        randomization_labels[pl_id] = pl_data.get("label", pl_id)
-    # Add any custom labels not in playlist_groups
+    for seq_id, seq_data in st.session_state.get("event_sequences", {}).items():
+        randomization_labels[seq_id] = seq_data.get("label", seq_id)
+    # Add any custom labels not in event_sequences
     for rand_id, label in st.session_state.get("randomization_labels", {}).items():
         if rand_id not in randomization_labels:
             randomization_labels[rand_id] = label
@@ -1740,17 +1728,17 @@ def render_participant_table_fragment():
                                     applied_groups += 1
                                 if use_rand and get_pandas().notna(row[rand_col]):
                                     new_rand = str(row[rand_col])
-                                    # Auto-create playlist group if it doesn't exist
-                                    if new_rand and new_rand not in st.session_state.playlist_groups:
-                                        st.session_state.playlist_groups[new_rand] = {
+                                    # Auto-create event sequence if it doesn't exist
+                                    if new_rand and new_rand not in st.session_state.event_sequences:
+                                        st.session_state.event_sequences[new_rand] = {
                                             "label": new_rand,
-                                            "music_order": ["music_1", "music_2", "music_3"]
+                                            "condition_order": ["condition_a", "condition_b", "condition_c"]
                                         }
                                     st.session_state.participant_randomizations[pid] = new_rand
                                     applied_rands += 1
 
-                        # Save playlist groups if new ones were created
-                        save_playlist_groups(st.session_state.playlist_groups)
+                        # Save event sequences if new ones were created
+                        save_event_sequences(st.session_state.event_sequences)
 
                         # Save and clear all caches to force table rebuild
                         save_participant_data()
@@ -1801,21 +1789,21 @@ def render_participant_table_fragment():
             unique_randomizations = set(st.session_state.participant_randomizations.values())
             unique_randomizations.discard("")  # Remove empty string
 
-            # Get playlist group IDs
-            playlist_ids = set(st.session_state.get("playlist_groups", {}).keys())
+            # Get event sequence IDs
+            sequence_ids = set(st.session_state.get("event_sequences", {}).keys())
 
             if unique_randomizations:
-                # Show playlist-based randomizations (read-only, from Setup)
-                playlist_values = sorted(unique_randomizations & playlist_ids)
-                custom_values = sorted(unique_randomizations - playlist_ids)
+                # Show sequence-based randomizations (read-only, from Setup)
+                sequence_values = sorted(unique_randomizations & sequence_ids)
+                custom_values = sorted(unique_randomizations - sequence_ids)
 
-                if playlist_values:
-                    st.caption("From Playlist Groups (edit in Setup > Groups):")
-                    for rand_value in playlist_values:
-                        pl_label = st.session_state.playlist_groups.get(rand_value, {}).get("label", rand_value)
+                if sequence_values:
+                    st.caption("From Event Sequences (edit in Setup > Sequences):")
+                    for rand_value in sequence_values:
+                        seq_label = st.session_state.event_sequences.get(rand_value, {}).get("label", rand_value)
                         st.text_input(
                             f"{rand_value}",
-                            value=pl_label,
+                            value=seq_label,
                             key=f"rand_label_ro_{rand_value}",
                             disabled=True,
                             label_visibility="visible"
@@ -2211,7 +2199,7 @@ def render_settings_panel():
         new_show_exclusions = st.checkbox("Exclusions", value=plot_opts.get("show_exclusions", True), key="settings_show_exclusions")
         new_show_gaps = st.checkbox("Gaps", value=plot_opts.get("show_gaps", True), key="settings_show_gaps")
     with col2:
-        new_show_music_sec = st.checkbox("Sections", value=plot_opts.get("show_music_sections", True), key="settings_show_music_sec")
+        new_show_music_sec = st.checkbox("Sections", value=plot_opts.get("show_condition_sections", plot_opts.get("show_music_sections", True)), key="settings_show_music_sec")
         new_show_artifacts = st.checkbox("Artifacts", value=plot_opts.get("show_artifacts", False), key="settings_show_artifacts")
         new_show_variability = st.checkbox("Variability", value=plot_opts.get("show_variability", False), key="settings_show_variability")
 
@@ -2256,8 +2244,8 @@ def render_settings_panel():
             "plot_options": {
                 "show_events": new_show_events,
                 "show_exclusions": new_show_exclusions,
-                "show_music_sections": new_show_music_sec,
-                "show_music_events": plot_opts.get("show_music_events", False),
+                "show_condition_sections": new_show_music_sec,
+                "show_condition_events": plot_opts.get("show_condition_events", plot_opts.get("show_music_events", False)),
                 "show_artifacts": new_show_artifacts,
                 "show_variability": new_show_variability,
                 "show_gaps": new_show_gaps,
@@ -3064,15 +3052,13 @@ def render_rr_plot_fragment(participant_id: str):
                         help="Export v2.0 .rrational file with corrected NN intervals"):
                 # Import the v2.0 export module
                 from rrational.gui.rrational_export import (
-                    build_rrational_v2, save_rrational_v2,
-                    get_quality_grade, get_quigley_recommendation
+                    build_rrational_v2, save_rrational_v2
                 )
                 from rrational.gui.persistence import (
                     load_section_validations, load_nn_intervals, get_processed_dir,
                     save_artifact_corrections, save_nn_intervals
                 )
                 from datetime import datetime
-                from pathlib import Path
 
                 data_dir = st.session_state.get("data_dir")
                 project_path = st.session_state.get("current_project")
@@ -3259,10 +3245,10 @@ def render_rr_plot_fragment(participant_id: str):
                                       key=f"frag_show_exclusions_{participant_id}",
                                       help="Show exclusion zones as red rectangles")
     with col_opt2:
-        show_music_sections = st.checkbox("Show music sections", value=plot_defaults.get("show_music_sections", True),
-                                          key=f"frag_show_music_sec_{participant_id}")
-        show_music_events = st.checkbox("Show music events", value=plot_defaults.get("show_music_events", False),
-                                        key=f"frag_show_music_evt_{participant_id}")
+        show_condition_sections = st.checkbox("Show condition sections", value=plot_defaults.get("show_condition_sections", plot_defaults.get("show_music_sections", True)),
+                                          key=f"frag_show_cond_sec_{participant_id}")
+        show_condition_events = st.checkbox("Show condition events", value=plot_defaults.get("show_condition_events", plot_defaults.get("show_music_events", False)),
+                                        key=f"frag_show_cond_evt_{participant_id}")
     with col_opt3:
         show_artifacts = st.checkbox("Show artifacts", value=plot_defaults.get("show_artifacts", True),
                                      key=f"frag_show_artifacts_{participant_id}",
@@ -5063,8 +5049,8 @@ def render_rr_plot_fragment(participant_id: str):
 
                 if not nn_displayed and algo_count > 0 and is_restored:
                     # Restored from save - NN data exists but can't be visualized
-                    st.info(f"NN visualization requires fresh detection. Run **Detect New Artifacts** to see the corrected line. "
-                           f"(Saved NN data is still used for HRV analysis.)")
+                    st.info("NN visualization requires fresh detection. Run **Detect New Artifacts** to see the corrected line. "
+                           "(Saved NN data is still used for HRV analysis.)")
 
                 if not nn_displayed and algo_count == 0:
                     st.info("No artifacts detected - NN line would be identical to RR line.")
@@ -5181,17 +5167,22 @@ def render_rr_plot_fragment(participant_id: str):
                     bgcolor='rgba(255,255,255,0.7)'
                 )
 
-    # Music sections
-    music_events = stored_data.get('music_events', [])
-    if show_music_sections and music_events:
-        music_colors = {
-            'music_1': 'rgba(65, 105, 225, 0.15)',
-            'music_2': 'rgba(50, 205, 50, 0.15)',
-            'music_3': 'rgba(255, 140, 0, 0.15)',
-        }
-        music_sections = {}
-        for evt in music_events:
-            # Handle both dict (from YAML) and object formats
+    # Condition sections overlay (from generated_events or condition_events)
+    condition_events = stored_data.get('condition_events', stored_data.get('generated_events', stored_data.get('music_events', [])))
+    if show_condition_sections and condition_events:
+        # Dynamic color palette for any number of conditions
+        _palette = [
+            'rgba(65, 105, 225, 0.15)', 'rgba(50, 205, 50, 0.15)',
+            'rgba(255, 140, 0, 0.15)', 'rgba(220, 20, 60, 0.15)',
+            'rgba(148, 103, 189, 0.15)', 'rgba(0, 191, 255, 0.15)',
+            'rgba(255, 215, 0, 0.15)', 'rgba(127, 255, 0, 0.15)',
+        ]
+        _line_palette = [
+            '#4169E1', '#32CD32', '#FF8C00', '#DC143C',
+            '#9467BD', '#00BFFF', '#FFD700', '#7FFF00',
+        ]
+        condition_sections = {}
+        for evt in condition_events:
             if isinstance(evt, dict):
                 label = evt.get('raw_label') or str(evt)
                 timestamp = evt.get('first_timestamp')
@@ -5200,25 +5191,29 @@ def render_rr_plot_fragment(participant_id: str):
                 timestamp = evt.first_timestamp if hasattr(evt, 'first_timestamp') else None
             if not timestamp:
                 continue
-            # Convert string timestamps from YAML to datetime
             if isinstance(timestamp, str):
                 from datetime import datetime
                 timestamp = datetime.fromisoformat(timestamp)
             if label.endswith('_start'):
-                music_type = label.replace('_start', '')
-                if music_type not in music_sections:
-                    music_sections[music_type] = []
-                music_sections[music_type].append({'start': timestamp, 'end': None})
+                cond_type = label.replace('_start', '')
+                if cond_type not in condition_sections:
+                    condition_sections[cond_type] = []
+                condition_sections[cond_type].append({'start': timestamp, 'end': None})
             elif label.endswith('_end'):
-                music_type = label.replace('_end', '')
-                if music_type in music_sections:
-                    for sec in reversed(music_sections[music_type]):
+                cond_type = label.replace('_end', '')
+                if cond_type in condition_sections:
+                    for sec in reversed(condition_sections[cond_type]):
                         if sec['end'] is None:
                             sec['end'] = timestamp
                             break
 
-        for music_type, sections in music_sections.items():
-            color = music_colors.get(music_type, 'rgba(128, 128, 128, 0.1)')
+        # Assign colors dynamically based on sorted condition names
+        sorted_conditions = sorted(condition_sections.keys())
+        cond_color_map = {c: _palette[i % len(_palette)] for i, c in enumerate(sorted_conditions)}
+        cond_line_map = {c: _line_palette[i % len(_line_palette)] for i, c in enumerate(sorted_conditions)}
+
+        for cond_type, sections in condition_sections.items():
+            color = cond_color_map.get(cond_type, 'rgba(128, 128, 128, 0.1)')
             for sec in sections:
                 if sec['start'] and sec['end']:
                     fig.add_shape(
@@ -5229,17 +5224,20 @@ def render_rr_plot_fragment(participant_id: str):
                     mid_time = sec['start'] + (sec['end'] - sec['start']) / 2
                     fig.add_annotation(
                         x=mid_time, y=y_max + 0.08 * y_range,
-                        text=music_type.replace('_', ' ').title(),
+                        text=cond_type.replace('_', ' ').title(),
                         showarrow=False, font=dict(size=8, color='gray')
                     )
 
-    # Music event lines
-    if show_music_events and music_events:
-        music_line_colors = {
-            'music_1': '#4169E1', 'music_2': '#32CD32', 'music_3': '#FF8C00',
-        }
-        for evt in music_events:
-            # Handle both dict (from YAML) and object formats
+    # Condition event lines
+    if show_condition_events and condition_events:
+        # Reuse dynamic color mapping
+        _line_palette_evt = ['#4169E1', '#32CD32', '#FF8C00', '#DC143C', '#9467BD', '#00BFFF', '#FFD700', '#7FFF00']
+        _seen_types = sorted({
+            (evt.get('raw_label') if isinstance(evt, dict) else getattr(evt, 'raw_label', '')).replace('_start', '').replace('_end', '')
+            for evt in condition_events
+        })
+        _evt_color_map = {c: _line_palette_evt[i % len(_line_palette_evt)] for i, c in enumerate(_seen_types)}
+        for evt in condition_events:
             if isinstance(evt, dict):
                 label = evt.get('raw_label') or str(evt)
                 timestamp = evt.get('first_timestamp')
@@ -5247,12 +5245,11 @@ def render_rr_plot_fragment(participant_id: str):
                 label = evt.raw_label if hasattr(evt, 'raw_label') else str(evt)
                 timestamp = evt.first_timestamp if hasattr(evt, 'first_timestamp') else None
             if timestamp:
-                # Convert string timestamps from YAML to datetime
                 if isinstance(timestamp, str):
                     from datetime import datetime
                     timestamp = datetime.fromisoformat(timestamp)
-                music_type = label.replace('_start', '').replace('_end', '')
-                color = music_line_colors.get(music_type, '#808080')
+                cond_type = label.replace('_start', '').replace('_end', '')
+                color = _evt_color_map.get(cond_type, '#808080')
                 fig.add_shape(
                     type="line", x0=timestamp, x1=timestamp,
                     y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
@@ -5656,10 +5653,12 @@ def _load_project(project_path: Path | str | None) -> None:
     save_last_project(project_path)
 
     # Clear and reload config from project
-    for key in ["groups", "all_events", "sections", "playlist_groups",
+    for key in ["groups", "all_events", "sections", "event_sequences",
                 "participant_groups", "participant_randomizations",
-                "participant_playlists", "participant_labels",
-                "event_order", "manual_events"]:
+                "participant_sequences", "participant_labels",
+                "event_order", "manual_events",
+                # Legacy keys
+                "playlist_groups", "participant_playlists", "music_labels"]:
         if key in st.session_state:
             del st.session_state[key]
 
@@ -5946,12 +5945,12 @@ def main():
                 group_label = st.session_state.groups.get(assigned_group, {}).get("label", assigned_group)
                 group_display = f"{group_label}" if group_label != assigned_group else assigned_group
 
-                # Get randomization with label (check playlist_groups first, then custom labels)
+                # Get randomization with label (check event_sequences first, then custom labels)
                 assigned_randomization = st.session_state.get("participant_randomizations", {}).get(selected_participant, "")
                 if assigned_randomization:
-                    # Try playlist_groups first, then custom randomization_labels
-                    if assigned_randomization in st.session_state.get("playlist_groups", {}):
-                        rand_label = st.session_state.playlist_groups[assigned_randomization].get("label", assigned_randomization)
+                    # Try event_sequences first, then custom randomization_labels
+                    if assigned_randomization in st.session_state.get("event_sequences", {}):
+                        rand_label = st.session_state.event_sequences[assigned_randomization].get("label", assigned_randomization)
                     else:
                         rand_label = st.session_state.get("randomization_labels", {}).get(assigned_randomization, assigned_randomization)
                     rand_display = f"{rand_label}" if rand_label != assigned_randomization else assigned_randomization
@@ -7510,12 +7509,18 @@ def main():
                             )
 
                         with col_labels:
+                            # Pre-fill from event sequence assignment if available
+                            _seq_id = st.session_state.get("participant_sequences", {}).get(selected_participant, "") or \
+                                      st.session_state.get("participant_randomizations", {}).get(selected_participant, "")
+                            _seq_data = st.session_state.get("event_sequences", {}).get(_seq_id, {})
+                            _cond_order = _seq_data.get("condition_order", _seq_data.get("music_order", []))
+                            _default_labels = "\n".join(_cond_order) if _cond_order else "condition_1\ncondition_2\ncondition_3"
                             condition_labels = st.text_area(
                                 "Condition labels (one per line)",
-                                value="condition_1\ncondition_2\ncondition_3",
+                                value=_default_labels,
                                 height=100,
                                 key=f"condition_labels_{selected_participant}",
-                                help="Labels for each condition that cycles"
+                                help="Labels for each condition that cycles. Pre-filled from sequence assignment if available."
                             )
 
                         # Parse condition labels

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -586,7 +585,7 @@ def save_participant_data():
     for pid in all_participant_ids:
         participants_data[pid] = {
             "group": st.session_state.participant_groups.get(pid, "Default"),
-            "playlist": st.session_state.get("participant_playlists", {}).get(pid, ""),
+            "sequence": st.session_state.get("participant_sequences", {}).get(pid, ""),
             "label": st.session_state.get("participant_labels", {}).get(pid, ""),
             "event_order": st.session_state.event_order.get(pid, []),
             "manual_events": st.session_state.manual_events.get(pid, []),

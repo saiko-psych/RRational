@@ -794,17 +794,17 @@ def _render_participants_table():
         )
 
     with col_import:
-        # CSV import for group/playlist matching
+        # CSV import for group/sequence matching
         # Track expander state in session state to prevent collapse on rerun
         if "csv_import_expanded" not in st.session_state:
             st.session_state.csv_import_expanded = False
         # Keep expanded if file is uploaded (check before expander renders)
-        if st.session_state.get("group_playlist_csv_upload") is not None:
+        if st.session_state.get("group_sequence_csv_upload") is not None:
             st.session_state.csv_import_expanded = True
-        with st.expander("Import Group/Playlist from CSV", expanded=st.session_state.csv_import_expanded):
+        with st.expander("Import Group/Sequence from CSV", expanded=st.session_state.csv_import_expanded):
             st.markdown("""
-            Upload a CSV file to automatically assign groups and playlists.
-            1. First define labels for your group/playlist values below
+            Upload a CSV file to automatically assign groups and event sequences.
+            1. First define labels for your group/sequence values below
             2. Then upload your CSV and map the columns
             """)
 
@@ -815,8 +815,8 @@ def _render_participants_table():
             # Initialize label mappings in session state
             if "csv_group_labels" not in st.session_state:
                 st.session_state.csv_group_labels = {}
-            if "csv_playlist_labels" not in st.session_state:
-                st.session_state.csv_playlist_labels = {}
+            if "csv_sequence_labels" not in st.session_state:
+                st.session_state.csv_sequence_labels = {}
 
             label_col1, label_col2 = st.columns(2)
 
@@ -851,34 +851,34 @@ def _render_participants_table():
                     st.caption("No group labels defined yet")
 
             with label_col2:
-                st.markdown("**Playlist Value Labels**")
-                # Add new playlist label
+                st.markdown("**Sequence Value Labels**")
+                # Add new sequence label
                 new_p_col1, new_p_col2, new_p_col3 = st.columns([2, 3, 1])
                 with new_p_col1:
-                    new_playlist_val = st.text_input("Value", key="new_playlist_val", placeholder="e.g., 1")
+                    new_seq_val = st.text_input("Value", key="new_seq_val", placeholder="e.g., 1")
                 with new_p_col2:
-                    new_playlist_label = st.text_input("Label", key="new_playlist_label", placeholder="e.g., R1")
+                    new_seq_label = st.text_input("Label", key="new_seq_label", placeholder="e.g., R1")
                 with new_p_col3:
                     st.write("")  # Spacer
-                    if st.button("Add", key="add_playlist_label"):
-                        if new_playlist_val and new_playlist_label:
-                            st.session_state.csv_playlist_labels[new_playlist_val] = new_playlist_label
+                    if st.button("Add", key="add_seq_label"):
+                        if new_seq_val and new_seq_label:
+                            st.session_state.csv_sequence_labels[new_seq_val] = new_seq_label
                             st.session_state.csv_import_expanded = True
                             st.rerun()
 
-                # Show existing playlist labels
-                if st.session_state.csv_playlist_labels:
-                    for pval, plabel in list(st.session_state.csv_playlist_labels.items()):
+                # Show existing sequence labels
+                if st.session_state.csv_sequence_labels:
+                    for pval, plabel in list(st.session_state.csv_sequence_labels.items()):
                         pcol1, pcol2 = st.columns([4, 1])
                         with pcol1:
                             st.text(f"{pval} → {plabel}")
                         with pcol2:
                             if st.button("X", key=f"del_p_{pval}"):
-                                del st.session_state.csv_playlist_labels[pval]
+                                del st.session_state.csv_sequence_labels[pval]
                                 st.session_state.csv_import_expanded = True
                                 st.rerun()
                 else:
-                    st.caption("No playlist labels defined yet")
+                    st.caption("No sequence labels defined yet")
 
             st.markdown("---")
 
@@ -901,17 +901,17 @@ def _render_participants_table():
                     help="Column name for group values"
                 )
             with col_map3:
-                playlist_col = st.text_input(
-                    "Playlist column",
-                    value="playlist",
-                    key="csv_col_playlist",
-                    help="Column name for playlist values"
+                sequence_col = st.text_input(
+                    "Sequence column",
+                    value="sequence",
+                    key="csv_col_sequence",
+                    help="Column name for event sequence values"
                 )
 
             uploaded_file = st.file_uploader(
                 "Choose CSV file",
                 type=['csv'],
-                key="group_playlist_csv_upload",
+                key="group_sequence_csv_upload",
                 help="Upload your CSV file with participant assignments"
             )
 
@@ -928,7 +928,7 @@ def _render_participants_table():
 
                     # Reorder columns: selected columns first, then others
                     priority_cols = []
-                    for col in [participant_col, group_col, playlist_col]:
+                    for col in [participant_col, group_col, sequence_col]:
                         if col and col in csv_columns:
                             priority_cols.append(col)
                     other_cols = [c for c in csv_columns if c not in priority_cols]
@@ -944,56 +944,55 @@ def _render_participants_table():
                     else:
                         # Check which mapped columns are present
                         has_group = group_col and group_col in csv_columns
-                        has_playlist = playlist_col and playlist_col in csv_columns
+                        has_sequence = sequence_col and sequence_col in csv_columns
 
                         # Show mapping status
                         st.markdown("**Detected mappings:**")
                         st.write(f"- Participant: `{participant_col}` *")
                         if group_col:
                             st.write(f"- Group: `{group_col}` {'*' if has_group else 'not found'}")
-                        if playlist_col:
-                            st.write(f"- Playlist: `{playlist_col}` {'*' if has_playlist else 'not found'}")
+                        if sequence_col:
+                            st.write(f"- Sequence: `{sequence_col}` {'*' if has_sequence else 'not found'}")
 
                         # Show defined labels
                         if st.session_state.csv_group_labels:
                             st.write(f"- Group labels defined: {len(st.session_state.csv_group_labels)}")
-                        if st.session_state.csv_playlist_labels:
-                            st.write(f"- Playlist labels defined: {len(st.session_state.csv_playlist_labels)}")
+                        if st.session_state.csv_sequence_labels:
+                            st.write(f"- Sequence labels defined: {len(st.session_state.csv_sequence_labels)}")
 
-                        if not has_group and not has_playlist:
-                            st.warning("No valid Group or Playlist column found. Check your column mapping above.")
+                        if not has_group and not has_sequence:
+                            st.warning("No valid Group or Sequence column found. Check your column mapping above.")
                         else:
                             if st.button("Apply Assignments", type="primary", key="apply_csv_assignments"):
                                 matched = 0
                                 not_found = []
                                 groups_created = set()
-                                playlists_created = set()
+                                sequences_created = set()
 
                                 # Get current participant IDs
                                 current_pids = {s.participant_id for s in st.session_state.summaries}
 
                                 # Get the value→label mappings from session state
                                 group_labels = st.session_state.csv_group_labels
-                                playlist_labels = st.session_state.csv_playlist_labels
+                                sequence_labels = st.session_state.csv_sequence_labels
 
-                                # First pass: create groups and playlists with labels
+                                # First pass: create groups and sequences with labels
                                 unique_groups = set()
-                                unique_playlists = set()
+                                unique_sequences = set()
 
                                 for _, row in import_df.iterrows():
                                     if has_group and pd.notna(row[group_col]):
                                         unique_groups.add(str(row[group_col]).strip())
-                                    if has_playlist and pd.notna(row[playlist_col]):
-                                        unique_playlists.add(str(row[playlist_col]).strip())
+                                    if has_sequence and pd.notna(row[sequence_col]):
+                                        unique_sequences.add(str(row[sequence_col]).strip())
 
                                 # Create/update groups with labels from mapping
                                 for g_code in unique_groups:
-                                    g_label = group_labels.get(g_code, g_code)  # Use code as label if not defined
+                                    g_label = group_labels.get(g_code, g_code)
                                     if g_code not in st.session_state.groups:
                                         st.session_state.groups[g_code] = {"events": [], "label": g_label}
                                         groups_created.add(g_code)
                                     else:
-                                        # Update label if defined
                                         if g_code in group_labels:
                                             if isinstance(st.session_state.groups[g_code], dict):
                                                 st.session_state.groups[g_code]["label"] = g_label
@@ -1001,23 +1000,22 @@ def _render_participants_table():
                                                 events = st.session_state.groups[g_code]
                                                 st.session_state.groups[g_code] = {"events": events, "label": g_label}
 
-                                # Create/update playlist groups with labels from mapping
-                                if "playlist_groups" not in st.session_state:
-                                    st.session_state.playlist_groups = {}
+                                # Create/update event sequences with labels from mapping
+                                if "event_sequences" not in st.session_state:
+                                    st.session_state.event_sequences = {}
 
-                                for p_code in unique_playlists:
-                                    if p_code:
-                                        p_label = playlist_labels.get(p_code, p_code)  # Use code as label if not defined
-                                        if p_code not in st.session_state.playlist_groups:
-                                            st.session_state.playlist_groups[p_code] = {
-                                                "label": p_label,
-                                                "music_order": ["music_1", "music_2", "music_3"]
+                                for s_code in unique_sequences:
+                                    if s_code:
+                                        s_label = sequence_labels.get(s_code, s_code)
+                                        if s_code not in st.session_state.event_sequences:
+                                            st.session_state.event_sequences[s_code] = {
+                                                "label": s_label,
+                                                "condition_order": ["condition_a", "condition_b", "condition_c"]
                                             }
-                                            playlists_created.add(p_code)
+                                            sequences_created.add(s_code)
                                         else:
-                                            # Update label if defined
-                                            if p_code in playlist_labels:
-                                                st.session_state.playlist_groups[p_code]["label"] = p_label
+                                            if s_code in sequence_labels:
+                                                st.session_state.event_sequences[s_code]["label"] = s_label
 
                                 # Second pass: assign participants
                                 for _, row in import_df.iterrows():
@@ -1031,20 +1029,20 @@ def _render_participants_table():
                                             group_val = str(row[group_col]).strip()
                                             st.session_state.participant_groups[pid] = group_val
 
-                                        # Assign playlist if present
-                                        if has_playlist and pd.notna(row[playlist_col]):
-                                            playlist_val = str(row[playlist_col]).strip()
-                                            if "participant_playlists" not in st.session_state:
-                                                st.session_state.participant_playlists = {}
-                                            st.session_state.participant_playlists[pid] = playlist_val
+                                        # Assign sequence if present
+                                        if has_sequence and pd.notna(row[sequence_col]):
+                                            seq_val = str(row[sequence_col]).strip()
+                                            if "participant_sequences" not in st.session_state:
+                                                st.session_state.participant_sequences = {}
+                                            st.session_state.participant_sequences[pid] = seq_val
                                     else:
                                         not_found.append(pid)
 
                                 # Save all changes
-                                from rrational.gui.persistence import save_groups, save_playlist_groups
+                                from rrational.gui.persistence import save_groups, save_event_sequences
                                 project_path = st.session_state.get("current_project")
                                 save_groups(st.session_state.groups, project_path)
-                                save_playlist_groups(st.session_state.playlist_groups, project_path)
+                                save_event_sequences(st.session_state.event_sequences, project_path)
                                 save_participant_data()
                                 cached_load_participants.clear()
 
@@ -1052,8 +1050,8 @@ def _render_participants_table():
                                 msg_parts = [f"Applied to {matched} participants"]
                                 if groups_created:
                                     msg_parts.append(f"created {len(groups_created)} groups")
-                                if playlists_created:
-                                    msg_parts.append(f"created {len(playlists_created)} playlists")
+                                if sequences_created:
+                                    msg_parts.append(f"created {len(sequences_created)} sequences")
                                 show_toast(", ".join(msg_parts), icon="success")
 
                                 if not_found:
@@ -1079,34 +1077,34 @@ def _render_batch_processing():
         batch_col1, batch_col2 = st.columns(2)
 
         with batch_col1:
-            st.markdown("##### Auto-Generate Music Events")
-            st.caption("Generate music section events for all participants in a playlist group")
+            st.markdown("##### Auto-Generate Condition Events")
+            st.caption("Generate condition events for all participants in an event sequence")
 
-            # Select playlist group to process
-            if "playlist_groups" in st.session_state and st.session_state.playlist_groups:
-                batch_playlist = st.selectbox(
-                    "Select Playlist Group",
-                    options=list(st.session_state.playlist_groups.keys()),
-                    key="batch_playlist_group",
-                    help="Generate music events for all participants assigned to this playlist group"
+            # Select event sequence to process
+            if "event_sequences" in st.session_state and st.session_state.event_sequences:
+                batch_sequence = st.selectbox(
+                    "Select Event Sequence",
+                    options=list(st.session_state.event_sequences.keys()),
+                    key="batch_sequence_group",
+                    help="Generate condition events for all participants assigned to this sequence"
                 )
 
                 batch_interval = st.number_input(
-                    "Music interval (minutes)",
+                    "Condition interval (minutes)",
                     min_value=1, max_value=30, value=5, step=1,
-                    key="batch_music_interval",
-                    help="How often the music changes"
+                    key="batch_condition_interval",
+                    help="How often the condition changes"
                 )
 
-                if st.button("Generate for All in Group", key="batch_generate_music"):
-                    # Find participants in this playlist group
+                if st.button("Generate for All in Sequence", key="batch_generate_conditions"):
+                    # Find participants in this sequence
                     participants_in_group = [
-                        pid for pid, pg in st.session_state.get("participant_playlists", {}).items()
-                        if pg == batch_playlist
+                        pid for pid, seq in st.session_state.get("participant_sequences", {}).items()
+                        if seq == batch_sequence
                     ]
 
                     if not participants_in_group:
-                        st.warning(f"No participants assigned to playlist group '{batch_playlist}'")
+                        st.warning(f"No participants assigned to event sequence '{batch_sequence}'")
                     else:
                         progress = st.progress(0)
                         status = st.empty()
@@ -1130,16 +1128,15 @@ def _render_batch_processing():
                                             boundaries[canonical] = evt.first_timestamp
 
                                 if 'measurement_start' in boundaries:
-                                    # Generate music events
                                     from rrational.prep.summaries import EventStatus
                                     from datetime import timedelta
 
-                                    if 'music_events' not in stored:
-                                        stored['music_events'] = []
-                                    stored['music_events'] = []  # Clear existing
+                                    if 'condition_events' not in stored:
+                                        stored['condition_events'] = []
+                                    stored['condition_events'] = []  # Clear existing
 
-                                    playlist_data = st.session_state.playlist_groups.get(batch_playlist, {})
-                                    music_order = playlist_data.get("music_order", ["music_1", "music_2", "music_3"])
+                                    seq_data = st.session_state.event_sequences.get(batch_sequence, {})
+                                    condition_order = seq_data.get("condition_order", seq_data.get("music_order", ["condition_a", "condition_b", "condition_c"]))
 
                                     # Pre-pause period
                                     start = boundaries['measurement_start']
@@ -1148,20 +1145,20 @@ def _render_batch_processing():
                                         current = start
                                         idx = 0
                                         while current < end:
-                                            music_type = music_order[idx % len(music_order)]
+                                            cond_type = condition_order[idx % len(condition_order)]
                                             next_time = current + timedelta(minutes=batch_interval)
                                             if next_time > end:
                                                 next_time = end
 
-                                            stored['music_events'].append(EventStatus(
-                                                raw_label=f"{music_type}_start",
-                                                canonical=f"{music_type}_start",
+                                            stored['condition_events'].append(EventStatus(
+                                                raw_label=f"{cond_type}_start",
+                                                canonical=f"{cond_type}_start",
                                                 first_timestamp=current,
                                                 last_timestamp=current
                                             ))
-                                            stored['music_events'].append(EventStatus(
-                                                raw_label=f"{music_type}_end",
-                                                canonical=f"{music_type}_end",
+                                            stored['condition_events'].append(EventStatus(
+                                                raw_label=f"{cond_type}_end",
+                                                canonical=f"{cond_type}_end",
                                                 first_timestamp=next_time,
                                                 last_timestamp=next_time
                                             ))
@@ -1175,20 +1172,20 @@ def _render_batch_processing():
                                         current = start
                                         idx = 0
                                         while current < end:
-                                            music_type = music_order[idx % len(music_order)]
+                                            cond_type = condition_order[idx % len(condition_order)]
                                             next_time = current + timedelta(minutes=batch_interval)
                                             if next_time > end:
                                                 next_time = end
 
-                                            stored['music_events'].append(EventStatus(
-                                                raw_label=f"{music_type}_start",
-                                                canonical=f"{music_type}_start",
+                                            stored['condition_events'].append(EventStatus(
+                                                raw_label=f"{cond_type}_start",
+                                                canonical=f"{cond_type}_start",
                                                 first_timestamp=current,
                                                 last_timestamp=current
                                             ))
-                                            stored['music_events'].append(EventStatus(
-                                                raw_label=f"{music_type}_end",
-                                                canonical=f"{music_type}_end",
+                                            stored['condition_events'].append(EventStatus(
+                                                raw_label=f"{cond_type}_end",
+                                                canonical=f"{cond_type}_end",
                                                 first_timestamp=next_time,
                                                 last_timestamp=next_time
                                             ))
@@ -1199,10 +1196,10 @@ def _render_batch_processing():
 
                         progress.progress(1.0)
                         status.empty()
-                        show_toast(f"Generated music events for {generated_count} participants", icon="success")
+                        show_toast(f"Generated condition events for {generated_count} participants", icon="success")
                         st.rerun()
             else:
-                st.info("Create playlist groups in the Group Management tab first")
+                st.info("Create event sequences in the Setup > Sequences tab first")
 
         with batch_col2:
             st.markdown("##### Auto-Create Quality Events")
