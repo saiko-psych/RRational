@@ -56,7 +56,7 @@ AGENTS.md
 CLAUDE.md
 MEMORY.md
 MEMORY_ARCHIVE.md
-docs/
+# docs/ is tracked — documentation belongs in the repo
 
 nul
 

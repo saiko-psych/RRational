@@ -1,31 +1,9 @@
 # RRational Quick Start Guide
 
-**Version: v0.8.1** | **Last Updated: March 2026**
+**Version: v0.8.1** | **Last Updated: April 2026**
 
----
-
-## Installation
-
-### Prerequisites
-
-- Python 3.11, 3.12, or 3.13 ([Download](https://www.python.org/downloads/))
-- uv package manager ([Install uv](https://docs.astral.sh/uv/getting-started/installation/))
-
-### Install RRational
-
-```bash
-# Clone the repository
-git clone https://github.com/saiko-psych/rrational.git
-cd rrational
-
-# Install dependencies
-uv sync
-
-# Launch the app
-uv run streamlit run src/rrational/gui/app.py
-```
-
-The app opens at http://localhost:8501
+> For installation instructions, see the [Installation Guide](docs/INSTALLATION.md).
+> For supported file formats, see [Data Formats](docs/DATA_FORMATS.md).
 
 ---
 
@@ -246,16 +224,4 @@ Expected files in `data/raw/vns/`:
 
 ---
 
-## Version History
-
-| Version | Highlights |
-|---------|------------|
-| **v0.7.2** | Project management system, welcome screen, auto-load |
-| v0.7.1 | Ready for Analysis export with audit trail |
-| v0.7.0 | Renamed to RRational, artifact detection improvements |
-
----
-
-**RRational - A rational approach to HRV analysis**
-
-*Free and open-source. If you use this tool in your research, please cite appropriately.*
+**RRational - A rational approach to HRV analysis** | [Changelog](CHANGELOG.md) | [Full Documentation](docs/)
