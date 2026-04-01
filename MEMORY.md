@@ -8,6 +8,7 @@ This file contains detailed session notes and implementation history. For quick 
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| v0.8.1 | 2026-03-30 | Unified time-based segmentation, project restructuring, issue fixes (#16/#19/#27/#28) |
 | v0.7.8 | 2026-01-18 | .rrational v2.0 format with section-based NN intervals, Analysis tab v2.0 support |
 | v0.7.7 | 2026-01-18 | Explicit section validation storage, VNS multi-file merge (#20), Mac auto-load fix (#6) |
 | v0.7.6 | 2026-01-17 | Centralized section validation with disambiguation UI |

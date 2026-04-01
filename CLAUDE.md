@@ -24,9 +24,10 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## Current Status
 
-**Version**: `v0.8.1` | **Tests**: 46/46 passing
+**Version**: `v0.8.1` | **Tests**: 71/71 passing
 
 **GUI**: 5-tab Streamlit app (Data, Participants, Setup, Sections, Analysis)
+**Segmentation**: Unified time-based (artifact detection + analysis use same segments)
 
 **Storage**: Project-based (`MyProject/config/*.yml`) or global fallback (`~/.rrational/`)
 
@@ -49,27 +50,40 @@ This is a **scientific research tool**. Follow HRV guidelines:
 ## Key Files
 - `app.py` - Main app + Participants tab + artifact detection
 - `tabs/` - data.py, setup.py, analysis.py
-- `segmentation.py` - Unified time-based segments (artifact + analysis)
-- `shared.py` - Utilities, caching
+- `gui/segmentation.py` - Unified time-based segments (artifact + analysis)
+- `gui/theme.py` - CSS/HTML/JS theming (extracted from app.py)
+- `gui/plots/` - analysis_plots.py, group_plots.py (extracted from analysis.py)
+- `gui/shared.py` - GUI utilities, caching
+- `analysis/hrv_metrics.py` - Metric catalogs, presets, windowing
+- `analysis/hrv_compute.py` - HRV calculation, result transforms
+- `cleaning/quality.py` - Quality detection, artifact fixpeaks, gap detection
+- `segments/section_validation.py` - Event/section validation dataclasses
+- `prep/participant_table.py` - Participant table building
 - `persistence.py` - YAML storage
 - `project.py` - ProjectManager
-- `welcome.py` - Welcome screen
 
 ## TODOs
 
 **High Priority:**
 - [ ] Playlist group comparison
-- [ ] Setup section rework
+- [ ] Setup section rework (#17)
 - [ ] R-R power spectrum plot
 - [x] Batch processing / groupwise analysis (v0.7.9)
+- [x] Unified time-based segmentation (v0.8.1)
+- [x] Project restructuring (v0.8.1)
 - [ ] Report generation (PDF/HTML)
 
 **Low Priority:**
 - [ ] Standalone app (PyInstaller/Nuitka)
-- [ ] Tutorial videos
+- [ ] Detrending (#15)
+- [ ] Better colouring options (#25)
+- [ ] Support for more apps (#26)
+- [ ] Loading animation (#13)
 
 **Known limitations:**
 - Plot zoom doesn't auto-load detail (use resolution slider)
+- Arrow key panning works but with server roundtrip (#16)
+- Tab switching briefly shows old tab content (Streamlit limitation, #14)
 
 ## Documentation Resources
 
