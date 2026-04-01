@@ -924,8 +924,10 @@ def _render_sections_section():
             for _, row in edited_sections.iterrows():
                 section_code = row["Code"]
                 if section_code:  # Skip empty rows
-                    # Parse comma-separated start events
+                    # Parse comma-separated start events (data_editor returns NaN for empty cells)
                     start_events_str = row.get("Start Event(s)", "")
+                    if not isinstance(start_events_str, str) or pd.isna(start_events_str):
+                        start_events_str = ""
                     start_events_list = [e.strip() for e in start_events_str.split(",") if e.strip()]
                     if not start_events_list:
                         start_events_list = ["measurement_start"]  # Fallback
@@ -935,8 +937,10 @@ def _render_sections_section():
                     if invalid_start:
                         validation_errors.append(f"Section '{section_code}': invalid start event(s): {', '.join(invalid_start)}")
 
-                    # Parse comma-separated end events
+                    # Parse comma-separated end events (data_editor returns NaN for empty cells)
                     end_events_str = row.get("End Event(s)", "")
+                    if not isinstance(end_events_str, str) or pd.isna(end_events_str):
+                        end_events_str = ""
                     end_events_list = [e.strip() for e in end_events_str.split(",") if e.strip()]
                     if not end_events_list:
                         end_events_list = ["measurement_end"]  # Fallback
