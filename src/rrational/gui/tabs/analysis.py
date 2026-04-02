@@ -2045,10 +2045,24 @@ def _render_single_participant_analysis():
             st.warning("No sections defined. Please define sections in the Sections tab first.")
             return
 
+        # Default to all validated sections for the selected participant
+        default_sections = available_sections  # fallback: all sections
+        _analysis_pid = st.session_state.get("analysis_participant_single")
+        if _analysis_pid:
+            from rrational.gui.shared import get_validated_sections_for_participant as _get_vals
+            _val_results = _get_vals(
+                participant_id=_analysis_pid,
+                sections_config=st.session_state.sections,
+                normalizer=st.session_state.get("normalizer"),
+            )
+            _valid = [s for s, r in _val_results.items() if r.is_valid]
+            if _valid:
+                default_sections = _valid
+
         selected_sections = st.multiselect(
             "Select Sections to Analyze",
             options=available_sections,
-            default=[available_sections[0]] if available_sections else [],
+            default=default_sections,
             key="analysis_sections_single"
         )
 

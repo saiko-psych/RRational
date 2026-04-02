@@ -3424,10 +3424,9 @@ def render_rr_plot_fragment(participant_id: str):
                     "Scope",
                     options=scope_options,
                     format_func=lambda x: scope_labels[x],
-                    horizontal=True,
                     index=default_scope_idx,
                     key=f"frag_artifact_scope_{participant_id}",
-                    help="Run detection on full recording, a specific section, or custom time range.",
+                    help="Choose scope for artifact detection.",
                 )
 
                 # Section selector (only shown when scope is "section")
@@ -3463,23 +3462,40 @@ def render_rr_plot_fragment(participant_id: str):
                             help="End time relative to recording start",
                         )
                 elif artifact_scope == "all_validated":
-                    # Load validated sections and show which will be processed
+                    # Find validated sections: try live validation first, then persisted file
+                    from rrational.gui.shared import get_validated_sections_for_participant as get_vals_live
                     from rrational.gui.persistence import load_section_validations as load_vals_scope
-                    vals_scope = load_vals_scope(
-                        participant_id,
-                        st.session_state.get("data_dir"),
-                        st.session_state.get("current_project")
-                    )
+
                     validated_sections_scope = []
-                    if vals_scope and vals_scope.get("sections"):
-                        for sec_name, sec_data in vals_scope["sections"].items():
-                            if sec_data.get("is_valid"):
+
+                    # First: try live validation from current session state
+                    all_sections = st.session_state.get("sections", {})
+                    if all_sections:
+                        live_results = get_vals_live(
+                            participant_id=participant_id,
+                            sections_config=all_sections,
+                            normalizer=st.session_state.get("normalizer"),
+                        )
+                        for sec_name, result in live_results.items():
+                            if result.is_valid:
                                 validated_sections_scope.append(sec_name)
 
+                    # Fallback: load from persisted YAML if live validation found nothing
+                    if not validated_sections_scope:
+                        vals_scope = load_vals_scope(
+                            participant_id,
+                            st.session_state.get("data_dir"),
+                            st.session_state.get("current_project")
+                        )
+                        if vals_scope and vals_scope.get("sections"):
+                            for sec_name, sec_data in vals_scope["sections"].items():
+                                if sec_data.get("is_valid"):
+                                    validated_sections_scope.append(sec_name)
+
                     if validated_sections_scope:
-                        st.caption(f"Will create NN files for: {', '.join(sorted(validated_sections_scope))}")
+                        st.caption(f"Will process: {', '.join(sorted(validated_sections_scope))}")
                     else:
-                        st.warning("No validated sections found. Validate sections in the Sections tab first.")
+                        st.warning("No validated sections found. Check Section Validation below.")
 
                 # Store scope settings in session state for use later
                 st.session_state[f"artifact_scope_settings_{participant_id}"] = {
