@@ -5819,6 +5819,24 @@ def main():
         with st.expander("Settings", expanded=False):
             render_settings_panel()
 
+        # Version & debug info
+        from rrational import __version__, get_build_info
+        _build = get_build_info()
+        _version_str = f"v{_build['version']}"
+        if _build.get("git_commit"):
+            _version_str += f" ({_build['git_commit']})"
+        st.caption(_version_str)
+
+        with st.expander("Debug Info", expanded=False):
+            st.code(
+                f"Version: {_build['version']}\n"
+                f"Commit:  {_build.get('git_commit', 'N/A')}\n"
+                f"Date:    {_build.get('git_date', 'N/A')}\n"
+                f"Python:  {_build['python']}\n"
+                f"OS:      {_build['platform']}",
+                language=None,
+            )
+
     # Get selected page for content rendering
     selected_page = st.session_state.active_page
 
