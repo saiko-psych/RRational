@@ -8,8 +8,15 @@ except PackageNotFoundError:  # pragma: no cover
     __version__ = "0.0.0"
 
 
+_build_info_cache: dict[str, str] | None = None
+
+
 def get_build_info() -> dict[str, str]:
-    """Get build/debug information for diagnostics."""
+    """Get build/debug information for diagnostics. Cached after first call."""
+    global _build_info_cache
+    if _build_info_cache is not None:
+        return _build_info_cache
+
     import platform
     import sys
 
@@ -41,6 +48,7 @@ def get_build_info() -> dict[str, str]:
     except Exception:
         pass
 
+    _build_info_cache = info
     return info
 
 

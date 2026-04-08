@@ -81,9 +81,8 @@ class RepeatingSection:
     @property
     def label(self) -> str:
         """Human-readable label for this section."""
-        phase_label = "Pre" if self.phase == "pre_pause" else "Post"
-        section_num = self.index + 1 if self.phase == "pre_pause" else self.index - 8
-        return f"{phase_label}-{section_num}: {self.condition_type}"
+        # For pre-pause: 1-based from index; post-pause: number within phase
+        return f"{self.index + 1}: {self.condition_type}"
 
 
 @dataclass(slots=True)

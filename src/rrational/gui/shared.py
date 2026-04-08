@@ -1,4 +1,4 @@
-"""Shared helpers, constants, and caching for the Music HRV GUI."""
+"""Shared helpers, constants, and caching for the RRational GUI."""
 
 from __future__ import annotations
 
