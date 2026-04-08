@@ -12,28 +12,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Lazy import for plotly (saves ~0.12s on startup)
-_go = None
-_make_subplots = None
-PLOTLY_AVAILABLE = True
-
-
-def get_plotly_analysis():
-    """Lazily import plotly for analysis tab."""
-    global _go, _make_subplots, PLOTLY_AVAILABLE
-    if _go is None:
-        try:
-            import plotly.graph_objects as go
-            from plotly.subplots import make_subplots
-            _go = go
-            _make_subplots = make_subplots
-        except ImportError:
-            PLOTLY_AVAILABLE = False
-            _go = None
-            _make_subplots = None
-    return _go, _make_subplots
-
-
 from rrational.gui.shared import (  # noqa: E402
     NEUROKIT_AVAILABLE,
     get_neurokit,
@@ -80,6 +58,7 @@ from rrational.analysis.hrv_compute import (  # noqa: E402
 from rrational.gui.plots.analysis_plots import (  # noqa: E402
     PLOT_COLORS,
     get_theme_colors,
+    get_plotly_analysis,
     create_professional_tachogram,
     create_poincare_plot,
     create_frequency_domain_plot,
@@ -205,37 +184,6 @@ during the recording period.
         ]
     },
 }
-
-# Color scheme for professional plots
-PLOT_COLORS = {
-    "primary": "#2E86AB",      # Blue - main data
-    "secondary": "#A23B72",    # Magenta - secondary data
-    "accent": "#F18F01",       # Orange - highlights
-    "success": "#C73E1D",      # Red - alerts/artifacts
-    "neutral": "#6C757D",      # Gray - grid/reference
-    "background": "#FAFAFA",   # Light gray background
-    "lf_band": "rgba(255, 193, 7, 0.3)",   # Yellow - LF band
-    "hf_band": "rgba(46, 134, 171, 0.3)",  # Blue - HF band
-    "vlf_band": "rgba(108, 117, 125, 0.2)",  # Gray - VLF band
-}
-
-
-
-def get_theme_colors():
-    """Get colors for chart rendering.
-
-    Always returns light theme colors to match config.toml base theme.
-    Dark mode is handled by JavaScript updatePlotlyTheme() function
-    which updates charts dynamically when user switches themes.
-    """
-    # Always use light theme for initial render (matches config.toml)
-    # JavaScript handles dark mode switching dynamically
-    return {
-        'bg': '#FFFFFF',
-        'text': '#31333F',
-        'grid': 'rgba(0,0,0,0.1)',
-    }
-
 
 def create_professional_tachogram(rr_intervals: list, section_label: str,
                                    artifact_indices: list = None):
@@ -3187,7 +3135,7 @@ def _display_single_participant_results(selected_participant: str):
                 )
 
             # Visualization tabs for professional plots
-            if PLOTLY_AVAILABLE and len(rr_intervals) > 10:
+            if get_plotly_analysis()[0] is not None and len(rr_intervals) > 10:
                 plot_tabs = st.tabs(["Tachogram", "Poincaré", "Frequency", "HR Distribution", "Data"])
 
                 with plot_tabs[0]:

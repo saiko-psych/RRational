@@ -8,18 +8,7 @@ from __future__ import annotations
 import pandas as pd
 
 from rrational.analysis.hrv_metrics import get_metric_info
-from rrational.gui.plots.analysis_plots import get_theme_colors
-
-_go = None
-
-
-def get_plotly_analysis():
-    """Lazily import plotly."""
-    global _go
-    if _go is None:
-        import plotly.graph_objects as go
-        _go = go
-    return _go, None
+from rrational.gui.plots.analysis_plots import get_theme_colors, get_plotly_analysis
 
 
 def _create_group_bar_chart(

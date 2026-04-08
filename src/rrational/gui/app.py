@@ -7,8 +7,7 @@ from pathlib import Path
 import time
 
 from rrational.cleaning.rr import CleaningConfig
-from rrational.io import DEFAULT_ID_PATTERN, load_recording, discover_recordings
-from rrational.prep import load_hrv_logger_preview
+from rrational.io import DEFAULT_ID_PATTERN
 from rrational.gui.persistence import (
     load_groups,
     save_events,
@@ -27,19 +26,27 @@ from rrational.gui.help_text import (
     ARTIFACT_CORRECTION_HELP,
     VNS_DATA_HELP,
 )
-from rrational.cleaning.quality import (
-    detect_quality_changepoints,
-)
 from rrational.gui.shared import (
     create_gui_normalizer,
     save_participant_data,
     update_normalizer,
     show_toast,
     auto_save_config,
+    DEFAULT_CANONICAL_EVENTS,
+    get_neurokit,
+    cached_load_hrv_logger_preview,
+    cached_load_participants,
+    cached_discover_recordings,
+    cached_load_recording,
+    cached_load_vns_recording,
+    cached_clean_rr_intervals,
+    cached_quality_analysis,
+    cached_get_plot_data,
 )
 
-# Helper function to normalize timestamps for safe comparison
-# Handles mixed timezone-aware and timezone-naive datetimes from old saved data
+
+# Normalize timestamps for safe comparison (returns None for invalid, unlike
+# section_validation._normalize_timestamp which returns datetime.min)
 def _normalize_ts(ts):
     """Normalize a timestamp to naive datetime for safe comparison."""
     if ts is None:
@@ -55,11 +62,8 @@ def _normalize_ts(ts):
     return ts
 
 
-# Lazy imports for heavy modules (saves ~0.5s+ on startup)
+# Lazy import for pandas (saves startup time)
 _pd = None
-_render_setup_tab = None
-_render_data_tab = None
-_render_analysis_tab = None
 
 
 def get_pandas():
@@ -71,6 +75,10 @@ def get_pandas():
     return _pd
 
 
+# Lazy imports for tab modules
+_render_setup_tab = None
+_render_data_tab = None
+_render_analysis_tab = None
 
 
 def _get_render_setup_tab():
@@ -103,35 +111,7 @@ def _get_render_analysis_tab():
 import sys
 TEST_MODE = "--test-mode" in sys.argv or "--test" in sys.argv
 
-# Lazy import for neurokit2 and matplotlib (saves ~0.9s on startup)
-NEUROKIT_AVAILABLE = True
-_nk = None
-_plt = None
-
-
-def get_neurokit():
-    """Lazily import neurokit2 to speed up app startup."""
-    global _nk, NEUROKIT_AVAILABLE
-    if _nk is None:
-        try:
-            import neurokit2 as nk
-            _nk = nk
-        except ImportError:
-            NEUROKIT_AVAILABLE = False
-            _nk = None
-    return _nk
-
-
-def get_matplotlib():
-    """Lazily import matplotlib to speed up app startup."""
-    global _plt
-    if _plt is None:
-        import matplotlib.pyplot as plt
-        _plt = plt
-    return _plt
-
-
-# Lazy import for plotly (saves ~0.12s on startup)
+# Lazy import for plotly (get_neurokit/get_matplotlib imported from shared) (saves ~0.12s on startup)
 PLOTLY_AVAILABLE = True
 _go = None
 _plotly_events = None
@@ -201,19 +181,6 @@ if "restore_participant" in st.query_params:
         st.session_state["selected_participant"] = _restore_id
     # Clear the query param to clean up the URL
     del st.query_params["restore_participant"]
-
-
-# Default canonical events for the Default Group
-DEFAULT_CANONICAL_EVENTS = {
-    "rest_pre_start": [],
-    "rest_pre_end": [],
-    "measurement_start": [],
-    "pause_start": [],
-    "pause_end": [],
-    "measurement_end": [],
-    "rest_post_start": [],
-    "rest_post_end": [],
-}
 
 
 # Initialize session state with persistent storage
@@ -454,191 +421,6 @@ if "participant_groups" not in st.session_state or "event_order" not in st.sessi
         st.session_state.manual_events = {}
 
 
-# Cached data loading function for better performance
-@st.cache_data(show_spinner=False, ttl=300)
-def cached_load_hrv_logger_preview(data_dir_str, pattern, config_dict, gui_events_dict):
-    """Cached version of load_hrv_logger_preview for instant navigation.
-
-    ISSUE 1 FIX: Uses GUI events dictionary to create normalizer (not sections.yml).
-    """
-    data_path = Path(data_dir_str)
-    # Reconstruct config from dict (can't cache objects directly)
-    config = CleaningConfig(
-        rr_min_ms=config_dict["rr_min_ms"],
-        rr_max_ms=config_dict["rr_max_ms"],
-        sudden_change_pct=config_dict["sudden_change_pct"]
-    )
-    # ISSUE 1 FIX: Create normalizer from GUI events only
-    normalizer = create_gui_normalizer(gui_events_dict)
-    return load_hrv_logger_preview(data_path, pattern=pattern, config=config, normalizer=normalizer)
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def cached_load_participants():
-    """Cached version of load_participants for faster access.
-
-    TTL ensures cache is refreshed periodically to prevent memory accumulation.
-    """
-    return load_participants()
-
-
-@st.cache_data(show_spinner=False, ttl=600)
-def cached_discover_recordings(data_dir_str: str, pattern: str):
-    """Cache discovery of recordings to avoid re-scanning directory."""
-    data_path = Path(data_dir_str)
-    return list(discover_recordings(data_path, pattern=pattern))
-
-
-@st.cache_data(show_spinner=False, ttl=600)
-def cached_load_recording(rr_paths_tuple, events_paths_tuple, participant_id: str):
-    """Cache loaded recording data for instant access.
-
-    Uses tuples for paths since lists aren't hashable for caching.
-    Returns serializable data: (rr_data, events_data, raw_events)
-    """
-    from rrational.io.hrv_logger import RecordingBundle
-    bundle = RecordingBundle(
-        participant_id=participant_id,
-        rr_paths=[Path(p) for p in rr_paths_tuple],
-        events_paths=[Path(p) for p in events_paths_tuple]
-    )
-    recording, raw_events, _ = load_recording(bundle)
-    # Return serializable data
-    return {
-        'rr_intervals': [(rr.timestamp, rr.rr_ms, rr.elapsed_ms) for rr in recording.rr_intervals],
-        'events': [(e.label, e.timestamp) for e in recording.events],
-        'raw_events': raw_events
-    }
-
-
-@st.cache_data(show_spinner=False, ttl=600)
-def cached_load_vns_recording(vns_paths_tuple: tuple, participant_id: str, use_corrected: bool = False):
-    """Cache loaded VNS recording data for instant access.
-
-    Args:
-        vns_paths_tuple: Tuple of VNS file path strings (for cache key hashability)
-        participant_id: Participant identifier
-        use_corrected: Whether to use corrected RR values from VNS files
-    """
-    from rrational.io.vns_analyse import VNSRecordingBundle, load_vns_recording
-    bundle = VNSRecordingBundle(
-        participant_id=participant_id,
-        file_paths=[Path(p) for p in vns_paths_tuple],
-    )
-    recording = load_vns_recording(bundle, use_corrected=use_corrected)
-
-    # Serialize file segments for caching
-    file_segments = None
-    if recording.file_segments:
-        file_segments = [
-            {
-                'file_name': seg.file_path.name,
-                'start_time': seg.start_time,
-                'end_time': seg.end_time,
-                'duration_ms': seg.duration_ms,
-                'beat_count': seg.beat_count,
-            }
-            for seg in recording.file_segments
-        ]
-
-    # Serialize gaps
-    gaps = None
-    if recording.gaps:
-        gaps = [
-            {
-                'after_file': gap.after_file.name,
-                'before_file': gap.before_file.name,
-                'gap_start': gap.gap_start,
-                'gap_end': gap.gap_end,
-                'gap_duration_s': gap.gap_duration_s,
-            }
-            for gap in recording.gaps
-        ]
-
-    # Serialize overlaps
-    overlaps = None
-    if recording.overlaps:
-        overlaps = [
-            {
-                'file1': ov.file1.name,
-                'file2': ov.file2.name,
-                'overlap_start': ov.overlap_start,
-                'overlap_end': ov.overlap_end,
-                'overlap_duration_s': ov.overlap_duration_s,
-            }
-            for ov in recording.overlaps
-        ]
-
-    return {
-        'rr_intervals': [(rr.timestamp, rr.rr_ms, rr.elapsed_ms) for rr in recording.rr_intervals],
-        'events': [(e.label, e.timestamp) for e in recording.events],
-        'raw_events': [],  # VNS doesn't have duplicate tracking
-        'file_segments': file_segments,
-        'gaps': gaps,
-        'overlaps': overlaps,
-    }
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def cached_clean_rr_intervals(rr_data_tuple, config_dict, is_vns_data: bool = False):
-    """Cache cleaned RR intervals to avoid recomputation.
-
-    For VNS data, returns ALL intervals without filtering or flagging.
-    Artifact detection is handled by NeuroKit2 at analysis time.
-
-    Returns:
-        tuple: (rr_data, stats, extra_info)
-        - For HRV Logger: rr_data = [(timestamp, rr_ms), ...], cleaned data
-        - For VNS: rr_data = [(timestamp, rr_ms, is_flagged=False), ...], ALL data, no flags
-    """
-    from rrational.cleaning.rr import clean_rr_intervals, CleaningStats, RRInterval
-
-    # Reconstruct RR intervals from cached data
-    rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                    for ts, rr, elapsed in rr_data_tuple]
-
-    if is_vns_data:
-        # For VNS data: NO filtering, NO flagging
-        # - All intervals are kept (timestamps are cumulative, can't remove any)
-        # - No visual flagging (artifact detection done by NeuroKit2 at analysis time)
-        result = [(rr.timestamp, rr.rr_ms, False) for rr in rr_intervals if rr.timestamp]
-        stats = CleaningStats(
-            total_samples=len(rr_intervals),
-            retained_samples=len(rr_intervals),
-            removed_samples=0,
-            artifact_ratio=0.0,
-            reasons={"out_of_range": 0, "sudden_change": 0}
-        )
-        return result, stats, {}
-    else:
-        # For HRV Logger, apply cleaning (real timestamps are independent of RR values)
-        config = CleaningConfig(
-            rr_min_ms=config_dict["rr_min_ms"],
-            rr_max_ms=config_dict["rr_max_ms"],
-            sudden_change_pct=config_dict["sudden_change_pct"]
-        )
-        cleaned, stats = clean_rr_intervals(rr_intervals, config)
-        # HRV Logger: use original packet timestamps (align with events, ~1/sec resolution)
-        # Multiple beats can share same timestamp - this is correct for plotting
-        return [(rr.timestamp, rr.rr_ms) for rr in cleaned if rr.timestamp], stats, {}
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def cached_quality_analysis(rr_values_tuple, timestamps_tuple):
-    """Cache quality changepoint detection results."""
-    rr_list = list(rr_values_tuple)
-    timestamps_list = list(timestamps_tuple)
-    result = detect_quality_changepoints(rr_list, change_type="var")
-    # Add timestamps to segment stats
-    n_ts = len(timestamps_list)
-    for seg_stats in result["segment_stats"]:
-        start_idx = seg_stats["start_idx"]
-        end_idx = min(seg_stats["end_idx"], n_ts - 1)
-        seg_stats["start_time"] = timestamps_list[start_idx] if start_idx < n_ts else None
-        seg_stats["end_time"] = timestamps_list[end_idx] if end_idx < n_ts else None
-    return result
-
-
 def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
     """Generate NeuroKit2 diagnostic plots for artifact detection.
 
@@ -654,7 +436,7 @@ def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
     if len(rr_values) < 10:
         raise ValueError(f"Not enough RR values for diagnostic plots: {len(rr_values)}")
 
-    if not NEUROKIT_AVAILABLE:
+    if get_neurokit() is None:
         return None
 
     import io
@@ -776,7 +558,7 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
         elif method in ("kubios_segmented", "lipponen2019_segmented"):
             # Segmented Lipponen/Kubios - process long recordings in chunks for better sensitivity
             # Lipponen2019 uses NeuroKit2's Kubios method (Lipponen & Tarvainen, 2019)
-            if not NEUROKIT_AVAILABLE:
+            if get_neurokit() is None:
                 return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
                         "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
                         "indices_by_type": {},
@@ -880,7 +662,7 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
 
         elif method in ("kubios", "lipponen2019"):
             # Single-pass Lipponen/Kubios method (Lipponen & Tarvainen, 2019)
-            if not NEUROKIT_AVAILABLE:
+            if get_neurokit() is None:
                 return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
                         "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
                         "indices_by_type": {},
@@ -1368,78 +1150,6 @@ def get_summary_dict():
         st.session_state._summary_dict = {s.participant_id: s for s in summaries}
         st.session_state._summary_dict_cache_key = cache_key
     return st.session_state._summary_dict
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str, downsample_threshold: int = 5000, flags_tuple=None):
-    """Cache processed plot data (NOT the figure - that's slow to serialize).
-
-    Downsamples data if too many points for faster rendering.
-    Returns the data needed to build the plot quickly.
-
-    Also pre-calculates sequential timestamps (cumulative RR time) from FULL data
-    before downsampling, for Signal Inspection mode.
-
-    Note: Gap detection is NOT done here - it's done separately in the fragment
-    using cached_gap_detection() with the user's configurable threshold.
-
-    Args:
-        flags_tuple: Optional tuple of booleans indicating flagged (problematic) intervals (VNS only)
-    """
-    from datetime import timedelta
-
-    timestamps = list(timestamps_tuple)
-    rr_values = list(rr_values_tuple)
-    flags = list(flags_tuple) if flags_tuple else None
-    n_points = len(timestamps)
-
-    # Calculate sequential timestamps from FULL data (before downsampling)
-    # Sequential time = cumulative RR time, removes gaps
-    sequential_timestamps = []
-    total_gap_time_ms = 0  # Computed from actual gaps later
-
-    if timestamps and rr_values:
-        base_ts = timestamps[0]
-        cumulative_ms = 0
-
-        for i, rr in enumerate(rr_values):
-            seq_ts = base_ts + timedelta(milliseconds=cumulative_ms)
-            sequential_timestamps.append(seq_ts)
-            cumulative_ms += rr
-
-    # Downsample if too many points (keeps every Nth point)
-    step = 1
-    original_indices = list(range(n_points))  # Maps displayed index -> original index
-    if n_points > downsample_threshold:
-        step = n_points // downsample_threshold
-        timestamps = timestamps[::step]
-        rr_values = rr_values[::step]
-        sequential_timestamps = sequential_timestamps[::step]
-        original_indices = original_indices[::step]  # Keep mapping after downsampling
-        if flags:
-            flags = flags[::step]
-
-    y_min = min(rr_values)
-    y_max = max(rr_values)
-    y_range = y_max - y_min
-
-    result = {
-        'timestamps': timestamps,  # Original (real) timestamps
-        'sequential_timestamps': sequential_timestamps,  # Cumulative RR time
-        'rr_values': rr_values,
-        'y_min': y_min,
-        'y_max': y_max,
-        'y_range': y_range,
-        'n_original': n_points,
-        'n_displayed': len(timestamps),
-        'participant_id': participant_id,
-        'original_indices': original_indices,  # Maps displayed index -> original index (for artifact marking)
-        'downsample_step': step,  # For mapping gap indices after downsampling
-        'total_rr_time_ms': cumulative_ms if timestamps else 0,  # Sum of all RR intervals
-    }
-    if flags:
-        result['flags'] = flags
-    return result
 
 
 @st.fragment

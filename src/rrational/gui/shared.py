@@ -76,24 +76,6 @@ __all__ = [
     "init_session_state",
 ]
 
-def _normalize_timestamp(ts):
-    """Normalize a timestamp to naive datetime for safe comparison.
-
-    Handles mixed timezone-aware and timezone-naive datetimes from old saved data.
-    """
-    if ts is None:
-        return datetime.min
-    if isinstance(ts, str):
-        try:
-            ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return datetime.min
-    # Convert to naive datetime to avoid offset-naive vs offset-aware comparison errors
-    if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
-        ts = ts.replace(tzinfo=None)
-    return ts
-
-
 # Default canonical events for the Default Group
 DEFAULT_CANONICAL_EVENTS = {
     "rest_pre_start": [],
@@ -818,18 +800,40 @@ def cached_load_recording(rr_paths_tuple, events_paths_tuple, participant_id: st
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def cached_clean_rr_intervals(rr_data_tuple, config_dict):
-    """Cache cleaned RR intervals to avoid recomputation."""
-    from rrational.cleaning.rr import clean_rr_intervals, RRInterval
+def cached_clean_rr_intervals(rr_data_tuple, config_dict, is_vns_data: bool = False):
+    """Cache cleaned RR intervals to avoid recomputation.
+
+    For VNS data, returns ALL intervals without filtering or flagging.
+    Artifact detection is handled by NeuroKit2 at analysis time.
+
+    Returns:
+        tuple: (rr_data, stats, extra_info)
+        - For HRV Logger: rr_data = [(timestamp, rr_ms), ...], cleaned data
+        - For VNS: rr_data = [(timestamp, rr_ms, is_flagged=False), ...], ALL data, no flags
+    """
+    from rrational.cleaning.rr import clean_rr_intervals, CleaningStats, RRInterval
+
     rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
                     for ts, rr, elapsed in rr_data_tuple]
+
+    if is_vns_data:
+        result = [(rr.timestamp, rr.rr_ms, False) for rr in rr_intervals if rr.timestamp]
+        stats = CleaningStats(
+            total_samples=len(rr_intervals),
+            retained_samples=len(rr_intervals),
+            removed_samples=0,
+            artifact_ratio=0.0,
+            reasons={"out_of_range": 0, "sudden_change": 0}
+        )
+        return result, stats, {}
+
     config = CleaningConfig(
         rr_min_ms=config_dict["rr_min_ms"],
         rr_max_ms=config_dict["rr_max_ms"],
         sudden_change_pct=config_dict["sudden_change_pct"]
     )
     cleaned, stats = clean_rr_intervals(rr_intervals, config)
-    return [(rr.timestamp, rr.rr_ms) for rr in cleaned if rr.timestamp], stats
+    return [(rr.timestamp, rr.rr_ms) for rr in cleaned if rr.timestamp], stats, {}
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -848,31 +852,67 @@ def cached_quality_analysis(rr_values_tuple, timestamps_tuple):
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str, downsample_threshold: int = 5000):
-    """Cache processed plot data (NOT the figure - that's slow to serialize)."""
+def cached_get_plot_data(timestamps_tuple, rr_values_tuple, participant_id: str, downsample_threshold: int = 5000, flags_tuple=None):
+    """Cache processed plot data (NOT the figure - that's slow to serialize).
+
+    Downsamples data if too many points for faster rendering.
+    Also pre-calculates sequential timestamps (cumulative RR time) from FULL data
+    before downsampling, for Signal Inspection mode.
+
+    Args:
+        flags_tuple: Optional tuple of booleans indicating flagged (problematic) intervals (VNS only)
+    """
+    from datetime import timedelta
+
     timestamps = list(timestamps_tuple)
     rr_values = list(rr_values_tuple)
-
+    flags = list(flags_tuple) if flags_tuple else None
     n_points = len(timestamps)
+
+    # Calculate sequential timestamps from FULL data (before downsampling)
+    sequential_timestamps = []
+    cumulative_ms = 0
+
+    if timestamps and rr_values:
+        base_ts = timestamps[0]
+        for i, rr in enumerate(rr_values):
+            seq_ts = base_ts + timedelta(milliseconds=cumulative_ms)
+            sequential_timestamps.append(seq_ts)
+            cumulative_ms += rr
+
+    # Downsample if too many points (keeps every Nth point)
+    step = 1
+    original_indices = list(range(n_points))
     if n_points > downsample_threshold:
         step = n_points // downsample_threshold
         timestamps = timestamps[::step]
         rr_values = rr_values[::step]
+        sequential_timestamps = sequential_timestamps[::step]
+        original_indices = original_indices[::step]
+        if flags:
+            flags = flags[::step]
 
     y_min = min(rr_values)
     y_max = max(rr_values)
     y_range = y_max - y_min
 
-    return {
+    result = {
         'timestamps': timestamps,
+        'sequential_timestamps': sequential_timestamps,
         'rr_values': rr_values,
         'y_min': y_min,
         'y_max': y_max,
         'y_range': y_range,
         'n_original': n_points,
         'n_displayed': len(timestamps),
-        'participant_id': participant_id
+        'participant_id': participant_id,
+        'original_indices': original_indices,
+        'downsample_step': step,
+        'total_rr_time_ms': cumulative_ms if timestamps else 0,
     }
+    if flags:
+        result['flags'] = flags
+    return result
 
 
 @st.cache_data(show_spinner=False, ttl=600)

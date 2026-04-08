@@ -45,22 +45,22 @@ def _open_folder_dialog(title: str = "Select Folder", initial_dir: str | None = 
     if initial_dir is None or not Path(initial_dir).exists():
         initial_dir = str(Path.home())
 
-    # Escape any quotes in the paths/title for the script
-    title_escaped = title.replace('"', '\\"')
-    initial_dir_escaped = initial_dir.replace('\\', '\\\\').replace('"', '\\"')
-
     # Python code to run in subprocess - cross-platform compatible
-    script = f'''
+    # Title and initial_dir are passed via sys.argv to avoid script injection
+    script = '''
+import sys
 import tkinter as tk
 from tkinter import filedialog
 import platform
+
+title = sys.argv[1]
+initialdir = sys.argv[2]
 
 root = tk.Tk()
 root.withdraw()
 
 # Platform-specific window handling
 if platform.system() == "Darwin":  # macOS
-    # On Mac, bring window to front differently
     root.lift()
     root.call("wm", "attributes", ".", "-topmost", True)
     root.after_idle(root.call, "wm", "attributes", ".", "-topmost", False)
@@ -72,8 +72,8 @@ root.update()
 
 folder = filedialog.askdirectory(
     parent=root,
-    title="{title_escaped}",
-    initialdir="{initial_dir_escaped}",
+    title=title,
+    initialdir=initialdir,
 )
 
 root.destroy()
@@ -85,7 +85,7 @@ if folder:
     try:
         # Run in subprocess - this won't block Streamlit
         result = subprocess.run(
-            [sys.executable, "-c", script],
+            [sys.executable, "-c", script, title, initial_dir],
             capture_output=True,
             text=True,
             timeout=120,  # 2 minute timeout for user to select

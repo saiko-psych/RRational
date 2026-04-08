@@ -175,67 +175,16 @@ def extract_repeating_sections(
 
     n_conditions = len(condition_order)
 
-    # Extract pre-pause sections
-    for i in range(protocol.pre_pause_sections):
-        condition_type = condition_order[i % n_conditions]
-
-        expected_start = pre_pause_start + timedelta(seconds=i * pre_section_duration)
-        expected_end = expected_start + timedelta(seconds=pre_section_duration)
-
-        actual_start = max(expected_start, pre_pause_start)
-        actual_end = min(expected_end, pre_pause_end)
-
-        section = RepeatingSection(
-            index=i,
-            condition_type=condition_type,
-            phase="pre_pause",
-            expected_start=expected_start,
-            expected_end=expected_end,
-            actual_start=actual_start,
-            actual_end=actual_end,
-            expected_duration_s=pre_section_duration,
+    # Extract sections for both phases using shared helper
+    for phase, n_sections, section_duration, phase_start, phase_end, index_offset in [
+        ("pre_pause", protocol.pre_pause_sections, pre_section_duration, pre_pause_start, pre_pause_end, 0),
+        ("post_pause", protocol.post_pause_sections, post_section_duration, post_pause_start, post_pause_end, protocol.pre_pause_sections),
+    ]:
+        _extract_phase_sections(
+            analysis, rr_intervals, condition_order, n_conditions,
+            phase, n_sections, section_duration, phase_start, phase_end,
+            index_offset, protocol, mismatch_strategy,
         )
-
-        section.rr_intervals = [
-            rr for rr in rr_intervals
-            if rr.timestamp and actual_start <= rr.timestamp <= actual_end
-        ]
-        section.beat_count = len(section.rr_intervals)
-        section.actual_duration_s = sum(rr.rr_ms for rr in section.rr_intervals) / 1000
-
-        _validate_section(section, protocol, mismatch_strategy)
-        analysis.sections.append(section)
-
-    # Extract post-pause sections
-    for i in range(protocol.post_pause_sections):
-        condition_type = condition_order[i % n_conditions]
-
-        expected_start = post_pause_start + timedelta(seconds=i * post_section_duration)
-        expected_end = expected_start + timedelta(seconds=post_section_duration)
-
-        actual_start = max(expected_start, post_pause_start)
-        actual_end = min(expected_end, post_pause_end)
-
-        section = RepeatingSection(
-            index=protocol.pre_pause_sections + i,
-            condition_type=condition_type,
-            phase="post_pause",
-            expected_start=expected_start,
-            expected_end=expected_end,
-            actual_start=actual_start,
-            actual_end=actual_end,
-            expected_duration_s=post_section_duration,
-        )
-
-        section.rr_intervals = [
-            rr for rr in rr_intervals
-            if rr.timestamp and actual_start <= rr.timestamp <= actual_end
-        ]
-        section.beat_count = len(section.rr_intervals)
-        section.actual_duration_s = sum(rr.rr_ms for rr in section.rr_intervals) / 1000
-
-        _validate_section(section, protocol, mismatch_strategy)
-        analysis.sections.append(section)
 
     # Summarize validation
     analysis.valid_sections = sum(1 for s in analysis.sections if s.is_valid)
@@ -249,6 +198,52 @@ def extract_repeating_sections(
         )
 
     return analysis
+
+
+def _extract_phase_sections(
+    analysis: RepeatingSectionAnalysis,
+    rr_intervals: Sequence[RRInterval],
+    condition_order: list[str],
+    n_conditions: int,
+    phase: str,
+    n_sections: int,
+    section_duration: float,
+    phase_start: datetime,
+    phase_end: datetime,
+    index_offset: int,
+    protocol: ProtocolConfig,
+    mismatch_strategy: str,
+) -> None:
+    """Extract sections for a single phase (pre_pause or post_pause)."""
+    for i in range(n_sections):
+        condition_type = condition_order[i % n_conditions]
+
+        expected_start = phase_start + timedelta(seconds=i * section_duration)
+        expected_end = expected_start + timedelta(seconds=section_duration)
+
+        actual_start = max(expected_start, phase_start)
+        actual_end = min(expected_end, phase_end)
+
+        section = RepeatingSection(
+            index=index_offset + i,
+            condition_type=condition_type,
+            phase=phase,
+            expected_start=expected_start,
+            expected_end=expected_end,
+            actual_start=actual_start,
+            actual_end=actual_end,
+            expected_duration_s=section_duration,
+        )
+
+        section.rr_intervals = [
+            rr for rr in rr_intervals
+            if rr.timestamp and actual_start <= rr.timestamp <= actual_end
+        ]
+        section.beat_count = len(section.rr_intervals)
+        section.actual_duration_s = sum(rr.rr_ms for rr in section.rr_intervals) / 1000
+
+        _validate_section(section, protocol, mismatch_strategy)
+        analysis.sections.append(section)
 
 
 def _validate_section(

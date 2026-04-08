@@ -1252,7 +1252,7 @@ def _render_batch_processing():
                                 "rr_max_ms": st.session_state.cleaning_config.rr_max_ms,
                                 "sudden_change_pct": st.session_state.cleaning_config.sudden_change_pct
                             }
-                            rr_with_timestamps, _ = cached_clean_rr_intervals(
+                            rr_with_timestamps, _, _ = cached_clean_rr_intervals(
                                 tuple(recording_data['rr_intervals']),
                                 config_dict
                             )
