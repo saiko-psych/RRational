@@ -31,7 +31,7 @@ uv run streamlit run src/rrational/gui/app.py
 
 The app opens in your browser at [http://localhost:8501](http://localhost:8501).
 
-<!-- screenshot: welcome-screen.png — Welcome screen with "Create New Project", "Open Existing", "Recent Projects" options -->
+![Data Tab after loading participants](../assets/screenshots/data-tab-loaded.png)
 
 ### 1.2 Create a New Project
 
@@ -44,7 +44,6 @@ The app opens in your browser at [http://localhost:8501](http://localhost:8501).
     - **VNS Analyse** for TXT files
 6. Click **"Create Project"**
 
-<!-- screenshot: create-project.png — Create project dialog with name, description, data source checkboxes -->
 
 Your project folder is now created:
 
@@ -81,7 +80,7 @@ Copy your HRV recording files into the correct subfolder:
 3. Click **"Analyze Folder"**
 4. Wait for the scan to complete
 
-<!-- screenshot: data-tab-loaded.png — Data tab showing "12 participants loaded", participant table with columns -->
+![Participants Overview table](../assets/screenshots/data-tab-loaded.png)
 
 ### 2.2 Review Participants Overview
 
@@ -127,7 +126,7 @@ Alternatively, edit the **Group** column directly in the participants table.
 2. Select a participant from the **dropdown** at the top
 3. The **tachogram** (RR interval plot) loads automatically
 
-<!-- screenshot: participants-tachogram.png — Tachogram showing RR intervals over time with events as dashed lines -->
+![Participants tab with tachogram](../assets/screenshots/participants-tachogram.png)
 
 ### 3.2 Understand the Tachogram
 
@@ -154,7 +153,7 @@ Above the plot, enable/disable overlays using checkboxes:
 - **Show time gaps** — Gray shading for recording interruptions
 - **Show variability segments** — Color-coded variability regions
 
-<!-- screenshot: plot-options.png — Checkbox row showing all plot options -->
+![Plot options checkboxes](../assets/screenshots/plot-options.png)
 
 ### 3.4 Navigate Between Participants
 
@@ -173,7 +172,7 @@ Above the plot, enable/disable overlays using checkboxes:
 1. In the Participants tab, find the **Mode** radio buttons
 2. Select **"Signal Inspection"**
 
-<!-- screenshot: signal-inspection-mode.png — Mode radio buttons with "Signal Inspection" selected -->
+![Signal inspection area](../assets/screenshots/signal-inspection-area.png)
 
 ### 4.2 Configure Artifact Detection
 
@@ -191,7 +190,6 @@ Expand **"Detect New Artifacts"**:
     - **Preset** — Standard 350 beats/segment
     - **Manual** — Custom beats per segment
 
-<!-- screenshot: artifact-detection-settings.png — Artifact detection expander showing method, scope, and sizing options -->
 
 ### 4.3 Run Detection
 
@@ -201,7 +199,6 @@ Expand **"Detect New Artifacts"**:
     - Quality summary shows: artifact count, rate, and grade per segment
     - Segment assessment table with include/exclude checkboxes
 
-<!-- screenshot: artifact-results.png — Tachogram with artifact markers and quality summary below -->
 
 ### 4.4 Per-Segment Quality Assessment
 
@@ -237,7 +234,7 @@ Expand **"Detect New Artifacts"**:
     - Add **synonyms** for fuzzy matching (e.g., `Start Messung`, `Messung Anfang`)
     - Matching is case-insensitive
 
-<!-- screenshot: setup-events.png — Events tab with canonical names and synonyms -->
+![Setup Events tab](../assets/screenshots/setup-events.png)
 
 !!! tip "Common event names"
     | Canonical Name | Typical Synonyms |
@@ -269,7 +266,7 @@ For studies with repeating conditions (e.g., music randomization):
 5. Create additional sequences with different orders for counterbalancing
 6. Scroll down to **Condition Labels** to add display names and descriptions
 
-<!-- screenshot: setup-sequences.png — Sequences tab with condition order and labels table -->
+![Setup Sequences tab](../assets/screenshots/setup-sequences.png)
 
 ### 5.4 Define Sections
 
@@ -287,7 +284,6 @@ For studies with repeating conditions (e.g., music randomization):
 
 3. Click **"Save Section Changes"**
 
-<!-- screenshot: setup-sections.png — Sections tab with data editor showing section definitions -->
 
 ---
 
@@ -304,7 +300,6 @@ Before analysis, validate that sections are correctly detected for each particip
     - **Yellow** = Needs attention (multiple candidates, disambiguation required)
     - **Red** = Invalid (missing events, duration mismatch)
 
-<!-- screenshot: section-validation.png — Section validation panel showing valid/invalid sections -->
 
 ### 6.2 Disambiguate Events
 
@@ -334,7 +329,7 @@ If a section shows "multiple events found":
 | **Repeating Section Analysis** | Protocol-based repeating condition comparison |
 | **Group Analysis** | Batch comparison across study groups |
 
-<!-- screenshot: analysis-mode.png — Analysis tab with mode selector -->
+![Analysis tab with mode selection](../assets/screenshots/analysis-mode.png)
 
 ### 7.2 Single Participant Analysis
 
@@ -347,7 +342,6 @@ If a section shows "multiple events found":
     - **Per-segment** — Results for each time-based segment within a section
 6. Click **"Analyze HRV"**
 
-<!-- screenshot: analysis-single-results.png — Analysis results with metrics table and plots -->
 
 ### 7.3 Understanding Results
 
@@ -374,7 +368,6 @@ RRational generates four diagnostic plots:
 3. **Frequency Spectrum** — Power spectral density with LF/HF bands
 4. **HR Distribution** — Heart rate histogram
 
-<!-- screenshot: analysis-plots.png — Four analysis plots in a 2x2 grid -->
 
 ### 7.5 Group Analysis
 
