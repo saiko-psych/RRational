@@ -1,123 +1,181 @@
 """Take documentation screenshots of the RRational GUI using Playwright.
 
-Usage:
-    uv run python scripts/take_screenshots.py
+Uses Streamlit-specific wait strategies:
+- Wait for "Running..." indicator to disappear
+- Wait for specific elements (canvas, tables) to render
+- Element-specific screenshots for clarity
 
-Requires:
-    uv pip install playwright
-    uv run playwright install chromium
+Usage:
+    # Start the app first:
+    uv run streamlit run src/rrational/gui/app.py --server.headless true -- --test-mode
+    # Then take screenshots:
+    uv run python scripts/take_screenshots.py
 """
 
-import asyncio
 from pathlib import Path
-
-from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright, Page, expect
 
 BASE_URL = "http://localhost:8501"
-OUTPUT_DIR = Path("docs/assets/screenshots")
-VIEWPORT = {"width": 1400, "height": 900}
+OUT = Path("docs/assets/screenshots")
+W, H = 1400, 900
 
 
-async def wait_for_streamlit(page, extra_ms=3000):
-    """Wait for Streamlit to fully render."""
-    await page.wait_for_load_state("networkidle")
-    await page.wait_for_timeout(extra_ms)
+def wait_streamlit(page: Page, timeout: int = 15000):
+    """Wait for Streamlit to finish processing."""
+    try:
+        running = page.get_by_text("Running...")
+        running.wait_for(state="detached", timeout=timeout)
+    except Exception:
+        pass  # May not appear if already loaded
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_timeout(1500)
 
 
-async def click_sidebar_button(page, text):
-    """Click a sidebar navigation button by its text."""
-    sidebar = page.locator("[data-testid='stSidebar']")
-    btn = sidebar.locator(f"button:has-text('{text}')").first
-    await btn.click()
-    await wait_for_streamlit(page)
+def click_nav(page: Page, label: str):
+    """Click a sidebar navigation button."""
+    page.locator(f"[data-testid='stSidebar'] button:has-text('{label}')").first.click()
+    wait_streamlit(page)
 
 
-async def click_radio_option(page, text):
-    """Click a Streamlit radio option by label text."""
-    # Streamlit renders radio labels as <p> inside a label container
-    label = page.locator(f"text='{text}'").first
-    await label.click()
-    await wait_for_streamlit(page)
+def click_radio(page: Page, label: str):
+    """Click a Streamlit radio option."""
+    page.locator(f"label:has-text('{label}')").first.click()
+    wait_streamlit(page)
 
 
-async def take_screenshots():
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+def screenshot(page: Page, name: str, full_page: bool = False):
+    """Take and save a screenshot."""
+    path = OUT / name
+    page.screenshot(path=str(path), full_page=full_page)
+    size_kb = path.stat().st_size // 1024
+    print(f"  [{size_kb:>4}KB] {name}")
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(viewport=VIEWPORT)
-        page = await context.new_page()
 
-        # === 1. Data Tab (initial load in test mode) ===
-        print("1. Data tab...")
-        await page.goto(BASE_URL)
-        await wait_for_streamlit(page, 5000)  # Extra time for first load
-        await page.screenshot(path=str(OUTPUT_DIR / "data-tab-loaded.png"))
-        print("   -> data-tab-loaded.png")
+def main():
+    OUT.mkdir(parents=True, exist_ok=True)
 
-        # === 2. Participants Tab ===
-        print("2. Participants tab...")
-        await click_sidebar_button(page, "Participants")
-        await page.screenshot(path=str(OUTPUT_DIR / "participants-tachogram.png"))
-        print("   -> participants-tachogram.png")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        ctx = browser.new_context(viewport={"width": W, "height": H})
+        page = ctx.new_page()
 
-        # Scroll to plot options and tachogram
-        await page.evaluate("window.scrollTo(0, 500)")
-        await page.wait_for_timeout(1500)
-        await page.screenshot(path=str(OUTPUT_DIR / "plot-options.png"))
-        print("   -> plot-options.png")
+        # ── 1. DATA TAB ──────────────────────────────────
+        print("1. Data Tab")
+        page.goto(BASE_URL)
+        wait_streamlit(page, timeout=20000)
 
-        # Scroll to bottom area (events, validation)
-        await page.evaluate("window.scrollTo(0, 2000)")
-        await page.wait_for_timeout(1500)
-        await page.screenshot(path=str(OUTPUT_DIR / "signal-inspection-area.png"))
-        print("   -> signal-inspection-area.png")
-
-        # === 3. Setup Tab - Events ===
-        print("3. Setup tab...")
-        await click_sidebar_button(page, "Setup")
-        await page.screenshot(path=str(OUTPUT_DIR / "setup-events.png"))
-        print("   -> setup-events.png")
-
-        # Click Sequences radio option
+        # Wait for the participant table to render
         try:
-            await click_radio_option(page, "Sequences")
-            await page.screenshot(path=str(OUTPUT_DIR / "setup-sequences.png"))
-            print("   -> setup-sequences.png")
-        except Exception as e:
-            print(f"   ! Sequences failed: {e}")
+            page.locator("table").first.wait_for(state="visible", timeout=10000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1000)
+        screenshot(page, "data-tab-loaded.png")
 
-        # Click Sections radio option
+        # Scroll to participants table
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.4)")
+        page.wait_for_timeout(1000)
+        screenshot(page, "participants-overview.png")
+
+        # ── 2. PARTICIPANTS TAB ───────────────────────────
+        print("2. Participants Tab")
+        click_nav(page, "Participants")
+
+        # Wait for the participant header/metrics to render
         try:
-            await click_radio_option(page, "Sections")
-            await page.screenshot(path=str(OUTPUT_DIR / "setup-sections.png"))
-            print("   -> setup-sections.png")
+            page.get_by_text("Total Beats").wait_for(state="visible", timeout=10000)
+        except Exception:
+            pass
+        screenshot(page, "participants-header.png")
+
+        # Scroll down to where tachogram + plot options are
+        page.evaluate("window.scrollTo(0, 400)")
+        page.wait_for_timeout(1000)
+
+        # Wait for canvas (Plotly chart) to render
+        try:
+            page.locator("canvas").first.wait_for(state="visible", timeout=10000)
+            page.wait_for_timeout(2000)  # Extra for WebGL
+        except Exception:
+            pass
+        screenshot(page, "participants-tachogram.png")
+
+        # Scroll to plot options checkboxes
+        page.evaluate("window.scrollTo(0, 600)")
+        page.wait_for_timeout(1000)
+        screenshot(page, "plot-options.png")
+
+        # Scroll to bottom - events area / section validation
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(1500)
+        screenshot(page, "events-area.png")
+
+        # ── 3. SETUP TAB ─────────────────────────────────
+        print("3. Setup Tab")
+        click_nav(page, "Setup")
+        screenshot(page, "setup-events.png")
+
+        # Click Sequences radio
+        try:
+            click_radio(page, "Sequences")
+            # Scroll to show condition labels table
+            page.evaluate("window.scrollTo(0, 300)")
+            page.wait_for_timeout(500)
+            screenshot(page, "setup-sequences.png")
+
+            # Scroll further to Condition Labels section
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(500)
+            screenshot(page, "setup-condition-labels.png")
         except Exception as e:
-            print(f"   ! Sections failed: {e}")
+            print(f"  ! Sequences: {e}")
 
-        # === 4. Analysis Tab ===
-        print("4. Analysis tab...")
-        await click_sidebar_button(page, "Analysis")
-        await page.screenshot(path=str(OUTPUT_DIR / "analysis-mode.png"))
-        print("   -> analysis-mode.png")
+        # Click Sections radio
+        try:
+            # Scroll back to top first so the radio is visible
+            page.evaluate("window.scrollTo(0, 0)")
+            page.wait_for_timeout(500)
+            click_radio(page, "Sections")
+            screenshot(page, "setup-sections.png")
+        except Exception as e:
+            print(f"  ! Sections: {e}")
 
-        # === 5. Sidebar bottom (version, bug report, docs buttons) ===
-        print("5. Sidebar...")
+        # ── 4. ANALYSIS TAB ──────────────────────────────
+        print("4. Analysis Tab")
+        click_nav(page, "Analysis")
+        screenshot(page, "analysis-mode.png")
+
+        # Click "Repeating Section Analysis" radio
+        try:
+            click_radio(page, "Repeating Section Analysis")
+            screenshot(page, "analysis-repeating.png")
+        except Exception as e:
+            print(f"  ! Repeating: {e}")
+
+        # ── 5. SIDEBAR ───────────────────────────────────
+        print("5. Sidebar")
         sidebar = page.locator("[data-testid='stSidebar']")
-        if await sidebar.count() > 0:
-            # Scroll sidebar to show version + link buttons
-            await sidebar.evaluate("el => el.scrollTo(0, el.scrollHeight)")
-            await page.wait_for_timeout(1000)
-            await page.screenshot(path=str(OUTPUT_DIR / "sidebar-bottom.png"))
-            print("   -> sidebar-bottom.png")
+        if sidebar.count() > 0:
+            # Scroll sidebar to bottom to show version + buttons
+            sidebar.evaluate("el => el.scrollTo(0, el.scrollHeight)")
+            page.wait_for_timeout(800)
+            screenshot(page, "sidebar-bottom.png")
 
-        await browser.close()
+            # Take sidebar-only screenshot
+            try:
+                sidebar.screenshot(path=str(OUT / "sidebar-only.png"))
+                print(f"  [{(OUT / 'sidebar-only.png').stat().st_size // 1024:>4}KB] sidebar-only.png")
+            except Exception as e:
+                print(f"  ! Sidebar element: {e}")
 
-    screenshots = list(OUTPUT_DIR.glob("*.png"))
-    print(f"\nDone! {len(screenshots)} screenshots in {OUTPUT_DIR}/")
-    for s in sorted(screenshots):
-        print(f"  {s.name} ({s.stat().st_size // 1024}KB)")
+        browser.close()
+
+    # Summary
+    pngs = sorted(OUT.glob("*.png"))
+    print(f"\nDone! {len(pngs)} screenshots in {OUT}/")
+    for p in pngs:
+        print(f"  {p.name}")
 
 
 if __name__ == "__main__":
-    asyncio.run(take_screenshots())
+    main()

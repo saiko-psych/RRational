@@ -80,7 +80,7 @@ Copy your HRV recording files into the correct subfolder:
 3. Click **"Analyze Folder"**
 4. Wait for the scan to complete
 
-![Participants Overview table](../assets/screenshots/data-tab-loaded.png)
+![Participants Overview](../assets/screenshots/participants-overview.png)
 
 ### 2.2 Review Participants Overview
 
@@ -126,7 +126,9 @@ Alternatively, edit the **Group** column directly in the participants table.
 2. Select a participant from the **dropdown** at the top
 3. The **tachogram** (RR interval plot) loads automatically
 
-![Participants tab with tachogram](../assets/screenshots/participants-tachogram.png)
+![Participants tab](../assets/screenshots/participants-header.png)
+
+<!-- TODO: Add manual screenshot of tachogram plot (Plotly WebGL doesn't render in headless browser) -->
 
 ### 3.2 Understand the Tachogram
 
@@ -153,7 +155,7 @@ Above the plot, enable/disable overlays using checkboxes:
 - **Show time gaps** — Gray shading for recording interruptions
 - **Show variability segments** — Color-coded variability regions
 
-![Plot options checkboxes](../assets/screenshots/plot-options.png)
+<!-- TODO: Add manual screenshot of plot options with tachogram visible -->
 
 ### 3.4 Navigate Between Participants
 
@@ -172,7 +174,7 @@ Above the plot, enable/disable overlays using checkboxes:
 1. In the Participants tab, find the **Mode** radio buttons
 2. Select **"Signal Inspection"**
 
-![Signal inspection area](../assets/screenshots/signal-inspection-area.png)
+<!-- TODO: Add manual screenshot of Signal Inspection with artifact detection -->
 
 ### 4.2 Configure Artifact Detection
 
@@ -330,6 +332,8 @@ If a section shows "multiple events found":
 | **Group Analysis** | Batch comparison across study groups |
 
 ![Analysis tab with mode selection](../assets/screenshots/analysis-mode.png)
+
+![Repeating Section Analysis mode](../assets/screenshots/analysis-repeating.png)
 
 ### 7.2 Single Participant Analysis
 
