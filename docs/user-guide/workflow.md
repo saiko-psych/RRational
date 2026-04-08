@@ -382,6 +382,7 @@ Click **"Analysis"** in the sidebar.
 | **Single Participant** | Analyze one participant's sections individually | Detailed per-participant analysis |
 | **Repeating Section Analysis** | Protocol-based repeating condition comparison | Studies with repeating conditions (e.g., music, stimuli) |
 | **Group Analysis** | Batch comparison across study groups | Group-level statistical comparisons |
+| **Sequence Comparison** | Compare HRV across event sequences and conditions | Counterbalanced designs, condition-order effects |
 
 ### 6.2 Single Participant Settings
 
@@ -414,7 +415,56 @@ Click **"Analysis"** in the sidebar.
 
 *What you see: Group Analysis mode where you select groups to compare and run batch analysis.*
 
-### 6.5 HRV Metrics Reference
+### 6.5 Sequence Comparison
+
+![Sequence Comparison mode](../assets/screenshots/37-sequence-comparison.png)
+
+*What you see: The "Sequence Comparison" mode with all event sequences listed, showing participant counts per sequence. An optional "Filter by Group" expander allows cross-group comparisons.*
+
+![Sequence Comparison settings](../assets/screenshots/38-sequence-comparison-settings.png)
+
+*Step 2 shows conditions to compare (extracted from sequence definitions). Step 3 provides the same metric presets and analysis settings as Group Analysis.*
+
+| Setting | What it does |
+|---------|-------------|
+| **Select Sequences** | Choose which event sequences to compare |
+| **Filter by Group** | Optionally add group dimension to comparisons |
+| **Select Conditions** | Choose which experimental conditions to analyze |
+| **Compare Sequences** | Run the comparison and display results with charts |
+
+Results are displayed in Data, Statistics, and Chart tabs — the same visualization options as Group Analysis (bar charts, box plots, violin plots, raincloud plots, SD1/SD2 scatter).
+
+### 6.6 Power Spectrum (PSD)
+
+In the **Participants tab**, below the tachogram, an expandable **Power Spectrum (PSD)** section shows the frequency-domain analysis for the current participant.
+
+![Power Spectrum plot](../assets/screenshots/34-psd-expander.png)
+
+*The Power Spectral Density plot shows VLF (gray), LF (yellow), and HF (blue) frequency bands with power values and percentages. The PSD line shows the Welch-estimated power distribution.*
+
+| Band | Frequency Range | What it reflects |
+|------|----------------|-----------------|
+| **VLF** | 0.003–0.04 Hz | Thermoregulation, hormonal |
+| **LF** | 0.04–0.15 Hz | Both sympathetic and parasympathetic + baroreflex |
+| **HF** | 0.15–0.4 Hz | Parasympathetic (vagal) activity |
+
+!!! note
+    The PSD requires at least 100 beats (300+ recommended). It uses the full (non-downsampled) RR data for accurate frequency estimation.
+
+### 6.7 Report Export
+
+Analysis reports can be downloaded in two formats:
+
+| Format | What it includes |
+|--------|-----------------|
+| **Markdown (.md)** | Text-based report with tables — suitable for research documentation |
+| **HTML** | Standalone file with professional styling, summary cards, and optionally embedded charts — suitable for sharing and printing |
+
+For **Single Participant** analysis, reports include data source, cleaning parameters, artifact correction details, section information, and all computed HRV metrics.
+
+For **Group Analysis**, HTML reports include participant counts, descriptive statistics tables, and individual results — all in a single self-contained file.
+
+### 6.8 HRV Metrics Reference
 
 | Metric | Domain | What It Tells You |
 |--------|--------|-------------------|
