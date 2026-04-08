@@ -1536,7 +1536,7 @@ def render_analysis_tab():
         # Selection mode
         analysis_mode = st.radio(
             "Analysis Mode",
-            options=["Single Participant", "Repeating Section Analysis", "Group Analysis"],
+            options=["Single Participant", "Repeating Section Analysis", "Group Analysis", "Sequence Comparison"],
             horizontal=True,
         )
 
@@ -1546,8 +1546,11 @@ def render_analysis_tab():
         elif analysis_mode == "Repeating Section Analysis":
             _render_repeating_section_analysis()
 
-        else:  # Group Analysis
+        elif analysis_mode == "Group Analysis":
             _render_group_analysis()
+
+        else:  # Sequence Comparison
+            _render_sequence_comparison()
 
 
 def _render_single_participant_analysis():
@@ -4562,3 +4565,434 @@ Using overlapping windows improves the reliability of HRV estimates by providing
                         st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.info(f"No data available for {selected_chart_metric} in selected sections.")
+
+
+def _render_sequence_comparison():
+    """Render Event Sequence Group Comparison analysis.
+
+    Compares HRV metrics across event sequences, grouping participants by their
+    assigned sequence and analyzing per-condition differences.
+    """
+    with st.expander("**Sequence Comparison Overview**", expanded=False):
+        st.markdown("""
+**Overview:**
+Compare HRV metrics between participants assigned to different event sequences.
+Each sequence defines a condition order (e.g., A-B-A-B vs B-A-B-A).
+This analysis groups participants by sequence and compares conditions within and across sequences.
+
+**Requirements:**
+- Event sequences defined in Setup > Sequences
+- Participants assigned to sequences
+- Sections validated for each participant
+- `.rrational` v2 files exported (from the Participants tab)
+
+**Use case:** Counterbalanced designs where condition order might affect HRV.
+        """)
+
+    # Check prerequisites
+    event_sequences = st.session_state.get("event_sequences", {})
+    if not event_sequences:
+        st.warning("No event sequences defined. Go to Setup > Sequences to create them.")
+        return
+
+    participant_sequences = st.session_state.get("participant_sequences", {})
+    if not participant_sequences:
+        st.warning("No participants assigned to sequences. Assign participants in the Participants tab.")
+        return
+
+    condition_labels = st.session_state.get("condition_labels", {})
+
+    # -------------------------------------------------------------------------
+    # Step 1: Select Sequences
+    # -------------------------------------------------------------------------
+    st.markdown("### Step 1: Select Sequences")
+
+    # Count participants per sequence
+    seq_counts = {}
+    for seq_id in event_sequences:
+        count = sum(1 for s in participant_sequences.values() if s == seq_id)
+        seq_counts[seq_id] = count
+
+    seq_options = [f"{sid} ({seq_counts[sid]} participants)" for sid in event_sequences]
+    seq_map = {f"{sid} ({seq_counts[sid]} participants)": sid for sid in event_sequences}
+
+    selected_seq_labels = st.multiselect(
+        "Select sequences to compare",
+        options=seq_options,
+        default=seq_options,
+        key="seq_comparison_sequences",
+    )
+    selected_sequences = [seq_map[label] for label in selected_seq_labels]
+
+    if not selected_sequences:
+        st.info("Please select at least one sequence.")
+        return
+
+    # -------------------------------------------------------------------------
+    # Step 2: Select Conditions
+    # -------------------------------------------------------------------------
+    st.markdown("### Step 2: Select Conditions")
+
+    # Collect all unique conditions across selected sequences
+    all_conditions = set()
+    for seq_id in selected_sequences:
+        seq_data = event_sequences.get(seq_id, {})
+        condition_order = seq_data.get("condition_order", [])
+        all_conditions.update(condition_order)
+
+    all_conditions = sorted(all_conditions)
+    if not all_conditions:
+        st.warning("Selected sequences have no conditions defined.")
+        return
+
+    # Show condition labels
+    condition_display = []
+    for cond in all_conditions:
+        label = condition_labels.get(cond, cond)
+        condition_display.append(f"{label}" if label != cond else cond)
+
+    selected_conditions = st.multiselect(
+        "Select conditions to analyze",
+        options=all_conditions,
+        default=all_conditions,
+        format_func=lambda c: condition_labels.get(c, c),
+        key="seq_comparison_conditions",
+    )
+
+    if not selected_conditions:
+        st.info("Please select at least one condition.")
+        return
+
+    # -------------------------------------------------------------------------
+    # Step 3: Analysis Options
+    # -------------------------------------------------------------------------
+    st.markdown("### Step 3: Analysis Options")
+
+    st.markdown("**HRV Metrics**")
+    preset_names = list(HRV_METRIC_PRESETS.keys())
+    preset_col1, preset_col2 = st.columns([1, 2])
+
+    with preset_col1:
+        selected_preset = st.selectbox(
+            "Metric preset",
+            options=preset_names,
+            index=1,
+            key="seq_comparison_metric_preset",
+        )
+
+    with preset_col2:
+        st.caption(HRV_METRIC_PRESETS[selected_preset]["description"])
+
+    if selected_preset == "Custom":
+        selected_metrics = []
+        metric_cols = st.columns(4)
+        categories = [
+            ("Time (Basic)", "time_basic"),
+            ("Time (Extended)", "time_extended"),
+            ("Frequency", "frequency"),
+            ("Nonlinear", "nonlinear"),
+        ]
+        for i, (cat_label, cat_key) in enumerate(categories):
+            with metric_cols[i]:
+                st.markdown(f"*{cat_label}*")
+                for metric_name in HRV_METRICS_CATALOG[cat_key].keys():
+                    metric_info = HRV_METRICS_CATALOG[cat_key][metric_name]
+                    if st.checkbox(
+                        metric_info["label"],
+                        value=metric_name in ["RMSSD", "SDNN", "MeanHR"],
+                        key=f"seq_metric_{metric_name}",
+                    ):
+                        selected_metrics.append(metric_name)
+    else:
+        selected_metrics = HRV_METRIC_PRESETS[selected_preset]["metrics"]
+
+    if not selected_metrics:
+        st.warning("Please select at least one metric.")
+        return
+
+    st.caption(f"**Selected:** {', '.join(selected_metrics[:8])}{'...' if len(selected_metrics) > 8 else ''}")
+
+    st.markdown("**Analysis Settings**")
+    col1, col2 = st.columns(2)
+    with col1:
+        use_overlapping = st.checkbox(
+            "Use overlapping windows",
+            value=True,
+            key="seq_comparison_overlapping",
+        )
+    with col2:
+        allow_raw_fallback = st.checkbox(
+            "Allow raw data fallback",
+            value=True,
+            key="seq_comparison_raw_fallback",
+        )
+
+    if use_overlapping:
+        col1, col2 = st.columns(2)
+        with col1:
+            window_beats = st.number_input(
+                "Window size (beats)", min_value=100, max_value=1000, value=300, step=50,
+                key="seq_comparison_window_beats",
+            )
+        with col2:
+            overlap_pct = st.slider(
+                "Overlap (%)", min_value=0, max_value=90, value=75, step=5,
+                key="seq_comparison_overlap",
+            )
+    else:
+        window_beats = 300
+        overlap_pct = 75
+
+    # -------------------------------------------------------------------------
+    # Run Analysis
+    # -------------------------------------------------------------------------
+    st.divider()
+
+    if st.button("**Compare Sequences**", key="run_seq_comparison_btn", type="primary", use_container_width=True):
+        import time as _time
+
+        project_path = st.session_state.get("project_path")
+        data_dir = st.session_state.get("data_dir")
+        results = []
+        missing = {}
+
+        # Collect participants per sequence
+        seq_participants = {}
+        for seq_id in selected_sequences:
+            seq_participants[seq_id] = [
+                pid for pid, s in participant_sequences.items() if s == seq_id
+            ]
+
+        total_work = sum(len(pids) * len(selected_conditions) for pids in seq_participants.values())
+        current_work = [0]
+
+        progress_bar = st.progress(0, text="Starting sequence comparison...")
+        status_container = st.empty()
+        start_time = _time.time()
+
+        for seq_id in selected_sequences:
+            seq_data = event_sequences.get(seq_id, {})
+            pids = seq_participants.get(seq_id, [])
+
+            for pid in pids:
+                # Find .rrational file
+                rrational_path = _find_rrational_v2_file(pid, project_path=project_path, data_dir=data_dir)
+                if not rrational_path:
+                    missing[pid] = "No .rrational v2 file"
+                    current_work[0] += len(selected_conditions)
+                    continue
+
+                # For each selected condition, try to load section data
+                for condition in selected_conditions:
+                    current_work[0] += 1
+                    pct = min(current_work[0] / max(total_work, 1), 1.0)
+                    cond_label = condition_labels.get(condition, condition)
+                    progress_bar.progress(pct, text=f"{int(pct*100)}% - [{pid}] {cond_label}")
+
+                    # Try loading condition-specific section (section name = condition label or condition id)
+                    section_name = cond_label if cond_label != condition else condition
+                    nn_data, info = _load_nn_from_rrational_v2(rrational_path, section_name)
+
+                    # Also try with condition id directly
+                    if not nn_data or len(nn_data) < MIN_BEATS_TIME_DOMAIN:
+                        nn_data, info = _load_nn_from_rrational_v2(rrational_path, condition)
+
+                    if not nn_data or len(nn_data) < MIN_BEATS_TIME_DOMAIN:
+                        if allow_raw_fallback:
+                            raw_data, raw_info = _load_raw_section_data(
+                                pid, section_name, rrational_path, project_path, data_dir
+                            )
+                            if not raw_data or len(raw_data) < MIN_BEATS_TIME_DOMAIN:
+                                raw_data, raw_info = _load_raw_section_data(
+                                    pid, condition, rrational_path, project_path, data_dir
+                                )
+                            if raw_data and len(raw_data) >= MIN_BEATS_TIME_DOMAIN:
+                                nn_data = raw_data
+                                info = raw_info or {}
+                                info["data_source"] = "Raw"
+
+                    if not nn_data or len(nn_data) < MIN_BEATS_TIME_DOMAIN:
+                        missing.setdefault(pid, {})[condition] = info.get("error", "Insufficient data")
+                        continue
+
+                    # Calculate HRV
+                    metrics, std, n_win = _calculate_hrv_metrics(
+                        nn_data,
+                        use_overlapping,
+                        window_beats,
+                        overlap_pct,
+                        selected_metrics=selected_metrics,
+                    )
+
+                    seq_label = seq_data.get("label", seq_id)
+                    results.append(ParticipantSectionResult(
+                        participant_id=pid,
+                        group=seq_label,  # Sequence as "group" for reuse of existing viz
+                        section_name=cond_label,  # Condition as "section" for reuse
+                        n_beats=info.get("n_beats", len(nn_data)),
+                        duration_s=info.get("duration_s", sum(nn_data) / 1000),
+                        quality_grade=info.get("quality_grade", "unknown"),
+                        artifact_rate=info.get("artifact_rate", 0.0),
+                        hrv_metrics=metrics,
+                        hrv_std=std,
+                        n_windows=n_win,
+                        data_source=info.get("data_source", "NN"),
+                    ))
+
+        elapsed = _time.time() - start_time
+        progress_bar.progress(1.0, text="100% - Complete!")
+        status_container.caption(f"Completed in {_format_duration(elapsed)}")
+
+        st.session_state.seq_comparison_results = {
+            "results": results,
+            "missing": missing,
+        }
+
+        show_toast(f"Sequence comparison complete: {len(results)} results", icon="success")
+
+    # -------------------------------------------------------------------------
+    # Display Results
+    # -------------------------------------------------------------------------
+    if "seq_comparison_results" not in st.session_state:
+        return
+
+    stored = st.session_state.seq_comparison_results
+    results = stored["results"]
+    missing = stored["missing"]
+
+    if not results:
+        st.warning("No results. Check prerequisites: .rrational files exported, sections validated, conditions matching section names.")
+        if missing:
+            with st.expander("**Missing Data Details**", expanded=True):
+                for pid, info in missing.items():
+                    if isinstance(info, dict):
+                        for section, reason in info.items():
+                            st.write(f"- `{pid}` / {section}: {reason}")
+                    else:
+                        st.write(f"- `{pid}`: {info}")
+        return
+
+    # Summary
+    st.markdown("---")
+    st.markdown("### Results")
+
+    n_participants = len(set(r.participant_id for r in results))
+    n_sequences = len(set(r.group for r in results))
+    n_conditions = len(set(r.section_name for r in results))
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Participants", n_participants)
+    with col2:
+        st.metric("Sequences", n_sequences)
+    with col3:
+        st.metric("Conditions", n_conditions)
+    with col4:
+        st.metric("Data Points", len(results))
+
+    # Convert to DataFrames (reuse existing functions)
+    long_df = _results_to_long_df(results)
+    stats_df = _calculate_group_stats(long_df)
+
+    # Rename columns for clarity
+    long_df = long_df.rename(columns={"group": "sequence", "section": "condition"})
+    stats_df = stats_df.rename(columns={"group": "sequence", "section": "condition"})
+
+    # Missing data
+    if missing:
+        with st.expander(f"**Missing Data ({len(missing)} participants)**", expanded=False):
+            for pid, info in missing.items():
+                if isinstance(info, dict):
+                    for section, reason in info.items():
+                        st.write(f"- `{pid}` / {section}: {reason}")
+                else:
+                    st.write(f"- `{pid}`: {info}")
+
+    # Tabs for results
+    tab_data, tab_stats, tab_chart = st.tabs(["**Data**", "**Statistics**", "**Chart**"])
+
+    with tab_data:
+        st.dataframe(long_df, use_container_width=True, height=400)
+        csv_data = long_df.to_csv(index=False)
+        st.download_button(
+            label="Download CSV",
+            data=csv_data,
+            file_name="hrv_sequence_comparison.csv",
+            mime="text/csv",
+            key="download_seq_data",
+        )
+
+    with tab_stats:
+        st.markdown("**Descriptive Statistics by Sequence and Condition**")
+        st.dataframe(stats_df, use_container_width=True, height=400)
+        stats_csv = stats_df.to_csv(index=False)
+        st.download_button(
+            label="Download Statistics CSV",
+            data=stats_csv,
+            file_name="hrv_sequence_statistics.csv",
+            mime="text/csv",
+            key="download_seq_stats",
+        )
+
+    with tab_chart:
+        # Rename back for plot compatibility (group_plots expects "group" and "section")
+        plot_df = long_df.rename(columns={"sequence": "group", "condition": "section"})
+
+        viz_type = st.radio(
+            "Visualization type",
+            options=["Bar Chart", "Box Plot", "Violin Plot", "Raincloud Plot", "SD1/SD2 Scatter"],
+            horizontal=True,
+            key="seq_comparison_viz_type",
+        )
+
+        available_metrics = []
+        for col in plot_df.columns:
+            col_upper = col.upper()
+            if col_upper in ALL_HRV_METRICS and plot_df[col].notna().any():
+                available_metrics.append(col_upper)
+
+        priority_order = ["RMSSD", "SDNN", "PNN50", "MEANNN", "MEANHR", "LF", "HF", "LF_HF", "SD1", "SD2"]
+        available_metrics = sorted(
+            available_metrics,
+            key=lambda x: priority_order.index(x) if x in priority_order else 100
+        )
+
+        if viz_type == "SD1/SD2 Scatter":
+            if "sd1" in plot_df.columns and "sd2" in plot_df.columns:
+                fig = _create_sd1_sd2_scatter(plot_df, color_by="group")
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("SD1/SD2 metrics not available. Use a preset that includes nonlinear metrics.")
+        elif available_metrics:
+            selected_chart_metric = st.selectbox(
+                "Select metric",
+                options=available_metrics,
+                format_func=lambda m: f"{m} ({get_metric_info(m).get('unit', '')})" if get_metric_info(m) else m,
+                key="seq_comparison_chart_metric",
+            )
+
+            # Filter DataFrame
+            metric_col = selected_chart_metric.lower()
+            if metric_col in plot_df.columns:
+                filtered_df = plot_df[plot_df[metric_col].notna()].copy()
+
+                if viz_type == "Bar Chart":
+                    # Recompute stats for the plot df
+                    plot_stats = _calculate_group_stats(plot_df)
+                    fig = _create_group_bar_chart(plot_stats, selected_chart_metric)
+                elif viz_type == "Box Plot":
+                    fig = _create_box_violin_plot(filtered_df, selected_chart_metric, plot_type="box")
+                elif viz_type == "Violin Plot":
+                    fig = _create_box_violin_plot(filtered_df, selected_chart_metric, plot_type="violin")
+                elif viz_type == "Raincloud Plot":
+                    fig = _create_raincloud_plot(filtered_df, selected_chart_metric, group_by="group", color_by="section")
+                else:
+                    fig = None
+
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info(f"No data for {selected_chart_metric}.")
+        else:
+            st.warning("No metrics available.")
