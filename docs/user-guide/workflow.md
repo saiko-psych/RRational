@@ -126,9 +126,7 @@ Alternatively, edit the **Group** column directly in the participants table.
 2. Select a participant from the **dropdown** at the top
 3. The **tachogram** (RR interval plot) loads automatically
 
-![Participants tab](../assets/screenshots/participants-header.png)
-
-<!-- TODO: Add manual screenshot of tachogram plot (Plotly WebGL doesn't render in headless browser) -->
+![Participants tab with tachogram](../assets/screenshots/tachogram.png)
 
 ### 3.2 Understand the Tachogram
 
@@ -155,7 +153,7 @@ Above the plot, enable/disable overlays using checkboxes:
 - **Show time gaps** — Gray shading for recording interruptions
 - **Show variability segments** — Color-coded variability regions
 
-<!-- TODO: Add manual screenshot of plot options with tachogram visible -->
+![Plot options with tachogram](../assets/screenshots/tachogram.png)
 
 ### 3.4 Navigate Between Participants
 
@@ -174,7 +172,7 @@ Above the plot, enable/disable overlays using checkboxes:
 1. In the Participants tab, find the **Mode** radio buttons
 2. Select **"Signal Inspection"**
 
-<!-- TODO: Add manual screenshot of Signal Inspection with artifact detection -->
+![Signal Inspection mode with plot options](../assets/screenshots/tachogram.png)
 
 ### 4.2 Configure Artifact Detection
 
