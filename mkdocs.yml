@@ -26,11 +26,14 @@ theme:
     - navigation.tabs
     - navigation.sections
     - navigation.top
+    - navigation.indexes
     - content.code.copy
     - content.code.select
     - search.suggest
     - search.highlight
     - toc.follow
+  icon:
+    repo: fontawesome/brands/github
 
 plugins:
   - search
@@ -47,17 +50,22 @@ markdown_extensions:
   - toc:
       permalink: true
   - tables
+  - attr_list
+  - md_in_html
 
 nav:
   - Home: index.md
   - Getting Started:
-    - Installation: INSTALLATION.md
-    - Configuration: CONFIGURATION.md
-    - Data Formats: DATA_FORMATS.md
-  - Scientific Background:
-    - HRV Guidelines: hrv_scientific.md
-    - Processing Pipeline: hrv_processing_pipeline.md
-  - Developer Guide:
-    - Architecture: ARCHITECTURE.md
-    - Contributing: CONTRIBUTING.md
-    - Issue Handling: ISSUE_HANDLING.md
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+  - User Guide:
+    - Complete Workflow: user-guide/workflow.md
+    - Data Formats: user-guide/data-formats.md
+    - Configuration: user-guide/configuration.md
+  - Science:
+    - HRV Guidelines: science/guidelines.md
+    - Processing Pipeline: science/processing-pipeline.md
+  - Development:
+    - Architecture: development/architecture.md
+    - Contributing: development/contributing.md
+    - Issue Handling: development/issue-handling.md

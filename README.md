@@ -6,11 +6,15 @@
 [![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
 [![Version](https://img.shields.io/badge/version-0.8.1-green.svg)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-77%20passing-brightgreen.svg)](tests/)
-[![Docs](https://readthedocs.org/projects/rrational/badge/?version=latest)](https://rrational.readthedocs.io)
+[![Documentation](https://readthedocs.org/projects/rrational/badge/?version=latest)](https://rrational.readthedocs.io)
 
 **A rational approach to Heart Rate Variability analysis**
 
 *Free, open-source HRV toolkit for researchers — like Kubios, but free.*
+
+[Documentation](https://rrational.readthedocs.io) |
+[Quick Start](https://rrational.readthedocs.io/en/latest/getting-started/quickstart/) |
+[Report a Bug](https://github.com/saiko-psych/rrational/issues/new/choose)
 
 </div>
 
@@ -31,35 +35,22 @@ Supports data from [HRV Logger](https://www.hrv.tools/hrv-logger-faq.html) (iOS/
 - **Project management** — Self-contained project folders with data, config, and results
 - **Group comparison** — Batch analysis across study groups with statistical summaries
 - **Scientific rigor** — Follows 2024 Quigley guidelines for artifact handling and reporting
-- **Export ready** — CSV export for statistical analysis, `.rrational` files with full audit trail
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/saiko-psych/rrational.git
 cd rrational
-uv sync                # Install dependencies (requires uv)
-uv run streamlit run src/rrational/gui/app.py   # Launch the GUI
+uv sync
+uv run streamlit run src/rrational/gui/app.py
 ```
 
-> Requires Python 3.11-3.13 and [uv](https://docs.astral.sh/uv/getting-started/installation/). See [Installation Guide](docs/INSTALLATION.md) for detailed setup and troubleshooting.
+> Requires Python 3.11-3.13 and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+> See the [Installation Guide](https://rrational.readthedocs.io/en/latest/getting-started/installation/) for details.
 
 ## Documentation
 
-| Resource | Description |
-|----------|-------------|
-| **[Quick Start Guide](QUICKSTART.md)** | Get up and running in 5 minutes |
-| **[Installation Guide](docs/INSTALLATION.md)** | Detailed setup, updating & troubleshooting |
-| **[Data Formats](docs/DATA_FORMATS.md)** | Supported file formats (HRV Logger, VNS Analyse) |
-| **[Configuration](docs/CONFIGURATION.md)** | Project structure, settings & storage |
-| **[Architecture](docs/ARCHITECTURE.md)** | Code structure & module overview |
-| **[Scientific Background](docs/hrv_scientific.md)** | HRV guidelines, references & best practices |
-| **[Contributing](docs/CONTRIBUTING.md)** | How to report issues & contribute code |
-| **[Changelog](CHANGELOG.md)** | Version history |
-
-## Scientific Background
-
-RRational implements current best practices for HRV research, including the 2024 Quigley guidelines for artifact handling, minimum data requirements (100 beats for time domain, 300 for frequency domain), and transparent quality reporting. For details, see [Scientific Background](docs/hrv_scientific.md) and [Signal Processing Pipeline](docs/hrv_processing_pipeline.md).
+Full documentation is available at **[rrational.readthedocs.io](https://rrational.readthedocs.io)**.
 
 ## Citation
 
@@ -69,7 +60,7 @@ If you use RRational in your research, please cite:
 
 ## Contributing
 
-Found a bug or have a feature idea? Check [existing issues](https://github.com/saiko-psych/rrational/issues) first, then see our [Contributing Guide](docs/CONTRIBUTING.md).
+Found a bug or have a feature idea? Check [existing issues](https://github.com/saiko-psych/rrational/issues) first, then see the [Contributing Guide](https://rrational.readthedocs.io/en/latest/development/contributing/).
 
 ## License
 
