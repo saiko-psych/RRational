@@ -6208,6 +6208,35 @@ def main():
                 except Exception as e:
                     st.warning(f"Could not generate RR plot: {e}")
 
+                # ================== POWER SPECTRUM (available in all modes) ==================
+                _psd_key = f"show_psd_{selected_participant}"
+                with st.expander("Power Spectrum (PSD)", expanded=st.session_state.get(_psd_key, False)):
+                    st.session_state[_psd_key] = True  # Track expanded state
+                    _full_rr = st.session_state.get(f"full_rr_data_{selected_participant}", {})
+                    rr_for_psd = _full_rr.get("rr_values")
+                    if rr_for_psd and len(rr_for_psd) >= 100:
+                        from rrational.gui.plots.analysis_plots import create_frequency_domain_plot
+                        psd_fig, psd_stats = create_frequency_domain_plot(
+                            rr_for_psd, selected_participant
+                        )
+                        if psd_fig is not None:
+                            st.plotly_chart(psd_fig, use_container_width=True, key=f"psd_chart_{selected_participant}")
+                            if psd_stats:
+                                cols = st.columns(len(psd_stats))
+                                for col, (label, value) in zip(cols, psd_stats.items()):
+                                    with col:
+                                        if isinstance(value, tuple):
+                                            st.metric(label, value[0], delta=value[1])
+                                        else:
+                                            st.metric(label, value)
+                        else:
+                            st.info("Could not compute PSD. Ensure NeuroKit2 and SciPy are installed.")
+                    elif rr_for_psd:
+                        st.info(f"Need at least 100 beats for PSD (have {len(rr_for_psd)}). "
+                                "300+ beats recommended for reliable frequency analysis.")
+                    else:
+                        st.info("Load a participant and generate the tachogram first.")
+
                 # ================== EXCLUSION ZONES (shown when in exclusion mode) ==================
                 if interaction_mode == "Add Exclusions":
                     col_excl_title, col_excl_help = st.columns([4, 1])
