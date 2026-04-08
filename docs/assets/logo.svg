@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 48">
+  <!-- Icon: Poincare-style dots -->
+  <rect x="2" y="8" width="32" height="32" rx="6" fill="#1e3a5f"/>
+  <circle cx="11" cy="30" r="3" fill="#ee6c4d"/>
+  <circle cx="15" cy="24" r="3" fill="#ee6c4d"/>
+  <circle cx="18" cy="22" r="3.5" fill="#e63946"/>
+  <circle cx="21" cy="20" r="3" fill="#ee6c4d"/>
+  <circle cx="25" cy="14" r="3" fill="#ee6c4d"/>
+  <line x1="8" y1="36" x2="30" y2="10" stroke="#3d5a80" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <!-- Text -->
+  <text x="42" y="33" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="currentColor">RRational</text>
+</svg>

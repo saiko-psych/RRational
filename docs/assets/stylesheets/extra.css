@@ -1,0 +1,70 @@
+/* RRational custom theme colors */
+
+/* Light mode */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1e3a5f;
+  --md-primary-fg-color--light: #2E86AB;
+  --md-primary-fg-color--dark: #142d4a;
+  --md-accent-fg-color: #ee6c4d;
+  --md-accent-fg-color--transparent: rgba(238, 108, 77, 0.1);
+}
+
+/* Dark mode */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #2E86AB;
+  --md-primary-fg-color--light: #4da6cb;
+  --md-primary-fg-color--dark: #1e6e8f;
+  --md-accent-fg-color: #ee6c4d;
+  --md-accent-fg-color--transparent: rgba(238, 108, 77, 0.1);
+  --md-default-bg-color: #1a1a2e;
+  --md-default-bg-color--light: #22223b;
+}
+
+/* Header logo sizing */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 1.8rem;
+  width: auto;
+}
+
+/* Nicer admonition styling */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 8px;
+}
+
+/* Code block styling */
+.md-typeset code {
+  border-radius: 4px;
+}
+
+/* Navigation tabs */
+.md-tabs {
+  font-weight: 500;
+}
+
+/* Footer link color */
+.md-footer-meta a {
+  color: var(--md-accent-fg-color);
+}
+
+/* Metric table styling in workflow docs */
+.md-typeset table:not([class]) th {
+  background-color: var(--md-primary-fg-color);
+  color: white;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background-color: var(--md-primary-fg-color--dark);
+}
+
+/* Screenshot images - subtle shadow */
+.md-typeset img[src*="screenshots"] {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  margin: 1rem 0;
+}
+
+[data-md-color-scheme="slate"] .md-typeset img[src*="screenshots"] {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
