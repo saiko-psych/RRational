@@ -5,33 +5,34 @@ Quick reference for Claude Code. **Detailed history: MEMORY.md**
 ## Rules
 - **ALWAYS TEST**: `uv run pytest` before delivering!
 - **Check docs first** before implementing - solutions may already exist!
+- **Do NOT close GitHub issues** without manual verification by the user!
 
 ### File Maintenance Rules
 | File | What to write | What NOT to write |
 |------|---------------|-------------------|
-| **CLAUDE.md** | Current version, TODOs, quick reference | Session notes, version history, detailed explanations |
-| **MEMORY.md** | Session notes, version history, style guides | Old sessions (move to archive when >v0.7.x) |
-| **MEMORY_ARCHIVE.md** | Archived sessions (v0.6.x and older) | Current work |
+| **CLAUDE.md** | Current version, TODOs, quick reference | Session notes, version history |
+| **MEMORY.md** | Session notes, version history, style guides | Old sessions (archive when stale) |
 
 **After each session**: Add notes to MEMORY.md, update version in CLAUDE.md if changed. Keep CLAUDE.md <90 lines!
 
 ## Quick Commands
 ```bash
 uv run streamlit run src/rrational/gui/app.py  # Launch GUI
+uv run streamlit run src/rrational/gui/app.py -- --test-mode  # Demo data
 uv run pytest                                   # Run tests
 uv run ruff check src/ tests/ --fix            # Lint
 ```
 
 ## Current Status
 
-**Version**: `v0.8.1` | **Tests**: 71/71 passing
+**Version**: `v0.9.0` | **Tests**: 77/77 passing
 
-**GUI**: 5-tab Streamlit app (Data, Participants, Setup, Sections, Analysis)
+**GUI**: 4-tab Streamlit app (Data, Participants, Setup, Analysis)
+**Analysis modes**: Single Participant, Repeating Section, Group, Sequence Comparison
+**Setup sub-tabs**: Events, Groups, Sequences, Sections
 **Segmentation**: Unified time-based (artifact detection + analysis use same segments)
-
 **Storage**: Project-based (`MyProject/config/*.yml`) or global fallback (`~/.rrational/`)
-
-**Data Sources**: [HRV Logger](https://www.hrv.tools/hrv-logger-faq.html) (CSV) and [VNS Analyse](https://apps.apple.com/de/app/vns-analyse/id990667927) (TXT)
+**Docs**: https://rrational.readthedocs.io (MkDocs Material, auto-builds on push)
 
 ## Scientific Best Practices (CRITICAL)
 
@@ -47,59 +48,50 @@ This is a **scientific research tool**. Follow HRV guidelines:
 3. **Cache data**: `@st.cache_data` - cache raw data, not objects
 4. **NEVER use Plotly JSON serialization** - extremely slow
 
+## Environment Notes
+- Windows: `taskkill //F //IM streamlit.exe` to kill running instances
+- Streamlit `@st.fragment`: content only in DOM after parent checkbox/interaction
+- Plotly WebGL headless: needs `--use-gl=swiftshader` flag for Playwright
+- `uv.lock` changes block `git pull` — users need `git checkout uv.lock` first
+- Playwright MCP plugin: use for doc screenshots (saves to disk, unlike Chrome Extension)
+- ReadTheDocs: `requirements-docs.txt` uses pip (RTD build server), project uses uv
+
 ## Key Files
 - `app.py` - Main app + Participants tab + artifact detection
 - `tabs/` - data.py, setup.py, analysis.py
-- `gui/segmentation.py` - Unified time-based segments (artifact + analysis)
-- `gui/theme.py` - CSS/HTML/JS theming (extracted from app.py)
-- `gui/plots/` - analysis_plots.py, group_plots.py (extracted from analysis.py)
-- `gui/shared.py` - GUI utilities, caching
+- `gui/segmentation.py` - Unified time-based segments
+- `gui/persistence.py` - YAML storage (event_sequences.yml, condition_labels.yml)
 - `analysis/repeating_sections.py` - Repeating section extraction (formerly music_sections)
 - `analysis/hrv_metrics.py` - Metric catalogs, presets, windowing
 - `analysis/hrv_compute.py` - HRV calculation, result transforms
 - `cleaning/quality.py` - Quality detection, artifact fixpeaks, gap detection
-- `segments/section_validation.py` - Event/section validation dataclasses
-- `prep/participant_table.py` - Participant table building
-- `persistence.py` - YAML storage
-- `project.py` - ProjectManager
 
 ## TODOs
 
 **High Priority:**
-- [ ] Event sequence group comparison
-- [x] Setup section rework (#17) - Playlists → Event Sequences
-- [ ] R-R power spectrum plot
-- [x] Batch processing / groupwise analysis (v0.7.9)
-- [x] Unified time-based segmentation (v0.8.1)
-- [x] Project restructuring (v0.8.1)
-- [ ] Report generation (PDF/HTML)
+- [x] Event sequence group comparison (Sequence Comparison mode + group filter)
+- [x] R-R power spectrum plot (PSD expander in Participants tab)
+- [x] Report generation (HTML + Markdown export)
 
 **Low Priority:**
 - [ ] Standalone app (PyInstaller/Nuitka)
 - [ ] Detrending (#15)
 - [ ] Better colouring options (#25)
 - [ ] Support for more apps (#26)
-- [ ] Loading animation (#13)
 
-**Known limitations:**
-- Plot zoom doesn't auto-load detail (use resolution slider)
-- Arrow key panning works but with server roundtrip (#16)
-- Tab switching briefly shows old tab content (Streamlit limitation, #14)
+## Documentation Structure
 
-## Documentation Resources
-
-**Use these resources when needed - don't reinvent the wheel!**
-
-| Resource | Purpose |
-|----------|---------|
-| **MEMORY.md** | Recent session notes (v0.7.x), version summary table, style guides |
-| **MEMORY_ARCHIVE.md** | Older session notes (v0.6.x and earlier), architecture patterns |
-| **QUICKSTART.md** | User guide for the app |
-| `docs/HRV_project_spec.md` | Full project specification |
-| `docs/hrv_scientific.md` | Scientific HRV guidelines and references |
-| `docs/hrv_processing_pipeline.md` | Data processing pipeline details |
-| `docs/CONTRIBUTING.md` | Contribution guidelines |
-| `docs/ISSUE_HANDLING.md` | GitHub issue handling procedures |
-| `docs/manual_HRV_logger.md` | HRV Logger app documentation |
-
-**When to use:** Bug fix → MEMORY.md | Architecture → MEMORY_ARCHIVE.md | Science → docs/hrv_scientific.md
+```
+README.md              → Landing page (links to RTD)
+CHANGELOG.md           → Version history
+QUICKSTART.md          → Redirect to RTD
+mkdocs.yml             → RTD config
+docs/
+├── index.md           → RTD home page
+├── getting-started/   → installation, quickstart, use-cases, FAQ
+├── user-guide/        → workflow (with screenshots), data-formats, configuration
+├── science/           → guidelines, processing-pipeline
+├── development/       → architecture, contributing, issue-handling
+├── reference/         → glossary, HRV_project_spec, PLAN_rrational_v2
+└── assets/screenshots/→ 33 Playwright-captured GUI screenshots
+```
