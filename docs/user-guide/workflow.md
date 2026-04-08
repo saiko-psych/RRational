@@ -172,7 +172,7 @@ Above the plot, enable/disable overlays using checkboxes:
 1. In the Participants tab, find the **Mode** radio buttons
 2. Select **"Signal Inspection"**
 
-![Signal Inspection mode with plot options](../assets/screenshots/tachogram.png)
+![Artifact detection settings and scope](../assets/screenshots/tachogram-with-artifacts.png)
 
 ### 4.2 Configure Artifact Detection
 
@@ -199,6 +199,9 @@ Expand **"Detect New Artifacts"**:
     - Quality summary shows: artifact count, rate, and grade per segment
     - Segment assessment table with include/exclude checkboxes
 
+![Tachogram with artifact markers](../assets/screenshots/artifact-detection-settings.png)
+
+![Section validation and data integrity results](../assets/screenshots/artifact-detection-results.png)
 
 ### 4.4 Per-Segment Quality Assessment
 
