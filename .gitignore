@@ -51,12 +51,15 @@ build/
 .python-version
 .uv/
 
-# Local agent instructions
+# Claude Code instructions (local only)
 AGENTS.md
 CLAUDE.md
 MEMORY.md
 MEMORY_ARCHIVE.md
-# docs/ is tracked — documentation belongs in the repo
+music hrv.md
+
+# Playwright MCP artifacts
+.playwright-mcp/
 
 nul
 
