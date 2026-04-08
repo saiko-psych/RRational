@@ -1,0 +1,63 @@
+site_name: RRational
+site_description: "A rational approach to Heart Rate Variability analysis"
+site_url: https://rrational.readthedocs.io/
+repo_url: https://github.com/saiko-psych/rrational
+repo_name: saiko-psych/rrational
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.select
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - toc:
+      permalink: true
+  - tables
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: INSTALLATION.md
+    - Configuration: CONFIGURATION.md
+    - Data Formats: DATA_FORMATS.md
+  - Scientific Background:
+    - HRV Guidelines: hrv_scientific.md
+    - Processing Pipeline: hrv_processing_pipeline.md
+  - Developer Guide:
+    - Architecture: ARCHITECTURE.md
+    - Contributing: CONTRIBUTING.md
+    - Issue Handling: ISSUE_HANDLING.md

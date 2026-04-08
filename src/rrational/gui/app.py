@@ -5819,6 +5819,10 @@ def main():
         with st.expander("Settings", expanded=False):
             render_settings_panel()
 
+        # Help links
+        st.link_button("Documentation", "https://rrational.readthedocs.io", use_container_width=True)
+        st.link_button("Report a Bug", "https://github.com/saiko-psych/rrational/issues/new/choose", use_container_width=True)
+
         # Version & debug info
         from rrational import __version__, get_build_info
         _build = get_build_info()

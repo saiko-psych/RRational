@@ -6,6 +6,7 @@
 [![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
 [![Version](https://img.shields.io/badge/version-0.8.1-green.svg)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-77%20passing-brightgreen.svg)](tests/)
+[![Docs](https://readthedocs.org/projects/rrational/badge/?version=latest)](https://rrational.readthedocs.io)
 
 **A rational approach to Heart Rate Variability analysis**
 
