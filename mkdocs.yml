@@ -50,6 +50,7 @@ markdown_extensions:
   - toc:
       permalink: true
   - tables
+  - def_list
   - attr_list
   - md_in_html
   - pymdownx.emoji:
@@ -62,6 +63,7 @@ nav:
     - When to Use RRational: getting-started/use-cases.md
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
+    - FAQ: getting-started/faq.md
   - User Guide:
     - Complete Workflow: user-guide/workflow.md
     - Data Formats: user-guide/data-formats.md
@@ -73,3 +75,5 @@ nav:
     - Architecture: development/architecture.md
     - Contributing: development/contributing.md
     - Issue Handling: development/issue-handling.md
+  - Reference:
+    - Glossary: reference/glossary.md
