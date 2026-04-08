@@ -52,16 +52,20 @@ markdown_extensions:
   - tables
   - attr_list
   - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 nav:
   - Home: index.md
   - Getting Started:
+    - When to Use RRational: getting-started/use-cases.md
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
   - User Guide:
     - Complete Workflow: user-guide/workflow.md
     - Data Formats: user-guide/data-formats.md
-    - Configuration: user-guide/configuration.md
+    - Configuration & Projects: user-guide/configuration.md
   - Science:
     - HRV Guidelines: science/guidelines.md
     - Processing Pipeline: science/processing-pipeline.md
