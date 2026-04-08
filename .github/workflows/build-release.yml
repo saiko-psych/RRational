@@ -1,0 +1,158 @@
+name: Build Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v0.9.0
+  workflow_dispatch:  # Allow manual trigger for testing
+
+permissions:
+  contents: write  # Needed for creating releases
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: RRational-Windows
+            asset_ext: .zip
+          - os: macos-latest
+            artifact_name: RRational-macOS
+            asset_ext: .zip
+          - os: ubuntu-latest
+            artifact_name: RRational-Linux
+            asset_ext: .tar.gz
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.os }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: |
+          uv sync
+          uv pip install streamlit-desktop-app pyinstaller
+
+      # Linux: Install system dependencies for pywebview
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgirepository1.0-dev \
+            gir1.2-webkit2-4.1 \
+            python3-gi \
+            python3-gi-cairo
+
+      - name: Build desktop app
+        run: |
+          uv run streamlit-desktop-app build \
+            src/rrational/gui/app.py \
+            --name RRational \
+            --pyinstaller-options \
+              --collect-all streamlit \
+              --collect-all streamlit_plotly_events \
+              --collect-all plotly \
+              --collect-all pywebview \
+              --hidden-import neurokit2 \
+              --hidden-import neurokit2.hrv \
+              --hidden-import neurokit2.signal \
+              --hidden-import scipy.signal \
+              --hidden-import scipy.interpolate \
+              --hidden-import scipy.stats \
+              --hidden-import scipy.special \
+              --hidden-import yaml \
+              --hidden-import rrational \
+              --hidden-import rrational.gui \
+              --hidden-import rrational.gui.tabs \
+              --hidden-import rrational.gui.plots \
+              --hidden-import rrational.analysis \
+              --hidden-import rrational.cleaning \
+              --hidden-import rrational.io \
+              --hidden-import rrational.prep \
+              --hidden-import rrational.segments \
+              --add-data "src/rrational/gui/assets${{ runner.os == 'Windows' && ';' || ':' }}rrational/gui/assets" \
+              --add-data "data/demo${{ runner.os == 'Windows' && ';' || ':' }}data/demo" \
+              --noconfirm
+        shell: bash
+
+      # Package the build output
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          7z a -tzip ${{ matrix.artifact_name }}.zip RRational/
+        shell: bash
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r ${{ matrix.artifact_name }}.zip RRational/
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd dist
+          tar -czf ${{ matrix.artifact_name }}.tar.gz RRational/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}${{ matrix.asset_ext }}
+          retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: RRational ${{ github.ref_name }}
+          body: |
+            ## RRational ${{ github.ref_name }}
+
+            ### Downloads
+
+            | Platform | File |
+            |----------|------|
+            | Windows | `RRational-Windows.zip` |
+            | macOS | `RRational-macOS.zip` |
+            | Linux | `RRational-Linux.tar.gz` |
+
+            ### Installation
+
+            1. Download the archive for your platform
+            2. Extract the archive
+            3. Run `RRational` (or `RRational.exe` on Windows)
+
+            The app opens in a native window — no Python installation required.
+
+            ---
+            *Built automatically from [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})*
+          files: |
+            artifacts/RRational-Windows/RRational-Windows.zip
+            artifacts/RRational-macOS/RRational-macOS.zip
+            artifacts/RRational-Linux/RRational-Linux.tar.gz
+          draft: true  # Create as draft — review before publishing
+          generate_release_notes: true
