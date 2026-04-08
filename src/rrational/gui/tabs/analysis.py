@@ -4628,6 +4628,34 @@ This analysis groups participants by sequence and compares conditions within and
         st.info("Please select at least one sequence.")
         return
 
+    # Optional: Filter by groups
+    group_list = list(st.session_state.get("groups", {}).keys())
+    selected_groups = None
+    if group_list:
+        with st.expander("**Filter by Group** (optional)", expanded=False):
+            st.caption("Compare conditions across groups — e.g., how does RMSSD during 'Music' differ between Group A and Group B?")
+            use_group_filter = st.checkbox(
+                "Include group in comparison",
+                value=False,
+                key="seq_comparison_use_groups",
+            )
+            if use_group_filter:
+                group_counts = {}
+                for g in group_list:
+                    group_counts[g] = sum(1 for pg in st.session_state.get("participant_groups", {}).values() if pg == g)
+                group_options = [f"{g} ({group_counts[g]})" for g in group_list]
+                g_map = {f"{g} ({group_counts[g]})": g for g in group_list}
+                selected_group_labels = st.multiselect(
+                    "Select groups",
+                    options=group_options,
+                    default=group_options,
+                    key="seq_comparison_groups",
+                )
+                selected_groups = [g_map[l] for l in selected_group_labels]
+                if not selected_groups:
+                    st.info("Select at least one group.")
+                    return
+
     # -------------------------------------------------------------------------
     # Step 2: Select Conditions
     # -------------------------------------------------------------------------
@@ -4756,12 +4784,14 @@ This analysis groups participants by sequence and compares conditions within and
         results = []
         missing = {}
 
-        # Collect participants per sequence
+        # Collect participants per sequence (optionally filtered by group)
+        participant_groups = st.session_state.get("participant_groups", {})
         seq_participants = {}
         for seq_id in selected_sequences:
-            seq_participants[seq_id] = [
-                pid for pid, s in participant_sequences.items() if s == seq_id
-            ]
+            pids = [pid for pid, s in participant_sequences.items() if s == seq_id]
+            if selected_groups:
+                pids = [pid for pid in pids if participant_groups.get(pid) in selected_groups]
+            seq_participants[seq_id] = pids
 
         total_work = sum(len(pids) * len(selected_conditions) for pids in seq_participants.values())
         current_work = [0]
@@ -4825,9 +4855,15 @@ This analysis groups participants by sequence and compares conditions within and
                     )
 
                     seq_label = seq_data.get("label", seq_id)
+                    # When group filter is active, include group in the label
+                    if selected_groups:
+                        pid_group = participant_groups.get(pid, "unknown")
+                        group_label = f"{seq_label} / {pid_group}"
+                    else:
+                        group_label = seq_label
                     results.append(ParticipantSectionResult(
                         participant_id=pid,
-                        group=seq_label,  # Sequence as "group" for reuse of existing viz
+                        group=group_label,  # Sequence (+ group) as "group" for reuse
                         section_name=cond_label,  # Condition as "section" for reuse
                         n_beats=info.get("n_beats", len(nn_data)),
                         duration_s=info.get("duration_s", sum(nn_data) / 1000),
