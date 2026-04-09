@@ -66,9 +66,12 @@ def detect_format(path: Path) -> str | None:
                 pass
 
     # Plain RR: just numbers, one per line (Elite HRV, Kubios plain export)
-    if re.match(r"^\d+\.?\d*$", first):
+    # Skip leading comment lines (e.g. Kubios signal/series export with # headers)
+    data_lines = [l.strip() for l in lines if l.strip() and not l.strip().startswith("#")]
+    first_data = data_lines[0] if data_lines else ""
+    if re.match(r"^\d+\.?\d*$", first_data):
         # Check a few more lines to confirm
-        numeric_count = sum(1 for line in lines[:10] if re.match(r"^\d+\.?\d*$", line.strip()))
+        numeric_count = sum(1 for line in data_lines[:10] if re.match(r"^\d+\.?\d*$", line.strip()))
         if numeric_count >= 3:
             return "plain_rr"
 

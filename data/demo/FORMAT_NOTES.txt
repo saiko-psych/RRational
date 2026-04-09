@@ -1,20 +1,19 @@
 Sample HRV Data Files - Format Notes
 =====================================
-All files are SYNTHETIC but follow documented format specifications.
-Created for parser testing. RR values are physiologically realistic
-(~785-891 ms, corresponding to ~67-76 bpm).
+Files marked [SYNTHETIC] are generated for parser testing.
+Files marked [REAL] are publicly available research datasets.
 
 1. POLAR (data/demo/polar/)
 ---------------------------
 
-a) polar_h10_rr_sample.csv
+a) polar_h10_rr_sample.csv [SYNTHETIC]
    - Source format: Polar Beat / Polar Sensor Logger CSV export
    - Separator: comma
    - Columns: "Phone timestamp" (ISO datetime with ms), "RR-interval [ms]" (integer ms)
    - Units: milliseconds
    - Reference: Polar Beat app export, ECG Logger app, Polar Sensor Logger
 
-b) polar_flow_hrv_export.csv
+b) polar_flow_hrv_export.csv [SYNTHETIC]
    - Source format: Polar Flow web service HRV export (headerless TSV)
    - Separator: tab
    - Columns: elapsed_time_seconds (float), RR_interval_ms (integer)
@@ -22,10 +21,17 @@ b) polar_flow_hrv_export.csv
    - No header row
    - Reference: https://github.com/oroce/polar-h7-rr, Polar Flow web export
 
+c) polar_h7_rr_export.csv [REAL]
+   - Source: https://github.com/oroce/polar-h7-rr (Polar H7 chest strap recording)
+   - Format: Polar Flow headerless TSV (elapsed_seconds<TAB>rr_ms)
+   - 52 beats (~1 minute recording)
+   - License: public repository, no explicit license
+   - Detected as: polar_flow
+
 2. EMPATICA E4 (data/demo/empatica/)
 -------------------------------------
 
-IBI.csv
+a) IBI.csv [SYNTHETIC]
    - Source format: Empatica E4 Connect IBI export
    - Separator: comma + space (", ")
    - Line 1 (header): Unix timestamp of recording start, " IBI"
@@ -36,10 +42,19 @@ IBI.csv
    - To convert to ms: multiply by 1000
    - Reference: https://support.empatica.com/hc/en-us/articles/201608896
 
-3. ELITE HRV (data/demo/elite_hrv/)
--------------------------------------
+b) IBI_stress_predict_S10.csv [REAL]
+   - Source: Stress-Predict Dataset, subject S10
+     https://github.com/italha-d/Stress-Predict-Dataset
+   - Citation: Iqbal et al. (2022) Sensors 22(21):8135
+   - Format: Empatica E4 IBI.csv (unix_timestamp header, offset+IBI in seconds)
+   - 599 beats (first 600 lines from ~1140 total)
+   - License: MIT
+   - Detected as: empatica
 
-rr_intervals.txt
+3. ELITE HRV / PLAIN RR (data/demo/elite_hrv/)
+------------------------------------------------
+
+a) rr_intervals.txt [SYNTHETIC]
    - Source format: Elite HRV app raw export
    - One RR interval per line, no header
    - Units: milliseconds (integer)
@@ -48,10 +63,19 @@ rr_intervals.txt
    - Compatible with Kubios HRV import (Type 1 format)
    - Reference: https://help.elitehrv.com/article/49-exporting-raw-r-r-intervals
 
+b) physionet_4075_healthy.txt [REAL]
+   - Source: PhysioNet "RR interval time series from healthy subjects" v1.0.0
+     https://physionet.org/content/rr-interval-healthy-subjects/1.0.0/
+   - Subject: 4075 (adult, from 24-hour Holter recording, first 600 beats)
+   - Format: one RR interval per line, integer milliseconds, no header
+   - 600 beats (from ~100,000 total in full recording)
+   - License: CC-BY 4.0
+   - Detected as: plain_rr
+
 4. KUBIOS HRV (data/demo/kubios/)
 -----------------------------------
 
-kubios_hrv_export.txt
+a) kubios_hrv_export.txt [SYNTHETIC]
    - Source format: Kubios HRV Premium TXT/CSV report export
    - Separator: comma
    - Sections (in order):
@@ -66,3 +90,10 @@ kubios_hrv_export.txt
    - Each results section uses: Variable,Units,Value
    - Validated by presence of "Kubios HRV" string in file
    - Reference: Kubios HRV Users Guide, https://github.com/PGomes92/kubios
+
+b) kubios_signal_export_sample.txt [REAL]
+   - Source: https://github.com/PGomes92/kubios (SampleExport.txt)
+   - Format: Kubios signal/series export (# comment headers + one RR per line)
+   - 423 beats, values in ms (float with .000 suffix)
+   - License: MIT
+   - Detected as: plain_rr (comment lines skipped by parser)
