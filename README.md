@@ -10,7 +10,7 @@
 
 **A rational approach to Heart Rate Variability analysis**
 
-*Free, open-source HRV toolkit for researchers — like Kubios, but free.*
+*Free, open-source HRV toolkit for researchers*
 
 [Documentation](https://rrational.readthedocs.io) |
 [Quick Start](https://rrational.readthedocs.io/en/latest/getting-started/quickstart/) |
