@@ -25,7 +25,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## Current Status
 
-**Version**: `v0.9.0` | **Tests**: 77/77 passing
+**Version**: `v0.9.0` | **Tests**: 91/91 passing
 
 **GUI**: 4-tab Streamlit app (Data, Participants, Setup, Analysis)
 **Analysis modes**: Single Participant, Repeating Section, Group, Sequence Comparison
@@ -65,6 +65,7 @@ This is a **scientific research tool**. Follow HRV guidelines:
 - `analysis/hrv_metrics.py` - Metric catalogs, presets, windowing
 - `analysis/hrv_compute.py` - HRV calculation, result transforms
 - `cleaning/quality.py` - Quality detection, artifact fixpeaks, gap detection
+- `io/generic_rr.py` - Parsers for Polar, Empatica, Elite HRV, Kubios, plain text
 
 ## TODOs
 
@@ -74,10 +75,10 @@ This is a **scientific research tool**. Follow HRV guidelines:
 - [x] Report generation (HTML + Markdown export)
 
 **Low Priority:**
-- [ ] Standalone app (PyInstaller/Nuitka)
+- [x] Standalone app (PyInstaller + pywebview, GitHub Actions CI/CD)
+- [x] Support for more apps (#26) — Polar, Empatica, Elite HRV, Kubios, plain text
 - [ ] Detrending (#15)
 - [ ] Better colouring options (#25)
-- [ ] Support for more apps (#26)
 
 ## Documentation Structure
 
@@ -90,8 +91,8 @@ docs/
 ├── index.md           → RTD home page
 ├── getting-started/   → installation, quickstart, use-cases, FAQ
 ├── user-guide/        → workflow (with screenshots), data-formats, configuration
-├── science/           → guidelines, processing-pipeline
+├── science/           → methodology: guidelines, processing-pipeline
 ├── development/       → architecture, contributing, issue-handling
 ├── reference/         → glossary, HRV_project_spec, PLAN_rrational_v2
-└── assets/screenshots/→ 33 Playwright-captured GUI screenshots
+└── assets/screenshots/→ 38 Playwright-captured GUI screenshots
 ```

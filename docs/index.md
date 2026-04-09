@@ -51,10 +51,15 @@ It provides an interactive Streamlit GUI for importing, inspecting, cleaning, an
 
 ## Supported Data Sources
 
-| App | Platform | Format | Details |
-|-----|----------|--------|---------|
+| Source | Platform | Format | Details |
+|--------|----------|--------|---------|
 | [HRV Logger](https://www.hrv.tools/hrv-logger-faq.html) | iOS / Android | CSV | [Format Reference](user-guide/data-formats.md) |
-| [VNS Analyse](https://apps.apple.com/de/app/vns-analyse/id990667927) | iOS | TXT | [Format Reference](user-guide/data-formats.md#vns-analyse-txt) |
+| [VNS Analyse](https://apps.apple.com/de/app/vns-analyse/id990667927) | iOS (clinical) | TXT | [Format Reference](user-guide/data-formats.md#vns-analyse-txt) |
+| Polar H10 / Polar Beat | Chest strap | CSV | [Format Reference](user-guide/data-formats.md#polar-sensor-logger--polar-beat-csv) |
+| Polar Flow | Web export | TSV | [Format Reference](user-guide/data-formats.md#polar-flow-hrv-export-tsv) |
+| Empatica E4 / EmbracePlus | Wristband (PPG) | CSV | [Format Reference](user-guide/data-formats.md#empatica-e4--embraceplus-ibicsv) |
+| Elite HRV / Plain text | iOS / Android | TXT | [Format Reference](user-guide/data-formats.md#elite-hrv--plain-text-rr) |
+| Kubios HRV | Desktop | TXT | [Format Reference](user-guide/data-formats.md#kubios-hrv-export) |
 
 ## Getting Started
 
