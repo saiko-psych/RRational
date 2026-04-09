@@ -5969,6 +5969,16 @@ def main():
                             else:
                                 st.error(f"No VNS recording found for {selected_participant}")
                                 recording_data = {'rr_intervals': [], 'events': [], 'raw_events': []}
+                    elif source_app not in ("HRV Logger", "VNS Analyse", "Unknown") and getattr(summary, 'rr_paths', None):
+                        # Load generic RR format (Polar, Empatica, Elite HRV, Kubios, etc.)
+                        from rrational.io.generic_rr import load_generic_rr
+                        rr_path = summary.rr_paths[0]
+                        rec = load_generic_rr(rr_path, participant_id=selected_participant)
+                        recording_data = {
+                            'rr_intervals': [(rr.timestamp, rr.rr_ms, rr.elapsed_ms or 0) for rr in rec.rr_intervals],
+                            'events': [],
+                            'raw_events': [],
+                        }
                     elif getattr(summary, 'rr_paths', None):
                         # Load HRV Logger recording using stored paths
                         events_paths = getattr(summary, 'events_paths', []) or []
