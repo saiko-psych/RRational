@@ -17,6 +17,20 @@ RRational implements recommendations from:
 
 RRational uses the **Lipponen-Tarvainen algorithm** (via NeuroKit2's Kubios implementation) which classifies beats into six categories: ectopic, long, short, missed, extra, and normal.
 
+``` mermaid
+flowchart TD
+  A[Run artifact detection] --> B{Artifact rate?}
+  B -->|< 2%| C[Grade A\nUse as-is]
+  B -->|2-5%| D[Grade B\nCorrect + analyze]
+  B -->|5-10%| E[Grade C\nCorrect, time-domain only]
+  B -->|> 10%| F[Grade D\nExclude segment]
+
+  style C fill:#28a745,color:#fff
+  style D fill:#2E86AB,color:#fff
+  style E fill:#ffc107,color:#000
+  style F fill:#dc3545,color:#fff
+```
+
 !!! tip "Recommended Workflow"
     1. Run artifact detection on **all validated sections** (same segments)
     2. Review per-segment quality grades

@@ -4,8 +4,20 @@ How RRational processes RR interval data from import to analysis results.
 
 ## Pipeline Overview
 
-```
-Import → Clean → Detect Artifacts → Validate Sections → Analyze → Export
+``` mermaid
+flowchart LR
+  A[Import] --> B[Clean]
+  B --> C[Inspect]
+  C --> D[Detect\nArtifacts]
+  D --> E[Correct]
+  E --> F[Validate\nSections]
+  F --> G[Analyze]
+  G --> H[Export]
+
+  style A fill:#2E86AB,color:#fff
+  style D fill:#ee6c4d,color:#fff
+  style G fill:#1e3a5f,color:#fff
+  style H fill:#28a745,color:#fff
 ```
 
 | Stage | What happens | Where in the app |
