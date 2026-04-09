@@ -1,7 +1,5 @@
 """Tests for extracted HRV computation and result transforms."""
 
-import pandas as pd
-import pytest
 
 from rrational.analysis.hrv_metrics import ParticipantSectionResult
 from rrational.analysis.hrv_compute import (

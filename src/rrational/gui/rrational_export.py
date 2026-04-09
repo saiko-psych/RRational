@@ -1035,7 +1035,7 @@ def load_rrational_v2(filepath: Path | str) -> RRationalExportV2:
     version = data.get("rrational_version", "1.0")
     if version == RRATIONAL_VERSION_V1:
         raise ValueError(
-            f"File is v1.0 format. Use load_rrational() or migrate_v1_to_v2() instead."
+            "File is v1.0 format. Use load_rrational() or migrate_v1_to_v2() instead."
         )
 
     meta = data.get("metadata", {})
@@ -1159,7 +1159,6 @@ def build_rrational_v2(
         load_artifact_corrections,
         load_section_validations,
         load_nn_intervals,
-        get_processed_dir,
     )
 
     warnings = []

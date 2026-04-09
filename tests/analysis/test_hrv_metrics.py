@@ -1,6 +1,5 @@
 """Tests for extracted HRV metric definitions and utilities."""
 
-import numpy as np
 import pandas as pd
 import pytest
 
