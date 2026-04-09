@@ -1,4 +1,4 @@
-"""File ingestion helpers for HRV Logger and VNS Analyse exports."""
+"""File ingestion helpers for HRV Logger, VNS Analyse, and generic RR formats."""
 
 from rrational.io.hrv_logger import (
     DEFAULT_ID_PATTERN,
@@ -14,6 +14,13 @@ from rrational.io.hrv_logger import (
     load_recording,
     load_recordings_from_directory,
     load_rr_intervals,
+)
+
+from rrational.io.generic_rr import (
+    GenericRecording,
+    detect_format,
+    load_generic_rr,
+    SUPPORTED_FORMATS,
 )
 
 from rrational.io.vns_analyse import (
@@ -39,6 +46,11 @@ __all__ = [
     "load_recording",
     "load_recordings_from_directory",
     "load_rr_intervals",
+    # Generic RR formats (Polar, Empatica, Elite HRV, Kubios, plain text)
+    "GenericRecording",
+    "detect_format",
+    "load_generic_rr",
+    "SUPPORTED_FORMATS",
     # VNS Analyse
     "VNSRecording",
     "VNSRecordingBundle",

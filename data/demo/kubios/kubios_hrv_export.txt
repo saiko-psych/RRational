@@ -1,0 +1,102 @@
+Kubios HRV Analysis Report
+==========================
+Software:,Kubios HRV Premium (ver 3.5.0)
+Date:,01-Apr-2026
+
+Data File Information
+---------------------
+Filename:,sample_rr_data.txt
+Total Recording Time (s):,300
+Number of RR intervals:,358
+Number of Artifacts:,4 (1.1%)
+
+Artifact Correction
+-------------------
+Correction method:,Kubios automatic correction
+Correction threshold:,Medium
+
+Time-Domain Results
+-------------------
+Variable,Units,Value
+Mean RR (ms),ms,838.5
+STD RR (SDNN) (ms),ms,42.3
+Mean HR (beats/min),1/min,71.6
+STD HR (beats/min),1/min,3.8
+Min HR (beats/min),1/min,65.2
+Max HR (beats/min),1/min,78.4
+RMSSD (ms),ms,34.7
+NNxx,count,87
+pNNxx (%),percent,24.3
+RR tri index,,12.4
+TINN (ms),ms,195.0
+
+Frequency-Domain Results (FFT spectrum with Welch's periodogram)
+-----------------------------------------------------------------
+Variable,Units,Value
+VLF peak (Hz),Hz,0.023
+VLF power (ms2),ms^2,245.8
+VLF power (log),ln(ms^2),5.50
+VLF power (%),percent,18.2
+LF peak (Hz),Hz,0.078
+LF power (ms2),ms^2,612.4
+LF power (log),ln(ms^2),6.42
+LF power (%),percent,45.4
+LF power (n.u.),n.u.,55.6
+HF peak (Hz),Hz,0.215
+HF power (ms2),ms^2,489.7
+HF power (log),ln(ms^2),6.19
+HF power (%),percent,36.3
+HF power (n.u.),n.u.,44.4
+LF/HF ratio,,1.25
+Total power (ms2),ms^2,1347.9
+
+Nonlinear Results
+-----------------
+Variable,Units,Value
+SD1 (ms),ms,24.6
+SD2 (ms),ms,54.2
+SD2/SD1,,2.20
+ApEn,,1.023
+SampEn,,1.514
+DFA alpha1,,0.98
+DFA alpha2,,0.72
+
+Autonomic Balance
+-----------------
+Variable,Units,Value
+PNS index,,-0.42
+SNS index,,0.85
+Stress index,,8.72
+
+RR Intervals (ms)
+------------------
+832
+845
+798
+812
+856
+891
+873
+815
+789
+802
+834
+867
+842
+819
+805
+838
+871
+854
+822
+796
+811
+847
+879
+863
+828
+801
+785
+817
+849
+862
