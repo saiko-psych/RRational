@@ -35,6 +35,11 @@ RECORDING_APP_DETECTION = {
     "elite_hrv": {"name": "Elite HRV", "device": "Unknown", "sampling_rate": 1000},
     "elite-hrv": {"name": "Elite HRV", "device": "Unknown", "sampling_rate": 1000},
     "elitehrv": {"name": "Elite HRV", "device": "Unknown", "sampling_rate": 1000},
+    "polar": {"name": "Polar", "device": "Polar H10", "sampling_rate": 1000},
+    "polar_flow": {"name": "Polar", "device": "Polar H10", "sampling_rate": 1000},
+    "empatica": {"name": "Empatica", "device": "Empatica E4", "sampling_rate": 64},
+    "e4": {"name": "Empatica", "device": "Empatica E4", "sampling_rate": 64},
+    "kubios": {"name": "Kubios", "device": "Unknown", "sampling_rate": 1000},
 }
 
 
@@ -139,6 +144,86 @@ def analyze_folder_structure(root_path: Path) -> dict:
         "sources": sources,
         "tree": "\n".join(tree_lines),
     }
+
+
+def _load_generic_rr_folder(
+    folder_path: Path,
+    id_pattern: str,
+    config_dict: dict,
+) -> list:
+    """Load RR interval files from a folder using the generic parser.
+
+    Discovers all CSV/TXT files, auto-detects format, and creates
+    PreparationSummary objects compatible with the existing GUI pipeline.
+    """
+    import re
+    from rrational.io.generic_rr import detect_format, load_generic_rr
+    from rrational.io.hrv_logger import extract_participant_id
+    from rrational.prep.summaries import PreparationSummary, EventStatus
+    from rrational.cleaning.rr import CleaningConfig, clean_rr_intervals
+
+    config = CleaningConfig(
+        rr_min_ms=config_dict["rr_min_ms"],
+        rr_max_ms=config_dict["rr_max_ms"],
+        sudden_change_pct=config_dict["sudden_change_pct"],
+    )
+
+    # Find all data files
+    files = sorted(
+        f for f in folder_path.iterdir()
+        if f.is_file() and f.suffix.lower() in ('.csv', '.txt', '.dat')
+        and detect_format(f) is not None
+    )
+
+    summaries = []
+    for file_path in files:
+        try:
+            # Extract participant ID from filename
+            pid = extract_participant_id(file_path.name, pattern=id_pattern)
+            if not pid:
+                pid = file_path.stem
+
+            rec = load_generic_rr(file_path, participant_id=pid)
+            if not rec.rr_intervals:
+                continue
+
+            # Apply cleaning
+            cleaned, stats = clean_rr_intervals(rec.rr_intervals, config)
+
+            # Build timestamps
+            first_ts = next((rr.timestamp for rr in rec.rr_intervals if rr.timestamp), None)
+            last_ts = next((rr.timestamp for rr in reversed(rec.rr_intervals) if rr.timestamp), None)
+            rr_values = [rr.rr_ms for rr in cleaned]
+            duration = sum(rr.rr_ms for rr in rec.rr_intervals) / 1000
+
+            summary = PreparationSummary(
+                participant_id=pid,
+                recording_datetime=first_ts,
+                first_timestamp=first_ts,
+                last_timestamp=last_ts,
+                total_beats=len(rec.rr_intervals),
+                retained_beats=len(cleaned),
+                removed_beats=len(rec.rr_intervals) - len(cleaned),
+                artifact_ratio=stats.artifact_ratio,
+                duration_s=duration,
+                events_detected=0,
+                duplicate_events=0,
+                duplicate_rr_intervals=0,
+                duplicate_details=[],
+                rr_min_ms=min(rr_values) if rr_values else 0,
+                rr_max_ms=max(rr_values) if rr_values else 0,
+                rr_mean_ms=sum(rr_values) / len(rr_values) if rr_values else 0,
+                artifact_reasons=stats.reasons,
+                events=[],
+                present_sections=set(),
+                source_app=rec.source_app,
+                rr_paths=[file_path],
+            )
+            summaries.append(summary)
+        except Exception:
+            continue
+
+    return summaries
 
 
 def detect_recording_app(data_path: Path) -> dict:
@@ -443,10 +528,6 @@ def render_data_tab():
                             }
 
                             for src in selected_sources:
-                                if src['name'] == "Elite HRV":
-                                    st.write(f"Skipping {src['folder']} (Elite HRV not yet supported)")
-                                    continue
-
                                 st.write(f"Loading from: {src['folder']} ({src['name']})")
                                 load_path = Path(src["path"])
 
@@ -460,6 +541,11 @@ def render_data_tab():
                                         use_corrected=st.session_state.get("vns_use_corrected", False),
                                     )
                                     app_name = "VNS Analyse"
+                                elif src["name"] in ("Elite HRV", "Polar", "Empatica", "Kubios"):
+                                    summaries = _load_generic_rr_folder(
+                                        load_path, id_pattern, config_dict
+                                    )
+                                    app_name = src["name"]
                                 else:
                                     # Default to HRV Logger format
                                     summaries = cached_load_hrv_logger_preview(

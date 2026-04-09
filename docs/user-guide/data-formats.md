@@ -1,11 +1,33 @@
 # Supported Data Formats
 
-RRational supports data from two popular HRV recording apps:
+RRational supports data from multiple HRV recording apps and devices:
 
-| App | Platform | Format | Link |
-|-----|----------|--------|------|
-| **HRV Logger** | iOS/Android | CSV | [hrv.tools](https://www.hrv.tools/hrv-logger-faq.html) |
-| **VNS Analyse** | iOS | TXT | [App Store](https://apps.apple.com/de/app/vns-analyse/id990667927) |
+| Source | Platform | Format | Auto-Detected |
+|--------|----------|--------|--------------|
+| **HRV Logger** | iOS/Android | CSV | Yes (folder name) |
+| **VNS Analyse** | iOS (clinical) | TXT | Yes (folder name) |
+| **Polar Sensor Logger / Polar Beat** | iOS/Android | CSV | Yes (folder or content) |
+| **Polar Flow** | Web export | TSV | Yes (content) |
+| **Empatica E4 / EmbracePlus** | Wristband | CSV (IBI.csv) | Yes (content) |
+| **Elite HRV** | iOS/Android | TXT | Yes (folder name) |
+| **Kubios HRV** | Desktop | TXT | Yes (content) |
+| **Plain text RR** | Any | TXT/CSV | Yes (content) |
+
+### Folder Structure
+
+Place files in subfolders named after the recording app:
+
+```
+data/raw/
+├── hrv_logger/      → HRV Logger CSV files
+├── vns_analyse/     → VNS Analyse TXT files
+├── polar/           → Polar Sensor Logger or Flow exports
+├── empatica/        → Empatica E4 IBI.csv files
+├── elite_hrv/       → Elite HRV exports
+└── kubios/          → Kubios HRV report exports
+```
+
+RRational auto-detects the format from the folder name. For files with no matching folder name, the file content is analyzed to determine the format automatically.
 
 ---
 
@@ -95,6 +117,65 @@ RR values are in **seconds** (not milliseconds). Events are embedded as annotati
 In the Data tab, you can choose:
 - **Raw values** (`Rohwerte`) — Original uncorrected RR intervals
 - **Corrected values** (`Korrigierte Werte`) — VNS-corrected intervals
+
+---
+
+## Polar Sensor Logger / Polar Beat (CSV)
+
+Place files in `data/raw/polar/`.
+
+CSV with two columns:
+
+```
+Phone timestamp,RR-interval [ms]
+2026-04-01 09:00:00.000,832
+2026-04-01 09:00:00.832,845
+```
+
+Timestamps are real phone time with millisecond precision. RR intervals in milliseconds.
+
+## Polar Flow HRV Export (TSV)
+
+Tab-separated, no header:
+
+```
+0.997	832
+1.829	845
+2.674	798
+```
+
+Column 1: elapsed time in seconds. Column 2: RR interval in ms. No absolute timestamps available.
+
+## Empatica E4 / EmbracePlus (IBI.csv)
+
+Place `IBI.csv` files in `data/raw/empatica/`.
+
+```
+1775181600.000000, IBI
+7.734375,0.875000
+8.609375,0.953125
+```
+
+First line: Unix timestamp of recording start. Data: time offset (seconds), IBI duration (seconds). RRational converts to milliseconds automatically.
+
+!!! note
+    Empatica uses 1/64 second resolution (PPG-based). Expect slightly lower precision than ECG-based devices.
+
+## Elite HRV / Plain Text RR
+
+Place files in `data/raw/elite_hrv/`. One RR interval per line:
+
+```
+832
+845
+798
+```
+
+RRational auto-detects whether values are in milliseconds or seconds based on the value range. Compatible with any tool that exports simple RR interval lists.
+
+## Kubios HRV Export
+
+Place Kubios report files in `data/raw/kubios/`. RRational extracts RR intervals from the "RR Intervals" section of the report, plus analysis metadata.
 
 ---
 
