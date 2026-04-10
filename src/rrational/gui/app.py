@@ -2219,22 +2219,65 @@ def render_settings_panel():
             key="settings_show_variability",
         )
 
+    st.caption("**Color Theme**")
+    from rrational.gui.color_scheme import ColorScheme, PRESET_THEMES, get_preset_names
+
+    preset_names = ["Custom"] + get_preset_names()
+    current_preset = plot_opts.get(
+        "color_preset", settings.get("color_preset", "Scientific")
+    )
+    if current_preset not in preset_names:
+        current_preset = "Scientific"
+
+    selected_preset = st.selectbox(
+        "Preset",
+        preset_names,
+        index=preset_names.index(current_preset)
+        if current_preset in preset_names
+        else 1,
+        key="settings_color_preset",
+        help="Choose a color scheme or select 'Custom' to pick individual colors",
+    )
+
+    # Load colors from preset or current config
+    if selected_preset != "Custom" and selected_preset in PRESET_THEMES:
+        scheme = PRESET_THEMES[selected_preset]
+    else:
+        scheme = ColorScheme.from_dict(plot_opts.get("colors", {}))
+
+    is_custom = selected_preset == "Custom"
+
     st.caption("**Plot Colors**")
-    plot_colors = plot_opts.get("colors", {})
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        new_line_color = st.color_picker(
-            "RR Line",
-            value=plot_colors.get("line", "#2E86AB"),
-            key="settings_line_color",
-            help="Color for RR interval line",
+        new_rr_line = st.color_picker(
+            "RR Line", value=scheme.rr_line, key="sc_rr_line", disabled=not is_custom
+        )
+        new_nn_line = st.color_picker(
+            "NN Line", value=scheme.nn_line, key="sc_nn_line", disabled=not is_custom
         )
     with col2:
-        new_artifact_color = st.color_picker(
+        new_artifact = st.color_picker(
             "Artifacts",
-            value=plot_colors.get("artifact", "#FF6B6B"),
-            key="settings_artifact_color",
-            help="Color for flagged/artifact intervals",
+            value=scheme.artifact,
+            key="sc_artifact",
+            disabled=not is_custom,
+        )
+        new_exclusion = st.color_picker(
+            "Exclusions",
+            value=scheme.exclusion,
+            key="sc_exclusion",
+            disabled=not is_custom,
+        )
+    with col3:
+        new_event = st.color_picker(
+            "Events", value=scheme.event_marker, key="sc_event", disabled=not is_custom
+        )
+        new_section = st.color_picker(
+            "Sections",
+            value=scheme.section_border,
+            key="sc_section",
+            disabled=not is_custom,
         )
 
     # Save button
@@ -2272,10 +2315,19 @@ def render_settings_panel():
                 "show_variability": new_show_variability,
                 "show_gaps": new_show_gaps,
                 "gap_threshold": new_gap_threshold,
-                "colors": {
-                    "line": new_line_color,
-                    "artifact": new_artifact_color,
-                },
+                "colors": (
+                    ColorScheme(
+                        rr_line=new_rr_line,
+                        artifact=new_artifact,
+                        nn_line=new_nn_line,
+                        exclusion=new_exclusion,
+                        event_marker=new_event,
+                        section_border=new_section,
+                    ).to_dict()
+                    if is_custom
+                    else scheme.to_dict()
+                ),
+                "color_preset": selected_preset,
             },
         }
         save_settings(new_settings)
