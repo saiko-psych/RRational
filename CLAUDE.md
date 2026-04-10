@@ -25,7 +25,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## Current Status
 
-**Version**: `v0.9.0` | **Tests**: 101/101 passing
+**Version**: `v0.9.1` | **Tests**: 101/101 passing
 
 **GUI**: 4-tab Streamlit app (Data, Participants, Setup, Analysis)
 **Analysis modes**: Single Participant, Repeating Section, Group, Sequence Comparison

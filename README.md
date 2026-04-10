@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.9.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.1-green.svg)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-91%20passing-brightgreen.svg)](tests/)
 [![Documentation](https://readthedocs.org/projects/rrational/badge/?version=latest)](https://rrational.readthedocs.io)
 
