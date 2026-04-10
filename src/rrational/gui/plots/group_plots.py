@@ -10,26 +10,19 @@ import pandas as pd
 from rrational.analysis.hrv_metrics import get_metric_info
 from rrational.gui.plots.analysis_plots import get_theme_colors, get_plotly_analysis
 
-_DEFAULT_PALETTE = [
-    "#2E86AB",
-    "#A23B72",
-    "#F18F01",
-    "#C73E1D",
-    "#6C757D",
-    "#28A745",
-    "#17A2B8",
-    "#FFC107",
-]
-
 
 def _get_group_palette() -> list[str]:
     """Get group color palette from user config or defaults."""
     try:
         from rrational.gui.theme import get_plot_colors
 
-        return get_plot_colors().get("group_palette", _DEFAULT_PALETTE)
+        from rrational.gui.color_scheme import ColorScheme
+
+        return get_plot_colors().get("group_palette", ColorScheme().group_palette)
     except Exception:
-        return _DEFAULT_PALETTE
+        from rrational.gui.color_scheme import ColorScheme
+
+        return ColorScheme().group_palette
 
 
 def _create_group_bar_chart(

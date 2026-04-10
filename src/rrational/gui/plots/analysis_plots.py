@@ -129,7 +129,7 @@ def create_professional_tachogram(
             x=list(range(n_beats)) + list(range(n_beats - 1, -1, -1)),
             y=[mean_rr + 2 * std_rr] * n_beats + [mean_rr - 2 * std_rr] * n_beats,
             fill="toself",
-            fillcolor="rgba(46, 134, 171, 0.1)",
+            fillcolor=colors.get("section_fill", "rgba(46, 134, 171, 0.1)"),
             line=dict(width=0),
             name="±2 SD",
             hoverinfo="skip",
@@ -143,7 +143,9 @@ def create_professional_tachogram(
             x=list(range(n_beats)) + list(range(n_beats - 1, -1, -1)),
             y=[mean_rr + std_rr] * n_beats + [mean_rr - std_rr] * n_beats,
             fill="toself",
-            fillcolor="rgba(46, 134, 171, 0.2)",
+            fillcolor=colors.get("section_fill", "rgba(46, 134, 171, 0.1)").replace(
+                "0.1", "0.2"
+            ),
             line=dict(width=0),
             name="±1 SD",
             hoverinfo="skip",
@@ -311,7 +313,9 @@ def create_poincare_plot(rr_intervals: list, section_label: str):
             y=ellipse_y.tolist(),
             mode="lines",
             fill="toself",
-            fillcolor="rgba(46, 134, 171, 0.2)",
+            fillcolor=colors.get("section_fill", "rgba(46, 134, 171, 0.1)").replace(
+                "0.1", "0.2"
+            ),
             line=dict(color=colors["rr_line"], width=2),
             name="SD1/SD2 Ellipse",
             hoverinfo="name",

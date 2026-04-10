@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import statistics
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -24,6 +25,24 @@ class GenericRecording:
     source_app: str
     rr_intervals: list[RRInterval]
     metadata: dict
+
+
+def _values_to_rr_intervals(values: list[float]) -> tuple[list[RRInterval], str]:
+    """Convert raw numeric values to RRInterval objects with auto unit detection.
+
+    Returns (intervals, detected_unit) where detected_unit is "seconds" or "milliseconds".
+    """
+    median_val = statistics.median(values)
+    is_seconds = median_val < 10
+
+    intervals = []
+    elapsed = 0
+    for val in values:
+        rr_ms = int(round(val * 1000)) if is_seconds else int(round(val))
+        intervals.append(RRInterval(timestamp=None, rr_ms=rr_ms, elapsed_ms=elapsed))
+        elapsed += rr_ms
+
+    return intervals, "seconds" if is_seconds else "milliseconds"
 
 
 def detect_format(path: Path) -> str | None:
@@ -290,20 +309,7 @@ def _parse_plain_rr(path: Path) -> tuple[list[RRInterval], dict]:
     if not values:
         return [], {}
 
-    # Auto-detect units: if median < 10, assume seconds; else milliseconds
-    import statistics
-
-    median_val = statistics.median(values)
-    is_seconds = median_val < 10
-
-    intervals = []
-    elapsed = 0
-    for val in values:
-        rr_ms = int(round(val * 1000)) if is_seconds else int(round(val))
-        intervals.append(RRInterval(timestamp=None, rr_ms=rr_ms, elapsed_ms=elapsed))
-        elapsed += rr_ms
-
-    unit = "seconds" if is_seconds else "milliseconds"
+    intervals, unit = _values_to_rr_intervals(values)
     return intervals, {"source": "Plain RR", "detected_unit": unit}
 
 
@@ -359,20 +365,8 @@ def _parse_kubios(path: Path) -> tuple[list[RRInterval], dict]:
     if not rr_values:
         return [], metadata
 
-    # Auto-detect units
-    import statistics
-
-    median_val = statistics.median(rr_values)
-    is_seconds = median_val < 10
-
-    intervals = []
-    elapsed = 0
-    for val in rr_values:
-        rr_ms = int(round(val * 1000)) if is_seconds else int(round(val))
-        intervals.append(RRInterval(timestamp=None, rr_ms=rr_ms, elapsed_ms=elapsed))
-        elapsed += rr_ms
-
-    if is_seconds:
+    intervals, unit = _values_to_rr_intervals(rr_values)
+    if unit == "seconds":
         metadata["detected_unit"] = "seconds"
 
     return intervals, metadata
