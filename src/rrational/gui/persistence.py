@@ -41,9 +41,28 @@ DEFAULT_SETTINGS = {
         "show_gaps": True,
         "gap_threshold": 15.0,
         "colors": {
-            "line": "#2E86AB",  # RR interval line color
-            "artifact": "#FF6B6B",  # Artifact marker color
+            "rr_line": "#2E86AB",
+            "artifact": "#FF6B6B",
+            "nn_line": "#28A745",
+            "exclusion": "#FFA500",
+            "event_marker": "#E91E63",
+            "section_fill": "rgba(46, 134, 171, 0.1)",
+            "section_border": "#2E86AB",
+            "vlf_band": "rgba(108, 117, 125, 0.2)",
+            "lf_band": "rgba(255, 193, 7, 0.3)",
+            "hf_band": "rgba(46, 134, 171, 0.3)",
+            "group_palette": [
+                "#2E86AB",
+                "#A23B72",
+                "#F18F01",
+                "#C73E1D",
+                "#6C757D",
+                "#28A745",
+                "#17A2B8",
+                "#FFC107",
+            ],
         },
+        "color_preset": "Scientific",
     },
     "recent_projects": [],  # List of recently opened projects
     "max_recent_projects": 10,
@@ -166,6 +185,7 @@ def migrate_legacy_config() -> bool:
 
 # --- Groups ---
 
+
 def save_groups(groups: dict[str, Any], project_path: Path | None = None) -> None:
     """Save groups configuration to YAML.
 
@@ -197,6 +217,7 @@ def load_groups(project_path: Path | None = None) -> dict[str, Any]:
 
 
 # --- Events ---
+
 
 def save_events(events: dict[str, list[str]], project_path: Path | None = None) -> None:
     """Save events configuration to YAML.
@@ -230,6 +251,7 @@ def load_events(project_path: Path | None = None) -> dict[str, list[str]]:
 
 # --- Sections ---
 
+
 def save_sections(sections: dict[str, Any], project_path: Path | None = None) -> None:
     """Save sections configuration to YAML.
 
@@ -262,7 +284,10 @@ def load_sections(project_path: Path | None = None) -> dict[str, Any]:
 
 # --- Participants ---
 
-def save_participants(participants_data: dict[str, Any], project_path: Path | None = None) -> None:
+
+def save_participants(
+    participants_data: dict[str, Any], project_path: Path | None = None
+) -> None:
     """Save participants configuration to YAML.
 
     Args:
@@ -282,7 +307,9 @@ def save_participants(participants_data: dict[str, Any], project_path: Path | No
         ensure_config_dir()
     target = _get_config_path("participants.yml", project_path)
     with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(participants_data, f, default_flow_style=False, allow_unicode=True)
+        yaml.safe_dump(
+            participants_data, f, default_flow_style=False, allow_unicode=True
+        )
 
 
 def load_participants(project_path: Path | None = None) -> dict[str, Any]:
@@ -303,17 +330,24 @@ def load_participants(project_path: Path | None = None) -> dict[str, Any]:
 
 # --- Event Sequences (formerly Playlist Groups) ---
 
+
 def _migrate_sequence_data(data: dict[str, Any]) -> dict[str, Any]:
     """Migrate legacy playlist_groups data: rename music_order -> condition_order."""
     migrated = {}
     for key, value in data.items():
-        if isinstance(value, dict) and "music_order" in value and "condition_order" not in value:
+        if (
+            isinstance(value, dict)
+            and "music_order" in value
+            and "condition_order" not in value
+        ):
             value = {**value, "condition_order": value.pop("music_order")}
         migrated[key] = value
     return migrated
 
 
-def save_event_sequences(event_sequences: dict[str, Any], project_path: Path | None = None) -> None:
+def save_event_sequences(
+    event_sequences: dict[str, Any], project_path: Path | None = None
+) -> None:
     """Save event sequence configuration to YAML.
 
     Args:
@@ -360,7 +394,10 @@ load_playlist_groups = load_event_sequences
 
 # --- Condition Labels (formerly Music Labels) ---
 
-def save_condition_labels(condition_labels: dict[str, Any], project_path: Path | None = None) -> None:
+
+def save_condition_labels(
+    condition_labels: dict[str, Any], project_path: Path | None = None
+) -> None:
     """Save condition labels configuration to YAML.
 
     Args:
@@ -371,7 +408,9 @@ def save_condition_labels(condition_labels: dict[str, Any], project_path: Path |
         ensure_config_dir()
     target = _get_config_path("condition_labels.yml", project_path)
     with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(condition_labels, f, default_flow_style=False, allow_unicode=True)
+        yaml.safe_dump(
+            condition_labels, f, default_flow_style=False, allow_unicode=True
+        )
 
 
 def load_condition_labels(project_path: Path | None = None) -> dict[str, Any]:
@@ -402,6 +441,7 @@ load_music_labels = load_condition_labels
 
 
 # --- Protocol ---
+
 
 def save_protocol(protocol: dict[str, Any], project_path: Path | None = None) -> None:
     """Save protocol configuration to YAML.
@@ -453,6 +493,7 @@ def load_protocol(project_path: Path | None = None) -> dict[str, Any]:
 
 
 # --- Participant Events ---
+
 
 def save_participant_events(
     participant_id: str,
@@ -512,7 +553,7 @@ def save_participant_events(
             "participant_id": participant_id,
             "format_version": "1.0",
             "source_type": "rrational_toolkit",
-            **serialized
+            **serialized,
         }
 
         with open(participant_file, "w", encoding="utf-8") as f:
@@ -530,7 +571,7 @@ def save_participant_events(
             "participant_id": participant_id,
             "format_version": "1.0",
             "source_type": "rrational_toolkit",
-            **serialized
+            **serialized,
         }
 
         with open(participant_file, "w", encoding="utf-8") as f:
@@ -650,7 +691,9 @@ def delete_participant_events(
             del all_events[participant_id]
 
             with open(PARTICIPANT_EVENTS_FILE, "w", encoding="utf-8") as f:
-                yaml.safe_dump(all_events, f, default_flow_style=False, allow_unicode=True)
+                yaml.safe_dump(
+                    all_events, f, default_flow_style=False, allow_unicode=True
+                )
 
             deleted_any = True
 
@@ -670,6 +713,7 @@ def list_saved_participant_events() -> list[str]:
 
 # --- Settings (always global) ---
 
+
 def save_settings(settings: dict[str, Any]) -> None:
     """Save application settings to YAML.
 
@@ -687,15 +731,20 @@ def save_settings(settings: dict[str, Any]) -> None:
     # Merge with defaults to ensure all keys exist
     merged = {**DEFAULT_SETTINGS, **settings}
     if "plot_options" in settings:
-        merged["plot_options"] = {**DEFAULT_SETTINGS["plot_options"], **settings["plot_options"]}
+        merged["plot_options"] = {
+            **DEFAULT_SETTINGS["plot_options"],
+            **settings["plot_options"],
+        }
         # Also merge nested colors within plot_options
         if "colors" in settings["plot_options"]:
             merged["plot_options"]["colors"] = {
                 **DEFAULT_SETTINGS["plot_options"]["colors"],
-                **settings["plot_options"]["colors"]
+                **settings["plot_options"]["colors"],
             }
         else:
-            merged["plot_options"]["colors"] = DEFAULT_SETTINGS["plot_options"]["colors"].copy()
+            merged["plot_options"]["colors"] = DEFAULT_SETTINGS["plot_options"][
+                "colors"
+            ].copy()
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         yaml.safe_dump(merged, f, default_flow_style=False, allow_unicode=True)
 
@@ -711,12 +760,15 @@ def load_settings() -> dict[str, Any]:
     # Merge with defaults to handle missing keys
     result = {**DEFAULT_SETTINGS, **saved}
     if "plot_options" in saved:
-        result["plot_options"] = {**DEFAULT_SETTINGS["plot_options"], **saved.get("plot_options", {})}
+        result["plot_options"] = {
+            **DEFAULT_SETTINGS["plot_options"],
+            **saved.get("plot_options", {}),
+        }
         # Also merge nested colors within plot_options
         saved_colors = saved.get("plot_options", {}).get("colors", {})
         result["plot_options"]["colors"] = {
             **DEFAULT_SETTINGS["plot_options"]["colors"],
-            **saved_colors
+            **saved_colors,
         }
     else:
         result["plot_options"] = DEFAULT_SETTINGS["plot_options"].copy()
@@ -764,6 +816,7 @@ def get_last_project() -> str | None:
 
 
 # --- Processed Directory ---
+
 
 def get_processed_dir(
     data_dir: str | Path | None = None,
@@ -813,10 +866,12 @@ def list_ready_files_for_participant(
         List of .rrational file paths, sorted by modification time (newest first)
     """
     from rrational.gui.rrational_export import find_rrational_files
+
     return find_rrational_files(participant_id, data_dir, project_path)
 
 
 # --- Artifact Corrections ---
+
 
 def save_artifact_corrections(
     participant_id: str,
@@ -878,15 +933,25 @@ def save_artifact_corrections(
             existing_data = {}
 
     # Migrate old format (v1.2 and earlier) to new section-based format (v1.3)
-    if existing_data.get("format_version", "1.0") < "1.3" and "sections" not in existing_data:
+    if (
+        existing_data.get("format_version", "1.0") < "1.3"
+        and "sections" not in existing_data
+    ):
         # Old format had artifacts at root level - migrate to "_full" section
-        if "algorithm_artifact_indices" in existing_data or "manual_artifacts" in existing_data:
+        if (
+            "algorithm_artifact_indices" in existing_data
+            or "manual_artifacts" in existing_data
+        ):
             old_section_data = {
-                "algorithm_artifact_indices": existing_data.get("algorithm_artifact_indices", []),
+                "algorithm_artifact_indices": existing_data.get(
+                    "algorithm_artifact_indices", []
+                ),
                 "algorithm_method": existing_data.get("algorithm_method"),
                 "algorithm_threshold": existing_data.get("algorithm_threshold"),
                 "manual_artifacts": existing_data.get("manual_artifacts", []),
-                "excluded_artifact_indices": existing_data.get("excluded_artifact_indices", []),
+                "excluded_artifact_indices": existing_data.get(
+                    "excluded_artifact_indices", []
+                ),
                 "scope": existing_data.get("scope"),
                 "saved_at": existing_data.get("saved_at"),
             }
@@ -903,11 +968,15 @@ def save_artifact_corrections(
 
     # Build section data
     section_data = {
-        "algorithm_artifact_indices": list(algorithm_artifacts) if algorithm_artifacts is not None else [],
+        "algorithm_artifact_indices": list(algorithm_artifacts)
+        if algorithm_artifacts is not None
+        else [],
         "algorithm_method": algorithm_method,
         "algorithm_threshold": algorithm_threshold,
         "manual_artifacts": manual_artifacts,
-        "excluded_artifact_indices": list(artifact_exclusions) if artifact_exclusions else [],
+        "excluded_artifact_indices": list(artifact_exclusions)
+        if artifact_exclusions
+        else [],
         "scope": scope,
         "saved_at": datetime.now().isoformat(),
     }
@@ -988,11 +1057,19 @@ def load_artifact_corrections(
                     section_data = data.get("sections", {}).get(section_key)
                     if section_data:
                         return {
-                            "manual_artifacts": section_data.get("manual_artifacts", []),
-                            "excluded_artifact_indices": section_data.get("excluded_artifact_indices", []),
-                            "algorithm_artifact_indices": section_data.get("algorithm_artifact_indices", []),
+                            "manual_artifacts": section_data.get(
+                                "manual_artifacts", []
+                            ),
+                            "excluded_artifact_indices": section_data.get(
+                                "excluded_artifact_indices", []
+                            ),
+                            "algorithm_artifact_indices": section_data.get(
+                                "algorithm_artifact_indices", []
+                            ),
                             "algorithm_method": section_data.get("algorithm_method"),
-                            "algorithm_threshold": section_data.get("algorithm_threshold"),
+                            "algorithm_threshold": section_data.get(
+                                "algorithm_threshold"
+                            ),
                             "scope": section_data.get("scope"),
                             "segment_beats": section_data.get("segment_beats"),
                             "indices_by_type": section_data.get("indices_by_type", {}),
@@ -1018,7 +1095,9 @@ def load_artifact_corrections(
 
             # Include algorithm artifacts if present (format version 1.1+)
             if "algorithm_artifact_indices" in data:
-                result["algorithm_artifact_indices"] = data.get("algorithm_artifact_indices", [])
+                result["algorithm_artifact_indices"] = data.get(
+                    "algorithm_artifact_indices", []
+                )
                 result["algorithm_method"] = data.get("algorithm_method")
                 result["algorithm_threshold"] = data.get("algorithm_threshold")
 
@@ -1044,7 +1123,9 @@ def list_artifact_sections(
         List of section keys (e.g., ["_full", "rest_pre", "music_1"])
         Returns empty list if no artifact data exists.
     """
-    data = load_artifact_corrections(participant_id, data_dir, project_path, section_key=None)
+    data = load_artifact_corrections(
+        participant_id, data_dir, project_path, section_key=None
+    )
     if data is None:
         return []
 
@@ -1073,7 +1154,9 @@ def get_merged_artifacts_for_display(
         - 'excluded_artifact_indices': list of all excluded indices
         - 'sections_info': dict mapping section_key to summary info
     """
-    data = load_artifact_corrections(participant_id, data_dir, project_path, section_key=None)
+    data = load_artifact_corrections(
+        participant_id, data_dir, project_path, section_key=None
+    )
     if data is None:
         return {
             "algorithm_artifact_indices": [],
@@ -1193,13 +1276,17 @@ def load_artifact_corrections_from_rrational(
         # Convert ManualArtifact format to session state format
         converted_manual = []
         for ma in manual_artifacts:
-            converted_manual.append({
-                "original_idx": ma.get("original_idx", 0),
-                "timestamp": ma.get("timestamp", ""),
-                "rr_value": ma.get("rr_value", 0),
-                "source": ma.get("source", "manual"),
-                "plot_idx": ma.get("original_idx", 0),  # Use original_idx as plot_idx
-            })
+            converted_manual.append(
+                {
+                    "original_idx": ma.get("original_idx", 0),
+                    "timestamp": ma.get("timestamp", ""),
+                    "rr_value": ma.get("rr_value", 0),
+                    "source": ma.get("source", "manual"),
+                    "plot_idx": ma.get(
+                        "original_idx", 0
+                    ),  # Use original_idx as plot_idx
+                }
+            )
 
         if converted_manual or excluded_indices:
             return {
@@ -1215,6 +1302,7 @@ def load_artifact_corrections_from_rrational(
 
 
 # --- Section Validations (explicit per-participant storage) ---
+
 
 def save_section_validations(
     participant_id: str,
@@ -1390,6 +1478,7 @@ def list_participants_with_section_validations(
 
 
 # --- NN Intervals (corrected intervals per section) ---
+
 
 def save_nn_intervals(
     participant_id: str,
@@ -1651,10 +1740,14 @@ def delete_nn_intervals(
 
                 if section_name in metadata.get("sections", {}):
                     del metadata["sections"][section_name]
-                    metadata["last_modified"] = __import__("datetime").datetime.now().isoformat()
+                    metadata["last_modified"] = (
+                        __import__("datetime").datetime.now().isoformat()
+                    )
 
                     with open(metadata_file, "w", encoding="utf-8") as f:
-                        yaml.safe_dump(metadata, f, default_flow_style=False, allow_unicode=True)
+                        yaml.safe_dump(
+                            metadata, f, default_flow_style=False, allow_unicode=True
+                        )
                     deleted_any = True
             except Exception:
                 pass
@@ -1681,10 +1774,14 @@ def delete_nn_intervals(
 
                     if section_name in data.get("sections", {}):
                         del data["sections"][section_name]
-                        data["last_modified"] = __import__("datetime").datetime.now().isoformat()
+                        data["last_modified"] = (
+                            __import__("datetime").datetime.now().isoformat()
+                        )
 
                         with open(file_path, "w", encoding="utf-8") as f:
-                            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+                            yaml.safe_dump(
+                                data, f, default_flow_style=False, allow_unicode=True
+                            )
                         deleted_any = True
                 except Exception:
                     pass
@@ -1705,7 +1802,9 @@ def list_sections_with_nn_intervals(
     Returns:
         List of section names that have NN interval data
     """
-    data = load_nn_intervals(participant_id, data_dir=data_dir, project_path=project_path)
+    data = load_nn_intervals(
+        participant_id, data_dir=data_dir, project_path=project_path
+    )
     if data and "sections" in data:
         return list(data["sections"].keys())
     return []
@@ -1734,7 +1833,9 @@ def get_nn_intervals_summary(
 
         Returns None if no NN intervals file exists.
     """
-    data = load_nn_intervals(participant_id, data_dir=data_dir, project_path=project_path)
+    data = load_nn_intervals(
+        participant_id, data_dir=data_dir, project_path=project_path
+    )
     if not data:
         return None
 
@@ -1742,7 +1843,9 @@ def get_nn_intervals_summary(
     for section_name, section_data in data.get("sections", {}).items():
         summary[section_name] = {
             "has_nn": True,
-            "nn_count": section_data.get("final_nn_count", len(section_data.get("intervals", []))),
+            "nn_count": section_data.get(
+                "final_nn_count", len(section_data.get("intervals", []))
+            ),
             "correction_method": section_data.get("correction_method", "unknown"),
             "corrected_at": section_data.get("corrected_at"),
             "intervals_corrected": section_data.get("intervals_corrected", 0),

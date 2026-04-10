@@ -22,35 +22,41 @@ def get_current_theme_colors():
 
     if is_dark:
         return {
-            'bg': '#0E1117',
-            'text': '#FAFAFA',
-            'grid': 'rgba(255,255,255,0.1)',
-            'line': '#3D3D4D',
+            "bg": "#0E1117",
+            "text": "#FAFAFA",
+            "grid": "rgba(255,255,255,0.1)",
+            "line": "#3D3D4D",
         }
     else:
         return {
-            'bg': '#FFFFFF',
-            'text': '#31333F',
-            'grid': 'rgba(0,0,0,0.1)',
-            'line': '#E5E5E5',
+            "bg": "#FFFFFF",
+            "text": "#31333F",
+            "grid": "rgba(0,0,0,0.1)",
+            "line": "#E5E5E5",
         }
 
 
-
-def get_plot_colors():
+def get_plot_colors() -> dict:
     """Get custom plot colors from settings.
 
-    Returns dict with colors for RR line, artifacts, etc.
+    Returns full color dict from ColorScheme, respecting dark mode.
+    Backward-compatible: always includes 'line' key.
     """
+    from rrational.gui.color_scheme import ColorScheme
+
     settings = st.session_state.get("app_settings", {})
-    plot_opts = settings.get("plot_options", {})
-    colors = plot_opts.get("colors", {})
+    colors_dict = settings.get("plot_options", {}).get("colors", {})
+    scheme = ColorScheme.from_dict(colors_dict)
 
-    return {
-        'line': colors.get("line", "#2E86AB"),  # Default: accent blue
-        'artifact': colors.get("artifact", "#FF6B6B"),  # Default: red
-    }
+    # Apply dark variant if dark mode is active
+    is_dark = settings.get("theme", "light") == "dark"
+    if is_dark:
+        scheme = scheme.dark_variant()
 
+    result = scheme.to_dict()
+    # Backward-compat: 'line' key for existing code
+    result["line"] = result["rr_line"]
+    return result
 
 
 def apply_custom_css():
@@ -1142,6 +1148,7 @@ def apply_custom_css():
 
     # JavaScript to apply saved theme and accent color on page load
     import streamlit.components.v1 as components
+
     theme_init_js = """
     <script>
         (function() {
@@ -1480,4 +1487,3 @@ def apply_custom_css():
     </script>
     """
     components.html(theme_init_js, height=0)
-
