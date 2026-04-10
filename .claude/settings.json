@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys,subprocess,os; d=json.load(sys.stdin); f=d.get('tool_input',{}).get('file_path','') or d.get('tool_response',{}).get('filePath',''); (subprocess.run(['uv','run','ruff','check','--fix','--quiet',f],capture_output=True), subprocess.run(['uv','run','ruff','format','--quiet',f],capture_output=True)) if f.endswith('.py') and os.path.exists(f) else None\"",
+            "timeout": 30,
+            "statusMessage": "Ruff auto-lint..."
+          }
+        ]
+      }
+    ]
+  }
+}

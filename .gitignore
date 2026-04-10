@@ -51,10 +51,11 @@ build/
 .python-version
 .uv/
 
-# Claude Code instructions (local only)
+# Claude Code instructions and local settings
 AGENTS.md
 CLAUDE.md
 MEMORY.md
+.claude/settings.local.json
 MEMORY_ARCHIVE.md
 music hrv.md
 

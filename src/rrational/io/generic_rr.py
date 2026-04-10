@@ -19,6 +19,7 @@ from rrational.io.hrv_logger import RRInterval
 @dataclass(slots=True)
 class GenericRecording:
     """Recording loaded from a generic RR interval file."""
+
     participant_id: str
     source_app: str
     rr_intervals: list[RRInterval]
@@ -67,11 +68,15 @@ def detect_format(path: Path) -> str | None:
 
     # Plain RR: just numbers, one per line (Elite HRV, Kubios plain export)
     # Skip leading comment lines (e.g. Kubios signal/series export with # headers)
-    data_lines = [l.strip() for l in lines if l.strip() and not l.strip().startswith("#")]
+    data_lines = [
+        l.strip() for l in lines if l.strip() and not l.strip().startswith("#")
+    ]
     first_data = data_lines[0] if data_lines else ""
     if re.match(r"^\d+\.?\d*$", first_data):
         # Check a few more lines to confirm
-        numeric_count = sum(1 for line in data_lines[:10] if re.match(r"^\d+\.?\d*$", line.strip()))
+        numeric_count = sum(
+            1 for line in data_lines[:10] if re.match(r"^\d+\.?\d*$", line.strip())
+        )
         if numeric_count >= 3:
             return "plain_rr"
 
@@ -194,11 +199,13 @@ def _parse_polar_flow(path: Path) -> tuple[list[RRInterval], dict]:
         except ValueError:
             continue
 
-        intervals.append(RRInterval(
-            timestamp=None,  # No absolute timestamps in Polar Flow export
-            rr_ms=rr_ms,
-            elapsed_ms=int(elapsed_s * 1000),
-        ))
+        intervals.append(
+            RRInterval(
+                timestamp=None,  # No absolute timestamps in Polar Flow export
+                rr_ms=rr_ms,
+                elapsed_ms=int(elapsed_s * 1000),
+            )
+        )
 
     return intervals, {"source": "Polar Flow"}
 
@@ -285,6 +292,7 @@ def _parse_plain_rr(path: Path) -> tuple[list[RRInterval], dict]:
 
     # Auto-detect units: if median < 10, assume seconds; else milliseconds
     import statistics
+
     median_val = statistics.median(values)
     is_seconds = median_val < 10
 
@@ -353,6 +361,7 @@ def _parse_kubios(path: Path) -> tuple[list[RRInterval], dict]:
 
     # Auto-detect units
     import statistics
+
     median_val = statistics.median(rr_values)
     is_seconds = median_val < 10
 

@@ -53,11 +53,12 @@ def _normalize_ts(ts):
         return None
     if isinstance(ts, str):
         from datetime import datetime
+
         try:
             ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except (ValueError, TypeError):
             return None
-    if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
+    if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
         ts = ts.replace(tzinfo=None)
     return ts
 
@@ -71,6 +72,7 @@ def get_pandas():
     global _pd
     if _pd is None:
         import pandas as pd
+
         _pd = pd
     return _pd
 
@@ -86,6 +88,7 @@ def _get_render_setup_tab():
     global _render_setup_tab
     if _render_setup_tab is None:
         from rrational.gui.tabs.setup import render_setup_tab
+
         _render_setup_tab = render_setup_tab
     return _render_setup_tab
 
@@ -95,6 +98,7 @@ def _get_render_data_tab():
     global _render_data_tab
     if _render_data_tab is None:
         from rrational.gui.tabs.data import render_data_tab
+
         _render_data_tab = render_data_tab
     return _render_data_tab
 
@@ -104,11 +108,14 @@ def _get_render_analysis_tab():
     global _render_analysis_tab
     if _render_analysis_tab is None:
         from rrational.gui.tabs.analysis import render_analysis_tab
+
         _render_analysis_tab = render_analysis_tab
     return _render_analysis_tab
 
+
 # Parse command line arguments (passed via: streamlit run app.py -- --test-mode)
-import sys
+import sys  # noqa: E402
+
 TEST_MODE = "--test-mode" in sys.argv or "--test" in sys.argv
 
 # Lazy import for plotly (get_neurokit/get_matplotlib imported from shared) (saves ~0.12s on startup)
@@ -124,6 +131,7 @@ def get_plotly():
         try:
             import plotly.graph_objects as go
             from streamlit_plotly_events import plotly_events
+
             _go = go
             _plotly_events = plotly_events
         except ImportError:
@@ -156,7 +164,13 @@ if "legacy_migration_done" not in st.session_state:
     if migrate_legacy_config():
         st.toast("Migrated settings from previous version", icon="info")
         # Clear session state keys so migrated data will be loaded fresh
-        for key in ["groups", "all_events", "sections", "event_sequences", "playlist_groups"]:
+        for key in [
+            "groups",
+            "all_events",
+            "sections",
+            "event_sequences",
+            "playlist_groups",
+        ]:
             if key in st.session_state:
                 del st.session_state[key]
     st.session_state.legacy_migration_done = True
@@ -191,7 +205,9 @@ if "app_settings" not in st.session_state:
 if "data_dir" not in st.session_state:
     if TEST_MODE:
         # In test mode, auto-load demo data for faster testing
-        demo_path = Path(__file__).parent.parent.parent.parent / "data" / "demo" / "hrv_logger"
+        demo_path = (
+            Path(__file__).parent.parent.parent.parent / "data" / "demo" / "hrv_logger"
+        )
         if demo_path.exists():
             st.session_state.data_dir = str(demo_path)
         else:
@@ -218,7 +234,7 @@ if "default_device_settings" not in st.session_state:
     st.session_state.default_device_settings = {
         "recording_app": "HRV Logger",
         "device": "Polar H10",
-        "sampling_rate": 1000  # Hz - Polar H10 native rate
+        "sampling_rate": 1000,  # Hz - Polar H10 native rate
     }
 # Condition labels (e.g., condition_a -> "Treatment Alpha")
 # Skip loading in demo mode - use empty defaults
@@ -257,7 +273,7 @@ if "groups" not in st.session_state:
             "Default": {
                 "label": "Default Group",
                 "expected_events": DEFAULT_CANONICAL_EVENTS.copy(),
-                "selected_sections": []  # ISSUE 7: Add sections selection
+                "selected_sections": [],  # ISSUE 7: Add sections selection
             }
         }
     else:
@@ -280,10 +296,30 @@ if "sections" not in st.session_state:
     if not loaded_sections:
         # Default sections - start_events/end_events are lists (any of these events can start/end the section)
         st.session_state.sections = {
-            "rest_pre": {"label": "Pre-Rest", "description": "Baseline rest period", "start_events": ["rest_pre_start"], "end_events": ["rest_pre_end"]},
-            "measurement": {"label": "Measurement", "description": "Main measurement period", "start_events": ["measurement_start"], "end_events": ["measurement_end"]},
-            "pause": {"label": "Pause", "description": "Break between blocks", "start_events": ["pause_start"], "end_events": ["pause_end"]},
-            "rest_post": {"label": "Post-Rest", "description": "Post-measurement rest", "start_events": ["rest_post_start"], "end_events": ["rest_post_end"]},
+            "rest_pre": {
+                "label": "Pre-Rest",
+                "description": "Baseline rest period",
+                "start_events": ["rest_pre_start"],
+                "end_events": ["rest_pre_end"],
+            },
+            "measurement": {
+                "label": "Measurement",
+                "description": "Main measurement period",
+                "start_events": ["measurement_start"],
+                "end_events": ["measurement_end"],
+            },
+            "pause": {
+                "label": "Pause",
+                "description": "Break between blocks",
+                "start_events": ["pause_start"],
+                "end_events": ["pause_end"],
+            },
+            "rest_post": {
+                "label": "Post-Rest",
+                "description": "Post-measurement rest",
+                "start_events": ["rest_post_start"],
+                "end_events": ["rest_post_end"],
+            },
         }
     else:
         # Migrate old format (start_event/end_event) to new format (start_events/end_events)
@@ -295,8 +331,13 @@ if "sections" not in st.session_state:
         st.session_state.sections = loaded_sections
 
 # Create normalizer from GUI events - only recreate when events change
-_events_hash = hash(frozenset((k, tuple(v)) for k, v in st.session_state.all_events.items()))
-if "normalizer" not in st.session_state or st.session_state.get("_events_hash") != _events_hash:
+_events_hash = hash(
+    frozenset((k, tuple(v)) for k, v in st.session_state.all_events.items())
+)
+if (
+    "normalizer" not in st.session_state
+    or st.session_state.get("_events_hash") != _events_hash
+):
     st.session_state.normalizer = create_gui_normalizer(st.session_state.all_events)
     st.session_state._events_hash = _events_hash
 
@@ -306,7 +347,10 @@ if not st.session_state.summaries:
     auto_load_enabled = st.session_state.app_settings.get("auto_load", False)
     should_auto_load = (TEST_MODE or auto_load_enabled) and st.session_state.data_dir
     if should_auto_load:
-        from rrational.gui.shared import cached_load_hrv_logger_preview, cached_load_vns_preview
+        from rrational.gui.shared import (
+            cached_load_hrv_logger_preview,
+            cached_load_vns_preview,
+        )
         from rrational.gui.tabs.data import RECORDING_APP_DETECTION
 
         config_dict = {"rr_min_ms": 200, "rr_max_ms": 2000, "sudden_change_pct": 100}
@@ -360,6 +404,7 @@ if not st.session_state.summaries:
             except Exception as e:
                 # Log error but continue - don't let one folder failure stop all loading
                 import logging
+
                 logging.warning(f"Auto-load: Failed to load from {folder_path}: {e}")
 
         if summaries:
@@ -373,12 +418,17 @@ if not st.session_state.summaries:
 
 # Load participant-specific data (groups, playlists, labels, event orders, manual events)
 # Skip loading in demo mode - use fresh defaults
-if "participant_groups" not in st.session_state or "event_order" not in st.session_state:
+if (
+    "participant_groups" not in st.session_state
+    or "event_order" not in st.session_state
+):
     loaded_participants = None if _is_demo_mode else load_participants(_project_path)
     if loaded_participants:
         # Extract randomization labels if present
         if "_randomization_labels" in loaded_participants:
-            st.session_state.randomization_labels = loaded_participants.pop("_randomization_labels")
+            st.session_state.randomization_labels = loaded_participants.pop(
+                "_randomization_labels"
+            )
 
         st.session_state.participant_groups = {
             pid: data.get("group", "Default")
@@ -446,7 +496,7 @@ def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
 
     # Force Agg backend for figure generation
     original_backend = matplotlib.get_backend()
-    matplotlib.use('Agg', force=True)
+    matplotlib.use("Agg", force=True)
 
     try:
         nk = get_neurokit()
@@ -463,8 +513,11 @@ def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
         try:
             # Use iterative=False for comprehensive artifact detection
             info, _ = nk.signal_fixpeaks(
-                peak_indices, sampling_rate=1000, iterative=False,
-                method="Kubios", show=True,
+                peak_indices,
+                sampling_rate=1000,
+                iterative=False,
+                method="Kubios",
+                show=True,
             )
             new_figs = set(plt.get_fignums()) - existing_figs
             if new_figs:
@@ -472,7 +525,9 @@ def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
                 fig.set_size_inches(14, 10)
                 fig.tight_layout()
                 buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor='white')
+                fig.savefig(
+                    buf, format="png", dpi=100, bbox_inches="tight", facecolor="white"
+                )
                 buf.seek(0)
                 img_bytes = buf.getvalue()
                 plt.close(fig)
@@ -491,9 +546,14 @@ def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "threshold",
-                               threshold_pct: float = 0.20, segment_beats: int = 300,
-                               window_s: float | None = None):
+def cached_artifact_detection(
+    rr_values_tuple,
+    timestamps_tuple,
+    method: str = "threshold",
+    threshold_pct: float = 0.20,
+    segment_beats: int = 300,
+    window_s: float | None = None,
+):
     """Cache artifact detection results with indices AND corrected RR from NeuroKit2.
 
     Args:
@@ -513,11 +573,20 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
     timestamps_list = list(timestamps_tuple)
 
     if len(rr_list) < 10:
-        return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
-                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
-                "indices_by_type": {},
-                "method": method, "segment_stats": [], "corrected_rr": rr_list,
-                "corrected_timestamps": timestamps_list, "original_rr": rr_list}
+        return {
+            "artifact_indices": [],
+            "artifact_timestamps": [],
+            "artifact_rr": [],
+            "total_artifacts": 0,
+            "artifact_ratio": 0.0,
+            "by_type": {},
+            "indices_by_type": {},
+            "method": method,
+            "segment_stats": [],
+            "corrected_rr": rr_list,
+            "corrected_timestamps": timestamps_list,
+            "original_rr": rr_list,
+        }
 
     try:
         import numpy as np
@@ -533,7 +602,7 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
 
             for i in range(1, len(rr_array)):
                 # Check ratio to previous beat
-                ratio = rr_array[i] / rr_array[i-1]
+                ratio = rr_array[i] / rr_array[i - 1]
                 if ratio < (1 - threshold_pct) or ratio > (1 + threshold_pct):
                     artifact_indices.append(i)
 
@@ -553,37 +622,60 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                     elif idx == len(corrected_rr) - 1:
                         corrected_rr[idx] = corrected_rr[idx - 1]
                     else:
-                        corrected_rr[idx] = (corrected_rr[idx - 1] + corrected_rr[idx + 1]) / 2
+                        corrected_rr[idx] = (
+                            corrected_rr[idx - 1] + corrected_rr[idx + 1]
+                        ) / 2
 
         elif method in ("kubios_segmented", "lipponen2019_segmented"):
             # Segmented Lipponen/Kubios - process long recordings in chunks for better sensitivity
             # Lipponen2019 uses NeuroKit2's Kubios method (Lipponen & Tarvainen, 2019)
             if get_neurokit() is None:
-                return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
-                        "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
-                        "indices_by_type": {},
-                        "method": method, "segment_stats": [], "corrected_rr": rr_list,
-                        "corrected_timestamps": timestamps_list, "original_rr": rr_list}
+                return {
+                    "artifact_indices": [],
+                    "artifact_timestamps": [],
+                    "artifact_rr": [],
+                    "total_artifacts": 0,
+                    "artifact_ratio": 0.0,
+                    "by_type": {},
+                    "indices_by_type": {},
+                    "method": method,
+                    "segment_stats": [],
+                    "corrected_rr": rr_list,
+                    "corrected_timestamps": timestamps_list,
+                    "original_rr": rr_list,
+                }
 
-            from rrational.gui.segmentation import generate_segments, assess_segment_quality
+            from rrational.gui.segmentation import (
+                generate_segments,
+                assess_segment_quality,
+            )
 
             nk = get_neurokit()
             rr_array = np.array(rr_list, dtype=float)
 
             # Determine window size: prefer window_s, fall back to segment_beats estimate
-            effective_window_s = window_s if window_s is not None else segment_beats * 0.8
+            effective_window_s = (
+                window_s if window_s is not None else segment_beats * 0.8
+            )
 
             # Generate time-based segments (no overlap for artifact detection)
-            time_segments = generate_segments(rr_array, window_s=effective_window_s, overlap_pct=0.0)
+            time_segments = generate_segments(
+                rr_array, window_s=effective_window_s, overlap_pct=0.0
+            )
 
             # Initialize combined results
             artifact_indices_set = set()
             by_type = {"ectopic": 0, "missed": 0, "extra": 0, "longshort": 0}
-            indices_by_type = {"ectopic": set(), "missed": set(), "extra": set(), "longshort": set()}
+            indices_by_type = {
+                "ectopic": set(),
+                "missed": set(),
+                "extra": set(),
+                "longshort": set(),
+            }
             segment_stats = []  # Track per-segment artifact percentages
 
             for seg in time_segments:
-                segment_rr = rr_array[seg.beat_start:seg.beat_end]
+                segment_rr = rr_array[seg.beat_start : seg.beat_end]
 
                 if len(segment_rr) < 10:
                     continue
@@ -611,7 +703,11 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                         elif not isinstance(indices, list):
                             indices = []
 
-                        global_indices = [i + seg.beat_start for i in indices if 0 <= i < len(segment_rr)]
+                        global_indices = [
+                            i + seg.beat_start
+                            for i in indices
+                            if 0 <= i < len(segment_rr)
+                        ]
                         by_type[artifact_type] += len(global_indices)
                         indices_by_type[artifact_type].update(global_indices)
                         artifact_indices_set.update(global_indices)
@@ -624,23 +720,29 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
 
                 # Update segment with artifact info
                 seg.artifact_count = segment_artifacts
-                seg.artifact_pct = round(segment_artifacts / seg.n_beats * 100, 2) if seg.n_beats > 0 else 0.0
+                seg.artifact_pct = (
+                    round(segment_artifacts / seg.n_beats * 100, 2)
+                    if seg.n_beats > 0
+                    else 0.0
+                )
                 seg.quality_grade = assess_segment_quality(seg)
                 seg.included = seg.quality_grade != "exclude"
 
                 # Backward-compatible segment stats
-                segment_stats.append({
-                    "segment": seg.idx + 1,
-                    "start_beat": seg.beat_start,
-                    "end_beat": seg.beat_end,
-                    "n_beats": seg.n_beats,
-                    "n_artifacts": segment_artifacts,
-                    "artifact_pct": seg.artifact_pct,
-                    "start_ms": seg.start_ms,
-                    "end_ms": seg.end_ms,
-                    "duration_s": seg.duration_s,
-                    "quality_grade": seg.quality_grade,
-                })
+                segment_stats.append(
+                    {
+                        "segment": seg.idx + 1,
+                        "start_beat": seg.beat_start,
+                        "end_beat": seg.beat_end,
+                        "n_beats": seg.n_beats,
+                        "n_artifacts": segment_artifacts,
+                        "artifact_pct": seg.artifact_pct,
+                        "start_ms": seg.start_ms,
+                        "end_ms": seg.end_ms,
+                        "duration_s": seg.duration_s,
+                        "quality_grade": seg.quality_grade,
+                    }
+                )
 
             artifact_indices = sorted(artifact_indices_set)
             # Convert indices_by_type sets to sorted lists
@@ -658,16 +760,27 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                     elif idx == len(corrected_rr) - 1:
                         corrected_rr[idx] = corrected_rr[idx - 1]
                     else:
-                        corrected_rr[idx] = (corrected_rr[idx - 1] + corrected_rr[idx + 1]) / 2
+                        corrected_rr[idx] = (
+                            corrected_rr[idx - 1] + corrected_rr[idx + 1]
+                        ) / 2
 
         elif method in ("kubios", "lipponen2019"):
             # Single-pass Lipponen/Kubios method (Lipponen & Tarvainen, 2019)
             if get_neurokit() is None:
-                return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
-                        "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
-                        "indices_by_type": {},
-                        "method": method, "segment_stats": [], "corrected_rr": rr_list,
-                        "corrected_timestamps": timestamps_list, "original_rr": rr_list}
+                return {
+                    "artifact_indices": [],
+                    "artifact_timestamps": [],
+                    "artifact_rr": [],
+                    "total_artifacts": 0,
+                    "artifact_ratio": 0.0,
+                    "by_type": {},
+                    "indices_by_type": {},
+                    "method": method,
+                    "segment_stats": [],
+                    "corrected_rr": rr_list,
+                    "corrected_timestamps": timestamps_list,
+                    "original_rr": rr_list,
+                }
 
             import io
             import matplotlib
@@ -689,7 +802,7 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
 
             # Phase 1: Detection with show=True to capture diagnostic
             original_backend = matplotlib.get_backend()
-            matplotlib.use('Agg', force=True)
+            matplotlib.use("Agg", force=True)
             was_interactive = plt.isinteractive()
             plt.ioff()
             existing_figs = set(plt.get_fignums())
@@ -714,7 +827,13 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                     fig.set_size_inches(14, 10)
                     fig.tight_layout()
                     buf = io.BytesIO()
-                    fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor='white')
+                    fig.savefig(
+                        buf,
+                        format="png",
+                        dpi=100,
+                        bbox_inches="tight",
+                        facecolor="white",
+                    )
                     buf.seek(0)
                     diagnostic_bytes = buf.getvalue()
                     plt.close(fig)
@@ -763,7 +882,9 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
                         corrected_rr[idx] = corrected_rr[idx - 1]
                     else:
                         # Middle: use mean of neighbors
-                        corrected_rr[idx] = (corrected_rr[idx - 1] + corrected_rr[idx + 1]) / 2
+                        corrected_rr[idx] = (
+                            corrected_rr[idx - 1] + corrected_rr[idx + 1]
+                        ) / 2
 
         else:
             # Unknown method, fall back to threshold
@@ -788,7 +909,9 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             "indices_by_type": indices_by_type,
             "method": method,
             "segment_stats": segment_stats,
-            "segments": time_segments if method in ("kubios_segmented", "lipponen2019_segmented") else [],
+            "segments": time_segments
+            if method in ("kubios_segmented", "lipponen2019_segmented")
+            else [],
             "corrected_rr": corrected_rr,
             "corrected_timestamps": timestamps_list,
             "original_rr": rr_list,
@@ -796,11 +919,21 @@ def cached_artifact_detection(rr_values_tuple, timestamps_tuple, method: str = "
             "window_s": window_s,
         }
     except Exception:
-        return {"artifact_indices": [], "artifact_timestamps": [], "artifact_rr": [],
-                "total_artifacts": 0, "artifact_ratio": 0.0, "by_type": {},
-                "indices_by_type": {}, "diagnostic_bytes": None,
-                "method": method, "segment_stats": [], "corrected_rr": rr_list,
-                "corrected_timestamps": timestamps_list, "original_rr": rr_list}
+        return {
+            "artifact_indices": [],
+            "artifact_timestamps": [],
+            "artifact_rr": [],
+            "total_artifacts": 0,
+            "artifact_ratio": 0.0,
+            "by_type": {},
+            "indices_by_type": {},
+            "diagnostic_bytes": None,
+            "method": method,
+            "segment_stats": [],
+            "corrected_rr": rr_list,
+            "corrected_timestamps": timestamps_list,
+            "original_rr": rr_list,
+        }
 
 
 def run_segmented_artifact_detection_at_gaps(
@@ -834,9 +967,12 @@ def run_segmented_artifact_detection_at_gaps(
     if not gap_adjacent_indices or len(rr_values) < 10:
         # No gaps - run normal detection
         return cached_artifact_detection(
-            tuple(rr_values), tuple(timestamps),
-            method=method, threshold_pct=threshold_pct,
-            segment_beats=segment_beats, window_s=window_s
+            tuple(rr_values),
+            tuple(timestamps),
+            method=method,
+            threshold_pct=threshold_pct,
+            segment_beats=segment_beats,
+            window_s=window_s,
         )
 
     # Sort gap boundary indices
@@ -865,7 +1001,12 @@ def run_segmented_artifact_detection_at_gaps(
             "total_artifacts": 0,
             "artifact_ratio": 0.0,
             "by_type": {"ectopic": 0, "missed": 0, "extra": 0, "longshort": 0},
-            "indices_by_type": {"ectopic": [], "missed": [], "extra": [], "longshort": []},
+            "indices_by_type": {
+                "ectopic": [],
+                "missed": [],
+                "extra": [],
+                "longshort": [],
+            },
             "method": method,
             "segment_stats": [],
             "corrected_rr": rr_values,
@@ -889,13 +1030,18 @@ def run_segmented_artifact_detection_at_gaps(
 
         # Run detection on this segment
         seg_result = cached_artifact_detection(
-            tuple(seg_rr), tuple(seg_ts),
-            method=method, threshold_pct=threshold_pct,
-            segment_beats=segment_beats, window_s=window_s
+            tuple(seg_rr),
+            tuple(seg_ts),
+            method=method,
+            threshold_pct=threshold_pct,
+            segment_beats=segment_beats,
+            window_s=window_s,
         )
 
         # Map indices back to original coordinates
-        seg_artifact_indices = [i + seg_start for i in seg_result.get("artifact_indices", [])]
+        seg_artifact_indices = [
+            i + seg_start for i in seg_result.get("artifact_indices", [])
+        ]
         all_artifact_indices.extend(seg_artifact_indices)
 
         # Map indices_by_type back to original coordinates
@@ -923,16 +1069,20 @@ def run_segmented_artifact_detection_at_gaps(
         # Track per-gap-segment summary stats
         seg_n_artifacts = len(seg_artifact_indices)
         seg_n_beats = seg_end - seg_start
-        seg_artifact_pct = (seg_n_artifacts / seg_n_beats * 100) if seg_n_beats > 0 else 0.0
-        gap_segment_stats.append({
-            "gap_segment": seg_idx + 1,
-            "start_beat": seg_start,
-            "end_beat": seg_end,
-            "n_beats": seg_n_beats,
-            "n_artifacts": seg_n_artifacts,
-            "artifact_pct": round(seg_artifact_pct, 2),
-            "by_type": dict(seg_result.get("by_type", {})),
-        })
+        seg_artifact_pct = (
+            (seg_n_artifacts / seg_n_beats * 100) if seg_n_beats > 0 else 0.0
+        )
+        gap_segment_stats.append(
+            {
+                "gap_segment": seg_idx + 1,
+                "start_beat": seg_start,
+                "end_beat": seg_end,
+                "n_beats": seg_n_beats,
+                "n_artifacts": seg_n_artifacts,
+                "artifact_pct": round(seg_artifact_pct, 2),
+                "by_type": dict(seg_result.get("by_type", {})),
+            }
+        )
 
     # Build merged result
     total_artifacts = len(all_artifact_indices)
@@ -940,8 +1090,16 @@ def run_segmented_artifact_detection_at_gaps(
 
     return {
         "artifact_indices": sorted(all_artifact_indices),
-        "artifact_timestamps": [timestamps[i] for i in sorted(all_artifact_indices) if 0 <= i < len(timestamps)],
-        "artifact_rr": [rr_values[i] for i in sorted(all_artifact_indices) if 0 <= i < len(rr_values)],
+        "artifact_timestamps": [
+            timestamps[i]
+            for i in sorted(all_artifact_indices)
+            if 0 <= i < len(timestamps)
+        ],
+        "artifact_rr": [
+            rr_values[i]
+            for i in sorted(all_artifact_indices)
+            if 0 <= i < len(rr_values)
+        ],
         "total_artifacts": total_artifacts,
         "artifact_ratio": artifact_ratio,
         "by_type": all_by_type,
@@ -958,7 +1116,9 @@ def run_segmented_artifact_detection_at_gaps(
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _deprecated_cached_artifact_correction(rr_values_tuple, timestamps_tuple, artifact_indices_tuple):
+def _deprecated_cached_artifact_correction(
+    rr_values_tuple, timestamps_tuple, artifact_indices_tuple
+):
     """Generate corrected NN intervals by interpolating artifacts.
 
     Uses cubic interpolation to replace artifact values with estimated values
@@ -995,7 +1155,7 @@ def _deprecated_cached_artifact_correction(rr_values_tuple, timestamps_tuple, ar
             }
 
         # Cubic interpolation for smoother correction
-        f = interp1d(valid_indices, valid_rr, kind='cubic', fill_value='extrapolate')
+        f = interp1d(valid_indices, valid_rr, kind="cubic", fill_value="extrapolate")
         corrected_rr = f(np.arange(len(rr_array)))
 
         # Keep original values for non-artifacts (only interpolate artifacts)
@@ -1023,12 +1183,22 @@ def cached_gap_detection(timestamps_tuple, rr_values_tuple, gap_threshold_s: flo
     rr_values = list(rr_values_tuple) if rr_values_tuple else None
 
     if len(timestamps) < 2:
-        return {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0}
+        return {
+            "gaps": [],
+            "total_gaps": 0,
+            "total_gap_duration_s": 0.0,
+            "gap_ratio": 0.0,
+        }
 
     try:
         valid_mask = np.array([t is not None for t in timestamps])
         if not np.any(valid_mask):
-            return {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0}
+            return {
+                "gaps": [],
+                "total_gaps": 0,
+                "total_gap_duration_s": 0.0,
+                "gap_ratio": 0.0,
+            }
 
         ts_seconds = np.array([t.timestamp() if t else np.nan for t in timestamps])
         ts_diff = np.diff(ts_seconds)
@@ -1047,34 +1217,56 @@ def cached_gap_detection(timestamps_tuple, rr_values_tuple, gap_threshold_s: flo
         total_gap_duration = 0.0
 
         for idx in gap_indices:
-            gap_duration = float(unexplained_time[idx]) if rr_values else float(ts_diff[idx])
+            gap_duration = (
+                float(unexplained_time[idx]) if rr_values else float(ts_diff[idx])
+            )
             if gap_duration > 0:
-                gaps.append({
-                    "start_time": timestamps[idx],
-                    "end_time": timestamps[idx + 1],
-                    "duration_s": gap_duration,
-                    "start_idx": int(idx),
-                    "end_idx": int(idx + 1)
-                })
+                gaps.append(
+                    {
+                        "start_time": timestamps[idx],
+                        "end_time": timestamps[idx + 1],
+                        "duration_s": gap_duration,
+                        "start_idx": int(idx),
+                        "end_idx": int(idx + 1),
+                    }
+                )
                 total_gap_duration += gap_duration
 
-        recording_duration = float(ts_seconds[-1] - ts_seconds[0]) if not np.isnan(ts_seconds[0]) else 0.0
+        recording_duration = (
+            float(ts_seconds[-1] - ts_seconds[0])
+            if not np.isnan(ts_seconds[0])
+            else 0.0
+        )
 
         return {
             "gaps": gaps,
             "total_gaps": len(gaps),
             "total_gap_duration_s": total_gap_duration,
-            "gap_ratio": total_gap_duration / recording_duration if recording_duration > 0 else 0.0
+            "gap_ratio": total_gap_duration / recording_duration
+            if recording_duration > 0
+            else 0.0,
         }
     except Exception:
-        return {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0}
+        return {
+            "gaps": [],
+            "total_gaps": 0,
+            "total_gap_duration_s": 0.0,
+            "gap_ratio": 0.0,
+        }
 
 
 @st.cache_data(show_spinner=False, ttl=600)
-def cached_build_participant_table(summaries_data: tuple, participant_groups: dict, participant_randomizations: dict,
-                                   group_labels: dict, randomization_labels: dict, loaded_participants_keys: tuple):
+def cached_build_participant_table(
+    summaries_data: tuple,
+    participant_groups: dict,
+    participant_randomizations: dict,
+    group_labels: dict,
+    randomization_labels: dict,
+    loaded_participants_keys: tuple,
+):
     """Cache the participant table data to avoid rebuilding on every rerun."""
     from rrational.prep.participant_table import build_participant_table
+
     return build_participant_table(
         summaries_data=[dict(t) for t in summaries_data],
         participant_groups=participant_groups,
@@ -1103,22 +1295,26 @@ def serialize_summaries_for_cache():
         recording_dt_str = ""
         if s.recording_datetime:
             recording_dt_str = s.recording_datetime.strftime("%Y-%m-%d %H:%M")
-        result.append({
-            "participant_id": s.participant_id,
-            "artifact_ratio": s.artifact_ratio,
-            "duplicate_rr_intervals": s.duplicate_rr_intervals,
-            "rr_file_count": getattr(s, 'rr_file_count', 1),
-            "events_file_count": getattr(s, 'events_file_count', 1 if s.events_detected > 0 else 0),
-            "events_detected": s.events_detected,
-            "total_beats": s.total_beats,
-            "retained_beats": s.retained_beats,
-            "duration_s": s.duration_s,
-            "duplicate_events": s.duplicate_events,
-            "rr_min_ms": s.rr_min_ms,
-            "rr_max_ms": s.rr_max_ms,
-            "rr_mean_ms": s.rr_mean_ms,
-            "recording_datetime_str": recording_dt_str,
-        })
+        result.append(
+            {
+                "participant_id": s.participant_id,
+                "artifact_ratio": s.artifact_ratio,
+                "duplicate_rr_intervals": s.duplicate_rr_intervals,
+                "rr_file_count": getattr(s, "rr_file_count", 1),
+                "events_file_count": getattr(
+                    s, "events_file_count", 1 if s.events_detected > 0 else 0
+                ),
+                "events_detected": s.events_detected,
+                "total_beats": s.total_beats,
+                "retained_beats": s.retained_beats,
+                "duration_s": s.duration_s,
+                "duplicate_events": s.duplicate_events,
+                "rr_min_ms": s.rr_min_ms,
+                "rr_max_ms": s.rr_max_ms,
+                "rr_mean_ms": s.rr_mean_ms,
+                "recording_datetime_str": recording_dt_str,
+            }
+        )
 
     # Cache it
     serialized = tuple(tuple(sorted(d.items())) for d in result)
@@ -1165,7 +1361,9 @@ def render_participant_table_fragment():
     st.subheader("Participants Overview")
 
     # Build group labels dict (group_id -> label)
-    group_labels = {gid: gdata.get("label", gid) for gid, gdata in st.session_state.groups.items()}
+    group_labels = {
+        gid: gdata.get("label", gid) for gid, gdata in st.session_state.groups.items()
+    }
 
     # Build randomization labels from event_sequences (primary source)
     # Merge with any custom labels in randomization_labels (fallback for non-sequence values)
@@ -1185,7 +1383,7 @@ def render_participant_table_fragment():
         dict(st.session_state.participant_randomizations),
         group_labels,
         randomization_labels,
-        tuple(loaded_participants.keys())
+        tuple(loaded_participants.keys()),
     )
 
     total_participants = len(st.session_state.summaries)
@@ -1198,7 +1396,9 @@ def render_participant_table_fragment():
                 st.markdown(f"- {issue}")
             st.markdown("---")
     else:
-        st.success(f"All {total_participants} participants look good! No issues detected.")
+        st.success(
+            f"All {total_participants} participants look good! No issues detected."
+        )
 
     # Cache DataFrame creation (avoid rebuilding on every rerun)
     df_cache_key = f"df_{len(participants_data)}_{participants_data[0]['Participant'] if participants_data else ''}"
@@ -1208,7 +1408,9 @@ def render_participant_table_fragment():
     df_participants = st.session_state._df_participants
 
     # Build label -> ID lookup for saving
-    label_to_group_id = {gdata.get("label", gid): gid for gid, gdata in st.session_state.groups.items()}
+    label_to_group_id = {
+        gdata.get("label", gid): gid for gid, gdata in st.session_state.groups.items()
+    }
     group_label_options = list(label_to_group_id.keys())
 
     # Editable dataframe with better column config
@@ -1275,10 +1477,23 @@ def render_participant_table_fragment():
                 help="Number of duplicate event occurrences",
             ),
         },
-        width='stretch',
+        width="stretch",
         hide_index=True,
         key="participants_table",
-        disabled=["Participant", "Saved", "Date/Time", "Total Beats", "Retained", "Duplicates", "Duration (min)", "Events", "Total Events", "Duplicate Events", "RR Range (ms)", "Mean RR (ms)"]
+        disabled=[
+            "Participant",
+            "Saved",
+            "Date/Time",
+            "Total Beats",
+            "Retained",
+            "Duplicates",
+            "Duration (min)",
+            "Events",
+            "Total Events",
+            "Duplicate Events",
+            "RR Range (ms)",
+            "Mean RR (ms)",
+        ],
     )
 
     # Auto-save group assignments when changed (map label back to group ID)
@@ -1292,7 +1507,9 @@ def render_participant_table_fragment():
             groups_changed = True
 
     # Auto-save randomization assignments when changed
-    edited_randomizations = dict(zip(edited_df["Participant"], edited_df["Randomization"]))
+    edited_randomizations = dict(
+        zip(edited_df["Participant"], edited_df["Randomization"])
+    )
     randomizations_changed = False
     for pid, new_rand in edited_randomizations.items():
         current_rand = st.session_state.participant_randomizations.get(pid, "")
@@ -1318,7 +1535,8 @@ def render_participant_table_fragment():
     if st.session_state.get("_high_duplicates_cache_key") != dup_cache_key:
         st.session_state._high_duplicates = [
             (p["Participant"], p["Duplicates"])
-            for p in participants_data if p["Duplicates"] > 0
+            for p in participants_data
+            if p["Duplicates"] > 0
         ]
         st.session_state._high_duplicates_cache_key = dup_cache_key
     high_duplicates = st.session_state._high_duplicates
@@ -1341,7 +1559,9 @@ def render_participant_table_fragment():
         Default column names: `code` (participant ID), `group`, `sequence` (randomization)
         """)
 
-        uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], key="assignment_csv_upload")
+        uploaded_file = st.file_uploader(
+            "Upload CSV file", type=["csv"], key="assignment_csv_upload"
+        )
 
         if uploaded_file is not None:
             try:
@@ -1357,37 +1577,52 @@ def render_participant_table_fragment():
                                 return col
                     return ""
 
-                default_id = find_default(columns, ["code", "id", "participant", "participant_id", "subject"])
+                default_id = find_default(
+                    columns, ["code", "id", "participant", "participant_id", "subject"]
+                )
                 default_group = find_default(columns, ["group", "condition", "gruppe"])
-                default_rand = find_default(columns, ["sequence", "playlist", "randomization", "randomisation", "rand"])
+                default_rand = find_default(
+                    columns,
+                    ["sequence", "playlist", "randomization", "randomisation", "rand"],
+                )
 
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     id_options = [""] + columns
-                    id_idx = id_options.index(default_id) if default_id in id_options else 0
+                    id_idx = (
+                        id_options.index(default_id) if default_id in id_options else 0
+                    )
                     id_col = st.selectbox(
                         "Participant ID column",
                         options=id_options,
                         index=id_idx,
-                        key="import_id_col"
+                        key="import_id_col",
                     )
                 with col2:
                     group_options = ["(skip)"] + columns
-                    group_idx = group_options.index(default_group) if default_group in group_options else 0
+                    group_idx = (
+                        group_options.index(default_group)
+                        if default_group in group_options
+                        else 0
+                    )
                     group_col = st.selectbox(
                         "Group column",
                         options=group_options,
                         index=group_idx,
-                        key="import_group_col"
+                        key="import_group_col",
                     )
                 with col3:
                     rand_options = ["(skip)"] + columns
-                    rand_idx = rand_options.index(default_rand) if default_rand in rand_options else 0
+                    rand_idx = (
+                        rand_options.index(default_rand)
+                        if default_rand in rand_options
+                        else 0
+                    )
                     rand_col = st.selectbox(
                         "Randomization column",
                         options=rand_options,
                         index=rand_idx,
-                        key="import_rand_col"
+                        key="import_rand_col",
                     )
 
                 use_group = group_col and group_col != "(skip)"
@@ -1400,9 +1635,13 @@ def render_participant_table_fragment():
                     matches = participant_ids & import_ids
                     missing = participant_ids - import_ids
 
-                    st.success(f"Matching participants: **{len(matches)}** / {len(participant_ids)}")
+                    st.success(
+                        f"Matching participants: **{len(matches)}** / {len(participant_ids)}"
+                    )
                     if missing:
-                        st.warning(f"Not found in CSV: {', '.join(sorted(missing)[:5])}{'...' if len(missing) > 5 else ''}")
+                        st.warning(
+                            f"Not found in CSV: {', '.join(sorted(missing)[:5])}{'...' if len(missing) > 5 else ''}"
+                        )
 
                     # Show preview
                     if matches:
@@ -1410,16 +1649,28 @@ def render_participant_table_fragment():
                         for _, row in import_df.head(5).iterrows():
                             pid = str(row[id_col])
                             if pid in participant_ids:
-                                preview_data.append({
-                                    "ID": pid,
-                                    "Group": str(row[group_col]) if use_group and get_pandas().notna(row[group_col]) else "-",
-                                    "Randomization": str(row[rand_col]) if use_rand and get_pandas().notna(row[rand_col]) else "-"
-                                })
+                                preview_data.append(
+                                    {
+                                        "ID": pid,
+                                        "Group": str(row[group_col])
+                                        if use_group
+                                        and get_pandas().notna(row[group_col])
+                                        else "-",
+                                        "Randomization": str(row[rand_col])
+                                        if use_rand
+                                        and get_pandas().notna(row[rand_col])
+                                        else "-",
+                                    }
+                                )
                         if preview_data:
                             st.write("Preview (first matches):")
-                            st.dataframe(get_pandas().DataFrame(preview_data), hide_index=True)
+                            st.dataframe(
+                                get_pandas().DataFrame(preview_data), hide_index=True
+                            )
 
-                    if st.button("Apply Assignments", type="primary", key="apply_csv_import"):
+                    if st.button(
+                        "Apply Assignments", type="primary", key="apply_csv_import"
+                    ):
                         applied_groups = 0
                         applied_rands = 0
                         for _, row in import_df.iterrows():
@@ -1432,19 +1683,29 @@ def render_participant_table_fragment():
                                         st.session_state.groups[new_group] = {
                                             "label": new_group,
                                             "expected_events": {},
-                                            "selected_sections": []
+                                            "selected_sections": [],
                                         }
                                     st.session_state.participant_groups[pid] = new_group
                                     applied_groups += 1
                                 if use_rand and get_pandas().notna(row[rand_col]):
                                     new_rand = str(row[rand_col])
                                     # Auto-create event sequence if it doesn't exist
-                                    if new_rand and new_rand not in st.session_state.event_sequences:
+                                    if (
+                                        new_rand
+                                        and new_rand
+                                        not in st.session_state.event_sequences
+                                    ):
                                         st.session_state.event_sequences[new_rand] = {
                                             "label": new_rand,
-                                            "condition_order": ["condition_a", "condition_b", "condition_c"]
+                                            "condition_order": [
+                                                "condition_a",
+                                                "condition_b",
+                                                "condition_c",
+                                            ],
                                         }
-                                    st.session_state.participant_randomizations[pid] = new_rand
+                                    st.session_state.participant_randomizations[pid] = (
+                                        new_rand
+                                    )
                                     applied_rands += 1
 
                         # Save event sequences if new ones were created
@@ -1458,10 +1719,15 @@ def render_participant_table_fragment():
                         if "_df_participants_cache_key" in st.session_state:
                             del st.session_state._df_participants_cache_key
 
-                        show_toast(f"Applied {applied_groups} group and {applied_rands} randomization assignments", icon="success")
+                        show_toast(
+                            f"Applied {applied_groups} group and {applied_rands} randomization assignments",
+                            icon="success",
+                        )
                         st.rerun()
                 elif id_col:
-                    st.info("Select at least one column to import (Group or Randomization)")
+                    st.info(
+                        "Select at least one column to import (Group or Randomization)"
+                    )
             except Exception as e:
                 st.error(f"Error reading CSV: {e}")
 
@@ -1482,7 +1748,7 @@ def render_participant_table_fragment():
                     f"{group_name}",
                     value=current_label,
                     key=f"group_label_{group_name}",
-                    label_visibility="visible"
+                    label_visibility="visible",
                 )
                 if new_label != current_label:
                     st.session_state.groups[group_name]["label"] = new_label
@@ -1496,7 +1762,9 @@ def render_participant_table_fragment():
             st.markdown("**Randomization Labels**")
 
             # Get all unique randomization values
-            unique_randomizations = set(st.session_state.participant_randomizations.values())
+            unique_randomizations = set(
+                st.session_state.participant_randomizations.values()
+            )
             unique_randomizations.discard("")  # Remove empty string
 
             # Get event sequence IDs
@@ -1510,30 +1778,36 @@ def render_participant_table_fragment():
                 if sequence_values:
                     st.caption("From Event Sequences (edit in Setup > Sequences):")
                     for rand_value in sequence_values:
-                        seq_label = st.session_state.event_sequences.get(rand_value, {}).get("label", rand_value)
+                        seq_label = st.session_state.event_sequences.get(
+                            rand_value, {}
+                        ).get("label", rand_value)
                         st.text_input(
                             f"{rand_value}",
                             value=seq_label,
                             key=f"rand_label_ro_{rand_value}",
                             disabled=True,
-                            label_visibility="visible"
+                            label_visibility="visible",
                         )
 
                 if custom_values:
                     st.caption("Custom values (editable):")
                     rand_changed = False
                     for rand_value in custom_values:
-                        current_label = st.session_state.get("randomization_labels", {}).get(rand_value, rand_value)
+                        current_label = st.session_state.get(
+                            "randomization_labels", {}
+                        ).get(rand_value, rand_value)
                         new_label = st.text_input(
                             f"{rand_value}",
                             value=current_label,
                             key=f"rand_label_{rand_value}",
-                            label_visibility="visible"
+                            label_visibility="visible",
                         )
                         if new_label != current_label:
                             if "randomization_labels" not in st.session_state:
                                 st.session_state.randomization_labels = {}
-                            st.session_state.randomization_labels[rand_value] = new_label
+                            st.session_state.randomization_labels[rand_value] = (
+                                new_label
+                            )
                             rand_changed = True
 
                     if rand_changed:
@@ -1549,9 +1823,11 @@ def render_participant_table_fragment():
         data=csv_participants,
         file_name="participants_overview.csv",
         mime="text/csv",
-        width='content',
+        width="content",
     )
-    st.caption("Group and randomization assignments save automatically when changed in the table.")
+    st.caption(
+        "Group and randomization assignments save automatically when changed in the table."
+    )
 
 
 def render_settings_panel():
@@ -1568,7 +1844,8 @@ def render_settings_panel():
     import streamlit.components.v1 as components
 
     # CSS-only theme toggle - instant switching via class toggle
-    components.html("""
+    components.html(
+        """
         <style>
             .theme-toggle-container {
                 display: flex;
@@ -1728,14 +2005,17 @@ def render_settings_panel():
             <button class="theme-btn light-btn" onclick="switchToLightTheme()">Light</button>
             <button class="theme-btn dark-btn" onclick="switchToDarkTheme()">Dark</button>
         </div>
-    """, height=45)
+    """,
+        height=45,
+    )
 
     # Live accent color picker
     st.caption("**Accent Color**")
     saved_accent = settings.get("accent_color", "#2E86AB")
 
     # Color picker with live update via JavaScript
-    components.html(f"""
+    components.html(
+        f"""
         <style>
             .color-picker-container {{
                 display: flex;
@@ -1865,7 +2145,9 @@ def render_settings_panel():
                    onchange="onHexInput(event)"
                    placeholder="#2E86AB">
         </div>
-    """, height=45)
+    """,
+        height=45,
+    )
 
     st.caption("**Default Data Folder**")
     new_folder = st.text_input(
@@ -1873,13 +2155,13 @@ def render_settings_panel():
         value=settings.get("data_folder", ""),
         key="settings_data_folder",
         placeholder="Leave empty for file picker",
-        label_visibility="collapsed"
+        label_visibility="collapsed",
     )
     new_auto_load = st.checkbox(
         "Auto-load on startup",
         value=settings.get("auto_load", False),
         key="settings_auto_load",
-        help="Automatically load data from the default folder when the app starts"
+        help="Automatically load data from the default folder when the app starts",
     )
 
     st.caption("**Plot Defaults**")
@@ -1890,7 +2172,7 @@ def render_settings_panel():
         value=settings.get("plot_resolution", 5000),
         step=1000,
         key="settings_resolution",
-        help="Default number of points to show (higher values for long recordings)"
+        help="Default number of points to show (higher values for long recordings)",
     )
 
     new_gap_threshold = st.slider(
@@ -1899,19 +2181,43 @@ def render_settings_panel():
         max_value=60.0,
         value=float(plot_opts.get("gap_threshold", 15.0)),
         step=1.0,
-        key="settings_gap_threshold"
+        key="settings_gap_threshold",
     )
 
     st.caption("**Show by default**")
     col1, col2 = st.columns(2)
     with col1:
-        new_show_events = st.checkbox("Events", value=plot_opts.get("show_events", True), key="settings_show_events")
-        new_show_exclusions = st.checkbox("Exclusions", value=plot_opts.get("show_exclusions", True), key="settings_show_exclusions")
-        new_show_gaps = st.checkbox("Gaps", value=plot_opts.get("show_gaps", True), key="settings_show_gaps")
+        new_show_events = st.checkbox(
+            "Events",
+            value=plot_opts.get("show_events", True),
+            key="settings_show_events",
+        )
+        new_show_exclusions = st.checkbox(
+            "Exclusions",
+            value=plot_opts.get("show_exclusions", True),
+            key="settings_show_exclusions",
+        )
+        new_show_gaps = st.checkbox(
+            "Gaps", value=plot_opts.get("show_gaps", True), key="settings_show_gaps"
+        )
     with col2:
-        new_show_music_sec = st.checkbox("Sections", value=plot_opts.get("show_condition_sections", plot_opts.get("show_music_sections", True)), key="settings_show_music_sec")
-        new_show_artifacts = st.checkbox("Artifacts", value=plot_opts.get("show_artifacts", False), key="settings_show_artifacts")
-        new_show_variability = st.checkbox("Variability", value=plot_opts.get("show_variability", False), key="settings_show_variability")
+        new_show_music_sec = st.checkbox(
+            "Sections",
+            value=plot_opts.get(
+                "show_condition_sections", plot_opts.get("show_music_sections", True)
+            ),
+            key="settings_show_music_sec",
+        )
+        new_show_artifacts = st.checkbox(
+            "Artifacts",
+            value=plot_opts.get("show_artifacts", False),
+            key="settings_show_artifacts",
+        )
+        new_show_variability = st.checkbox(
+            "Variability",
+            value=plot_opts.get("show_variability", False),
+            key="settings_show_variability",
+        )
 
     st.caption("**Plot Colors**")
     plot_colors = plot_opts.get("colors", {})
@@ -1921,28 +2227,32 @@ def render_settings_panel():
             "RR Line",
             value=plot_colors.get("line", "#2E86AB"),
             key="settings_line_color",
-            help="Color for RR interval line"
+            help="Color for RR interval line",
         )
     with col2:
         new_artifact_color = st.color_picker(
             "Artifacts",
             value=plot_colors.get("artifact", "#FF6B6B"),
             key="settings_artifact_color",
-            help="Color for flagged/artifact intervals"
+            help="Color for flagged/artifact intervals",
         )
 
     # Save button
     if st.button("Save Settings", key="save_settings_btn", width="stretch"):
         # Validate auto_load requires folder to be set
         if new_auto_load and not new_folder:
-            st.error("Auto-load requires a data folder to be set. Please enter a folder path above.")
+            st.error(
+                "Auto-load requires a data folder to be set. Please enter a folder path above."
+            )
             st.stop()
 
         # Validate folder exists if set
         if new_folder:
             folder_path = Path(new_folder)
             if not folder_path.exists():
-                st.warning(f"Folder not found: {new_folder}. Auto-load will fail until the folder exists.")
+                st.warning(
+                    f"Folder not found: {new_folder}. Auto-load will fail until the folder exists."
+                )
             elif not folder_path.is_dir():
                 st.error(f"Path is not a folder: {new_folder}")
                 st.stop()
@@ -1955,7 +2265,9 @@ def render_settings_panel():
                 "show_events": new_show_events,
                 "show_exclusions": new_show_exclusions,
                 "show_condition_sections": new_show_music_sec,
-                "show_condition_events": plot_opts.get("show_condition_events", plot_opts.get("show_music_events", False)),
+                "show_condition_events": plot_opts.get(
+                    "show_condition_events", plot_opts.get("show_music_events", False)
+                ),
                 "show_artifacts": new_show_artifacts,
                 "show_variability": new_show_variability,
                 "show_gaps": new_show_gaps,
@@ -1964,7 +2276,7 @@ def render_settings_panel():
                     "line": new_line_color,
                     "artifact": new_artifact_color,
                 },
-            }
+            },
         }
         save_settings(new_settings)
         st.session_state.app_settings = new_settings
@@ -1993,53 +2305,67 @@ def render_rr_plot_fragment(participant_id: str):
     # Get plotly (lazy import)
     go, plotly_events = get_plotly()
     if go is None:
-        st.warning("Plotly is not installed. Please install it with: `pip install plotly streamlit-plotly-events`")
+        st.warning(
+            "Plotly is not installed. Please install it with: `pip install plotly streamlit-plotly-events`"
+        )
         return
 
     # Always use Scattergl for performance
     ScatterType = go.Scattergl
 
     # Determine source_app (check plot_data first, then fall back to summary)
-    source_app = plot_data.get('source_app')
+    source_app = plot_data.get("source_app")
     if not source_app:
         # Fall back to checking the summary
         summary = get_summary_dict().get(participant_id)
-        source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
-    is_vns_data = (source_app == "VNS Analyse")
+        source_app = (
+            getattr(summary, "source_app", "HRV Logger") if summary else "HRV Logger"
+        )
+    is_vns_data = source_app == "VNS Analyse"
 
     # Check interaction mode for timestamp transformation
     plot_mode_key = f"plot_mode_{participant_id}"
     current_mode = st.session_state.get(plot_mode_key, "Add Events")
-    use_sequential_timestamps = (current_mode == "Signal Inspection" and not is_vns_data)
+    use_sequential_timestamps = current_mode == "Signal Inspection" and not is_vns_data
 
     # Original timestamps are always available for event alignment
-    original_timestamps = plot_data['timestamps']
+    original_timestamps = plot_data["timestamps"]
 
     # Pre-calculated sequential timestamps from cached_get_plot_data
     # These are calculated from FULL data before downsampling
-    sequential_timestamps = plot_data.get('sequential_timestamps', [])
-    
+    sequential_timestamps = plot_data.get("sequential_timestamps", [])
+
     # Build real-to-sequential mapping for event alignment
     real_to_sequential_map = None
     if use_sequential_timestamps and sequential_timestamps:
         real_to_sequential_map = list(zip(original_timestamps, sequential_timestamps))
         # Use sequential timestamps for plotting
         plot_data = dict(plot_data)  # Make a copy
-        plot_data['timestamps'] = sequential_timestamps
-        plot_data['original_timestamps'] = original_timestamps
+        plot_data["timestamps"] = sequential_timestamps
+        plot_data["original_timestamps"] = original_timestamps
 
     # Check if VNS data has multiple files (enables gap detection between files)
-    vns_has_multiple_files = st.session_state.get(f"vns_multiple_files_{participant_id}", False)
+    vns_has_multiple_files = st.session_state.get(
+        f"vns_multiple_files_{participant_id}", False
+    )
 
     # Show source info
     if is_vns_data:
         if vns_has_multiple_files:
-            st.info(f"**Data source: {source_app}** - Multiple files merged, gap detection enabled between recordings")
+            st.info(
+                f"**Data source: {source_app}** - Multiple files merged, gap detection enabled between recordings"
+            )
         else:
-            st.info(f"**Data source: {source_app}** - Gap detection disabled (single file, timestamps synthesized)")
+            st.info(
+                f"**Data source: {source_app}** - Gap detection disabled (single file, timestamps synthesized)"
+            )
             # Force clear any old gap data for single-file VNS
             st.session_state[f"gaps_{participant_id}"] = {
-                "gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": True
+                "gaps": [],
+                "total_gaps": 0,
+                "total_gap_duration_s": 0.0,
+                "gap_ratio": 0.0,
+                "vns_note": True,
             }
 
     # Keyboard shortcuts for inspection mode (I and R keys)
@@ -2069,10 +2395,10 @@ def render_rr_plot_fragment(participant_id: str):
             # Switch to Signal Inspection mode AND enable zoom
             st.session_state[plot_mode_key] = "Signal Inspection"
             st.session_state[zoom_key] = {
-                'y_min': 400,
-                'y_max': 1200,
-                'x_window_seconds': 60,
-                'center_on_mean': True
+                "y_min": 400,
+                "y_max": 1200,
+                "x_window_seconds": 60,
+                "center_on_mean": True,
             }
             st.session_state[pan_key] = 0
             st.toast("Signal Inspection + Zoom ON")
@@ -2083,10 +2409,10 @@ def render_rr_plot_fragment(participant_id: str):
                 st.toast("Inspection zoom OFF")
             else:
                 st.session_state[zoom_key] = {
-                    'y_min': 400,
-                    'y_max': 1200,
-                    'x_window_seconds': 60,
-                    'center_on_mean': True
+                    "y_min": 400,
+                    "y_max": 1200,
+                    "x_window_seconds": 60,
+                    "center_on_mean": True,
                 }
                 st.toast("Inspection zoom ON")
 
@@ -2122,14 +2448,18 @@ def render_rr_plot_fragment(participant_id: str):
     reset_zoom_key = f"reset_zoom_{participant_id}"
     pan_left_key = f"pan_left_{participant_id}"
     pan_right_key = f"pan_right_{participant_id}"
-    shortcut_button("I", "i", key=inspection_action_key, on_click=handle_inspection_shortcut)
+    shortcut_button(
+        "I", "i", key=inspection_action_key, on_click=handle_inspection_shortcut
+    )
     shortcut_button("R", "r", key=reset_zoom_key, on_click=handle_reset_zoom)
     shortcut_button("Left", "arrowleft", key=pan_left_key, on_click=handle_pan_left)
     shortcut_button("Right", "arrowright", key=pan_right_key, on_click=handle_pan_right)
 
     # Use components.html to inject JS that hides the buttons in the parent window
     import streamlit.components.v1 as components
-    components.html("""
+
+    components.html(
+        """
     <script>
     (function() {
         // Try multiple ways to access parent document
@@ -2167,7 +2497,10 @@ def render_rr_plot_fragment(participant_id: str):
         observer.observe(doc.body, {childList: true, subtree: true});
     })();
     </script>
-    """, height=0, scrolling=False)
+    """,
+        height=0,
+        scrolling=False,
+    )
 
     # Signal Inspection mode UI controls
     if current_mode == "Signal Inspection":
@@ -2176,802 +2509,1177 @@ def render_rr_plot_fragment(participant_id: str):
         # Compact zoom controls
         col_zoom, col_auto, col_info = st.columns([2, 1, 3])
         with col_zoom:
-            if st.button("Inspection Zoom", key=f"frag_zoom_btn_{participant_id}",
-                        help="Reset Y-axis to 400-1200ms, X to 60s window (press I)"):
+            if st.button(
+                "Inspection Zoom",
+                key=f"frag_zoom_btn_{participant_id}",
+                help="Reset Y-axis to 400-1200ms, X to 60s window (press I)",
+            ):
                 st.session_state[zoom_key] = {
-                    'y_min': 400,
-                    'y_max': 1200,
-                    'x_window_seconds': 60,
-                    'center_on_mean': True
+                    "y_min": 400,
+                    "y_max": 1200,
+                    "x_window_seconds": 60,
+                    "center_on_mean": True,
                 }
         with col_auto:
             if zoom_key in st.session_state:
-                if st.button("Auto", key=f"frag_clear_zoom_{participant_id}",
-                            help="Return to auto-scaling"):
+                if st.button(
+                    "Auto",
+                    key=f"frag_clear_zoom_{participant_id}",
+                    help="Return to auto-scaling",
+                ):
                     del st.session_state[zoom_key]
         with col_info:
             st.caption("Drag to pan, scroll to zoom, I / arrow keys")
 
     # Quick Save for Analysis expander (available in all modes)
     with st.expander("Quick Save for Analysis", expanded=False):
-            # Check for existing .rrational files
-            from rrational.gui.rrational_export import find_rrational_files
-            from rrational.gui.persistence import load_artifact_corrections, save_artifact_corrections
-            data_dir_save = st.session_state.get("data_dir", "")
-            project_path_save = st.session_state.get("current_project")
-            existing_ready_files = find_rrational_files(participant_id, data_dir_save, project_path_save)
+        # Check for existing .rrational files
+        from rrational.gui.rrational_export import find_rrational_files
+        from rrational.gui.persistence import (
+            load_artifact_corrections,
+            save_artifact_corrections,
+        )
 
-            if existing_ready_files:
-                st.success(f"**{len(existing_ready_files)} .rrational file(s) saved** for this participant")
-                with st.expander("View saved files", expanded=False):
-                    for f in existing_ready_files:
-                        segment = f.stem.replace(f"{participant_id}_", "") or "full"
-                        mod_time = f.stat().st_mtime
-                        from datetime import datetime
-                        mod_str = datetime.fromtimestamp(mod_time).strftime("%Y-%m-%d %H:%M")
-                        st.caption(f"• **{segment}** - {f.name} ({mod_str})")
+        data_dir_save = st.session_state.get("data_dir", "")
+        project_path_save = st.session_state.get("current_project")
+        existing_ready_files = find_rrational_files(
+            participant_id, data_dir_save, project_path_save
+        )
 
-            # Save Artifact Corrections button (more accessible location)
-            st.markdown("---")
-            st.markdown("**Save Artifact Markings**")
-            st.caption("Save your artifact markings to continue in future sessions")
+        if existing_ready_files:
+            st.success(
+                f"**{len(existing_ready_files)} .rrational file(s) saved** for this participant"
+            )
+            with st.expander("View saved files", expanded=False):
+                for f in existing_ready_files:
+                    segment = f.stem.replace(f"{participant_id}_", "") or "full"
+                    mod_time = f.stat().st_mtime
+                    from datetime import datetime
 
-            manual_artifacts_save = st.session_state.get(f"manual_artifacts_{participant_id}", [])
-            artifact_exclusions_save = st.session_state.get(f"artifact_exclusions_{participant_id}", set())
-            artifact_data_save = st.session_state.get(f"artifacts_{participant_id}", {})
-            algo_indices_save = artifact_data_save.get('artifact_indices', [])
+                    mod_str = datetime.fromtimestamp(mod_time).strftime(
+                        "%Y-%m-%d %H:%M"
+                    )
+                    st.caption(f"• **{segment}** - {f.name} ({mod_str})")
 
-            n_manual_save = len(manual_artifacts_save)
-            n_excluded_save = len(artifact_exclusions_save) if artifact_exclusions_save else 0
-            n_algo_save = len(algo_indices_save)
-            has_corrections_save = n_manual_save > 0 or n_excluded_save > 0 or n_algo_save > 0
+        # Save Artifact Corrections button (more accessible location)
+        st.markdown("---")
+        st.markdown("**Save Artifact Markings**")
+        st.caption("Save your artifact markings to continue in future sessions")
 
-            saved_corrections_check = load_artifact_corrections(participant_id, data_dir_save, project_path_save)
-            has_saved_corrections = saved_corrections_check is not None
+        manual_artifacts_save = st.session_state.get(
+            f"manual_artifacts_{participant_id}", []
+        )
+        artifact_exclusions_save = st.session_state.get(
+            f"artifact_exclusions_{participant_id}", set()
+        )
+        artifact_data_save = st.session_state.get(f"artifacts_{participant_id}", {})
+        algo_indices_save = artifact_data_save.get("artifact_indices", [])
 
-            if has_corrections_save:
-                # Build summary text
-                parts = []
-                if n_algo_save > 0:
-                    parts.append(f"{n_algo_save} algorithm")
-                if n_manual_save > 0:
-                    parts.append(f"{n_manual_save} manual")
-                if n_excluded_save > 0:
-                    parts.append(f"{n_excluded_save} excluded")
-                st.write(" + ".join(parts))
+        n_manual_save = len(manual_artifacts_save)
+        n_excluded_save = (
+            len(artifact_exclusions_save) if artifact_exclusions_save else 0
+        )
+        n_algo_save = len(algo_indices_save)
+        has_corrections_save = (
+            n_manual_save > 0 or n_excluded_save > 0 or n_algo_save > 0
+        )
 
-                # Get section_key for display
-                section_key_save = artifact_data_save.get('section_key', '_full')
-                section_display = "Full recording" if section_key_save == "_full" else section_key_save
-                if section_key_save.startswith("custom_"):
-                    section_display = "Custom range"
-                elif section_key_save == "_all_validated":
-                    sections_list = artifact_data_save.get('scope', {}).get('sections', [])
-                    section_display = f"All validated ({len(sections_list)} sections)"
+        saved_corrections_check = load_artifact_corrections(
+            participant_id, data_dir_save, project_path_save
+        )
+        has_saved_corrections = saved_corrections_check is not None
 
-                if section_key_save != "_full":
-                    st.caption(f"Scope: {section_display}")
+        if has_corrections_save:
+            # Build summary text
+            parts = []
+            if n_algo_save > 0:
+                parts.append(f"{n_algo_save} algorithm")
+            if n_manual_save > 0:
+                parts.append(f"{n_manual_save} manual")
+            if n_excluded_save > 0:
+                parts.append(f"{n_excluded_save} excluded")
+            st.write(" + ".join(parts))
 
-                if st.button("Save Artifact Corrections", key=f"sidebar_save_artifacts_{participant_id}",
-                            type="primary", width="stretch"):
-                    # Import datetime at the top of the save block for all paths
+            # Get section_key for display
+            section_key_save = artifact_data_save.get("section_key", "_full")
+            section_display = (
+                "Full recording" if section_key_save == "_full" else section_key_save
+            )
+            if section_key_save.startswith("custom_"):
+                section_display = "Custom range"
+            elif section_key_save == "_all_validated":
+                sections_list = artifact_data_save.get("scope", {}).get("sections", [])
+                section_display = f"All validated ({len(sections_list)} sections)"
+
+            if section_key_save != "_full":
+                st.caption(f"Scope: {section_display}")
+
+            if st.button(
+                "Save Artifact Corrections",
+                key=f"sidebar_save_artifacts_{participant_id}",
+                type="primary",
+                width="stretch",
+            ):
+                # Import datetime at the top of the save block for all paths
+                from datetime import datetime
+                from rrational.gui.persistence import save_nn_intervals
+
+                # Check if we have per-section results from "all_validated" detection
+                sections_results = artifact_data_save.get("sections_results")
+
+                if sections_results:
+                    # Save each section's artifacts and NN separately
+
+                    sections_saved = 0
+                    for sec_name, sec_result in sections_results.items():
+                        # Save artifacts for this section
+                        sec_indices = sec_result.get(
+                            "artifact_indices", []
+                        )  # Local indices
+                        sec_offset = sec_result.get("offset", 0)
+                        sec_scope = {
+                            "type": "section",
+                            "name": sec_name,
+                            "offset": sec_offset,
+                        }
+
+                        save_artifact_corrections(
+                            participant_id,
+                            manual_artifacts=[],  # Manual artifacts not supported per-section yet
+                            artifact_exclusions=set(),
+                            data_dir=data_dir_save,
+                            project_path=project_path_save,
+                            algorithm_artifacts=sec_indices,
+                            algorithm_method=artifact_data_save.get("method"),
+                            algorithm_threshold=artifact_data_save.get("threshold"),
+                            scope=sec_scope,
+                            section_key=sec_name,
+                            segment_beats=artifact_data_save.get("segment_beats"),
+                            indices_by_type=sec_result.get("indices_by_type"),
+                        )
+
+                        # Save NN intervals for this section
+                        sec_corrected = sec_result.get("corrected_rr", [])
+                        sec_timestamps = sec_result.get("corrected_timestamps", [])
+                        sec_original = sec_result.get("original_rr", sec_corrected)
+
+                        if (
+                            sec_corrected
+                            and sec_timestamps
+                            and len(sec_corrected) == len(sec_timestamps)
+                        ):
+                            # Build NN data for this section
+                            sec_artifact_set = set(sec_indices)
+                            nn_intervals = []
+                            corrections = []
+
+                            for i, (ts, rr_orig, rr_corr) in enumerate(
+                                zip(sec_timestamps, sec_original, sec_corrected)
+                            ):
+                                was_corrected = (
+                                    i in sec_artifact_set and abs(rr_orig - rr_corr) > 1
+                                )
+                                ts_ms = 0
+                                if (
+                                    hasattr(ts, "timestamp")
+                                    and sec_timestamps
+                                    and hasattr(sec_timestamps[0], "timestamp")
+                                ):
+                                    ts_ms = int(
+                                        (ts.timestamp() - sec_timestamps[0].timestamp())
+                                        * 1000
+                                    )
+                                nn_intervals.append(
+                                    [ts_ms, round(rr_corr, 1), was_corrected]
+                                )
+                                if was_corrected:
+                                    corrections.append(
+                                        {
+                                            "nn_idx": i,
+                                            "original_rr_ms": round(rr_orig, 1),
+                                            "corrected_nn_ms": round(rr_corr, 1),
+                                        }
+                                    )
+
+                            nn_data = {
+                                "correction_method": "kubios"
+                                if artifact_data_save.get("method")
+                                else "manual",
+                                "corrected_at": datetime.now().isoformat(),
+                                "original_beat_count": len(sec_corrected),
+                                "artifacts_removed": len(sec_artifact_set),
+                                "intervals_corrected": len(corrections),
+                                "final_nn_count": len(nn_intervals),
+                                "intervals": nn_intervals,
+                                "corrections": corrections,
+                            }
+                            save_nn_intervals(
+                                participant_id,
+                                sec_name,
+                                nn_data,
+                                data_dir=data_dir_save,
+                                project_path=project_path_save,
+                            )
+                        sections_saved += 1
+
+                    st.success(f"Saved artifacts and NN for {sections_saved} sections!")
+                    st.rerun()
+
+                else:
+                    # Standard single-scope save (not all_validated)
+                    # Get algorithm method and threshold info
+                    algo_method = artifact_data_save.get("method", None)
+                    algo_threshold = artifact_data_save.get("threshold", None)
+                    # Get scope (v1.2+ feature)
+                    scope_save = artifact_data_save.get("scope", None)
+                    # Get segment_beats for segmented methods
+                    segment_beats_save = artifact_data_save.get("segment_beats", None)
+                    # Get indices_by_type for artifact type categorization
+                    indices_by_type_save = artifact_data_save.get(
+                        "indices_by_type", None
+                    )
+
+                    # Get corrected_rr for NN intervals (saved separately)
+                    corrected_rr_save = artifact_data_save.get("corrected_rr")
+
+                    # Save artifact info (indices only, no corrected RR data)
+                    save_artifact_corrections(
+                        participant_id,
+                        manual_artifacts=manual_artifacts_save,
+                        artifact_exclusions=artifact_exclusions_save,
+                        data_dir=data_dir_save,
+                        project_path=project_path_save,
+                        algorithm_artifacts=algo_indices_save
+                        if algo_indices_save
+                        else None,
+                        algorithm_method=algo_method,
+                        algorithm_threshold=algo_threshold,
+                        scope=scope_save,
+                        section_key=section_key_save,
+                        segment_beats=segment_beats_save,
+                        indices_by_type=indices_by_type_save,
+                    )
+
+                    # Also save corrected NN intervals if available
+                    from rrational.gui.persistence import save_nn_intervals
+
+                    corrected_rr = corrected_rr_save
+                    # Use timestamps from artifact data (scoped), not plot data
+                    timestamps_for_nn = artifact_data_save.get(
+                        "corrected_timestamps", []
+                    )
+                    # Get original RR values from artifact data if available
+                    rr_values_for_nn = artifact_data_save.get("original_rr")
+
+                    nn_saved = False
+                    nn_save_reason = ""
+
+                    # Debug: Check what data we have
+                    has_corrected = corrected_rr is not None
+                    len_corrected = len(corrected_rr) if corrected_rr else 0
+                    len_timestamps = len(timestamps_for_nn) if timestamps_for_nn else 0
+
+                    if not has_corrected:
+                        nn_save_reason = "Re-run detection to generate NN intervals"
+                    elif len_corrected == 0:
+                        nn_save_reason = "Re-run detection to generate NN intervals"
+                    elif len_timestamps == 0:
+                        nn_save_reason = "No timestamp data available"
+                    elif len_corrected != len_timestamps:
+                        nn_save_reason = (
+                            "Data changed since detection - re-run detection"
+                        )
+                    else:
+                        # All checks passed - save NN intervals
+                        # Get scope offset to convert global indices to local
+                        scope_offset = 0
+                        scope_info = artifact_data_save.get("scope", {})
+                        if scope_info:
+                            scope_offset = scope_info.get("offset", 0)
+
+                        # Determine which intervals were corrected (convert to LOCAL indices)
+                        global_artifact_indices = (
+                            set(algo_indices_save)
+                            | set(
+                                art.get("plot_idx", -1) for art in manual_artifacts_save
+                            )
+                        ) - (
+                            artifact_exclusions_save
+                            if artifact_exclusions_save
+                            else set()
+                        )
+                        # Convert global indices to local indices within the scope
+                        local_artifact_indices = {
+                            idx - scope_offset
+                            for idx in global_artifact_indices
+                            if idx >= scope_offset
+                            and idx < scope_offset + len(corrected_rr)
+                        }
+
+                        # Use original RR if available, otherwise use corrected (can't detect changes)
+                        if rr_values_for_nn is None or len(rr_values_for_nn) != len(
+                            corrected_rr
+                        ):
+                            rr_values_for_nn = corrected_rr  # Fallback
+
+                        # Build NN intervals data
+                        nn_intervals_data = []
+                        corrections_list = []
+                        for i, (ts, rr_orig, rr_corr) in enumerate(
+                            zip(timestamps_for_nn, rr_values_for_nn, corrected_rr)
+                        ):
+                            was_corrected = (
+                                i in local_artifact_indices
+                                and abs(rr_orig - rr_corr) > 1
+                            )
+                            # Compact format: [timestamp_ms, nn_ms, was_corrected]
+                            ts_ms = (
+                                int((ts - timestamps_for_nn[0]).total_seconds() * 1000)
+                                if hasattr(ts, "total_seconds")
+                                or hasattr(timestamps_for_nn[0], "total_seconds")
+                                else 0
+                            )
+                            if hasattr(ts, "timestamp") and hasattr(
+                                timestamps_for_nn[0], "timestamp"
+                            ):
+                                ts_ms = int(
+                                    (ts.timestamp() - timestamps_for_nn[0].timestamp())
+                                    * 1000
+                                )
+                            nn_intervals_data.append(
+                                [ts_ms, round(rr_corr, 1), was_corrected]
+                            )
+
+                            if was_corrected:
+                                corrections_list.append(
+                                    {
+                                        "nn_idx": i,
+                                        "original_rr_ms": round(rr_orig, 1),
+                                        "corrected_nn_ms": round(rr_corr, 1),
+                                    }
+                                )
+
+                        nn_data = {
+                            "correction_method": "kubios" if algo_method else "manual",
+                            "corrected_at": datetime.now().isoformat(),
+                            "original_beat_count": len(corrected_rr),
+                            "artifacts_removed": len(local_artifact_indices),
+                            "intervals_corrected": len(corrections_list),
+                            "final_nn_count": len(nn_intervals_data),
+                            "intervals": nn_intervals_data,
+                            "corrections": corrections_list,
+                        }
+
+                        # Check if we should auto-split to validated sections
+                        auto_split = artifact_data_save.get(
+                            "auto_split_to_sections", False
+                        )
+
+                        if auto_split:
+                            # Auto-split: create separate NN files for each validated section
+                            from rrational.gui.persistence import (
+                                load_section_validations as load_vals_auto,
+                            )
+
+                            vals_auto = load_vals_auto(
+                                participant_id, data_dir_save, project_path_save
+                            )
+                            valid_sections_auto = []
+                            if vals_auto and vals_auto.get("sections"):
+                                for sec_name, sec_data in vals_auto["sections"].items():
+                                    if sec_data.get("is_valid"):
+                                        valid_sections_auto.append((sec_name, sec_data))
+
+                            if valid_sections_auto:
+                                sections_saved_auto = 0
+                                for sec_name, sec_data in valid_sections_auto:
+                                    sec_start = sec_data.get("start_event", {}).get(
+                                        "beat_idx", 0
+                                    )
+                                    sec_end = sec_data.get("end_event", {}).get(
+                                        "beat_idx", 0
+                                    )
+
+                                    if sec_start < 0 or sec_end > len(corrected_rr):
+                                        continue
+
+                                    # Slice data for this section
+                                    sec_corrected = corrected_rr[sec_start:sec_end]
+                                    sec_timestamps = timestamps_for_nn[
+                                        sec_start:sec_end
+                                    ]
+                                    sec_original = (
+                                        rr_values_for_nn[sec_start:sec_end]
+                                        if rr_values_for_nn
+                                        else sec_corrected
+                                    )
+
+                                    # Find artifacts in this section
+                                    sec_artifacts_local = {
+                                        idx - sec_start
+                                        for idx in local_artifact_indices
+                                        if sec_start <= idx < sec_end
+                                    }
+
+                                    # Build section NN data
+                                    sec_nn_intervals = []
+                                    sec_corrections = []
+                                    for i, (ts, rr_orig, rr_corr) in enumerate(
+                                        zip(sec_timestamps, sec_original, sec_corrected)
+                                    ):
+                                        was_corr = (
+                                            i in sec_artifacts_local
+                                            and abs(rr_orig - rr_corr) > 1
+                                        )
+                                        ts_ms = 0
+                                        if (
+                                            hasattr(ts, "timestamp")
+                                            and sec_timestamps
+                                            and hasattr(sec_timestamps[0], "timestamp")
+                                        ):
+                                            ts_ms = int(
+                                                (
+                                                    ts.timestamp()
+                                                    - sec_timestamps[0].timestamp()
+                                                )
+                                                * 1000
+                                            )
+                                        sec_nn_intervals.append(
+                                            [ts_ms, round(rr_corr, 1), was_corr]
+                                        )
+                                        if was_corr:
+                                            sec_corrections.append(
+                                                {
+                                                    "nn_idx": i,
+                                                    "original_rr_ms": round(rr_orig, 1),
+                                                    "corrected_nn_ms": round(
+                                                        rr_corr, 1
+                                                    ),
+                                                }
+                                            )
+
+                                    sec_nn_data = {
+                                        "correction_method": "kubios"
+                                        if algo_method
+                                        else "manual",
+                                        "corrected_at": datetime.now().isoformat(),
+                                        "source_scope": "_full (auto-split)",
+                                        "original_beat_count": len(sec_corrected),
+                                        "artifacts_removed": len(sec_artifacts_local),
+                                        "intervals_corrected": len(sec_corrections),
+                                        "final_nn_count": len(sec_nn_intervals),
+                                        "intervals": sec_nn_intervals,
+                                        "corrections": sec_corrections,
+                                    }
+                                    save_nn_intervals(
+                                        participant_id,
+                                        sec_name,
+                                        sec_nn_data,
+                                        data_dir=data_dir_save,
+                                        project_path=project_path_save,
+                                    )
+                                    sections_saved_auto += 1
+
+                                nn_saved = True
+                                nn_save_reason = (
+                                    f"Auto-split to {sections_saved_auto} sections"
+                                )
+                            else:
+                                nn_save_reason = "No validated sections for auto-split"
+                        else:
+                            # Normal save: single NN file for the scope
+                            section_for_nn = (
+                                section_key_save
+                                if section_key_save != "_full"
+                                else "_full"
+                            )
+                            save_nn_intervals(
+                                participant_id,
+                                section_for_nn,
+                                nn_data,
+                                data_dir=data_dir_save,
+                                project_path=project_path_save,
+                            )
+                            nn_saved = True
+
+                    # Update loaded_info to reflect current saved state
+                    st.session_state[f"artifacts_loaded_info_{participant_id}"] = {
+                        "saved_at": datetime.now().isoformat(),
+                        "algorithm_method": algo_method,
+                        "algorithm_threshold": algo_threshold,
+                        "n_algorithm": n_algo_save,
+                        "n_manual": n_manual_save,
+                        "n_excluded": n_excluded_save,
+                    }
+
+                    if nn_saved:
+                        st.success(
+                            f"Saved artifacts + NN intervals ({len_corrected} beats)"
+                        )
+                    else:
+                        st.warning(
+                            f"Saved artifacts only. NN intervals not saved: {nn_save_reason}"
+                        )
+        elif has_saved_corrections:
+            st.success("Artifact corrections saved")
+        else:
+            st.caption("No artifact markings yet")
+
+        # "Apply to All Validated Sections" button
+        # This creates separate NN files for each validated section from a broader detection scope
+        artifact_data_apply = st.session_state.get(f"artifacts_{participant_id}", {})
+        corrected_rr_apply = artifact_data_apply.get("corrected_rr")
+        timestamps_apply = artifact_data_apply.get("corrected_timestamps", [])
+        scope_apply = artifact_data_apply.get("scope", {})
+
+        if corrected_rr_apply and len(corrected_rr_apply) == len(timestamps_apply):
+            # Load validated sections
+            from rrational.gui.persistence import (
+                load_section_validations as load_vals_apply,
+            )
+
+            vals_apply = load_vals_apply(
+                participant_id,
+                st.session_state.get("data_dir"),
+                st.session_state.get("current_project"),
+            )
+            valid_sections_apply = []
+            if vals_apply and vals_apply.get("sections"):
+                for sec_name, sec_data in vals_apply["sections"].items():
+                    if sec_data.get("is_valid"):
+                        valid_sections_apply.append((sec_name, sec_data))
+
+            if len(valid_sections_apply) > 1:
+                st.markdown("---")
+                scope_name = scope_apply.get("name", "detection scope")
+                st.caption(
+                    f"Create NN files for each validated section from '{scope_name}'"
+                )
+
+                if st.button(
+                    "Apply to All Sections",
+                    key=f"apply_all_sections_{participant_id}",
+                    help="Split corrected NN intervals into separate files per validated section",
+                ):
                     from datetime import datetime
                     from rrational.gui.persistence import save_nn_intervals
 
-                    # Check if we have per-section results from "all_validated" detection
-                    sections_results = artifact_data_save.get('sections_results')
+                    scope_offset_apply = scope_apply.get("offset", 0)
+                    scope_start_beat = scope_offset_apply
+                    scope_end_beat = scope_offset_apply + len(corrected_rr_apply)
 
-                    if sections_results:
-                        # Save each section's artifacts and NN separately
+                    # Get artifact indices (local to scope)
+                    algo_idx_apply = artifact_data_apply.get("artifact_indices", [])
+                    manual_arts_apply = st.session_state.get(
+                        f"manual_artifacts_{participant_id}", []
+                    )
+                    excl_apply = st.session_state.get(
+                        f"artifact_exclusions_{participant_id}", set()
+                    )
 
-                        sections_saved = 0
-                        for sec_name, sec_result in sections_results.items():
-                            # Save artifacts for this section
-                            sec_indices = sec_result.get('artifact_indices', [])  # Local indices
-                            sec_offset = sec_result.get('offset', 0)
-                            sec_scope = {"type": "section", "name": sec_name, "offset": sec_offset}
+                    global_artifacts_apply = (
+                        set(algo_idx_apply)
+                        | set(a.get("plot_idx", -1) for a in manual_arts_apply)
+                    ) - excl_apply
 
-                            save_artifact_corrections(
-                                participant_id,
-                                manual_artifacts=[],  # Manual artifacts not supported per-section yet
-                                artifact_exclusions=set(),
-                                data_dir=data_dir_save,
-                                project_path=project_path_save,
-                                algorithm_artifacts=sec_indices,
-                                algorithm_method=artifact_data_save.get('method'),
-                                algorithm_threshold=artifact_data_save.get('threshold'),
-                                scope=sec_scope,
-                                section_key=sec_name,
-                                segment_beats=artifact_data_save.get('segment_beats'),
-                                indices_by_type=sec_result.get('indices_by_type'),
-                            )
+                    original_rr_apply = artifact_data_apply.get(
+                        "original_rr", corrected_rr_apply
+                    )
+                    algo_method_apply = artifact_data_apply.get("method", "unknown")
 
-                            # Save NN intervals for this section
-                            sec_corrected = sec_result.get('corrected_rr', [])
-                            sec_timestamps = sec_result.get('corrected_timestamps', [])
-                            sec_original = sec_result.get('original_rr', sec_corrected)
+                    sections_saved = 0
+                    sections_skipped = []
 
-                            if sec_corrected and sec_timestamps and len(sec_corrected) == len(sec_timestamps):
-                                # Build NN data for this section
-                                sec_artifact_set = set(sec_indices)
-                                nn_intervals = []
-                                corrections = []
+                    for sec_name, sec_data in valid_sections_apply:
+                        # Get section boundaries (beat indices)
+                        sec_start_beat = sec_data.get("start_event", {}).get(
+                            "beat_idx", 0
+                        )
+                        sec_end_beat = sec_data.get("end_event", {}).get("beat_idx", 0)
 
-                                for i, (ts, rr_orig, rr_corr) in enumerate(zip(sec_timestamps, sec_original, sec_corrected)):
-                                    was_corrected = i in sec_artifact_set and abs(rr_orig - rr_corr) > 1
-                                    ts_ms = 0
-                                    if hasattr(ts, 'timestamp') and sec_timestamps and hasattr(sec_timestamps[0], 'timestamp'):
-                                        ts_ms = int((ts.timestamp() - sec_timestamps[0].timestamp()) * 1000)
-                                    nn_intervals.append([ts_ms, round(rr_corr, 1), was_corrected])
-                                    if was_corrected:
-                                        corrections.append({
-                                            'nn_idx': i,
-                                            'original_rr_ms': round(rr_orig, 1),
-                                            'corrected_nn_ms': round(rr_corr, 1),
-                                        })
+                        # Check if section is within scope
+                        if (
+                            sec_start_beat < scope_start_beat
+                            or sec_end_beat > scope_end_beat
+                        ):
+                            sections_skipped.append(f"{sec_name} (outside scope)")
+                            continue
 
-                                nn_data = {
-                                    'correction_method': 'kubios' if artifact_data_save.get('method') else 'manual',
-                                    'corrected_at': datetime.now().isoformat(),
-                                    'original_beat_count': len(sec_corrected),
-                                    'artifacts_removed': len(sec_artifact_set),
-                                    'intervals_corrected': len(corrections),
-                                    'final_nn_count': len(nn_intervals),
-                                    'intervals': nn_intervals,
-                                    'corrections': corrections,
-                                }
-                                save_nn_intervals(participant_id, sec_name, nn_data,
-                                                 data_dir=data_dir_save, project_path=project_path_save)
-                            sections_saved += 1
+                        # Calculate local indices within scope
+                        local_start = sec_start_beat - scope_offset_apply
+                        local_end = sec_end_beat - scope_offset_apply
 
-                        st.success(f"Saved artifacts and NN for {sections_saved} sections!")
-                        st.rerun()
+                        if local_start < 0 or local_end > len(corrected_rr_apply):
+                            sections_skipped.append(f"{sec_name} (boundary error)")
+                            continue
 
-                    else:
-                        # Standard single-scope save (not all_validated)
-                        # Get algorithm method and threshold info
-                        algo_method = artifact_data_save.get('method', None)
-                        algo_threshold = artifact_data_save.get('threshold', None)
-                        # Get scope (v1.2+ feature)
-                        scope_save = artifact_data_save.get('scope', None)
-                        # Get segment_beats for segmented methods
-                        segment_beats_save = artifact_data_save.get('segment_beats', None)
-                        # Get indices_by_type for artifact type categorization
-                        indices_by_type_save = artifact_data_save.get('indices_by_type', None)
-
-                        # Get corrected_rr for NN intervals (saved separately)
-                        corrected_rr_save = artifact_data_save.get('corrected_rr')
-
-                        # Save artifact info (indices only, no corrected RR data)
-                        save_path = save_artifact_corrections(
-                            participant_id,
-                            manual_artifacts=manual_artifacts_save,
-                            artifact_exclusions=artifact_exclusions_save,
-                            data_dir=data_dir_save,
-                            project_path=project_path_save,
-                            algorithm_artifacts=algo_indices_save if algo_indices_save else None,
-                            algorithm_method=algo_method,
-                            algorithm_threshold=algo_threshold,
-                            scope=scope_save,
-                            section_key=section_key_save,
-                            segment_beats=segment_beats_save,
-                            indices_by_type=indices_by_type_save,
+                        # Slice the data for this section
+                        sec_corrected = corrected_rr_apply[local_start:local_end]
+                        sec_timestamps = timestamps_apply[local_start:local_end]
+                        sec_original = (
+                            original_rr_apply[local_start:local_end]
+                            if original_rr_apply
+                            else sec_corrected
                         )
 
-                        # Also save corrected NN intervals if available
-                        from rrational.gui.persistence import save_nn_intervals
-                        corrected_rr = corrected_rr_save
-                        # Use timestamps from artifact data (scoped), not plot data
-                        timestamps_for_nn = artifact_data_save.get('corrected_timestamps', [])
-                        # Get original RR values from artifact data if available
-                        rr_values_for_nn = artifact_data_save.get('original_rr')
+                        # Find artifacts within this section (convert to section-local indices)
+                        sec_artifacts_local = set()
+                        for global_idx in global_artifacts_apply:
+                            local_in_scope = global_idx - scope_offset_apply
+                            if local_start <= local_in_scope < local_end:
+                                sec_artifacts_local.add(local_in_scope - local_start)
 
-                        nn_saved = False
-                        nn_save_reason = ""
-
-                        # Debug: Check what data we have
-                        has_corrected = corrected_rr is not None
-                        len_corrected = len(corrected_rr) if corrected_rr else 0
-                        len_timestamps = len(timestamps_for_nn) if timestamps_for_nn else 0
-
-                        if not has_corrected:
-                            nn_save_reason = "Re-run detection to generate NN intervals"
-                        elif len_corrected == 0:
-                            nn_save_reason = "Re-run detection to generate NN intervals"
-                        elif len_timestamps == 0:
-                            nn_save_reason = "No timestamp data available"
-                        elif len_corrected != len_timestamps:
-                            nn_save_reason = "Data changed since detection - re-run detection"
-                        else:
-                            # All checks passed - save NN intervals
-                            # Get scope offset to convert global indices to local
-                            scope_offset = 0
-                            scope_info = artifact_data_save.get('scope', {})
-                            if scope_info:
-                                scope_offset = scope_info.get('offset', 0)
-
-                            # Determine which intervals were corrected (convert to LOCAL indices)
-                            global_artifact_indices = (set(algo_indices_save) |
-                                                   set(art.get('plot_idx', -1) for art in manual_artifacts_save)) - \
-                                                   (artifact_exclusions_save if artifact_exclusions_save else set())
-                            # Convert global indices to local indices within the scope
-                            local_artifact_indices = {idx - scope_offset for idx in global_artifact_indices
-                                                      if idx >= scope_offset and idx < scope_offset + len(corrected_rr)}
-
-                            # Use original RR if available, otherwise use corrected (can't detect changes)
-                            if rr_values_for_nn is None or len(rr_values_for_nn) != len(corrected_rr):
-                                rr_values_for_nn = corrected_rr  # Fallback
-
-                            # Build NN intervals data
-                            nn_intervals_data = []
-                            corrections_list = []
-                            for i, (ts, rr_orig, rr_corr) in enumerate(zip(timestamps_for_nn, rr_values_for_nn, corrected_rr)):
-                                was_corrected = i in local_artifact_indices and abs(rr_orig - rr_corr) > 1
-                                # Compact format: [timestamp_ms, nn_ms, was_corrected]
-                                ts_ms = int((ts - timestamps_for_nn[0]).total_seconds() * 1000) if hasattr(ts, 'total_seconds') or hasattr(timestamps_for_nn[0], 'total_seconds') else 0
-                                if hasattr(ts, 'timestamp') and hasattr(timestamps_for_nn[0], 'timestamp'):
-                                    ts_ms = int((ts.timestamp() - timestamps_for_nn[0].timestamp()) * 1000)
-                                nn_intervals_data.append([ts_ms, round(rr_corr, 1), was_corrected])
-
-                                if was_corrected:
-                                    corrections_list.append({
-                                        'nn_idx': i,
-                                        'original_rr_ms': round(rr_orig, 1),
-                                        'corrected_nn_ms': round(rr_corr, 1),
-                                    })
-
-                            nn_data = {
-                                'correction_method': 'kubios' if algo_method else 'manual',
-                                'corrected_at': datetime.now().isoformat(),
-                                'original_beat_count': len(corrected_rr),
-                                'artifacts_removed': len(local_artifact_indices),
-                                'intervals_corrected': len(corrections_list),
-                                'final_nn_count': len(nn_intervals_data),
-                                'intervals': nn_intervals_data,
-                                'corrections': corrections_list,
-                            }
-
-                            # Check if we should auto-split to validated sections
-                            auto_split = artifact_data_save.get('auto_split_to_sections', False)
-
-                            if auto_split:
-                                # Auto-split: create separate NN files for each validated section
-                                from rrational.gui.persistence import load_section_validations as load_vals_auto
-                                vals_auto = load_vals_auto(participant_id, data_dir_save, project_path_save)
-                                valid_sections_auto = []
-                                if vals_auto and vals_auto.get("sections"):
-                                    for sec_name, sec_data in vals_auto["sections"].items():
-                                        if sec_data.get("is_valid"):
-                                            valid_sections_auto.append((sec_name, sec_data))
-
-                                if valid_sections_auto:
-                                    sections_saved_auto = 0
-                                    for sec_name, sec_data in valid_sections_auto:
-                                        sec_start = sec_data.get('start_event', {}).get('beat_idx', 0)
-                                        sec_end = sec_data.get('end_event', {}).get('beat_idx', 0)
-
-                                        if sec_start < 0 or sec_end > len(corrected_rr):
-                                            continue
-
-                                        # Slice data for this section
-                                        sec_corrected = corrected_rr[sec_start:sec_end]
-                                        sec_timestamps = timestamps_for_nn[sec_start:sec_end]
-                                        sec_original = rr_values_for_nn[sec_start:sec_end] if rr_values_for_nn else sec_corrected
-
-                                        # Find artifacts in this section
-                                        sec_artifacts_local = {idx - sec_start for idx in local_artifact_indices
-                                                              if sec_start <= idx < sec_end}
-
-                                        # Build section NN data
-                                        sec_nn_intervals = []
-                                        sec_corrections = []
-                                        for i, (ts, rr_orig, rr_corr) in enumerate(zip(sec_timestamps, sec_original, sec_corrected)):
-                                            was_corr = i in sec_artifacts_local and abs(rr_orig - rr_corr) > 1
-                                            ts_ms = 0
-                                            if hasattr(ts, 'timestamp') and sec_timestamps and hasattr(sec_timestamps[0], 'timestamp'):
-                                                ts_ms = int((ts.timestamp() - sec_timestamps[0].timestamp()) * 1000)
-                                            sec_nn_intervals.append([ts_ms, round(rr_corr, 1), was_corr])
-                                            if was_corr:
-                                                    sec_corrections.append({
-                                                        'nn_idx': i,
-                                                        'original_rr_ms': round(rr_orig, 1),
-                                                        'corrected_nn_ms': round(rr_corr, 1),
-                                                    })
-
-                                        sec_nn_data = {
-                                            'correction_method': 'kubios' if algo_method else 'manual',
-                                            'corrected_at': datetime.now().isoformat(),
-                                            'source_scope': '_full (auto-split)',
-                                            'original_beat_count': len(sec_corrected),
-                                            'artifacts_removed': len(sec_artifacts_local),
-                                            'intervals_corrected': len(sec_corrections),
-                                            'final_nn_count': len(sec_nn_intervals),
-                                            'intervals': sec_nn_intervals,
-                                            'corrections': sec_corrections,
-                                        }
-                                        save_nn_intervals(participant_id, sec_name, sec_nn_data,
-                                                         data_dir=data_dir_save, project_path=project_path_save)
-                                        sections_saved_auto += 1
-
-                                    nn_saved = True
-                                    nn_save_reason = f"Auto-split to {sections_saved_auto} sections"
-                                else:
-                                    nn_save_reason = "No validated sections for auto-split"
-                            else:
-                                # Normal save: single NN file for the scope
-                                section_for_nn = section_key_save if section_key_save != '_full' else '_full'
-                                save_nn_intervals(
-                                    participant_id,
-                                    section_for_nn,
-                                    nn_data,
-                                    data_dir=data_dir_save,
-                                    project_path=project_path_save,
+                        # Build NN intervals for this section
+                        nn_intervals = []
+                        corrections = []
+                        for i, (ts, rr_orig, rr_corr) in enumerate(
+                            zip(sec_timestamps, sec_original, sec_corrected)
+                        ):
+                            was_corrected = (
+                                i in sec_artifacts_local and abs(rr_orig - rr_corr) > 1
+                            )
+                            ts_ms = 0
+                            if (
+                                hasattr(ts, "timestamp")
+                                and sec_timestamps
+                                and hasattr(sec_timestamps[0], "timestamp")
+                            ):
+                                ts_ms = int(
+                                    (ts.timestamp() - sec_timestamps[0].timestamp())
+                                    * 1000
                                 )
-                                nn_saved = True
+                            nn_intervals.append(
+                                [ts_ms, round(rr_corr, 1), was_corrected]
+                            )
+                            if was_corrected:
+                                corrections.append(
+                                    {
+                                        "nn_idx": i,
+                                        "original_rr_ms": round(rr_orig, 1),
+                                        "corrected_nn_ms": round(rr_corr, 1),
+                                    }
+                                )
 
-                        # Update loaded_info to reflect current saved state
-                        st.session_state[f"artifacts_loaded_info_{participant_id}"] = {
-                            "saved_at": datetime.now().isoformat(),
-                            "algorithm_method": algo_method,
-                            "algorithm_threshold": algo_threshold,
-                            "n_algorithm": n_algo_save,
-                            "n_manual": n_manual_save,
-                            "n_excluded": n_excluded_save,
+                        nn_data = {
+                            "correction_method": "kubios"
+                            if algo_method_apply
+                            else "manual",
+                            "corrected_at": datetime.now().isoformat(),
+                            "source_scope": scope_name,
+                            "original_beat_count": len(sec_corrected),
+                            "artifacts_removed": len(sec_artifacts_local),
+                            "intervals_corrected": len(corrections),
+                            "final_nn_count": len(nn_intervals),
+                            "intervals": nn_intervals,
+                            "corrections": corrections,
                         }
 
-                        if nn_saved:
-                            st.success(f"Saved artifacts + NN intervals ({len_corrected} beats)")
-                        else:
-                            st.warning(f"Saved artifacts only. NN intervals not saved: {nn_save_reason}")
-            elif has_saved_corrections:
-                st.success("Artifact corrections saved")
-            else:
-                st.caption("No artifact markings yet")
+                        save_nn_intervals(
+                            participant_id,
+                            sec_name,
+                            nn_data,
+                            data_dir=st.session_state.get("data_dir"),
+                            project_path=st.session_state.get("current_project"),
+                        )
+                        sections_saved += 1
 
-            # "Apply to All Validated Sections" button
-            # This creates separate NN files for each validated section from a broader detection scope
-            artifact_data_apply = st.session_state.get(f"artifacts_{participant_id}", {})
-            corrected_rr_apply = artifact_data_apply.get('corrected_rr')
-            timestamps_apply = artifact_data_apply.get('corrected_timestamps', [])
-            scope_apply = artifact_data_apply.get('scope', {})
-
-            if corrected_rr_apply and len(corrected_rr_apply) == len(timestamps_apply):
-                # Load validated sections
-                from rrational.gui.persistence import load_section_validations as load_vals_apply
-                vals_apply = load_vals_apply(
-                    participant_id,
-                    st.session_state.get("data_dir"),
-                    st.session_state.get("current_project")
-                )
-                valid_sections_apply = []
-                if vals_apply and vals_apply.get("sections"):
-                    for sec_name, sec_data in vals_apply["sections"].items():
-                        if sec_data.get("is_valid"):
-                            valid_sections_apply.append((sec_name, sec_data))
-
-                if len(valid_sections_apply) > 1:
-                    st.markdown("---")
-                    scope_name = scope_apply.get('name', 'detection scope')
-                    st.caption(f"Create NN files for each validated section from '{scope_name}'")
-
-                    if st.button("Apply to All Sections", key=f"apply_all_sections_{participant_id}",
-                                help="Split corrected NN intervals into separate files per validated section"):
-                        from datetime import datetime
-                        from rrational.gui.persistence import save_nn_intervals
-
-                        scope_offset_apply = scope_apply.get('offset', 0)
-                        scope_start_beat = scope_offset_apply
-                        scope_end_beat = scope_offset_apply + len(corrected_rr_apply)
-
-                        # Get artifact indices (local to scope)
-                        algo_idx_apply = artifact_data_apply.get('artifact_indices', [])
-                        manual_arts_apply = st.session_state.get(f"manual_artifacts_{participant_id}", [])
-                        excl_apply = st.session_state.get(f"artifact_exclusions_{participant_id}", set())
-
-                        global_artifacts_apply = (set(algo_idx_apply) |
-                                                 set(a.get('plot_idx', -1) for a in manual_arts_apply)) - excl_apply
-
-                        original_rr_apply = artifact_data_apply.get('original_rr', corrected_rr_apply)
-                        algo_method_apply = artifact_data_apply.get('method', 'unknown')
-
-                        sections_saved = 0
-                        sections_skipped = []
-
-                        for sec_name, sec_data in valid_sections_apply:
-                            # Get section boundaries (beat indices)
-                            sec_start_beat = sec_data.get('start_event', {}).get('beat_idx', 0)
-                            sec_end_beat = sec_data.get('end_event', {}).get('beat_idx', 0)
-
-                            # Check if section is within scope
-                            if sec_start_beat < scope_start_beat or sec_end_beat > scope_end_beat:
-                                sections_skipped.append(f"{sec_name} (outside scope)")
-                                continue
-
-                            # Calculate local indices within scope
-                            local_start = sec_start_beat - scope_offset_apply
-                            local_end = sec_end_beat - scope_offset_apply
-
-                            if local_start < 0 or local_end > len(corrected_rr_apply):
-                                sections_skipped.append(f"{sec_name} (boundary error)")
-                                continue
-
-                            # Slice the data for this section
-                            sec_corrected = corrected_rr_apply[local_start:local_end]
-                            sec_timestamps = timestamps_apply[local_start:local_end]
-                            sec_original = original_rr_apply[local_start:local_end] if original_rr_apply else sec_corrected
-
-                            # Find artifacts within this section (convert to section-local indices)
-                            sec_artifacts_local = set()
-                            for global_idx in global_artifacts_apply:
-                                local_in_scope = global_idx - scope_offset_apply
-                                if local_start <= local_in_scope < local_end:
-                                    sec_artifacts_local.add(local_in_scope - local_start)
-
-                            # Build NN intervals for this section
-                            nn_intervals = []
-                            corrections = []
-                            for i, (ts, rr_orig, rr_corr) in enumerate(zip(sec_timestamps, sec_original, sec_corrected)):
-                                was_corrected = i in sec_artifacts_local and abs(rr_orig - rr_corr) > 1
-                                ts_ms = 0
-                                if hasattr(ts, 'timestamp') and sec_timestamps and hasattr(sec_timestamps[0], 'timestamp'):
-                                    ts_ms = int((ts.timestamp() - sec_timestamps[0].timestamp()) * 1000)
-                                nn_intervals.append([ts_ms, round(rr_corr, 1), was_corrected])
-                                if was_corrected:
-                                    corrections.append({
-                                        'nn_idx': i,
-                                        'original_rr_ms': round(rr_orig, 1),
-                                        'corrected_nn_ms': round(rr_corr, 1),
-                                    })
-
-                            nn_data = {
-                                'correction_method': 'kubios' if algo_method_apply else 'manual',
-                                'corrected_at': datetime.now().isoformat(),
-                                'source_scope': scope_name,
-                                'original_beat_count': len(sec_corrected),
-                                'artifacts_removed': len(sec_artifacts_local),
-                                'intervals_corrected': len(corrections),
-                                'final_nn_count': len(nn_intervals),
-                                'intervals': nn_intervals,
-                                'corrections': corrections,
-                            }
-
-                            save_nn_intervals(
-                                participant_id, sec_name, nn_data,
-                                data_dir=st.session_state.get("data_dir"),
-                                project_path=st.session_state.get("current_project"),
-                            )
-                            sections_saved += 1
-
-                        if sections_saved > 0:
-                            st.success(f"Created NN files for {sections_saved} sections")
-                        if sections_skipped:
-                            st.warning(f"Skipped: {', '.join(sections_skipped)}")
-                        st.rerun()
-
-            # Export NN as CSV button (easily accessible)
-            st.markdown("---")
-            st.markdown("**Export Corrected NN Intervals**")
-            st.caption("Download CSV with artifact-corrected (interpolated) NN intervals")
-
-            # Get current plot data
-            plot_data_nn = st.session_state.get(f"plot_data_{participant_id}", {})
-            artifact_data_nn = st.session_state.get(f"artifacts_{participant_id}", {})
-
-            if plot_data_nn and 'timestamps' in plot_data_nn:
-                ts_nn = plot_data_nn['timestamps']
-                rr_nn = plot_data_nn['rr_values']
-
-                # Collect all artifact indices (algorithm + manual + exclusions reversed)
-                algo_indices_nn = set(artifact_data_nn.get('artifact_indices', []))
-                manual_indices_nn = set(art.get('plot_idx', -1) for art in manual_artifacts_save)
-                # Remove excluded indices (user un-marked them)
-                excluded_indices_nn = artifact_exclusions_save if artifact_exclusions_save else set()
-                all_artifact_idx_nn = (algo_indices_nn | manual_indices_nn) - excluded_indices_nn
-
-                n_artifacts_nn = len(all_artifact_idx_nn)
-                st.write(f"{len(ts_nn)} beats | {n_artifacts_nn} artifacts to correct")
-
-                if st.button("Export NN as CSV", key=f"sidebar_export_nn_{participant_id}",
-                            width="stretch"):
-                    # Use corrected RR from NeuroKit2's signal_fixpeaks (stored in artifact_data)
-                    corrected_rr_nn = artifact_data_nn.get('corrected_rr', rr_nn)
-                    if corrected_rr_nn is None or len(corrected_rr_nn) != len(rr_nn):
-                        corrected_rr_nn = rr_nn
-
-                    # Create DataFrame for export
-                    import io
-                    export_data_nn = []
-                    for i, (ts, rr_orig, rr_corr) in enumerate(zip(ts_nn, rr_nn, corrected_rr_nn)):
-                        ts_str = ts.strftime('%Y-%m-%d %H:%M:%S.%f') if hasattr(ts, 'strftime') else str(ts)
-                        is_art = i in all_artifact_idx_nn
-                        art_source = ''
-                        if is_art:
-                            if i in manual_indices_nn:
-                                art_source = 'manual'
-                            elif i in algo_indices_nn:
-                                art_source = 'algorithm'
-                        export_data_nn.append({
-                            'timestamp': ts_str,
-                            'rr_ms': rr_orig,
-                            'nn_ms': round(rr_corr, 1),
-                            'is_artifact': is_art,
-                            'artifact_source': art_source
-                        })
-
-                    df_nn = get_pandas().DataFrame(export_data_nn)
-
-                    # Store in session state for download
-                    csv_buffer_nn = io.StringIO()
-                    df_nn.to_csv(csv_buffer_nn, index=False)
-                    st.session_state[f"nn_csv_data_{participant_id}"] = csv_buffer_nn.getvalue()
-                    st.session_state[f"nn_csv_ready_{participant_id}"] = True
+                    if sections_saved > 0:
+                        st.success(f"Created NN files for {sections_saved} sections")
+                    if sections_skipped:
+                        st.warning(f"Skipped: {', '.join(sections_skipped)}")
                     st.rerun()
 
-                # Show download button if CSV is ready
-                if st.session_state.get(f"nn_csv_ready_{participant_id}"):
-                    csv_data_nn = st.session_state.get(f"nn_csv_data_{participant_id}", "")
-                    st.download_button(
-                        "Download NN CSV",
-                        data=csv_data_nn,
-                        file_name=f"{participant_id}_nn.csv",
-                        mime="text/csv",
-                        key=f"download_nn_{participant_id}",
-                        type="primary",
-                        width="stretch"
+        # Export NN as CSV button (easily accessible)
+        st.markdown("---")
+        st.markdown("**Export Corrected NN Intervals**")
+        st.caption("Download CSV with artifact-corrected (interpolated) NN intervals")
+
+        # Get current plot data
+        plot_data_nn = st.session_state.get(f"plot_data_{participant_id}", {})
+        artifact_data_nn = st.session_state.get(f"artifacts_{participant_id}", {})
+
+        if plot_data_nn and "timestamps" in plot_data_nn:
+            ts_nn = plot_data_nn["timestamps"]
+            rr_nn = plot_data_nn["rr_values"]
+
+            # Collect all artifact indices (algorithm + manual + exclusions reversed)
+            algo_indices_nn = set(artifact_data_nn.get("artifact_indices", []))
+            manual_indices_nn = set(
+                art.get("plot_idx", -1) for art in manual_artifacts_save
+            )
+            # Remove excluded indices (user un-marked them)
+            excluded_indices_nn = (
+                artifact_exclusions_save if artifact_exclusions_save else set()
+            )
+            all_artifact_idx_nn = (
+                algo_indices_nn | manual_indices_nn
+            ) - excluded_indices_nn
+
+            n_artifacts_nn = len(all_artifact_idx_nn)
+            st.write(f"{len(ts_nn)} beats | {n_artifacts_nn} artifacts to correct")
+
+            if st.button(
+                "Export NN as CSV",
+                key=f"sidebar_export_nn_{participant_id}",
+                width="stretch",
+            ):
+                # Use corrected RR from NeuroKit2's signal_fixpeaks (stored in artifact_data)
+                corrected_rr_nn = artifact_data_nn.get("corrected_rr", rr_nn)
+                if corrected_rr_nn is None or len(corrected_rr_nn) != len(rr_nn):
+                    corrected_rr_nn = rr_nn
+
+                # Create DataFrame for export
+                import io
+
+                export_data_nn = []
+                for i, (ts, rr_orig, rr_corr) in enumerate(
+                    zip(ts_nn, rr_nn, corrected_rr_nn)
+                ):
+                    ts_str = (
+                        ts.strftime("%Y-%m-%d %H:%M:%S.%f")
+                        if hasattr(ts, "strftime")
+                        else str(ts)
                     )
-            else:
-                st.caption("Load participant data first")
+                    is_art = i in all_artifact_idx_nn
+                    art_source = ""
+                    if is_art:
+                        if i in manual_indices_nn:
+                            art_source = "manual"
+                        elif i in algo_indices_nn:
+                            art_source = "algorithm"
+                    export_data_nn.append(
+                        {
+                            "timestamp": ts_str,
+                            "rr_ms": rr_orig,
+                            "nn_ms": round(rr_corr, 1),
+                            "is_artifact": is_art,
+                            "artifact_source": art_source,
+                        }
+                    )
 
-            # Get validated sections for this participant
-            from rrational.gui.persistence import load_section_validations as load_validations_for_export
-            validations_for_export = load_validations_for_export(
-                participant_id,
-                st.session_state.get("data_dir"),
-                st.session_state.get("current_project")
-            )
-            validated_section_names = []
-            if validations_for_export and validations_for_export.get("sections"):
-                for sec_name, sec_data in validations_for_export["sections"].items():
-                    if sec_data.get("is_valid"):
-                        validated_section_names.append(sec_name)
+                df_nn = get_pandas().DataFrame(export_data_nn)
 
-            if not validated_section_names:
-                st.warning("No validated sections found. Validate sections in the Sections tab first.")
-                export_options = []
-            else:
-                # Options: "All Validated Sections" + individual sections
-                export_options = ["All Validated Sections"] + validated_section_names
-
-            save_section = st.selectbox(
-                "Sections to export",
-                options=export_options if export_options else ["No validated sections"],
-                key=f"frag_save_section_{participant_id}",
-                help="Select which validated section(s) to export",
-                disabled=not export_options
-            )
-
-            include_corrected = st.checkbox(
-                "Include corrected NN intervals",
-                value=False,
-                key=f"frag_include_corrected_{participant_id}",
-                help="Include interpolated NN intervals (artifact-corrected)"
-            )
-
-            if st.button("Export for Analysis", key=f"frag_save_btn_{participant_id}",
-                        type="primary",
-                        help="Export v2.0 .rrational file with corrected NN intervals"):
-                # Import the v2.0 export module
-                from rrational.gui.rrational_export import (
-                    build_rrational_v2, save_rrational_v2
+                # Store in session state for download
+                csv_buffer_nn = io.StringIO()
+                df_nn.to_csv(csv_buffer_nn, index=False)
+                st.session_state[f"nn_csv_data_{participant_id}"] = (
+                    csv_buffer_nn.getvalue()
                 )
-                from rrational.gui.persistence import (
-                    load_section_validations, load_nn_intervals, get_processed_dir,
-                    save_artifact_corrections, save_nn_intervals
+                st.session_state[f"nn_csv_ready_{participant_id}"] = True
+                st.rerun()
+
+            # Show download button if CSV is ready
+            if st.session_state.get(f"nn_csv_ready_{participant_id}"):
+                csv_data_nn = st.session_state.get(f"nn_csv_data_{participant_id}", "")
+                st.download_button(
+                    "Download NN CSV",
+                    data=csv_data_nn,
+                    file_name=f"{participant_id}_nn.csv",
+                    mime="text/csv",
+                    key=f"download_nn_{participant_id}",
+                    type="primary",
+                    width="stretch",
                 )
-                from datetime import datetime
+        else:
+            st.caption("Load participant data first")
 
-                data_dir = st.session_state.get("data_dir")
-                project_path = st.session_state.get("current_project")
+        # Get validated sections for this participant
+        from rrational.gui.persistence import (
+            load_section_validations as load_validations_for_export,
+        )
 
-                if not data_dir and not project_path:
-                    st.error("No data directory or project set - cannot save")
-                else:
-                    # Determine which sections to export
-                    sections_to_export = []
-                    if save_section == "All Validated Sections":
-                        # Export all validated sections
-                        validations = load_section_validations(participant_id, data_dir, project_path)
-                        if validations and validations.get("sections"):
-                            for sec_name, sec_data in validations["sections"].items():
-                                if sec_data.get("is_valid"):
-                                    sections_to_export.append(sec_name)
-                        if not sections_to_export:
-                            st.warning("No validated sections found. Please validate sections first in the Sections tab.")
-                    elif save_section and save_section != "No validated sections":
-                        # Export the selected section
-                        sections_to_export.append(save_section)
+        validations_for_export = load_validations_for_export(
+            participant_id,
+            st.session_state.get("data_dir"),
+            st.session_state.get("current_project"),
+        )
+        validated_section_names = []
+        if validations_for_export and validations_for_export.get("sections"):
+            for sec_name, sec_data in validations_for_export["sections"].items():
+                if sec_data.get("is_valid"):
+                    validated_section_names.append(sec_name)
 
-                    if sections_to_export:
-                        # FIRST: Auto-save artifacts and NN intervals from session state if available
-                        artifact_data_export = st.session_state.get(f"artifacts_{participant_id}", {})
-                        manual_artifacts_export = st.session_state.get(f"manual_artifacts_{participant_id}", [])
-                        artifact_exclusions_export = st.session_state.get(f"artifact_exclusions_{participant_id}", set())
+        if not validated_section_names:
+            st.warning(
+                "No validated sections found. Validate sections in the Sections tab first."
+            )
+            export_options = []
+        else:
+            # Options: "All Validated Sections" + individual sections
+            export_options = ["All Validated Sections"] + validated_section_names
 
-                        if artifact_data_export.get('artifact_indices'):
-                            section_key_export = artifact_data_export.get('section_key', '_full')
-                            corrected_rr_export = artifact_data_export.get('corrected_rr')
+        save_section = st.selectbox(
+            "Sections to export",
+            options=export_options if export_options else ["No validated sections"],
+            key=f"frag_save_section_{participant_id}",
+            help="Select which validated section(s) to export",
+            disabled=not export_options,
+        )
 
-                            # Save artifact info (indices only, no corrected RR data)
-                            save_artifact_corrections(
-                                participant_id,
-                                manual_artifacts=manual_artifacts_export,
-                                artifact_exclusions=artifact_exclusions_export,
-                                data_dir=data_dir,
-                                project_path=project_path,
-                                algorithm_artifacts=artifact_data_export.get('artifact_indices'),
-                                algorithm_method=artifact_data_export.get('method'),
-                                algorithm_threshold=artifact_data_export.get('threshold'),
-                                scope=artifact_data_export.get('scope'),
-                                section_key=section_key_export,
-                                segment_beats=artifact_data_export.get('segment_beats'),
-                                indices_by_type=artifact_data_export.get('indices_by_type'),
+        _include_corrected = st.checkbox(  # noqa: F841
+            "Include corrected NN intervals",
+            value=False,
+            key=f"frag_include_corrected_{participant_id}",
+            help="Include interpolated NN intervals (artifact-corrected)",
+        )
+
+        if st.button(
+            "Export for Analysis",
+            key=f"frag_save_btn_{participant_id}",
+            type="primary",
+            help="Export v2.0 .rrational file with corrected NN intervals",
+        ):
+            # Import the v2.0 export module
+            from rrational.gui.rrational_export import (
+                build_rrational_v2,
+                save_rrational_v2,
+            )
+            from rrational.gui.persistence import (
+                load_section_validations,
+                load_nn_intervals,
+                get_processed_dir,
+                save_artifact_corrections,
+                save_nn_intervals,
+            )
+            from datetime import datetime
+
+            data_dir = st.session_state.get("data_dir")
+            project_path = st.session_state.get("current_project")
+
+            if not data_dir and not project_path:
+                st.error("No data directory or project set - cannot save")
+            else:
+                # Determine which sections to export
+                sections_to_export = []
+                if save_section == "All Validated Sections":
+                    # Export all validated sections
+                    validations = load_section_validations(
+                        participant_id, data_dir, project_path
+                    )
+                    if validations and validations.get("sections"):
+                        for sec_name, sec_data in validations["sections"].items():
+                            if sec_data.get("is_valid"):
+                                sections_to_export.append(sec_name)
+                    if not sections_to_export:
+                        st.warning(
+                            "No validated sections found. Please validate sections first in the Sections tab."
+                        )
+                elif save_section and save_section != "No validated sections":
+                    # Export the selected section
+                    sections_to_export.append(save_section)
+
+                if sections_to_export:
+                    # FIRST: Auto-save artifacts and NN intervals from session state if available
+                    artifact_data_export = st.session_state.get(
+                        f"artifacts_{participant_id}", {}
+                    )
+                    manual_artifacts_export = st.session_state.get(
+                        f"manual_artifacts_{participant_id}", []
+                    )
+                    artifact_exclusions_export = st.session_state.get(
+                        f"artifact_exclusions_{participant_id}", set()
+                    )
+
+                    if artifact_data_export.get("artifact_indices"):
+                        section_key_export = artifact_data_export.get(
+                            "section_key", "_full"
+                        )
+                        corrected_rr_export = artifact_data_export.get("corrected_rr")
+
+                        # Save artifact info (indices only, no corrected RR data)
+                        save_artifact_corrections(
+                            participant_id,
+                            manual_artifacts=manual_artifacts_export,
+                            artifact_exclusions=artifact_exclusions_export,
+                            data_dir=data_dir,
+                            project_path=project_path,
+                            algorithm_artifacts=artifact_data_export.get(
+                                "artifact_indices"
+                            ),
+                            algorithm_method=artifact_data_export.get("method"),
+                            algorithm_threshold=artifact_data_export.get("threshold"),
+                            scope=artifact_data_export.get("scope"),
+                            section_key=section_key_export,
+                            segment_beats=artifact_data_export.get("segment_beats"),
+                            indices_by_type=artifact_data_export.get("indices_by_type"),
+                        )
+
+                        # Save NN intervals if corrected_rr is available
+                        timestamps_export = artifact_data_export.get(
+                            "corrected_timestamps", []
+                        )
+                        original_rr_export = artifact_data_export.get(
+                            "original_rr", corrected_rr_export
+                        )
+
+                        if corrected_rr_export and len(corrected_rr_export) == len(
+                            timestamps_export
+                        ):
+                            # Get scope offset to convert global indices to local
+                            scope_info_export = artifact_data_export.get("scope", {})
+                            scope_offset_export = (
+                                scope_info_export.get("offset", 0)
+                                if scope_info_export
+                                else 0
                             )
 
-                            # Save NN intervals if corrected_rr is available
-                            timestamps_export = artifact_data_export.get('corrected_timestamps', [])
-                            original_rr_export = artifact_data_export.get('original_rr', corrected_rr_export)
-
-                            if corrected_rr_export and len(corrected_rr_export) == len(timestamps_export):
-                                # Get scope offset to convert global indices to local
-                                scope_info_export = artifact_data_export.get('scope', {})
-                                scope_offset_export = scope_info_export.get('offset', 0) if scope_info_export else 0
-
-                                algo_indices_export = artifact_data_export.get('artifact_indices', [])
-                                global_artifact_idx_export = (set(algo_indices_export) |
-                                                          set(art.get('plot_idx', -1) for art in manual_artifacts_export)) - \
-                                                          (artifact_exclusions_export if artifact_exclusions_export else set())
-
-                                # Convert global indices to local indices within the scope
-                                local_artifact_idx_export = {idx - scope_offset_export for idx in global_artifact_idx_export
-                                                            if idx >= scope_offset_export and idx < scope_offset_export + len(corrected_rr_export)}
-
-                                if original_rr_export is None or len(original_rr_export) != len(corrected_rr_export):
-                                    original_rr_export = corrected_rr_export
-
-                                nn_intervals_data_export = []
-                                corrections_list_export = []
-                                for i, (ts, rr_orig, rr_corr) in enumerate(zip(timestamps_export, original_rr_export, corrected_rr_export)):
-                                    was_corrected = i in local_artifact_idx_export and abs(rr_orig - rr_corr) > 1
-                                    ts_ms = 0
-                                    if hasattr(ts, 'timestamp') and hasattr(timestamps_export[0], 'timestamp'):
-                                        ts_ms = int((ts.timestamp() - timestamps_export[0].timestamp()) * 1000)
-                                    nn_intervals_data_export.append([ts_ms, round(rr_corr, 1), was_corrected])
-                                    if was_corrected:
-                                        corrections_list_export.append({
-                                            'nn_idx': i,
-                                            'original_rr_ms': round(rr_orig, 1),
-                                            'corrected_nn_ms': round(rr_corr, 1),
-                                        })
-
-                                nn_data_export = {
-                                    'correction_method': 'kubios' if artifact_data_export.get('method') else 'manual',
-                                    'corrected_at': datetime.now().isoformat(),
-                                    'original_beat_count': len(corrected_rr_export),
-                                    'artifacts_removed': len(local_artifact_idx_export),
-                                    'intervals_corrected': len(corrections_list_export),
-                                    'final_nn_count': len(nn_intervals_data_export),
-                                    'intervals': nn_intervals_data_export,
-                                    'corrections': corrections_list_export,
-                                }
-                                save_nn_intervals(
-                                    participant_id,
-                                    section_key_export,
-                                    nn_data_export,
-                                    data_dir=data_dir,
-                                    project_path=project_path,
+                            algo_indices_export = artifact_data_export.get(
+                                "artifact_indices", []
+                            )
+                            global_artifact_idx_export = (
+                                set(algo_indices_export)
+                                | set(
+                                    art.get("plot_idx", -1)
+                                    for art in manual_artifacts_export
                                 )
-                                st.info(f"Auto-saved artifacts and NN intervals for section '{section_key_export}'")
+                            ) - (
+                                artifact_exclusions_export
+                                if artifact_exclusions_export
+                                else set()
+                            )
 
-                        # Check if NN intervals exist for the sections (after auto-save)
-                        nn_data = load_nn_intervals(participant_id, data_dir=data_dir, project_path=project_path)
-                        nn_sections = nn_data.get("sections", {}) if nn_data else {}
+                            # Convert global indices to local indices within the scope
+                            local_artifact_idx_export = {
+                                idx - scope_offset_export
+                                for idx in global_artifact_idx_export
+                                if idx >= scope_offset_export
+                                and idx < scope_offset_export + len(corrected_rr_export)
+                            }
 
-                        missing_nn = [s for s in sections_to_export if s not in nn_sections and s != "_full"]
-                        if missing_nn:
-                            st.warning(f"Sections without NN intervals: {', '.join(missing_nn)}. "
-                                      "Run artifact detection on these sections first.")
+                            if original_rr_export is None or len(
+                                original_rr_export
+                            ) != len(corrected_rr_export):
+                                original_rr_export = corrected_rr_export
 
-                        # Extract raw RR data for sections without NN intervals
-                        raw_rr_fallback = {}
-                        if missing_nn:
-                            recording = st.session_state.get("recording") or st.session_state.get(f"recording_{participant_id}")
-                            if recording:
-                                # Get section validations for timestamps
-                                validations_export = load_section_validations(participant_id, data_dir, project_path)
-                                if validations_export and validations_export.get("sections"):
-                                    for sec_name in missing_nn:
-                                        sec_validation = validations_export["sections"].get(sec_name, {})
-                                        if sec_validation.get("is_valid"):
-                                            start_beat = sec_validation.get("start_event", {}).get("beat_idx", 0)
-                                            end_beat = sec_validation.get("end_event", {}).get("beat_idx", 0)
-                                            if end_beat > start_beat:
-                                                # Extract raw RR for this section
-                                                rr_list = recording.rr_values[start_beat:end_beat]
-                                                ts_list = recording.timestamps[start_beat:end_beat]
-                                                if rr_list and ts_list:
-                                                    # Calculate timestamps relative to section start
-                                                    section_start_ts = ts_list[0] if ts_list else None
-                                                    raw_rr_data = []
-                                                    for i, (ts, rr) in enumerate(zip(ts_list, rr_list)):
-                                                        if section_start_ts:
-                                                            ts_ms = int((ts - section_start_ts).total_seconds() * 1000)
-                                                        else:
-                                                            ts_ms = i * int(rr)  # Fallback: cumulative RR
-                                                        raw_rr_data.append([ts_ms, round(rr, 1)])
-                                                    if raw_rr_data:
-                                                        raw_rr_fallback[sec_name] = raw_rr_data
+                            nn_intervals_data_export = []
+                            corrections_list_export = []
+                            for i, (ts, rr_orig, rr_corr) in enumerate(
+                                zip(
+                                    timestamps_export,
+                                    original_rr_export,
+                                    corrected_rr_export,
+                                )
+                            ):
+                                was_corrected = (
+                                    i in local_artifact_idx_export
+                                    and abs(rr_orig - rr_corr) > 1
+                                )
+                                ts_ms = 0
+                                if hasattr(ts, "timestamp") and hasattr(
+                                    timestamps_export[0], "timestamp"
+                                ):
+                                    ts_ms = int(
+                                        (
+                                            ts.timestamp()
+                                            - timestamps_export[0].timestamp()
+                                        )
+                                        * 1000
+                                    )
+                                nn_intervals_data_export.append(
+                                    [ts_ms, round(rr_corr, 1), was_corrected]
+                                )
+                                if was_corrected:
+                                    corrections_list_export.append(
+                                        {
+                                            "nn_idx": i,
+                                            "original_rr_ms": round(rr_orig, 1),
+                                            "corrected_nn_ms": round(rr_corr, 1),
+                                        }
+                                    )
 
-                        # Build v2.0 export
-                        with st.spinner("Building export..."):
-                            export, warnings = build_rrational_v2(
+                            nn_data_export = {
+                                "correction_method": "kubios"
+                                if artifact_data_export.get("method")
+                                else "manual",
+                                "corrected_at": datetime.now().isoformat(),
+                                "original_beat_count": len(corrected_rr_export),
+                                "artifacts_removed": len(local_artifact_idx_export),
+                                "intervals_corrected": len(corrections_list_export),
+                                "final_nn_count": len(nn_intervals_data_export),
+                                "intervals": nn_intervals_data_export,
+                                "corrections": corrections_list_export,
+                            }
+                            save_nn_intervals(
                                 participant_id,
-                                sections_to_export,
+                                section_key_export,
+                                nn_data_export,
                                 data_dir=data_dir,
                                 project_path=project_path,
-                                raw_rr_fallback=raw_rr_fallback if raw_rr_fallback else None,
+                            )
+                            st.info(
+                                f"Auto-saved artifacts and NN intervals for section '{section_key_export}'"
                             )
 
-                        # Show warnings
-                        for warn in warnings:
-                            st.warning(warn)
+                    # Check if NN intervals exist for the sections (after auto-save)
+                    nn_data = load_nn_intervals(
+                        participant_id, data_dir=data_dir, project_path=project_path
+                    )
+                    nn_sections = nn_data.get("sections", {}) if nn_data else {}
 
-                        if export.sections:
-                            # Save to processed folder
-                            processed_dir = get_processed_dir(data_dir=data_dir, project_path=project_path)
-                            filename = f"{participant_id}.rrational"
-                            filepath = processed_dir / filename
+                    missing_nn = [
+                        s
+                        for s in sections_to_export
+                        if s not in nn_sections and s != "_full"
+                    ]
+                    if missing_nn:
+                        st.warning(
+                            f"Sections without NN intervals: {', '.join(missing_nn)}. "
+                            "Run artifact detection on these sections first."
+                        )
 
-                            # Save with incremental update (preserve existing sections)
-                            save_rrational_v2(export, filepath, incremental=True)
-
-                            # Summary
-                            total_nn = sum(
-                                len(s.nn_intervals.data)
-                                for s in export.sections.values()
+                    # Extract raw RR data for sections without NN intervals
+                    raw_rr_fallback = {}
+                    if missing_nn:
+                        recording = st.session_state.get(
+                            "recording"
+                        ) or st.session_state.get(f"recording_{participant_id}")
+                        if recording:
+                            # Get section validations for timestamps
+                            validations_export = load_section_validations(
+                                participant_id, data_dir, project_path
                             )
-                            st.success(f"Exported {len(export.sections)} section(s) with {total_nn} NN intervals to {filename}")
-                        else:
-                            st.error("No sections could be exported. Check that sections are validated and have NN intervals.")
+                            if validations_export and validations_export.get(
+                                "sections"
+                            ):
+                                for sec_name in missing_nn:
+                                    sec_validation = validations_export["sections"].get(
+                                        sec_name, {}
+                                    )
+                                    if sec_validation.get("is_valid"):
+                                        start_beat = sec_validation.get(
+                                            "start_event", {}
+                                        ).get("beat_idx", 0)
+                                        end_beat = sec_validation.get(
+                                            "end_event", {}
+                                        ).get("beat_idx", 0)
+                                        if end_beat > start_beat:
+                                            # Extract raw RR for this section
+                                            rr_list = recording.rr_values[
+                                                start_beat:end_beat
+                                            ]
+                                            ts_list = recording.timestamps[
+                                                start_beat:end_beat
+                                            ]
+                                            if rr_list and ts_list:
+                                                # Calculate timestamps relative to section start
+                                                section_start_ts = (
+                                                    ts_list[0] if ts_list else None
+                                                )
+                                                raw_rr_data = []
+                                                for i, (ts, rr) in enumerate(
+                                                    zip(ts_list, rr_list)
+                                                ):
+                                                    if section_start_ts:
+                                                        ts_ms = int(
+                                                            (
+                                                                ts - section_start_ts
+                                                            ).total_seconds()
+                                                            * 1000
+                                                        )
+                                                    else:
+                                                        ts_ms = i * int(
+                                                            rr
+                                                        )  # Fallback: cumulative RR
+                                                    raw_rr_data.append(
+                                                        [ts_ms, round(rr, 1)]
+                                                    )
+                                                if raw_rr_data:
+                                                    raw_rr_fallback[sec_name] = (
+                                                        raw_rr_data
+                                                    )
+
+                    # Build v2.0 export
+                    with st.spinner("Building export..."):
+                        export, warnings = build_rrational_v2(
+                            participant_id,
+                            sections_to_export,
+                            data_dir=data_dir,
+                            project_path=project_path,
+                            raw_rr_fallback=raw_rr_fallback
+                            if raw_rr_fallback
+                            else None,
+                        )
+
+                    # Show warnings
+                    for warn in warnings:
+                        st.warning(warn)
+
+                    if export.sections:
+                        # Save to processed folder
+                        processed_dir = get_processed_dir(
+                            data_dir=data_dir, project_path=project_path
+                        )
+                        filename = f"{participant_id}.rrational"
+                        filepath = processed_dir / filename
+
+                        # Save with incremental update (preserve existing sections)
+                        save_rrational_v2(export, filepath, incremental=True)
+
+                        # Summary
+                        total_nn = sum(
+                            len(s.nn_intervals.data) for s in export.sections.values()
+                        )
+                        st.success(
+                            f"Exported {len(export.sections)} section(s) with {total_nn} NN intervals to {filename}"
+                        )
+                    else:
+                        st.error(
+                            "No sections could be exported. Check that sections are validated and have NN intervals."
+                        )
 
     # Plot display options - use saved defaults
     plot_defaults = st.session_state.get("app_settings", {}).get("plot_options", {})
     st.markdown("**Plot Options:**")
     col_opt1, col_opt2, col_opt3, col_opt4 = st.columns(4)
     with col_opt1:
-        show_events = st.checkbox("Show events", value=plot_defaults.get("show_events", True),
-                                  key=f"frag_show_events_{participant_id}",
-                                  help="Show boundary events on plot")
-        show_exclusions = st.checkbox("Show exclusions", value=plot_defaults.get("show_exclusions", True),
-                                      key=f"frag_show_exclusions_{participant_id}",
-                                      help="Show exclusion zones as red rectangles")
+        show_events = st.checkbox(
+            "Show events",
+            value=plot_defaults.get("show_events", True),
+            key=f"frag_show_events_{participant_id}",
+            help="Show boundary events on plot",
+        )
+        show_exclusions = st.checkbox(
+            "Show exclusions",
+            value=plot_defaults.get("show_exclusions", True),
+            key=f"frag_show_exclusions_{participant_id}",
+            help="Show exclusion zones as red rectangles",
+        )
     with col_opt2:
-        show_condition_sections = st.checkbox("Show condition sections", value=plot_defaults.get("show_condition_sections", plot_defaults.get("show_music_sections", True)),
-                                          key=f"frag_show_cond_sec_{participant_id}")
-        show_condition_events = st.checkbox("Show condition events", value=plot_defaults.get("show_condition_events", plot_defaults.get("show_music_events", False)),
-                                        key=f"frag_show_cond_evt_{participant_id}")
+        show_condition_sections = st.checkbox(
+            "Show condition sections",
+            value=plot_defaults.get(
+                "show_condition_sections",
+                plot_defaults.get("show_music_sections", True),
+            ),
+            key=f"frag_show_cond_sec_{participant_id}",
+        )
+        show_condition_events = st.checkbox(
+            "Show condition events",
+            value=plot_defaults.get(
+                "show_condition_events", plot_defaults.get("show_music_events", False)
+            ),
+            key=f"frag_show_cond_evt_{participant_id}",
+        )
     with col_opt3:
-        show_artifacts = st.checkbox("Show artifacts", value=plot_defaults.get("show_artifacts", True),
-                                     key=f"frag_show_artifacts_{participant_id}",
-                                     help="Show saved artifacts (manual, validated, algorithm)")
+        show_artifacts = st.checkbox(
+            "Show artifacts",
+            value=plot_defaults.get("show_artifacts", True),
+            key=f"frag_show_artifacts_{participant_id}",
+            help="Show saved artifacts (manual, validated, algorithm)",
+        )
         # Artifact detection settings (only when enabled)
         if show_artifacts:
             # Check if we have loaded artifact settings to use as defaults
-            loaded_info = st.session_state.get(f"artifacts_loaded_info_{participant_id}", {})
+            loaded_info = st.session_state.get(
+                f"artifacts_loaded_info_{participant_id}", {}
+            )
             loaded_method = loaded_info.get("algorithm_method")
             loaded_threshold = loaded_info.get("algorithm_threshold")
 
             # Check if we have saved/loaded artifacts
-            saved_artifact_data = st.session_state.get(f"artifacts_{participant_id}", {})
+            saved_artifact_data = st.session_state.get(
+                f"artifacts_{participant_id}", {}
+            )
             has_saved_artifacts = bool(saved_artifact_data.get("artifact_indices"))
 
             # Detection mode: saved (default) vs new detection
@@ -2981,16 +3689,20 @@ def render_rr_plot_fragment(participant_id: str):
             # Track expander state separately - keep open while configuring
             expander_open_key = f"artifact_expander_open_{participant_id}"
             # Keep expander open if: explicitly set to open, detection requested, scope is not 'full', or method is segmented
-            current_scope = st.session_state.get(f"frag_artifact_scope_{participant_id}", "full")
-            current_method = st.session_state.get(f"frag_artifact_method_{participant_id}", "threshold")
-            is_configuring = (
-                current_scope != "full" or
-                current_method in ("kubios_segmented", "lipponen2019_segmented")
+            current_scope = st.session_state.get(
+                f"frag_artifact_scope_{participant_id}", "full"
+            )
+            current_method = st.session_state.get(
+                f"frag_artifact_method_{participant_id}", "threshold"
+            )
+            is_configuring = current_scope != "full" or current_method in (
+                "kubios_segmented",
+                "lipponen2019_segmented",
             )
             expander_should_open = (
-                st.session_state.get(expander_open_key, False) or
-                run_new_detection or
-                is_configuring
+                st.session_state.get(expander_open_key, False)
+                or run_new_detection
+                or is_configuring
             )
 
             # Show saved artifact info if available (Clear button moved to results section)
@@ -3020,7 +3732,7 @@ def render_rr_plot_fragment(participant_id: str):
                     format_func=lambda x: method_options[x],
                     index=default_method_idx,
                     key=f"frag_artifact_method_{participant_id}",
-                    help="**Threshold**: Fast ratio check (>X% change). **Lipponen 2019**: State-of-the-art beat classification (=Kubios). **Segmented**: 5-min chunks for long recordings."
+                    help="**Threshold**: Fast ratio check (>X% change). **Lipponen 2019**: State-of-the-art beat classification (=Kubios). **Segmented**: 5-min chunks for long recordings.",
                 )
                 if artifact_method == "threshold":
                     # Use loaded threshold if available, convert to percentage (0.20 -> 20)
@@ -3030,12 +3742,18 @@ def render_rr_plot_fragment(participant_id: str):
                         # Clamp to valid range
                         default_thresh_pct = max(10, min(50, default_thresh_pct))
 
-                    artifact_threshold = st.slider(
-                        "Threshold %",
-                        min_value=10, max_value=50, value=default_thresh_pct, step=5,
-                        key=f"frag_artifact_thresh_{participant_id}",
-                        help="Max allowed RR change between beats (20% = Malik method)"
-                    ) / 100.0
+                    artifact_threshold = (
+                        st.slider(
+                            "Threshold %",
+                            min_value=10,
+                            max_value=50,
+                            value=default_thresh_pct,
+                            step=5,
+                            key=f"frag_artifact_thresh_{participant_id}",
+                            help="Max allowed RR change between beats (20% = Malik method)",
+                        )
+                        / 100.0
+                    )
                     segment_beats = 300  # Default, not used for threshold
                     window_s = None  # Not used for threshold
                     is_segmented_method = False
@@ -3082,18 +3800,26 @@ def render_rr_plot_fragment(participant_id: str):
                 # Filter to only sections where this participant has the required start/end events
                 # AND that are selected for the participant's group (same as Section Validation)
                 all_sections = st.session_state.get("sections", {})
-                participant_events = st.session_state.participant_events.get(participant_id, {})
+                participant_events = st.session_state.participant_events.get(
+                    participant_id, {}
+                )
                 event_list = participant_events.get("events", [])
 
                 # Get participant's group and filter by group's selected sections
-                participant_group = st.session_state.participant_groups.get(participant_id, "Default")
+                participant_group = st.session_state.participant_groups.get(
+                    participant_id, "Default"
+                )
                 group_data = st.session_state.groups.get(participant_group, {})
                 group_selected_sections = group_data.get("selected_sections", [])
 
                 # If group has selected sections, use only those; otherwise use all sections
                 sections_to_check = all_sections
                 if group_selected_sections:
-                    sections_to_check = {k: v for k, v in all_sections.items() if k in group_selected_sections}
+                    sections_to_check = {
+                        k: v
+                        for k, v in all_sections.items()
+                        if k in group_selected_sections
+                    }
 
                 # Get canonical event names for this participant
                 participant_event_names = set()
@@ -3153,7 +3879,9 @@ def render_rr_plot_fragment(participant_id: str):
                             help="Select a section for artifact detection.",
                         )
                     else:
-                        st.warning("No sections defined. Go to Setup tab to define sections.")
+                        st.warning(
+                            "No sections defined. Go to Setup tab to define sections."
+                        )
                         artifact_scope = "full"  # Fall back to full recording
                 elif artifact_scope == "custom":
                     col_start, col_end = st.columns(2)
@@ -3173,8 +3901,12 @@ def render_rr_plot_fragment(participant_id: str):
                         )
                 elif artifact_scope == "all_validated":
                     # Find validated sections: try live validation first, then persisted file
-                    from rrational.gui.shared import get_validated_sections_for_participant as get_vals_live
-                    from rrational.gui.persistence import load_section_validations as load_vals_scope
+                    from rrational.gui.shared import (
+                        get_validated_sections_for_participant as get_vals_live,
+                    )
+                    from rrational.gui.persistence import (
+                        load_section_validations as load_vals_scope,
+                    )
 
                     validated_sections_scope = []
 
@@ -3195,7 +3927,7 @@ def render_rr_plot_fragment(participant_id: str):
                         vals_scope = load_vals_scope(
                             participant_id,
                             st.session_state.get("data_dir"),
-                            st.session_state.get("current_project")
+                            st.session_state.get("current_project"),
                         )
                         if vals_scope and vals_scope.get("sections"):
                             for sec_name, sec_data in vals_scope["sections"].items():
@@ -3203,9 +3935,13 @@ def render_rr_plot_fragment(participant_id: str):
                                     validated_sections_scope.append(sec_name)
 
                     if validated_sections_scope:
-                        st.caption(f"Will process: {', '.join(sorted(validated_sections_scope))}")
+                        st.caption(
+                            f"Will process: {', '.join(sorted(validated_sections_scope))}"
+                        )
                     else:
-                        st.warning("No validated sections found. Check Section Validation below.")
+                        st.warning(
+                            "No validated sections found. Check Section Validation below."
+                        )
 
                 # Store scope settings in session state for use later
                 st.session_state[f"artifact_scope_settings_{participant_id}"] = {
@@ -3213,13 +3949,17 @@ def render_rr_plot_fragment(participant_id: str):
                     "selected_section": selected_section,
                     "custom_start": custom_start_time,
                     "custom_end": custom_end_time,
-                    "validated_sections": validated_sections_scope if artifact_scope == "all_validated" else None,
+                    "validated_sections": validated_sections_scope
+                    if artifact_scope == "all_validated"
+                    else None,
                 }
 
                 # Calculate estimated beats for the selected scope (for adaptive sizing)
-                plot_data_for_len = st.session_state.get(f"plot_data_{participant_id}", {})
-                full_rr_values = plot_data_for_len.get('rr_values', [])
-                full_timestamps = plot_data_for_len.get('timestamps', [])
+                plot_data_for_len = st.session_state.get(
+                    f"plot_data_{participant_id}", {}
+                )
+                full_rr_values = plot_data_for_len.get("rr_values", [])
+                full_timestamps = plot_data_for_len.get("timestamps", [])
                 n_beats_full = len(full_rr_values)
 
                 # Estimate scoped beats
@@ -3232,6 +3972,7 @@ def render_rr_plot_fragment(participant_id: str):
                 if artifact_scope == "section" and selected_section:
                     # Use centralized validation to get section boundaries
                     from rrational.gui.shared import get_section_time_range
+
                     sections = st.session_state.get("sections", {})
                     normalizer = st.session_state.get("normalizer")
 
@@ -3246,23 +3987,40 @@ def render_rr_plot_fragment(participant_id: str):
                         # Count beats in section (normalize timestamps for safe comparison)
                         start_norm = _normalize_ts(start_ts)
                         end_norm = _normalize_ts(end_ts)
-                        section_beats = sum(1 for ts in full_timestamps if start_norm and end_norm and start_norm <= _normalize_ts(ts) <= end_norm)
+                        section_beats = sum(
+                            1
+                            for ts in full_timestamps
+                            if start_norm
+                            and end_norm
+                            and start_norm <= _normalize_ts(ts) <= end_norm
+                        )
                         if section_beats > 0:
                             n_beats_scoped = section_beats
                             # Calculate actual duration from timestamps
-                            scoped_duration_min = (end_norm - start_norm).total_seconds() / 60 if start_norm and end_norm else 0
+                            scoped_duration_min = (
+                                (end_norm - start_norm).total_seconds() / 60
+                                if start_norm and end_norm
+                                else 0
+                            )
                             # Show the actual time range being used
-                            start_str = start_ts.strftime("%H:%M:%S") if start_ts else "?"
+                            start_str = (
+                                start_ts.strftime("%H:%M:%S") if start_ts else "?"
+                            )
                             end_str = end_ts.strftime("%H:%M:%S") if end_ts else "?"
                             scope_label = f"section '{selected_section}'"
                             st.caption(f"Section range: {start_str} - {end_str}")
                     else:
-                        st.warning(f"Could not determine time range for section '{selected_section}'")
+                        st.warning(
+                            f"Could not determine time range for section '{selected_section}'"
+                        )
 
-                elif artifact_scope == "custom" and custom_start_time and custom_end_time:
+                elif (
+                    artifact_scope == "custom" and custom_start_time and custom_end_time
+                ):
                     # Estimate custom range beats
                     try:
                         from datetime import timedelta
+
                         def parse_time_offset(time_str):
                             parts = time_str.split(":")
                             if len(parts) == 3:
@@ -3279,10 +4037,16 @@ def render_rr_plot_fragment(participant_id: str):
                             # Normalize for safe comparison (handle timezone-aware/naive mix)
                             start_dt_norm = _normalize_ts(start_dt)
                             end_dt_norm = _normalize_ts(end_dt)
-                            custom_beats = sum(1 for ts in full_timestamps if start_dt_norm <= _normalize_ts(ts) <= end_dt_norm)
+                            custom_beats = sum(
+                                1
+                                for ts in full_timestamps
+                                if start_dt_norm <= _normalize_ts(ts) <= end_dt_norm
+                            )
                             if custom_beats > 0:
                                 n_beats_scoped = custom_beats
-                                scope_label = f"range {custom_start_time}-{custom_end_time}"
+                                scope_label = (
+                                    f"range {custom_start_time}-{custom_end_time}"
+                                )
                     except Exception:
                         pass  # Keep full recording estimate
 
@@ -3294,14 +4058,22 @@ def render_rr_plot_fragment(participant_id: str):
                     segment_mode = st.radio(
                         "Mode",
                         options=["adaptive", "preset", "manual"],
-                        format_func=lambda x: {"adaptive": "Adaptive (recommended)", "preset": "Preset", "manual": "Manual"}[x],
+                        format_func=lambda x: {
+                            "adaptive": "Adaptive (recommended)",
+                            "preset": "Preset",
+                            "manual": "Manual",
+                        }[x],
                         horizontal=True,
                         key=f"frag_segment_mode_{participant_id}",
-                        help="Adaptive adjusts based on data length. Presets offer quick selection. Manual gives full control."
+                        help="Adaptive adjusts based on data length. Presets offer quick selection. Manual gives full control.",
                     )
 
                     # Use actual duration if available, otherwise estimate from beats
-                    scoped_minutes = scoped_duration_min if scoped_duration_min else (n_beats_scoped / 60)
+                    scoped_minutes = (
+                        scoped_duration_min
+                        if scoped_duration_min
+                        else (n_beats_scoped / 60)
+                    )
 
                     if segment_mode == "adaptive":
                         if scoped_minutes < 15:
@@ -3314,13 +4086,27 @@ def render_rr_plot_fragment(participant_id: str):
                             window_s = 420.0  # 7 min
                             adaptive_label = "Robust"
 
-                        st.info(f"**{adaptive_label}**: {window_s/60:.0f} min/segment for {scoped_minutes:.0f} min data ({scope_label})")
+                        st.info(
+                            f"**{adaptive_label}**: {window_s / 60:.0f} min/segment for {scoped_minutes:.0f} min data ({scope_label})"
+                        )
 
                     elif segment_mode == "preset":
                         preset_options = {
-                            "fine": ("Fine (2 min)", 120.0, "More sensitive, for noisy data or short sections"),
-                            "standard": ("Standard (5 min)", 300.0, "Balanced sensitivity, recommended for most data"),
-                            "robust": ("Robust (7 min)", 420.0, "Less sensitive, for clean data with stable baseline"),
+                            "fine": (
+                                "Fine (2 min)",
+                                120.0,
+                                "More sensitive, for noisy data or short sections",
+                            ),
+                            "standard": (
+                                "Standard (5 min)",
+                                300.0,
+                                "Balanced sensitivity, recommended for most data",
+                            ),
+                            "robust": (
+                                "Robust (7 min)",
+                                420.0,
+                                "Less sensitive, for clean data with stable baseline",
+                            ),
                         }
                         preset_choice = st.selectbox(
                             "Preset",
@@ -3328,20 +4114,29 @@ def render_rr_plot_fragment(participant_id: str):
                             format_func=lambda x: preset_options[x][0],
                             index=1,
                             key=f"frag_segment_preset_{participant_id}",
-                            help="\n".join([f"**{v[0]}**: {v[2]}" for v in preset_options.values()])
+                            help="\n".join(
+                                [f"**{v[0]}**: {v[2]}" for v in preset_options.values()]
+                            ),
                         )
                         window_s = preset_options[preset_choice][1]
-                        st.caption(f"{preset_options[preset_choice][2]} | {scoped_minutes:.0f} min data in {scope_label}")
+                        st.caption(
+                            f"{preset_options[preset_choice][2]} | {scoped_minutes:.0f} min data in {scope_label}"
+                        )
 
                     else:  # manual
                         window_min = st.slider(
                             "Segment duration (min)",
-                            min_value=1.0, max_value=10.0, value=5.0, step=0.5,
+                            min_value=1.0,
+                            max_value=10.0,
+                            value=5.0,
+                            step=0.5,
                             key=f"frag_segment_duration_{participant_id}",
-                            help="Duration per segment in minutes. Lower = more sensitive, Higher = more robust."
+                            help="Duration per segment in minutes. Lower = more sensitive, Higher = more robust.",
                         )
                         window_s = window_min * 60.0
-                        st.caption(f"{window_min:.1f} min per segment | {scoped_minutes:.0f} min data in {scope_label}")
+                        st.caption(
+                            f"{window_min:.1f} min per segment | {scoped_minutes:.0f} min data in {scope_label}"
+                        )
 
                 # Option to show diagnostic plots (like NeuroKit2's signal_fixpeaks visualization)
                 # Use session state to persist checkbox value across reruns
@@ -3350,7 +4145,7 @@ def render_rr_plot_fragment(participant_id: str):
                     "Show diagnostic plots",
                     value=st.session_state.get(diag_plots_key, True),  # Default to True
                     key=f"show_artifact_diagnostic_{participant_id}",
-                    help="Show NeuroKit2 diagnostic plots: artifact types, criteria thresholds, and subspace classification"
+                    help="Show NeuroKit2 diagnostic plots: artifact types, criteria thresholds, and subspace classification",
                 )
                 # Store the checkbox value in session state for detection code to use
                 st.session_state[diag_plots_key] = show_diagnostic_plots
@@ -3361,43 +4156,68 @@ def render_rr_plot_fragment(participant_id: str):
                 confirm_key = f"confirm_new_detection_{participant_id}"
 
                 # Run detection button with warning for saved corrections
-                if has_saved_corrections and not st.session_state.get(confirm_key, False):
+                if has_saved_corrections and not st.session_state.get(
+                    confirm_key, False
+                ):
                     # Show warning and require confirmation
-                    st.warning("You have saved artifact corrections. Running new detection will **replace** them.")
+                    st.warning(
+                        "You have saved artifact corrections. Running new detection will **replace** them."
+                    )
                     col_confirm, col_cancel = st.columns(2)
                     with col_confirm:
-                        if st.button("Replace & Detect", key=f"confirm_detection_{participant_id}", type="primary"):
+                        if st.button(
+                            "Replace & Detect",
+                            key=f"confirm_detection_{participant_id}",
+                            type="primary",
+                        ):
                             st.session_state[confirm_key] = True
                             st.session_state[detect_new_key] = True
                             # Store diagnostic plot preference for detection code
-                            st.session_state[f"show_diagnostic_plots_{participant_id}"] = show_diagnostic_plots
+                            st.session_state[
+                                f"show_diagnostic_plots_{participant_id}"
+                            ] = show_diagnostic_plots
                             if f"artifacts_{participant_id}" in st.session_state:
-                                st.session_state[f"artifacts_{participant_id}"]["force_redetect"] = True
+                                st.session_state[f"artifacts_{participant_id}"][
+                                    "force_redetect"
+                                ] = True
                             # Clear saved info since we're replacing
                             if loaded_info_key in st.session_state:
                                 del st.session_state[loaded_info_key]
                             st.rerun()
                     with col_cancel:
-                        if st.button("Cancel", key=f"cancel_detection_{participant_id}"):
+                        if st.button(
+                            "Cancel", key=f"cancel_detection_{participant_id}"
+                        ):
                             st.session_state[confirm_key] = False
                 else:
-                    if st.button("Run Detection", key=f"run_artifact_detection_{participant_id}", type="primary",
-                                width="stretch"):
+                    if st.button(
+                        "Run Detection",
+                        key=f"run_artifact_detection_{participant_id}",
+                        type="primary",
+                        width="stretch",
+                    ):
                         st.session_state[detect_new_key] = True
                         # Store diagnostic plot preference for detection code
-                        st.session_state[f"show_diagnostic_plots_{participant_id}"] = show_diagnostic_plots
+                        st.session_state[f"show_diagnostic_plots_{participant_id}"] = (
+                            show_diagnostic_plots
+                        )
                         # Clear saved artifacts to force new detection
                         if f"artifacts_{participant_id}" in st.session_state:
-                            st.session_state[f"artifacts_{participant_id}"]["force_redetect"] = True
+                            st.session_state[f"artifacts_{participant_id}"][
+                                "force_redetect"
+                            ] = True
                         st.rerun()
                     # Reset confirm state when not in confirmation mode
                     if confirm_key in st.session_state:
                         del st.session_state[confirm_key]
 
             # Show corrected only when artifacts enabled
-            show_corrected = st.checkbox("Show corrected (NN)", value=plot_defaults.get("show_corrected", False),
-                                         key=f"frag_show_corrected_{participant_id}",
-                                         help="Preview corrected NN intervals (artifacts interpolated)")
+            show_corrected = st.checkbox(
+                "Show corrected (NN)",
+                value=plot_defaults.get("show_corrected", False),
+                key=f"frag_show_corrected_{participant_id}",
+                help="Preview corrected NN intervals (artifacts interpolated)",
+            )
         else:
             artifact_method = "threshold"
             artifact_threshold = 0.20
@@ -3405,23 +4225,34 @@ def render_rr_plot_fragment(participant_id: str):
             window_s = None
             show_corrected = False  # Not available without artifacts
             gap_handling = "include"  # Default
-        show_variability = st.checkbox("Show variability segments", value=plot_defaults.get("show_variability", False),
-                                       key=f"frag_show_var_{participant_id}",
-                                       help="Detect variance changepoints")
+        show_variability = st.checkbox(
+            "Show variability segments",
+            value=plot_defaults.get("show_variability", False),
+            key=f"frag_show_var_{participant_id}",
+            help="Detect variance changepoints",
+        )
     with col_opt4:
         # Enable gap detection for HRV Logger OR multi-file VNS data
-        vns_has_multiple_files = st.session_state.get(f"vns_multiple_files_{participant_id}", False)
+        vns_has_multiple_files = st.session_state.get(
+            f"vns_multiple_files_{participant_id}", False
+        )
         disable_gap_controls = is_vns_data and not vns_has_multiple_files
 
-        show_gaps = st.checkbox("Show time gaps", value=plot_defaults.get("show_gaps", True),
-                                key=f"frag_show_gaps_{participant_id}",
-                                disabled=disable_gap_controls)
+        show_gaps = st.checkbox(
+            "Show time gaps",
+            value=plot_defaults.get("show_gaps", True),
+            key=f"frag_show_gaps_{participant_id}",
+            disabled=disable_gap_controls,
+        )
         gap_threshold = st.number_input(
             "Gap threshold (s)",
-            min_value=1.0, max_value=60.0, value=float(plot_defaults.get("gap_threshold", 15.0)), step=1.0,
+            min_value=1.0,
+            max_value=60.0,
+            value=float(plot_defaults.get("gap_threshold", 15.0)),
+            step=1.0,
             key=f"frag_gap_thresh_{participant_id}",
             help="Threshold for detecting gaps in data",
-            disabled=disable_gap_controls
+            disabled=disable_gap_controls,
         )
         # Only show Help button here if NOT in Signal Inspection mode
         # (Signal Inspection has its own dedicated Help section)
@@ -3445,9 +4276,13 @@ def render_rr_plot_fragment(participant_id: str):
             method_name = loaded_info.get("algorithm_method", "unknown")
             threshold = loaded_info.get("algorithm_threshold")
             if threshold is not None:
-                info_parts.append(f"**{loaded_info['n_algorithm']}** algorithm ({method_name}, {threshold:.0%})")
+                info_parts.append(
+                    f"**{loaded_info['n_algorithm']}** algorithm ({method_name}, {threshold:.0%})"
+                )
             else:
-                info_parts.append(f"**{loaded_info['n_algorithm']}** algorithm ({method_name})")
+                info_parts.append(
+                    f"**{loaded_info['n_algorithm']}** algorithm ({method_name})"
+                )
         if loaded_info.get("n_manual", 0) > 0:
             info_parts.append(f"**{loaded_info['n_manual']}** manual")
         if loaded_info.get("n_excluded", 0) > 0:
@@ -3458,6 +4293,7 @@ def render_rr_plot_fragment(participant_id: str):
             if saved_at:
                 try:
                     from datetime import datetime
+
                     dt = datetime.fromisoformat(saved_at)
                     saved_str = dt.strftime("%Y-%m-%d %H:%M")
                 except Exception:
@@ -3465,26 +4301,31 @@ def render_rr_plot_fragment(participant_id: str):
             else:
                 saved_str = "unknown"
 
-            st.info(f"**Loaded artifact corrections** (saved {saved_str}): " + " | ".join(info_parts))
+            st.info(
+                f"**Loaded artifact corrections** (saved {saved_str}): "
+                + " | ".join(info_parts)
+            )
 
     # Show downsampling info
-    if plot_data['n_displayed'] < plot_data['n_original']:
-        st.caption(f"Showing {plot_data['n_displayed']:,} of {plot_data['n_original']:,} points")
+    if plot_data["n_displayed"] < plot_data["n_original"]:
+        st.caption(
+            f"Showing {plot_data['n_displayed']:,} of {plot_data['n_original']:,} points"
+        )
 
     # Build figure
     fig = go.Figure()
 
     # Get custom plot colors from settings
     plot_colors = get_plot_colors()
-    line_color = plot_colors['line']
-    artifact_color = plot_colors['artifact']
+    line_color = plot_colors["line"]
+    artifact_color = plot_colors["artifact"]
 
     # Check if we have flags (VNS data with flagged intervals)
-    flags = plot_data.get('flags')
+    flags = plot_data.get("flags")
     if flags:
         # VNS data: Split into valid and flagged intervals
-        timestamps = plot_data['timestamps']
-        rr_values = plot_data['rr_values']
+        timestamps = plot_data["timestamps"]
+        rr_values = plot_data["rr_values"]
 
         good_ts, good_rr = [], []
         flagged_ts, flagged_rr = [], []
@@ -3502,52 +4343,62 @@ def render_rr_plot_fragment(participant_id: str):
         n_total = len(timestamps)
         if n_flagged > 0:
             flagged_time_ms = sum(flagged_rr)
-            st.warning(f"**{n_flagged} intervals flagged** ({n_flagged/n_total*100:.1f}%) - "
-                      f"shown in artifact color, excluded from HRV analysis. "
-                      f"Total flagged time: {flagged_time_ms/1000:.1f}s")
+            st.warning(
+                f"**{n_flagged} intervals flagged** ({n_flagged / n_total * 100:.1f}%) - "
+                f"shown in artifact color, excluded from HRV analysis. "
+                f"Total flagged time: {flagged_time_ms / 1000:.1f}s"
+            )
 
         # Valid intervals (connected with lines)
         if good_ts:
-            fig.add_trace(ScatterType(
-                x=good_ts,
-                y=good_rr,
-                mode='markers+lines',
-                name='RR Intervals (valid)',
-                marker=dict(size=3, color=line_color),
-                line=dict(width=1, color=line_color),
-                hovertemplate='Time: %{x}<br>RR: %{y} ms<extra></extra>'
-            ))
+            fig.add_trace(
+                ScatterType(
+                    x=good_ts,
+                    y=good_rr,
+                    mode="markers+lines",
+                    name="RR Intervals (valid)",
+                    marker=dict(size=3, color=line_color),
+                    line=dict(width=1, color=line_color),
+                    hovertemplate="Time: %{x}<br>RR: %{y} ms<extra></extra>",
+                )
+            )
 
         # Flagged intervals (markers only, no lines to show discontinuity)
         if flagged_ts:
-            fig.add_trace(ScatterType(
-                x=flagged_ts,
-                y=flagged_rr,
-                mode='markers',
-                name='RR Intervals (flagged)',
-                marker=dict(size=5, color=artifact_color, symbol='x'),
-                hovertemplate='Time: %{x}<br>RR: %{y} ms (FLAGGED)<extra></extra>'
-            ))
+            fig.add_trace(
+                ScatterType(
+                    x=flagged_ts,
+                    y=flagged_rr,
+                    mode="markers",
+                    name="RR Intervals (flagged)",
+                    marker=dict(size=5, color=artifact_color, symbol="x"),
+                    hovertemplate="Time: %{x}<br>RR: %{y} ms (FLAGGED)<extra></extra>",
+                )
+            )
     else:
         # HRV Logger: Already cleaned, show all with custom color
-        fig.add_trace(ScatterType(
-            x=plot_data['timestamps'],
-            y=plot_data['rr_values'],
-            mode='markers+lines',
-            name='RR Intervals',
-            marker=dict(size=3, color=line_color),
-            line=dict(width=1, color=line_color),
-            hovertemplate='Time: %{x}<br>RR: %{y} ms<extra></extra>'
-        ))
+        fig.add_trace(
+            ScatterType(
+                x=plot_data["timestamps"],
+                y=plot_data["rr_values"],
+                mode="markers+lines",
+                name="RR Intervals",
+                marker=dict(size=3, color=line_color),
+                line=dict(width=1, color=line_color),
+                hovertemplate="Time: %{x}<br>RR: %{y} ms<extra></extra>",
+            )
+        )
 
-    y_min, y_max = plot_data['y_min'], plot_data['y_max']
-    y_range = plot_data['y_range']
+    y_min, y_max = plot_data["y_min"], plot_data["y_max"]
+    y_range = plot_data["y_range"]
 
     # Get theme colors for the plot
     theme = get_current_theme_colors()
 
     # Check if Signal Inspection section filter is active
-    inspection_range = st.session_state.get(f"inspection_section_range_{participant_id}")
+    inspection_range = st.session_state.get(
+        f"inspection_section_range_{participant_id}"
+    )
 
     # Check zoom state early - needed for dynamic uirevision
     zoom_key = f"inspection_zoom_{participant_id}"
@@ -3570,21 +4421,24 @@ def render_rr_plot_fragment(participant_id: str):
     if use_sequential_timestamps:
         # Signal Inspection mode: x-axis shows sequential beat time (each beat unique position)
         xaxis_config = dict(
-            title=dict(text="Sequential Beat Time (gaps removed)", font=dict(color=theme['text'])),
-            tickformat='%H:%M:%S',
-            gridcolor=theme['grid'],
-            linecolor=theme['line'],
-            tickfont=dict(color=theme['text']),
+            title=dict(
+                text="Sequential Beat Time (gaps removed)",
+                font=dict(color=theme["text"]),
+            ),
+            tickformat="%H:%M:%S",
+            gridcolor=theme["grid"],
+            linecolor=theme["line"],
+            tickfont=dict(color=theme["text"]),
             uirevision=axis_uirevision,  # False when section selected to force range update
         )
     else:
         # Normal mode: x-axis shows real clock time (aligned with events)
         xaxis_config = dict(
-            title=dict(text="Time", font=dict(color=theme['text'])),
-            tickformat='%H:%M:%S',
-            gridcolor=theme['grid'],
-            linecolor=theme['line'],
-            tickfont=dict(color=theme['text']),
+            title=dict(text="Time", font=dict(color=theme["text"])),
+            tickformat="%H:%M:%S",
+            gridcolor=theme["grid"],
+            linecolor=theme["line"],
+            tickfont=dict(color=theme["text"]),
             uirevision=axis_uirevision,  # False when section selected to force range update
         )
     # Check if a section is selected in Signal Inspection mode
@@ -3593,8 +4447,10 @@ def render_rr_plot_fragment(participant_id: str):
     # Convert section range to sequential timestamps if needed
     section_seq_start, section_seq_end = None, None
     if section_selected and use_sequential_timestamps:
-        original_ts = plot_data.get('original_timestamps', [])
-        sequential_ts = plot_data.get('timestamps', [])  # Already replaced with sequential
+        original_ts = plot_data.get("original_timestamps", [])
+        sequential_ts = plot_data.get(
+            "timestamps", []
+        )  # Already replaced with sequential
 
         if original_ts and sequential_ts and len(original_ts) == len(sequential_ts):
             pd = get_pandas()
@@ -3611,93 +4467,119 @@ def render_rr_plot_fragment(participant_id: str):
 
     # Build Y-axis config
     yaxis_config = dict(
-        title=dict(text="RR Interval (ms)", font=dict(color=theme['text'])),
-        gridcolor=theme['grid'],
-        linecolor=theme['line'],
-        tickfont=dict(color=theme['text']),
+        title=dict(text="RR Interval (ms)", font=dict(color=theme["text"])),
+        gridcolor=theme["grid"],
+        linecolor=theme["line"],
+        tickfont=dict(color=theme["text"]),
         uirevision=axis_uirevision,  # False when section selected to force range update
     )
 
     # Determine X and Y axis ranges based on zoom and section state
     if inspection_zoom:
         # Inspection zoom active: Y = 400-1200ms, X = 60s window (always)
-        yaxis_config['range'] = [inspection_zoom['y_min'], inspection_zoom['y_max']]
-        yaxis_config['autorange'] = False
+        yaxis_config["range"] = [inspection_zoom["y_min"], inspection_zoom["y_max"]]
+        yaxis_config["autorange"] = False
 
         # X-axis: 60s window with pan offset from arrow keys
-        ts_for_zoom = plot_data.get('timestamps', [])
-        if inspection_zoom.get('x_window_seconds') and ts_for_zoom:
+        ts_for_zoom = plot_data.get("timestamps", [])
+        if inspection_zoom.get("x_window_seconds") and ts_for_zoom:
             pd = get_pandas()
-            half_window = pd.Timedelta(seconds=inspection_zoom['x_window_seconds'] / 2)
-            pan_offset_s = st.session_state.get(f"inspection_pan_offset_{participant_id}", 0)
+            half_window = pd.Timedelta(seconds=inspection_zoom["x_window_seconds"] / 2)
+            pan_offset_s = st.session_state.get(
+                f"inspection_pan_offset_{participant_id}", 0
+            )
             pan_delta = pd.Timedelta(seconds=pan_offset_s)
 
             if section_selected and section_seq_start and section_seq_end:
-                section_mid = pd.to_datetime(section_seq_start) + (pd.to_datetime(section_seq_end) - pd.to_datetime(section_seq_start)) / 2
+                section_mid = (
+                    pd.to_datetime(section_seq_start)
+                    + (
+                        pd.to_datetime(section_seq_end)
+                        - pd.to_datetime(section_seq_start)
+                    )
+                    / 2
+                )
                 center = section_mid + pan_delta
-                xaxis_config['range'] = [center - half_window, center + half_window]
+                xaxis_config["range"] = [center - half_window, center + half_window]
             else:
                 mid_idx = len(ts_for_zoom) // 2
                 mid_time = pd.to_datetime(ts_for_zoom[mid_idx])
                 center = mid_time + pan_delta
-                xaxis_config['range'] = [center - half_window, center + half_window]
-            xaxis_config['autorange'] = False
+                xaxis_config["range"] = [center - half_window, center + half_window]
+            xaxis_config["autorange"] = False
     else:
         # No inspection zoom: Y = auto
-        yaxis_config['autorange'] = True
+        yaxis_config["autorange"] = True
 
         if section_selected:
             # Section selected, no zoom: X = section range
             if use_sequential_timestamps and section_seq_start and section_seq_end:
-                xaxis_config['range'] = [section_seq_start, section_seq_end]
+                xaxis_config["range"] = [section_seq_start, section_seq_end]
             else:
-                xaxis_config['range'] = [inspection_range[0], inspection_range[1]]
-            xaxis_config['autorange'] = False
+                xaxis_config["range"] = [inspection_range[0], inspection_range[1]]
+            xaxis_config["autorange"] = False
         else:
             # No section, no zoom: X = full recording (auto)
-            xaxis_config['autorange'] = True
+            xaxis_config["autorange"] = True
 
     # Set dragmode based on interaction mode
     # Signal Inspection: pan mode for instant drag-to-pan (client-side, no server roundtrip)
     # Other modes: zoom mode for selecting regions
-    dragmode = 'pan' if current_mode == "Signal Inspection" else 'zoom'
+    dragmode = "pan" if current_mode == "Signal Inspection" else "zoom"
 
     fig.update_layout(
         title=f"Tachogram - {participant_id}",
         xaxis=xaxis_config,
         yaxis=yaxis_config,
-        hovermode='closest',
+        hovermode="closest",
         height=600,
         showlegend=True,
-        legend=dict(x=1.02, y=1, xanchor='left', yanchor='top', font=dict(color=theme['text'])),
+        legend=dict(
+            x=1.02, y=1, xanchor="left", yanchor="top", font=dict(color=theme["text"])
+        ),
         uirevision=zoom_revision,  # Dynamic - resets when zoom toggled
-        paper_bgcolor=theme['bg'],
-        plot_bgcolor=theme['bg'],
-        font=dict(color=theme['text']),
+        paper_bgcolor=theme["bg"],
+        plot_bgcolor=theme["bg"],
+        font=dict(color=theme["text"]),
         dragmode=dragmode,  # Enable instant pan in Signal Inspection mode
     )
 
     # Add event markers (conditional on show_events)
     if show_events:
-        events_list = stored_data.get('events', [])
-        manual_list = stored_data.get('manual', [])
+        events_list = stored_data.get("events", [])
+        manual_list = stored_data.get("manual", [])
         if not isinstance(events_list, list):
             events_list = []
         if not isinstance(manual_list, list):
             manual_list = []
         current_events = events_list + manual_list
 
-        distinct_colors = ['#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b',
-                           '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        distinct_colors = [
+            "#d62728",
+            "#2ca02c",
+            "#ff7f0e",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#7f7f7f",
+            "#bcbd22",
+            "#17becf",
+        ]
         event_by_canonical = {}
 
         for evt_status in current_events:
-            if hasattr(evt_status, 'canonical'):
+            if hasattr(evt_status, "canonical"):
                 canonical = evt_status.canonical
                 timestamp = evt_status.first_timestamp
             else:
-                canonical = st.session_state.normalizer.normalize(evt_status.label) if hasattr(evt_status, 'label') else None
-                timestamp = evt_status.timestamp if hasattr(evt_status, 'timestamp') else None
+                canonical = (
+                    st.session_state.normalizer.normalize(evt_status.label)
+                    if hasattr(evt_status, "label")
+                    else None
+                )
+                timestamp = (
+                    evt_status.timestamp if hasattr(evt_status, "timestamp") else None
+                )
 
             if canonical and canonical != "unmatched" and timestamp:
                 if canonical not in event_by_canonical:
@@ -3723,33 +4605,52 @@ def render_rr_plot_fragment(participant_id: str):
             color = distinct_colors[idx % len(distinct_colors)]
             for event_time in event_times:
                 # Map to sequential position if in Signal Inspection mode
-                display_time = map_to_sequential(event_time, real_to_sequential_map) if real_to_sequential_map else event_time
+                display_time = (
+                    map_to_sequential(event_time, real_to_sequential_map)
+                    if real_to_sequential_map
+                    else event_time
+                )
                 fig.add_shape(
-                    type="line", x0=display_time, x1=display_time,
-                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                    line=dict(color=color, width=2, dash='dash'), opacity=0.7
+                    type="line",
+                    x0=display_time,
+                    x1=display_time,
+                    y0=y_min - 0.05 * y_range,
+                    y1=y_max + 0.05 * y_range,
+                    line=dict(color=color, width=2, dash="dash"),
+                    opacity=0.7,
                 )
                 fig.add_annotation(
-                    x=display_time, y=y_max + 0.08 * y_range,
-                    text=event_name, showarrow=False, textangle=-90,
-                    font=dict(color=color, size=10)
+                    x=display_time,
+                    y=y_max + 0.08 * y_range,
+                    text=event_name,
+                    showarrow=False,
+                    textangle=-90,
+                    font=dict(color=color, size=10),
                 )
 
     # Gap detection (CACHED) - ALWAYS detect gaps from original timestamps
     # This provides consistent gap info for both Add Events and Signal Inspection modes
-    timestamps_list = plot_data['timestamps']
-    rr_list = plot_data['rr_values']
+    timestamps_list = plot_data["timestamps"]
+    rr_list = plot_data["rr_values"]
 
     # Enable gap detection for: HRV Logger data, OR VNS data with multiple files
     enable_gap_detection = not is_vns_data or vns_has_multiple_files
 
     if not enable_gap_detection:
         # Single-file VNS data doesn't have meaningful timestamp gaps
-        gap_result = {"gaps": [], "total_gaps": 0, "total_gap_duration_s": 0.0, "gap_ratio": 0.0, "vns_note": True}
+        gap_result = {
+            "gaps": [],
+            "total_gaps": 0,
+            "total_gap_duration_s": 0.0,
+            "gap_ratio": 0.0,
+            "vns_note": True,
+        }
         gap_adjacent_indices = set()
     else:
         # Detect gaps from ORIGINAL timestamps (not sequential), using user's threshold
-        gap_result = cached_gap_detection(tuple(original_timestamps), tuple(rr_list), gap_threshold)
+        gap_result = cached_gap_detection(
+            tuple(original_timestamps), tuple(rr_list), gap_threshold
+        )
         # Compute gap-adjacent indices (beats immediately after gaps) for artifact handling
         gap_adjacent_indices = set()
         for gap in gap_result.get("gaps", []):
@@ -3758,7 +4659,7 @@ def render_rr_plot_fragment(participant_id: str):
                 gap_adjacent_indices.add(gap_end_idx)
     st.session_state[f"gaps_{participant_id}"] = gap_result
     # Store gap-adjacent indices in plot_data for artifact handling
-    plot_data['gap_adjacent_indices'] = gap_adjacent_indices
+    plot_data["gap_adjacent_indices"] = gap_adjacent_indices
 
     # Get manual artifacts (always available, even if show_artifacts is False)
     manual_artifact_key = f"manual_artifacts_{participant_id}"
@@ -3788,7 +4689,9 @@ def render_rr_plot_fragment(participant_id: str):
             # User explicitly requested new detection - run it
             just_ran_detection = True
             # Get scope settings
-            scope_settings = st.session_state.get(f"artifact_scope_settings_{participant_id}", {"scope": "full"})
+            scope_settings = st.session_state.get(
+                f"artifact_scope_settings_{participant_id}", {"scope": "full"}
+            )
             detection_scope = scope_settings.get("scope", "full")
 
             # Prepare RR data based on scope
@@ -3799,11 +4702,14 @@ def render_rr_plot_fragment(participant_id: str):
 
             # CRITICAL: Use ORIGINAL timestamps for section comparison (not sequential)
             # get_section_time_range returns original clock timestamps
-            original_timestamps_for_scope = plot_data.get('original_timestamps', timestamps_list)
+            original_timestamps_for_scope = plot_data.get(
+                "original_timestamps", timestamps_list
+            )
 
             if detection_scope == "section" and scope_settings.get("selected_section"):
                 # Use centralized validation to get section boundaries
                 from rrational.gui.shared import get_section_time_range
+
                 section_name = scope_settings["selected_section"]
                 sections = st.session_state.get("sections", {})
                 normalizer = st.session_state.get("normalizer")
@@ -3821,9 +4727,16 @@ def render_rr_plot_fragment(participant_id: str):
                     start_norm = _normalize_ts(start_ts)
                     end_norm = _normalize_ts(end_ts)
                     filtered_data = []
-                    for idx, (ts, rr) in enumerate(zip(original_timestamps_for_scope, rr_list)):
+                    for idx, (ts, rr) in enumerate(
+                        zip(original_timestamps_for_scope, rr_list)
+                    ):
                         ts_norm = _normalize_ts(ts)
-                        if start_norm and end_norm and ts_norm and start_norm <= ts_norm <= end_norm:
+                        if (
+                            start_norm
+                            and end_norm
+                            and ts_norm
+                            and start_norm <= ts_norm <= end_norm
+                        ):
                             if not filtered_data:
                                 scope_offset = idx
                             filtered_data.append((ts, rr))
@@ -3831,11 +4744,20 @@ def render_rr_plot_fragment(participant_id: str):
                     if filtered_data:
                         timestamps_for_detection = [d[0] for d in filtered_data]
                         rr_for_detection = [d[1] for d in filtered_data]
-                        scope_info = {"type": "section", "name": section_name, "offset": scope_offset, "length": len(filtered_data)}
+                        scope_info = {
+                            "type": "section",
+                            "name": section_name,
+                            "offset": scope_offset,
+                            "length": len(filtered_data),
+                        }
                     else:
-                        st.warning(f"No data found in section '{section_name}'. Using full recording.")
+                        st.warning(
+                            f"No data found in section '{section_name}'. Using full recording."
+                        )
                 else:
-                    st.warning(f"Could not find start/end events for section '{section_name}'. Using full recording.")
+                    st.warning(
+                        f"Could not find start/end events for section '{section_name}'. Using full recording."
+                    )
 
             elif detection_scope == "custom":
                 # Parse custom time range
@@ -3876,19 +4798,31 @@ def render_rr_plot_fragment(participant_id: str):
                         if filtered_data:
                             timestamps_for_detection = [d[0] for d in filtered_data]
                             rr_for_detection = [d[1] for d in filtered_data]
-                            scope_info = {"type": "custom", "start": custom_start, "end": custom_end, "offset": scope_offset, "length": len(filtered_data)}
+                            scope_info = {
+                                "type": "custom",
+                                "start": custom_start,
+                                "end": custom_end,
+                                "offset": scope_offset,
+                                "length": len(filtered_data),
+                            }
                         else:
-                            st.warning(f"No data in time range {custom_start} - {custom_end}. Using full recording.")
+                            st.warning(
+                                f"No data in time range {custom_start} - {custom_end}. Using full recording."
+                            )
                 except Exception as e:
-                    st.warning(f"Could not parse time range: {e}. Using full recording.")
+                    st.warning(
+                        f"Could not parse time range: {e}. Using full recording."
+                    )
             elif detection_scope == "all_validated":
                 # Run SEPARATE artifact detection for each validated section
-                from rrational.gui.persistence import load_section_validations as load_vals_detect
+                from rrational.gui.persistence import (
+                    load_section_validations as load_vals_detect,
+                )
 
                 vals_detect = load_vals_detect(
                     participant_id,
                     st.session_state.get("data_dir"),
-                    st.session_state.get("current_project")
+                    st.session_state.get("current_project"),
                 )
 
                 validated_sections_to_detect = []
@@ -3906,15 +4840,23 @@ def render_rr_plot_fragment(participant_id: str):
                     total_artifacts_all = 0
                     total_beats_all = 0
 
-                    gap_handling_for_detection = st.session_state.get(f"frag_gap_handling_{participant_id}", "include")
-                    all_gap_adjacent = plot_data.get('gap_adjacent_indices', set())
+                    gap_handling_for_detection = st.session_state.get(
+                        f"frag_gap_handling_{participant_id}", "include"
+                    )
+                    all_gap_adjacent = plot_data.get("gap_adjacent_indices", set())
 
                     # CRITICAL: Use ORIGINAL timestamps for section comparison, not sequential timestamps
                     # (timestamps_list may contain sequential timestamps in Signal Inspection mode)
-                    original_ts_for_section = plot_data.get('original_timestamps', timestamps_list)
+                    original_ts_for_section = plot_data.get(
+                        "original_timestamps", timestamps_list
+                    )
 
-                    with st.spinner(f"Running artifact detection on {len(validated_sections_to_detect)} sections..."):
-                        for sec_name, sec_data in sorted(validated_sections_to_detect, key=lambda x: x[0]):
+                    with st.spinner(
+                        f"Running artifact detection on {len(validated_sections_to_detect)} sections..."
+                    ):
+                        for sec_name, sec_data in sorted(
+                            validated_sections_to_detect, key=lambda x: x[0]
+                        ):
                             # Get section time range directly from saved validation data
                             # This avoids relying on session state which may be stale
                             start_ts = None
@@ -3927,19 +4869,27 @@ def render_rr_plot_fragment(participant_id: str):
                             if start_evt.get("timestamp"):
                                 try:
                                     from datetime import datetime
-                                    start_ts = datetime.fromisoformat(start_evt["timestamp"])
+
+                                    start_ts = datetime.fromisoformat(
+                                        start_evt["timestamp"]
+                                    )
                                 except (ValueError, TypeError):
                                     pass
 
                             if end_evt.get("timestamp"):
                                 try:
                                     from datetime import datetime
-                                    end_ts = datetime.fromisoformat(end_evt["timestamp"])
+
+                                    end_ts = datetime.fromisoformat(
+                                        end_evt["timestamp"]
+                                    )
                                 except (ValueError, TypeError):
                                     pass
 
                             if not start_ts or not end_ts:
-                                st.warning(f"Could not find boundaries for section '{sec_name}', skipping.")
+                                st.warning(
+                                    f"Could not find boundaries for section '{sec_name}', skipping."
+                                )
                                 continue
 
                             # Filter data for this section (normalize timestamps for safe comparison)
@@ -3948,15 +4898,24 @@ def render_rr_plot_fragment(participant_id: str):
                             end_norm = _normalize_ts(end_ts)
                             sec_filtered = []
                             sec_offset = 0
-                            for idx, (ts, rr) in enumerate(zip(original_ts_for_section, rr_list)):
+                            for idx, (ts, rr) in enumerate(
+                                zip(original_ts_for_section, rr_list)
+                            ):
                                 ts_norm = _normalize_ts(ts)
-                                if start_norm and end_norm and ts_norm and start_norm <= ts_norm <= end_norm:
+                                if (
+                                    start_norm
+                                    and end_norm
+                                    and ts_norm
+                                    and start_norm <= ts_norm <= end_norm
+                                ):
                                     if not sec_filtered:
                                         sec_offset = idx
                                     sec_filtered.append((ts, rr))
 
                             if not sec_filtered:
-                                st.warning(f"No data in section '{sec_name}', skipping.")
+                                st.warning(
+                                    f"No data in section '{sec_name}', skipping."
+                                )
                                 continue
 
                             sec_timestamps = [d[0] for d in sec_filtered]
@@ -3964,25 +4923,37 @@ def render_rr_plot_fragment(participant_id: str):
 
                             # Get gap-adjacent indices for this section
                             gap_adjacent_for_sec = set()
-                            if gap_handling_for_detection == "boundary" and all_gap_adjacent:
+                            if (
+                                gap_handling_for_detection == "boundary"
+                                and all_gap_adjacent
+                            ):
                                 for global_idx in all_gap_adjacent:
                                     local_idx = global_idx - sec_offset
                                     if 0 <= local_idx < len(sec_rr):
                                         gap_adjacent_for_sec.add(local_idx)
 
                             # Run detection for this section
-                            if gap_handling_for_detection == "boundary" and gap_adjacent_for_sec:
+                            if (
+                                gap_handling_for_detection == "boundary"
+                                and gap_adjacent_for_sec
+                            ):
                                 sec_result = run_segmented_artifact_detection_at_gaps(
-                                    sec_rr, sec_timestamps,
+                                    sec_rr,
+                                    sec_timestamps,
                                     gap_adjacent_for_sec,
-                                    method=artifact_method, threshold_pct=artifact_threshold,
-                                    segment_beats=segment_beats, window_s=window_s
+                                    method=artifact_method,
+                                    threshold_pct=artifact_threshold,
+                                    segment_beats=segment_beats,
+                                    window_s=window_s,
                                 )
                             else:
                                 sec_result = cached_artifact_detection(
-                                    tuple(sec_rr), tuple(sec_timestamps),
-                                    method=artifact_method, threshold_pct=artifact_threshold,
-                                    segment_beats=segment_beats, window_s=window_s
+                                    tuple(sec_rr),
+                                    tuple(sec_timestamps),
+                                    method=artifact_method,
+                                    threshold_pct=artifact_threshold,
+                                    segment_beats=segment_beats,
+                                    window_s=window_s,
                                 )
                                 if gap_handling_for_detection == "boundary":
                                     sec_result = dict(sec_result)
@@ -3992,7 +4963,10 @@ def render_rr_plot_fragment(participant_id: str):
                             sec_result = dict(sec_result)
 
                             # Map local indices to global indices
-                            sec_global_indices = [i + sec_offset for i in sec_result.get("artifact_indices", [])]
+                            sec_global_indices = [
+                                i + sec_offset
+                                for i in sec_result.get("artifact_indices", [])
+                            ]
                             sec_result["artifact_indices_global"] = sec_global_indices
                             sec_result["offset"] = sec_offset
                             sec_result["beat_count"] = len(sec_rr)
@@ -4002,54 +4976,103 @@ def render_rr_plot_fragment(participant_id: str):
                             sec_result["original_rr"] = sec_rr
 
                             # Generate diagnostic plot for this section if requested
-                            if st.session_state.get(f"show_diagnostic_plots_{participant_id}", False):
-                                if artifact_method in ("kubios", "lipponen2019", "kubios_segmented", "lipponen2019_segmented"):
+                            if st.session_state.get(
+                                f"show_diagnostic_plots_{participant_id}", False
+                            ):
+                                if artifact_method in (
+                                    "kubios",
+                                    "lipponen2019",
+                                    "kubios_segmented",
+                                    "lipponen2019_segmented",
+                                ):
                                     try:
                                         # Check if this section has gap-separated segments
-                                        sec_gap_segments = sec_result.get("gap_segments", [])
-                                        if sec_gap_segments and len(sec_gap_segments) > 1:
+                                        sec_gap_segments = sec_result.get(
+                                            "gap_segments", []
+                                        )
+                                        if (
+                                            sec_gap_segments
+                                            and len(sec_gap_segments) > 1
+                                        ):
                                             # For segmented detection, generate diagnostic per segment
                                             sec_diag_plots = []
-                                            for seg_idx, (seg_start, seg_end) in enumerate(sec_gap_segments):
+                                            for seg_idx, (
+                                                seg_start,
+                                                seg_end,
+                                            ) in enumerate(sec_gap_segments):
                                                 seg_rr = sec_rr[seg_start:seg_end]
                                                 if len(seg_rr) >= 10:
-                                                    seg_diag = generate_artifact_diagnostic_plots(seg_rr)
+                                                    seg_diag = generate_artifact_diagnostic_plots(
+                                                        seg_rr
+                                                    )
                                                     if seg_diag:
-                                                        sec_diag_plots.append({
-                                                            "section": sec_name,
-                                                            "segment": seg_idx + 1,
-                                                            "start": seg_start,
-                                                            "end": seg_end,
-                                                            "image": seg_diag,
-                                                        })
+                                                        sec_diag_plots.append(
+                                                            {
+                                                                "section": sec_name,
+                                                                "segment": seg_idx + 1,
+                                                                "start": seg_start,
+                                                                "end": seg_end,
+                                                                "image": seg_diag,
+                                                            }
+                                                        )
                                             if sec_diag_plots:
-                                                sec_result["diagnostic_plots"] = sec_diag_plots
+                                                sec_result["diagnostic_plots"] = (
+                                                    sec_diag_plots
+                                                )
                                         else:
                                             # Use diagnostic captured during detection (ensures consistency)
-                                            sec_diag = sec_result.get("diagnostic_bytes")
+                                            sec_diag = sec_result.get(
+                                                "diagnostic_bytes"
+                                            )
                                             if sec_diag:
-                                                sec_result["diagnostic_plots"] = [{
-                                                    "section": sec_name,
-                                                    "segment": None,
-                                                    "image": sec_diag,
-                                                }]
+                                                sec_result["diagnostic_plots"] = [
+                                                    {
+                                                        "section": sec_name,
+                                                        "segment": None,
+                                                        "image": sec_diag,
+                                                    }
+                                                ]
                                     except Exception as e:
-                                        st.warning(f"Could not generate diagnostic plot for {sec_name}: {e}")
+                                        st.warning(
+                                            f"Could not generate diagnostic plot for {sec_name}: {e}"
+                                        )
 
                             # Store section result
                             all_sections_results[sec_name] = sec_result
 
                             # Merge for display
                             all_artifact_indices.extend(sec_global_indices)
-                            all_artifact_timestamps.extend([timestamps_list[i] for i in sec_global_indices if 0 <= i < len(timestamps_list)])
-                            all_artifact_rr.extend([rr_list[i] for i in sec_global_indices if 0 <= i < len(rr_list)])
+                            all_artifact_timestamps.extend(
+                                [
+                                    timestamps_list[i]
+                                    for i in sec_global_indices
+                                    if 0 <= i < len(timestamps_list)
+                                ]
+                            )
+                            all_artifact_rr.extend(
+                                [
+                                    rr_list[i]
+                                    for i in sec_global_indices
+                                    if 0 <= i < len(rr_list)
+                                ]
+                            )
                             total_artifacts_all += sec_result.get("total_artifacts", 0)
                             total_beats_all += len(sec_rr)
 
                     # Build full recording corrected_rr and aggregate artifact types by merging sections
                     full_corrected_rr = list(rr_list)  # Start with original
-                    all_by_type = {"ectopic": 0, "missed": 0, "extra": 0, "longshort": 0}
-                    all_indices_by_type = {"ectopic": [], "missed": [], "extra": [], "longshort": []}
+                    all_by_type = {
+                        "ectopic": 0,
+                        "missed": 0,
+                        "extra": 0,
+                        "longshort": 0,
+                    }
+                    all_indices_by_type = {
+                        "ectopic": [],
+                        "missed": [],
+                        "extra": [],
+                        "longshort": [],
+                    }
 
                     for sec_name, sec_result in all_sections_results.items():
                         sec_corrected = sec_result.get("corrected_rr")
@@ -4062,8 +5085,15 @@ def render_rr_plot_fragment(participant_id: str):
                         # Aggregate artifact types (map local indices to global)
                         sec_by_type = sec_result.get("by_type", {})
                         sec_indices_by_type = sec_result.get("indices_by_type", {})
-                        for artifact_type in ["ectopic", "missed", "extra", "longshort"]:
-                            all_by_type[artifact_type] += sec_by_type.get(artifact_type, 0)
+                        for artifact_type in [
+                            "ectopic",
+                            "missed",
+                            "extra",
+                            "longshort",
+                        ]:
+                            all_by_type[artifact_type] += sec_by_type.get(
+                                artifact_type, 0
+                            )
                             local_indices = sec_indices_by_type.get(artifact_type, [])
                             # Map local indices to global (add section offset)
                             global_indices = [i + sec_offset for i in local_indices]
@@ -4075,10 +5105,15 @@ def render_rr_plot_fragment(participant_id: str):
                         "artifact_timestamps": all_artifact_timestamps,
                         "artifact_rr": all_artifact_rr,
                         "total_artifacts": total_artifacts_all,
-                        "artifact_ratio": total_artifacts_all / total_beats_all if total_beats_all > 0 else 0.0,
+                        "artifact_ratio": total_artifacts_all / total_beats_all
+                        if total_beats_all > 0
+                        else 0.0,
                         "method": artifact_method,
                         "threshold": artifact_threshold,
-                        "scope": {"type": "all_validated", "sections": list(all_sections_results.keys())},
+                        "scope": {
+                            "type": "all_validated",
+                            "sections": list(all_sections_results.keys()),
+                        },
                         "section_key": "_all_validated",
                         "sections_results": all_sections_results,  # Per-section results for saving
                         "segment_beats": segment_beats,  # legacy
@@ -4091,14 +5126,20 @@ def render_rr_plot_fragment(participant_id: str):
                     }
 
                     # Collect all diagnostic plots from all sections
-                    if st.session_state.get(f"show_diagnostic_plots_{participant_id}", False):
+                    if st.session_state.get(
+                        f"show_diagnostic_plots_{participant_id}", False
+                    ):
                         all_diag_plots = []
                         for sec_name, sec_result in all_sections_results.items():
                             sec_plots = sec_result.get("diagnostic_plots", [])
                             all_diag_plots.extend(sec_plots)
                         if all_diag_plots:
-                            st.session_state[f"artifact_diagnostic_fig_{participant_id}"] = all_diag_plots
-                            st.success(f"Diagnostic plots generated for {len(all_diag_plots)} section(s)/segment(s)")
+                            st.session_state[
+                                f"artifact_diagnostic_fig_{participant_id}"
+                            ] = all_diag_plots
+                            st.success(
+                                f"Diagnostic plots generated for {len(all_diag_plots)} section(s)/segment(s)"
+                            )
 
                     # Store the merged artifact_result in session state for saving
                     # (normal detection path at line 6225 is skipped for all_validated)
@@ -4109,22 +5150,28 @@ def render_rr_plot_fragment(participant_id: str):
                     # Set flag to skip normal detection
                     st.session_state[f"_all_validated_done_{participant_id}"] = True
                 else:
-                    st.warning("No validated sections found. Using full recording instead.")
+                    st.warning(
+                        "No validated sections found. Using full recording instead."
+                    )
                     scope_info = {"type": "full"}
 
             # Run artifact detection (skip if all_validated already handled above)
-            all_validated_done = st.session_state.pop(f"_all_validated_done_{participant_id}", False)
+            all_validated_done = st.session_state.pop(
+                f"_all_validated_done_{participant_id}", False
+            )
 
             if not all_validated_done:
                 # Normal single-scope detection
                 # Get gap handling setting from session state
-                gap_handling_for_detection = st.session_state.get(f"frag_gap_handling_{participant_id}", "include")
+                gap_handling_for_detection = st.session_state.get(
+                    f"frag_gap_handling_{participant_id}", "include"
+                )
 
                 # Get gap_adjacent_indices for the detection scope
                 gap_adjacent_for_scope = set()
                 if gap_handling_for_detection == "boundary":
                     # Get gap adjacent indices from plot_data
-                    all_gap_adjacent = plot_data.get('gap_adjacent_indices', set())
+                    all_gap_adjacent = plot_data.get("gap_adjacent_indices", set())
                     if all_gap_adjacent:
                         # Filter to only indices within the detection scope
                         scope_offset = scope_info.get("offset", 0)
@@ -4138,37 +5185,53 @@ def render_rr_plot_fragment(participant_id: str):
                 # Use segmented detection at gaps if boundary mode is selected AND there are gaps in scope
                 if gap_handling_for_detection == "boundary" and gap_adjacent_for_scope:
                     artifact_result = run_segmented_artifact_detection_at_gaps(
-                        rr_for_detection, timestamps_for_detection,
+                        rr_for_detection,
+                        timestamps_for_detection,
                         gap_adjacent_for_scope,
-                        method=artifact_method, threshold_pct=artifact_threshold,
-                        segment_beats=segment_beats, window_s=window_s
+                        method=artifact_method,
+                        threshold_pct=artifact_threshold,
+                        segment_beats=segment_beats,
+                        window_s=window_s,
                     )
                 else:
                     artifact_result = cached_artifact_detection(
-                        tuple(rr_for_detection), tuple(timestamps_for_detection),
-                        method=artifact_method, threshold_pct=artifact_threshold,
-                        segment_beats=segment_beats, window_s=window_s
+                        tuple(rr_for_detection),
+                        tuple(timestamps_for_detection),
+                        method=artifact_method,
+                        threshold_pct=artifact_threshold,
+                        segment_beats=segment_beats,
+                        window_s=window_s,
                     )
                     # If boundary mode but no gaps in scope, mark as handled to skip legacy fallback
                     if gap_handling_for_detection == "boundary":
                         artifact_result = dict(artifact_result)
                         artifact_result["independent_segment_analysis"] = True
-                        artifact_result["segment_boundaries"] = []  # No gaps in this scope
+                        artifact_result[
+                            "segment_boundaries"
+                        ] = []  # No gaps in this scope
 
                 # Always make a copy before modifying (cached result may be immutable)
                 artifact_result = dict(artifact_result)
 
                 # Ensure corrected_timestamps and original_rr are set for NN saving
                 # (cached_artifact_detection returns these, but ensure they're set to full recording)
-                if "corrected_timestamps" not in artifact_result or artifact_result.get("corrected_timestamps") is None:
+                if (
+                    "corrected_timestamps" not in artifact_result
+                    or artifact_result.get("corrected_timestamps") is None
+                ):
                     artifact_result["corrected_timestamps"] = timestamps_list
-                if "original_rr" not in artifact_result or artifact_result.get("original_rr") is None:
+                if (
+                    "original_rr" not in artifact_result
+                    or artifact_result.get("original_rr") is None
+                ):
                     artifact_result["original_rr"] = rr_list
 
                 # Map artifact indices back to full recording if scope was not full
                 if scope_info["type"] != "full" and scope_info.get("offset", 0) > 0:
                     offset = scope_info["offset"]
-                    artifact_result["artifact_indices"] = [i + offset for i in artifact_result.get("artifact_indices", [])]
+                    artifact_result["artifact_indices"] = [
+                        i + offset for i in artifact_result.get("artifact_indices", [])
+                    ]
                     # Also map indices_by_type to global indices
                     if "indices_by_type" in artifact_result:
                         artifact_result["indices_by_type"] = {
@@ -4177,15 +5240,27 @@ def render_rr_plot_fragment(participant_id: str):
                         }
                     # Also map segment_boundaries to global indices
                     if "segment_boundaries" in artifact_result:
-                        artifact_result["segment_boundaries"] = [i + offset for i in artifact_result["segment_boundaries"]]
+                        artifact_result["segment_boundaries"] = [
+                            i + offset for i in artifact_result["segment_boundaries"]
+                        ]
                     # Rebuild timestamps and RR from full recording indices
-                    artifact_result["artifact_timestamps"] = [timestamps_list[i] for i in artifact_result["artifact_indices"] if 0 <= i < len(timestamps_list)]
-                    artifact_result["artifact_rr"] = [rr_list[i] for i in artifact_result["artifact_indices"] if 0 <= i < len(rr_list)]
+                    artifact_result["artifact_timestamps"] = [
+                        timestamps_list[i]
+                        for i in artifact_result["artifact_indices"]
+                        if 0 <= i < len(timestamps_list)
+                    ]
+                    artifact_result["artifact_rr"] = [
+                        rr_list[i]
+                        for i in artifact_result["artifact_indices"]
+                        if 0 <= i < len(rr_list)
+                    ]
 
                     # Expand corrected_rr to full recording length for visualization
                     # Start with original RR, replace scope portion with corrected values
                     scope_corrected = artifact_result.get("corrected_rr")
-                    if scope_corrected and len(scope_corrected) == len(rr_for_detection):
+                    if scope_corrected and len(scope_corrected) == len(
+                        rr_for_detection
+                    ):
                         full_corrected = list(rr_list)  # Start with original
                         scope_end = offset + len(scope_corrected)
                         if scope_end <= len(full_corrected):
@@ -4205,39 +5280,64 @@ def render_rr_plot_fragment(participant_id: str):
                     section_key = scope_info.get("name", "_full")
                 elif scope_info["type"] == "custom":
                     # Use a unique key for custom time ranges
-                    section_key = f"custom_{scope_info.get('start', '0')}-{scope_info.get('end', '0')}".replace(":", "")
+                    section_key = f"custom_{scope_info.get('start', '0')}-{scope_info.get('end', '0')}".replace(
+                        ":", ""
+                    )
                 else:
                     section_key = "_full"
                 artifact_result["section_key"] = section_key
 
                 # Use diagnostic plot captured during detection (ensures consistency)
-                if st.session_state.get(f"show_diagnostic_plots_{participant_id}", False):
+                if st.session_state.get(
+                    f"show_diagnostic_plots_{participant_id}", False
+                ):
                     # Use Lipponen methods for diagnostic plots (threshold method doesn't have NK2 diagnostics)
-                    if artifact_method in ("kubios", "lipponen2019", "kubios_segmented", "lipponen2019_segmented"):
+                    if artifact_method in (
+                        "kubios",
+                        "lipponen2019",
+                        "kubios_segmented",
+                        "lipponen2019_segmented",
+                    ):
                         try:
                             # Check if we have gap-separated segments
                             gap_segments = artifact_result.get("gap_segments", [])
                             if gap_segments and len(gap_segments) > 1:
                                 # For segmented detection, generate diagnostic per segment
                                 # (each segment needs its own NeuroKit2 diagnostic)
-                                with st.spinner("Generating diagnostic plots for segments..."):
+                                with st.spinner(
+                                    "Generating diagnostic plots for segments..."
+                                ):
                                     diag_plots = []
-                                    for seg_idx, (seg_start, seg_end) in enumerate(gap_segments):
+                                    for seg_idx, (seg_start, seg_end) in enumerate(
+                                        gap_segments
+                                    ):
                                         seg_rr = rr_for_detection[seg_start:seg_end]
                                         if len(seg_rr) >= 10:
-                                            seg_diag = generate_artifact_diagnostic_plots(seg_rr)
+                                            seg_diag = (
+                                                generate_artifact_diagnostic_plots(
+                                                    seg_rr
+                                                )
+                                            )
                                             if seg_diag:
-                                                diag_plots.append({
-                                                    "segment": seg_idx + 1,
-                                                    "start": seg_start,
-                                                    "end": seg_end,
-                                                    "image": seg_diag,
-                                                })
+                                                diag_plots.append(
+                                                    {
+                                                        "segment": seg_idx + 1,
+                                                        "start": seg_start,
+                                                        "end": seg_end,
+                                                        "image": seg_diag,
+                                                    }
+                                                )
                                     if diag_plots:
-                                        st.session_state[f"artifact_diagnostic_fig_{participant_id}"] = diag_plots
-                                        st.success(f"Diagnostic plots generated for {len(diag_plots)} gap-segments")
+                                        st.session_state[
+                                            f"artifact_diagnostic_fig_{participant_id}"
+                                        ] = diag_plots
+                                        st.success(
+                                            f"Diagnostic plots generated for {len(diag_plots)} gap-segments"
+                                        )
                                     else:
-                                        st.warning("No diagnostic plots could be generated (segments too small)")
+                                        st.warning(
+                                            "No diagnostic plots could be generated (segments too small)"
+                                        )
                             else:
                                 # Single-scope detection: use diagnostic captured during detection
                                 # This ensures EXACT consistency between diagnostic and Plotly artifacts
@@ -4245,22 +5345,37 @@ def render_rr_plot_fragment(participant_id: str):
                                 if diag_result is None:
                                     # Fallback: generate diagnostic if not captured (e.g., from cache)
                                     with st.spinner("Generating diagnostic plots..."):
-                                        diag_result = generate_artifact_diagnostic_plots(rr_for_detection)
+                                        diag_result = (
+                                            generate_artifact_diagnostic_plots(
+                                                rr_for_detection
+                                            )
+                                        )
                                 if diag_result is not None:
-                                    st.session_state[f"artifact_diagnostic_fig_{participant_id}"] = diag_result
-                                    st.success(f"Diagnostic plots generated: {len(diag_result)} bytes")
+                                    st.session_state[
+                                        f"artifact_diagnostic_fig_{participant_id}"
+                                    ] = diag_result
+                                    st.success(
+                                        f"Diagnostic plots generated: {len(diag_result)} bytes"
+                                    )
                                 else:
-                                    st.warning("Diagnostic plots could not be generated")
+                                    st.warning(
+                                        "Diagnostic plots could not be generated"
+                                    )
                         except Exception as e:
                             st.error(f"Error with diagnostic plots: {e}")
                             import traceback
+
                             st.code(traceback.format_exc())
                     else:
-                        st.info(f"Diagnostic plots not available for method '{artifact_method}' (only Lipponen/Kubios methods)")
+                        st.info(
+                            f"Diagnostic plots not available for method '{artifact_method}' (only Lipponen/Kubios methods)"
+                        )
 
             # Clear the force_redetect flag
             if force_redetect and f"artifacts_{participant_id}" in st.session_state:
-                st.session_state[f"artifacts_{participant_id}"].pop("force_redetect", None)
+                st.session_state[f"artifacts_{participant_id}"].pop(
+                    "force_redetect", None
+                )
             # Reset detection flag
             st.session_state[detect_new_key] = False
         elif has_saved_artifacts:
@@ -4272,7 +5387,9 @@ def render_rr_plot_fragment(participant_id: str):
             scope_length = len(timestamps_list)
             if saved_scope:
                 scope_offset = saved_scope.get("offset", 0)
-                scope_length = saved_scope.get("length", len(timestamps_list) - scope_offset)
+                scope_length = saved_scope.get(
+                    "length", len(timestamps_list) - scope_offset
+                )
 
             # Check if we have corrected_rr from fresh detection (stored in session state)
             # vs. restored from disk (which doesn't include corrected_rr)
@@ -4286,7 +5403,7 @@ def render_rr_plot_fragment(participant_id: str):
             saved_corrected_rr = saved_artifact_data.get("corrected_rr")
             saved_corrected_timestamps = saved_artifact_data.get("corrected_timestamps")
             saved_original_rr = saved_artifact_data.get("original_rr")
-            is_from_disk = saved_artifact_data.get("restored_from_save", False)
+            # restored_from_save flag available in saved_artifact_data if needed
 
             if saved_corrected_rr is not None:
                 corrected_rr_source = "fresh_detection"
@@ -4304,17 +5421,32 @@ def render_rr_plot_fragment(participant_id: str):
 
             artifact_result = {
                 "artifact_indices": saved_artifact_data.get("artifact_indices", []),
-                "artifact_timestamps": [timestamps_list[i] for i in saved_artifact_data.get("artifact_indices", []) if 0 <= i < len(timestamps_list)],
-                "artifact_rr": [rr_list[i] for i in saved_artifact_data.get("artifact_indices", []) if 0 <= i < len(rr_list)],
+                "artifact_timestamps": [
+                    timestamps_list[i]
+                    for i in saved_artifact_data.get("artifact_indices", [])
+                    if 0 <= i < len(timestamps_list)
+                ],
+                "artifact_rr": [
+                    rr_list[i]
+                    for i in saved_artifact_data.get("artifact_indices", [])
+                    if 0 <= i < len(rr_list)
+                ],
                 "total_artifacts": len(saved_artifact_data.get("artifact_indices", [])),
-                "artifact_ratio": len(saved_artifact_data.get("artifact_indices", [])) / len(rr_list) if rr_list else 0.0,
+                "artifact_ratio": len(saved_artifact_data.get("artifact_indices", []))
+                / len(rr_list)
+                if rr_list
+                else 0.0,
                 "method": saved_artifact_data.get("method", "loaded"),
                 "by_type": saved_artifact_data.get("by_type", {}),
                 "indices_by_type": saved_artifact_data.get("indices_by_type", {}),
                 "scope": saved_scope,
                 "section_key": saved_artifact_data.get("section_key", "_full"),
-                "auto_split_to_sections": saved_artifact_data.get("auto_split_to_sections", False),
-                "sections_results": saved_artifact_data.get("sections_results"),  # Per-section results for all_validated
+                "auto_split_to_sections": saved_artifact_data.get(
+                    "auto_split_to_sections", False
+                ),
+                "sections_results": saved_artifact_data.get(
+                    "sections_results"
+                ),  # Per-section results for all_validated
                 "segment_beats": saved_artifact_data.get("segment_beats"),
                 "corrected_rr": saved_corrected_rr,
                 "corrected_rr_source": corrected_rr_source,  # Track where corrected values came from
@@ -4336,43 +5468,73 @@ def render_rr_plot_fragment(participant_id: str):
             }
 
         # Get gap-adjacent indices from plot_data (beats immediately after gaps)
-        gap_adjacent_indices = plot_data.get('gap_adjacent_indices', set())
+        gap_adjacent_indices = plot_data.get("gap_adjacent_indices", set())
 
         # Filter out gap-adjacent beats based on gap_handling setting
         # Skip if we already did independent segment analysis (boundary mode with new detection)
         already_segmented = artifact_result.get("independent_segment_analysis", False)
         original_artifact_indices = artifact_result.get("artifact_indices", [])
         gap_adjacent_excluded = []  # Track how many were excluded
-        segment_boundaries = artifact_result.get("segment_boundaries", [])  # May already be set
+        segment_boundaries = artifact_result.get(
+            "segment_boundaries", []
+        )  # May already be set
 
         if gap_handling == "exclude" and gap_adjacent_indices and not already_segmented:
             # Remove gap-adjacent beats from artifact detection
-            filtered_indices = [i for i in original_artifact_indices if i not in gap_adjacent_indices]
-            gap_adjacent_excluded = [i for i in original_artifact_indices if i in gap_adjacent_indices]
+            filtered_indices = [
+                i for i in original_artifact_indices if i not in gap_adjacent_indices
+            ]
+            gap_adjacent_excluded = [
+                i for i in original_artifact_indices if i in gap_adjacent_indices
+            ]
 
             # Update artifact_result with filtered data
             artifact_result = dict(artifact_result)  # Make a copy
             artifact_result["artifact_indices"] = filtered_indices
-            artifact_result["artifact_timestamps"] = [timestamps_list[i] for i in filtered_indices if 0 <= i < len(timestamps_list)]
-            artifact_result["artifact_rr"] = [rr_list[i] for i in filtered_indices if 0 <= i < len(rr_list)]
+            artifact_result["artifact_timestamps"] = [
+                timestamps_list[i]
+                for i in filtered_indices
+                if 0 <= i < len(timestamps_list)
+            ]
+            artifact_result["artifact_rr"] = [
+                rr_list[i] for i in filtered_indices if 0 <= i < len(rr_list)
+            ]
             artifact_result["total_artifacts"] = len(filtered_indices)
-            artifact_result["artifact_ratio"] = len(filtered_indices) / len(rr_list) if rr_list else 0.0
+            artifact_result["artifact_ratio"] = (
+                len(filtered_indices) / len(rr_list) if rr_list else 0.0
+            )
             artifact_result["gap_adjacent_excluded"] = len(gap_adjacent_excluded)
 
-        elif gap_handling == "boundary" and gap_adjacent_indices and not already_segmented:
+        elif (
+            gap_handling == "boundary"
+            and gap_adjacent_indices
+            and not already_segmented
+        ):
             # Legacy fallback: Remove gap-adjacent beats AND mark as segment boundaries
             # (only used for saved/loaded artifacts that weren't analyzed with independent segments)
-            filtered_indices = [i for i in original_artifact_indices if i not in gap_adjacent_indices]
-            gap_adjacent_excluded = [i for i in original_artifact_indices if i in gap_adjacent_indices]
+            filtered_indices = [
+                i for i in original_artifact_indices if i not in gap_adjacent_indices
+            ]
+            gap_adjacent_excluded = [
+                i for i in original_artifact_indices if i in gap_adjacent_indices
+            ]
             segment_boundaries = sorted(gap_adjacent_indices)
 
             # Update artifact_result with filtered data
             artifact_result = dict(artifact_result)  # Make a copy
             artifact_result["artifact_indices"] = filtered_indices
-            artifact_result["artifact_timestamps"] = [timestamps_list[i] for i in filtered_indices if 0 <= i < len(timestamps_list)]
-            artifact_result["artifact_rr"] = [rr_list[i] for i in filtered_indices if 0 <= i < len(rr_list)]
+            artifact_result["artifact_timestamps"] = [
+                timestamps_list[i]
+                for i in filtered_indices
+                if 0 <= i < len(timestamps_list)
+            ]
+            artifact_result["artifact_rr"] = [
+                rr_list[i] for i in filtered_indices if 0 <= i < len(rr_list)
+            ]
             artifact_result["total_artifacts"] = len(filtered_indices)
-            artifact_result["artifact_ratio"] = len(filtered_indices) / len(rr_list) if rr_list else 0.0
+            artifact_result["artifact_ratio"] = (
+                len(filtered_indices) / len(rr_list) if rr_list else 0.0
+            )
             artifact_result["gap_adjacent_excluded"] = len(gap_adjacent_excluded)
             artifact_result["segment_boundaries"] = segment_boundaries
 
@@ -4383,20 +5545,36 @@ def render_rr_plot_fragment(participant_id: str):
             # Store original indices before filtering
             all_detected_indices = artifact_result.get("artifact_indices", [])
             # Filter out user-excluded artifacts
-            active_indices = [i for i in all_detected_indices if i not in user_exclusions]
+            active_indices = [
+                i for i in all_detected_indices if i not in user_exclusions
+            ]
             excluded_indices = [i for i in all_detected_indices if i in user_exclusions]
 
             # Update artifact_result
             artifact_result = dict(artifact_result)  # Make a copy
             artifact_result["artifact_indices"] = active_indices
-            artifact_result["artifact_timestamps"] = [timestamps_list[i] for i in active_indices if 0 <= i < len(timestamps_list)]
-            artifact_result["artifact_rr"] = [rr_list[i] for i in active_indices if 0 <= i < len(rr_list)]
+            artifact_result["artifact_timestamps"] = [
+                timestamps_list[i]
+                for i in active_indices
+                if 0 <= i < len(timestamps_list)
+            ]
+            artifact_result["artifact_rr"] = [
+                rr_list[i] for i in active_indices if 0 <= i < len(rr_list)
+            ]
             artifact_result["total_artifacts"] = len(active_indices)
-            artifact_result["artifact_ratio"] = len(active_indices) / len(rr_list) if rr_list else 0.0
+            artifact_result["artifact_ratio"] = (
+                len(active_indices) / len(rr_list) if rr_list else 0.0
+            )
             # Store excluded info for visualization
             artifact_result["user_excluded_indices"] = excluded_indices
-            artifact_result["user_excluded_timestamps"] = [timestamps_list[i] for i in excluded_indices if 0 <= i < len(timestamps_list)]
-            artifact_result["user_excluded_rr"] = [rr_list[i] for i in excluded_indices if 0 <= i < len(rr_list)]
+            artifact_result["user_excluded_timestamps"] = [
+                timestamps_list[i]
+                for i in excluded_indices
+                if 0 <= i < len(timestamps_list)
+            ]
+            artifact_result["user_excluded_rr"] = [
+                rr_list[i] for i in excluded_indices if 0 <= i < len(rr_list)
+            ]
             artifact_result["user_excluded_count"] = len(excluded_indices)
 
         st.session_state[f"artifacts_{participant_id}"] = artifact_result
@@ -4432,7 +5610,7 @@ def render_rr_plot_fragment(participant_id: str):
 
             # Format method display name
             method_display_names = {
-                "threshold": f"Threshold ({artifact_threshold*100:.0f}%)",
+                "threshold": f"Threshold ({artifact_threshold * 100:.0f}%)",
                 "lipponen2019": "Lipponen 2019",
                 "lipponen2019_segmented": "Lipponen 2019 (segmented)",
                 "kubios": "Kubios",
@@ -4444,19 +5622,26 @@ def render_rr_plot_fragment(participant_id: str):
             col_summary, col_clear_btn = st.columns([5, 1])
             with col_summary:
                 if method_used == "threshold":
-                    st.info(f"{scope_prefix}**{artifact_result['total_artifacts']} artifacts detected** "
-                           f"({artifact_result['artifact_ratio']*100:.1f}%) - "
-                           f"Method: {method_display}{gap_suffix}")
+                    st.info(
+                        f"{scope_prefix}**{artifact_result['total_artifacts']} artifacts detected** "
+                        f"({artifact_result['artifact_ratio'] * 100:.1f}%) - "
+                        f"Method: {method_display}{gap_suffix}"
+                    )
                 else:
-                    st.info(f"{scope_prefix}**{artifact_result['total_artifacts']} artifacts detected** "
-                           f"({artifact_result['artifact_ratio']*100:.1f}%) - "
-                           f"Ectopic: {by_type.get('ectopic', 0)}, "
-                           f"Missed: {by_type.get('missed', 0)}, "
-                           f"Extra: {by_type.get('extra', 0)}, "
-                       f"Long/Short: {by_type.get('longshort', 0)}{gap_suffix}")
+                    st.info(
+                        f"{scope_prefix}**{artifact_result['total_artifacts']} artifacts detected** "
+                        f"({artifact_result['artifact_ratio'] * 100:.1f}%) - "
+                        f"Ectopic: {by_type.get('ectopic', 0)}, "
+                        f"Missed: {by_type.get('missed', 0)}, "
+                        f"Extra: {by_type.get('extra', 0)}, "
+                        f"Long/Short: {by_type.get('longshort', 0)}{gap_suffix}"
+                    )
             with col_clear_btn:
-                if st.button("Clear", key=f"clear_artifacts_result_{participant_id}",
-                            help="Clear algorithm-detected artifacts"):
+                if st.button(
+                    "Clear",
+                    key=f"clear_artifacts_result_{participant_id}",
+                    help="Clear algorithm-detected artifacts",
+                ):
                     if f"artifacts_{participant_id}" in st.session_state:
                         del st.session_state[f"artifacts_{participant_id}"]
                     loaded_info_key = f"artifacts_loaded_info_{participant_id}"
@@ -4467,23 +5652,28 @@ def render_rr_plot_fragment(participant_id: str):
             # Display per-gap-segment stats (from independent segment analysis)
             gap_segment_stats = artifact_result.get("gap_segment_stats", [])
             if gap_segment_stats and len(gap_segment_stats) > 1:
-                with st.expander(f"Gap-Separated Segments ({len(gap_segment_stats)} segments)", expanded=True):
+                with st.expander(
+                    f"Gap-Separated Segments ({len(gap_segment_stats)} segments)",
+                    expanded=True,
+                ):
                     st.caption("Each segment between gaps was analyzed independently:")
                     # Create display DataFrame
                     gap_df_data = []
                     for gs in gap_segment_stats:
                         by_type = gs.get("by_type", {})
-                        gap_df_data.append({
-                            "Segment": gs["gap_segment"],
-                            "Beats": f"{gs['start_beat']}-{gs['end_beat']}",
-                            "N Beats": gs["n_beats"],
-                            "Artifacts": gs["n_artifacts"],
-                            "Rate %": gs["artifact_pct"],
-                            "Ectopic": by_type.get("ectopic", 0),
-                            "Missed": by_type.get("missed", 0),
-                            "Extra": by_type.get("extra", 0),
-                            "Long/Short": by_type.get("longshort", 0),
-                        })
+                        gap_df_data.append(
+                            {
+                                "Segment": gs["gap_segment"],
+                                "Beats": f"{gs['start_beat']}-{gs['end_beat']}",
+                                "N Beats": gs["n_beats"],
+                                "Artifacts": gs["n_artifacts"],
+                                "Rate %": gs["artifact_pct"],
+                                "Ectopic": by_type.get("ectopic", 0),
+                                "Missed": by_type.get("missed", 0),
+                                "Extra": by_type.get("extra", 0),
+                                "Long/Short": by_type.get("longshort", 0),
+                            }
+                        )
                     gap_df = get_pandas().DataFrame(gap_df_data)
 
                     def highlight_high_artifacts_gap(row):
@@ -4494,7 +5684,9 @@ def render_rr_plot_fragment(participant_id: str):
                         return [""] * len(row)
 
                     st.dataframe(
-                        gap_df.style.apply(highlight_high_artifacts_gap, axis=1).format({"Rate %": "{:.1f}"}),
+                        gap_df.style.apply(highlight_high_artifacts_gap, axis=1).format(
+                            {"Rate %": "{:.1f}"}
+                        ),
                         use_container_width=True,
                         hide_index=True,
                     )
@@ -4505,8 +5697,12 @@ def render_rr_plot_fragment(participant_id: str):
             if segment_stats:
                 from rrational.gui.segmentation import format_ms_as_time
 
-                with st.expander(f"Segment Assessment ({len(segment_stats)} segments)", expanded=True):
-                    st.caption("Assess each segment individually. Excluded segments will be skipped in analysis.")
+                with st.expander(
+                    f"Segment Assessment ({len(segment_stats)} segments)", expanded=True
+                ):
+                    st.caption(
+                        "Assess each segment individually. Excluded segments will be skipped in analysis."
+                    )
 
                     pd_mod = get_pandas()
 
@@ -4517,34 +5713,44 @@ def render_rr_plot_fragment(participant_id: str):
                         end_ms = s.get("end_ms", 0)
                         duration_s = s.get("duration_s", 0)
                         quality = s.get("quality_grade", "")
-                        time_range = f"{format_ms_as_time(start_ms)} - {format_ms_as_time(end_ms)}" if start_ms or end_ms else f"{s.get('start_beat', 0)}-{s.get('end_beat', 0)}"
+                        time_range = (
+                            f"{format_ms_as_time(start_ms)} - {format_ms_as_time(end_ms)}"
+                            if start_ms or end_ms
+                            else f"{s.get('start_beat', 0)}-{s.get('end_beat', 0)}"
+                        )
 
-                        seg_df_data.append({
-                            "#": s["segment"],
-                            "Time": time_range,
-                            "Duration": f"{duration_s:.0f}s" if duration_s else "",
-                            "Beats": s["n_beats"],
-                            "Artifacts": s["n_artifacts"],
-                            "Rate %": s["artifact_pct"],
-                            "Quality": quality,
-                        })
+                        seg_df_data.append(
+                            {
+                                "#": s["segment"],
+                                "Time": time_range,
+                                "Duration": f"{duration_s:.0f}s" if duration_s else "",
+                                "Beats": s["n_beats"],
+                                "Artifacts": s["n_artifacts"],
+                                "Rate %": s["artifact_pct"],
+                                "Quality": quality,
+                            }
+                        )
 
                     seg_df = pd_mod.DataFrame(seg_df_data)
 
                     # Color-coded display
                     quality_colors = {
-                        "good": "#d4edda",    # green
-                        "fair": "#fff3cd",    # yellow
-                        "poor": "#f8d7da",    # light red
-                        "exclude": "#ffcccc", # red
+                        "good": "#d4edda",  # green
+                        "fair": "#fff3cd",  # yellow
+                        "poor": "#f8d7da",  # light red
+                        "exclude": "#ffcccc",  # red
                     }
 
                     def highlight_quality(row):
                         color = quality_colors.get(row.get("Quality", ""), "")
-                        return [f"background-color: {color}" if color else ""] * len(row)
+                        return [f"background-color: {color}" if color else ""] * len(
+                            row
+                        )
 
                     st.dataframe(
-                        seg_df.style.apply(highlight_quality, axis=1).format({"Rate %": "{:.1f}"}),
+                        seg_df.style.apply(highlight_quality, axis=1).format(
+                            {"Rate %": "{:.1f}"}
+                        ),
                         use_container_width=True,
                         hide_index=True,
                     )
@@ -4560,18 +5766,30 @@ def render_rr_plot_fragment(participant_id: str):
 
                         col_all, col_none, col_auto = st.columns(3)
                         with col_all:
-                            if st.button("Include All", key=f"seg_include_all_{participant_id}"):
-                                st.session_state[seg_inclusion_key] = {seg.idx: True for seg in detection_segments}
+                            if st.button(
+                                "Include All", key=f"seg_include_all_{participant_id}"
+                            ):
+                                st.session_state[seg_inclusion_key] = {
+                                    seg.idx: True for seg in detection_segments
+                                }
                                 st.rerun()
                         with col_none:
-                            if st.button("Exclude All", key=f"seg_exclude_all_{participant_id}"):
-                                st.session_state[seg_inclusion_key] = {seg.idx: False for seg in detection_segments}
+                            if st.button(
+                                "Exclude All", key=f"seg_exclude_all_{participant_id}"
+                            ):
+                                st.session_state[seg_inclusion_key] = {
+                                    seg.idx: False for seg in detection_segments
+                                }
                                 st.rerun()
                         with col_auto:
-                            if st.button("Auto (Quigley)", key=f"seg_auto_{participant_id}",
-                                         help="Exclude segments with >10% artifacts or <50 beats"):
+                            if st.button(
+                                "Auto (Quigley)",
+                                key=f"seg_auto_{participant_id}",
+                                help="Exclude segments with >10% artifacts or <50 beats",
+                            ):
                                 st.session_state[seg_inclusion_key] = {
-                                    seg.idx: seg.quality_grade != "exclude" for seg in detection_segments
+                                    seg.idx: seg.quality_grade != "exclude"
+                                    for seg in detection_segments
                                 }
                                 st.rerun()
 
@@ -4581,7 +5799,8 @@ def render_rr_plot_fragment(participant_id: str):
                         for seg in detection_segments:
                             label = f"Seg {seg.idx + 1}: {format_ms_as_time(seg.start_ms)}-{format_ms_as_time(seg.end_ms)} ({seg.quality_grade})"
                             new_val = st.checkbox(
-                                label, value=inclusion.get(seg.idx, True),
+                                label,
+                                value=inclusion.get(seg.idx, True),
                                 key=f"seg_incl_{participant_id}_{seg.idx}",
                             )
                             if new_val != inclusion.get(seg.idx, True):
@@ -4593,18 +5812,25 @@ def render_rr_plot_fragment(participant_id: str):
 
                         # Summary
                         n_included = sum(1 for v in inclusion.values() if v)
-                        st.caption(f"{n_included}/{len(detection_segments)} segments included for analysis")
+                        st.caption(
+                            f"{n_included}/{len(detection_segments)} segments included for analysis"
+                        )
 
                     else:
                         # Legacy fallback: no Segment objects, just show summary
                         avg_pct = seg_df["Rate %"].mean()
                         max_pct = seg_df["Rate %"].max()
                         high_segments = len(seg_df[seg_df["Rate %"] > 10])
-                        st.caption(f"Avg: {avg_pct:.1f}% | Max: {max_pct:.1f}% | Segments >10%: {high_segments}")
+                        st.caption(
+                            f"Avg: {avg_pct:.1f}% | Max: {max_pct:.1f}% | Segments >10%: {high_segments}"
+                        )
 
             # Display NeuroKit2 diagnostic plots if generated
             diag_fig_key = f"artifact_diagnostic_fig_{participant_id}"
-            if diag_fig_key in st.session_state and st.session_state[diag_fig_key] is not None:
+            if (
+                diag_fig_key in st.session_state
+                and st.session_state[diag_fig_key] is not None
+            ):
                 diag_data = st.session_state[diag_fig_key]
 
                 # Check if it's a list of segment/section plots or a single image
@@ -4614,7 +5840,10 @@ def render_rr_plot_fragment(participant_id: str):
 
                     if has_sections:
                         # Section-based plots (from all_validated detection)
-                        with st.expander(f"NeuroKit2 Diagnostic Plots ({len(diag_data)} sections/segments)", expanded=True):
+                        with st.expander(
+                            f"NeuroKit2 Diagnostic Plots ({len(diag_data)} sections/segments)",
+                            expanded=True,
+                        ):
                             st.caption(
                                 "Each section was analyzed independently. "
                                 "**Left column:** Artifact types (top), consecutive-difference criterion (middle), "
@@ -4622,23 +5851,31 @@ def render_rr_plot_fragment(participant_id: str):
                                 "**Right column:** Subspace classification showing ectopic (red) and long/short (yellow/green) regions."
                             )
                             for plot_info in diag_data:
-                                section_name = plot_info.get('section', 'Unknown')
-                                segment_num = plot_info.get('segment')
+                                section_name = plot_info.get("section", "Unknown")
+                                segment_num = plot_info.get("segment")
                                 if segment_num:
                                     # Section with gap segments
-                                    st.markdown(f"**{section_name}** - Gap Segment {segment_num} (beats {plot_info.get('start', '?')}-{plot_info.get('end', '?')})")
+                                    st.markdown(
+                                        f"**{section_name}** - Gap Segment {segment_num} (beats {plot_info.get('start', '?')}-{plot_info.get('end', '?')})"
+                                    )
                                 else:
                                     # Section without gaps
                                     st.markdown(f"**{section_name}**")
                                 st.image(plot_info["image"], use_container_width=True)
                                 st.markdown("---")
                             # Add button to close/clear the diagnostic plots
-                            if st.button("Close diagnostic plots", key=f"close_diag_plots_{participant_id}"):
+                            if st.button(
+                                "Close diagnostic plots",
+                                key=f"close_diag_plots_{participant_id}",
+                            ):
                                 del st.session_state[diag_fig_key]
                                 st.rerun()
                     else:
                         # Multiple gap-segment plots (single-scope detection)
-                        with st.expander(f"NeuroKit2 Diagnostic Plots ({len(diag_data)} gap-segments)", expanded=True):
+                        with st.expander(
+                            f"NeuroKit2 Diagnostic Plots ({len(diag_data)} gap-segments)",
+                            expanded=True,
+                        ):
                             st.caption(
                                 "Each gap-separated segment was analyzed independently. "
                                 "**Left column:** Artifact types (top), consecutive-difference criterion (middle), "
@@ -4646,11 +5883,16 @@ def render_rr_plot_fragment(participant_id: str):
                                 "**Right column:** Subspace classification showing ectopic (red) and long/short (yellow/green) regions."
                             )
                             for plot_info in diag_data:
-                                st.markdown(f"**Gap Segment {plot_info['segment']}** (beats {plot_info['start']}-{plot_info['end']})")
+                                st.markdown(
+                                    f"**Gap Segment {plot_info['segment']}** (beats {plot_info['start']}-{plot_info['end']})"
+                                )
                                 st.image(plot_info["image"], use_container_width=True)
                                 st.markdown("---")
                             # Add button to close/clear the diagnostic plots
-                            if st.button("Close diagnostic plots", key=f"close_diag_plots_{participant_id}"):
+                            if st.button(
+                                "Close diagnostic plots",
+                                key=f"close_diag_plots_{participant_id}",
+                            ):
                                 del st.session_state[diag_fig_key]
                                 st.rerun()
                 else:
@@ -4663,7 +5905,10 @@ def render_rr_plot_fragment(participant_id: str):
                             "**Right column:** Subspace classification showing ectopic (red) and long/short (yellow/green) regions."
                         )
                         # Add button to close/clear the diagnostic plots
-                        if st.button("Close diagnostic plots", key=f"close_diag_plots_{participant_id}"):
+                        if st.button(
+                            "Close diagnostic plots",
+                            key=f"close_diag_plots_{participant_id}",
+                        ):
                             del st.session_state[diag_fig_key]
                             st.rerun()
 
@@ -4673,72 +5918,126 @@ def render_rr_plot_fragment(participant_id: str):
             if indices_by_type and any(indices_by_type.values()):
                 # Show artifacts by type with different colors (matching NeuroKit2 visualization)
                 artifact_type_styles = {
-                    "ectopic": {"color": "#FFD700", "symbol": "x", "name": "Ectopic"},  # Gold
-                    "missed": {"color": "#FF4444", "symbol": "x", "name": "Missed (false neg)"},  # Red
-                    "extra": {"color": "#FFEB3B", "symbol": "x", "name": "Extra (false pos)"},  # Light yellow
-                    "longshort": {"color": "#FF00FF", "symbol": "x", "name": "Long/Short"},  # Magenta
+                    "ectopic": {
+                        "color": "#FFD700",
+                        "symbol": "x",
+                        "name": "Ectopic",
+                    },  # Gold
+                    "missed": {
+                        "color": "#FF4444",
+                        "symbol": "x",
+                        "name": "Missed (false neg)",
+                    },  # Red
+                    "extra": {
+                        "color": "#FFEB3B",
+                        "symbol": "x",
+                        "name": "Extra (false pos)",
+                    },  # Light yellow
+                    "longshort": {
+                        "color": "#FF00FF",
+                        "symbol": "x",
+                        "name": "Long/Short",
+                    },  # Magenta
                 }
 
                 for artifact_type, indices in indices_by_type.items():
                     if not indices:
                         continue
-                    style = artifact_type_styles.get(artifact_type, {"color": "orange", "symbol": "x", "name": artifact_type})
+                    style = artifact_type_styles.get(
+                        artifact_type,
+                        {"color": "orange", "symbol": "x", "name": artifact_type},
+                    )
                     # Get timestamps and RR values for these indices
-                    type_ts = [timestamps_list[i] for i in indices if 0 <= i < len(timestamps_list)]
+                    type_ts = [
+                        timestamps_list[i]
+                        for i in indices
+                        if 0 <= i < len(timestamps_list)
+                    ]
                     type_rr = [rr_list[i] for i in indices if 0 <= i < len(rr_list)]
                     if type_ts:
-                        fig.add_trace(ScatterType(
-                            x=type_ts,
-                            y=type_rr,
-                            mode='markers',
-                            name=f'{style["name"]} ({len(type_ts)})',
-                            marker=dict(size=10, color=style["color"], symbol=style["symbol"], line=dict(width=2)),
-                            hovertemplate=f'Time: %{{x}}<br>RR: %{{y}} ms ({artifact_type.upper()})<extra></extra>'
-                        ))
+                        fig.add_trace(
+                            ScatterType(
+                                x=type_ts,
+                                y=type_rr,
+                                mode="markers",
+                                name=f"{style['name']} ({len(type_ts)})",
+                                marker=dict(
+                                    size=10,
+                                    color=style["color"],
+                                    symbol=style["symbol"],
+                                    line=dict(width=2),
+                                ),
+                                hovertemplate=f"Time: %{{x}}<br>RR: %{{y}} ms ({artifact_type.upper()})<extra></extra>",
+                            )
+                        )
             elif artifact_result["artifact_timestamps"]:
                 # Fallback: show all artifacts with single color (threshold method or no type info)
-                fig.add_trace(ScatterType(
-                    x=artifact_result["artifact_timestamps"],
-                    y=artifact_result["artifact_rr"],
-                    mode='markers',
-                    name=f'Artifacts ({method_used})',
-                    marker=dict(size=8, color='orange', symbol='x', line=dict(width=2)),
-                    hovertemplate='Time: %{x}<br>RR: %{y} ms (ARTIFACT)<extra></extra>'
-                ))
+                fig.add_trace(
+                    ScatterType(
+                        x=artifact_result["artifact_timestamps"],
+                        y=artifact_result["artifact_rr"],
+                        mode="markers",
+                        name=f"Artifacts ({method_used})",
+                        marker=dict(
+                            size=8, color="orange", symbol="x", line=dict(width=2)
+                        ),
+                        hovertemplate="Time: %{x}<br>RR: %{y} ms (ARTIFACT)<extra></extra>",
+                    )
+                )
 
             # Add user-excluded artifact markers (dimmed gray circles with X)
             excluded_ts = artifact_result.get("user_excluded_timestamps", [])
             excluded_rr = artifact_result.get("user_excluded_rr", [])
             if excluded_ts:
-                fig.add_trace(ScatterType(
-                    x=excluded_ts,
-                    y=excluded_rr,
-                    mode='markers',
-                    name=f'Excluded ({len(excluded_ts)})',
-                    marker=dict(size=10, color='gray', symbol='circle-x-open', line=dict(width=1)),
-                    opacity=0.5,
-                    hovertemplate='Time: %{x}<br>RR: %{y} ms (EXCLUDED - click to re-enable)<extra></extra>'
-                ))
+                fig.add_trace(
+                    ScatterType(
+                        x=excluded_ts,
+                        y=excluded_rr,
+                        mode="markers",
+                        name=f"Excluded ({len(excluded_ts)})",
+                        marker=dict(
+                            size=10,
+                            color="gray",
+                            symbol="circle-x-open",
+                            line=dict(width=1),
+                        ),
+                        opacity=0.5,
+                        hovertemplate="Time: %{x}<br>RR: %{y} ms (EXCLUDED - click to re-enable)<extra></extra>",
+                    )
+                )
 
             # Add segment boundary markers (cyan diamonds) when using boundary mode
             segment_boundaries = artifact_result.get("segment_boundaries", [])
             if segment_boundaries:
-                boundary_ts = [timestamps_list[i] for i in segment_boundaries if 0 <= i < len(timestamps_list)]
-                boundary_rr = [rr_list[i] for i in segment_boundaries if 0 <= i < len(rr_list)]
+                boundary_ts = [
+                    timestamps_list[i]
+                    for i in segment_boundaries
+                    if 0 <= i < len(timestamps_list)
+                ]
+                boundary_rr = [
+                    rr_list[i] for i in segment_boundaries if 0 <= i < len(rr_list)
+                ]
                 if boundary_ts:
-                    fig.add_trace(ScatterType(
-                        x=boundary_ts,
-                        y=boundary_rr,
-                        mode='markers',
-                        name=f'Segment Boundaries ({len(boundary_ts)})',
-                        marker=dict(size=10, color='cyan', symbol='diamond-open', line=dict(width=2)),
-                        hovertemplate='Time: %{x}<br>RR: %{y} ms (SEGMENT BOUNDARY)<extra></extra>'
-                    ))
+                    fig.add_trace(
+                        ScatterType(
+                            x=boundary_ts,
+                            y=boundary_rr,
+                            mode="markers",
+                            name=f"Segment Boundaries ({len(boundary_ts)})",
+                            marker=dict(
+                                size=10,
+                                color="cyan",
+                                symbol="diamond-open",
+                                line=dict(width=2),
+                            ),
+                            hovertemplate="Time: %{x}<br>RR: %{y} ms (SEGMENT BOUNDARY)<extra></extra>",
+                        )
+                    )
 
             # Collect manual artifact indices that are valid for current plot data (manual_artifacts already defined above)
             manual_artifact_indices = []
             for art in manual_artifacts:
-                plot_idx = art.get('plot_idx', -1)
+                plot_idx = art.get("plot_idx", -1)
                 if 0 <= plot_idx < len(rr_list):
                     manual_artifact_indices.append(plot_idx)
 
@@ -4748,7 +6047,7 @@ def render_rr_plot_fragment(participant_id: str):
             algo_count = len(artifact_result["artifact_indices"])
             if show_corrected:
                 nn_displayed = False
-                nn_source = None
+                # nn_source tracking removed (unused)
 
                 # Show computed corrected_rr if available (from fresh detection)
                 corrected_rr = artifact_result.get("corrected_rr")
@@ -4756,63 +6055,88 @@ def render_rr_plot_fragment(participant_id: str):
 
                 if not nn_displayed and algo_count > 0 and corrected_rr is not None:
                     if len(corrected_rr) == len(timestamps_list):
-                        fig.add_trace(ScatterType(
-                            x=timestamps_list,
-                            y=corrected_rr,
-                            mode='lines',
-                            name='Corrected (NN)',
-                            line=dict(width=2, color='green', dash='dot'),
-                            opacity=0.7,
-                            hovertemplate='Time: %{x}<br>NN: %{y:.0f} ms<extra></extra>'
-                        ))
+                        fig.add_trace(
+                            ScatterType(
+                                x=timestamps_list,
+                                y=corrected_rr,
+                                mode="lines",
+                                name="Corrected (NN)",
+                                line=dict(width=2, color="green", dash="dot"),
+                                opacity=0.7,
+                                hovertemplate="Time: %{x}<br>NN: %{y:.0f} ms<extra></extra>",
+                            )
+                        )
                         nn_displayed = True
-                        nn_source = "computed"
                         manual_count = len(manual_artifact_indices)
                         if manual_count > 0:
-                            st.info(f"Correction preview (not saved): {algo_count} algorithm artifacts. {manual_count} manual artifacts marked.")
+                            st.info(
+                                f"Correction preview (not saved): {algo_count} algorithm artifacts. {manual_count} manual artifacts marked."
+                            )
                         else:
-                            st.info(f"Correction preview (not saved): {algo_count} artifacts corrected")
+                            st.info(
+                                f"Correction preview (not saved): {algo_count} artifacts corrected"
+                            )
 
                 if not nn_displayed and algo_count > 0 and is_restored:
                     # Restored from save - NN data exists but can't be visualized
-                    st.info("NN visualization requires fresh detection. Run **Detect New Artifacts** to see the corrected line. "
-                           "(Saved NN data is still used for HRV analysis.)")
+                    st.info(
+                        "NN visualization requires fresh detection. Run **Detect New Artifacts** to see the corrected line. "
+                        "(Saved NN data is still used for HRV analysis.)"
+                    )
 
                 if not nn_displayed and algo_count == 0:
-                    st.info("No artifacts detected - NN line would be identical to RR line.")
+                    st.info(
+                        "No artifacts detected - NN line would be identical to RR line."
+                    )
         elif artifact_result.get("no_detection_yet"):
             # No detection has been run yet - show instructions
-            st.info("No artifact detection yet. Use **Detect New Artifacts** to run detection.")
-        elif artifact_result.get("restored_from_save") and artifact_result["total_artifacts"] == 0:
+            st.info(
+                "No artifact detection yet. Use **Detect New Artifacts** to run detection."
+            )
+        elif (
+            artifact_result.get("restored_from_save")
+            and artifact_result["total_artifacts"] == 0
+        ):
             # Loaded from save but had no artifacts
-            st.info("No artifacts in saved data. Use **Detect New Artifacts** to run new detection.")
+            st.info(
+                "No artifacts in saved data. Use **Detect New Artifacts** to run new detection."
+            )
 
     # Display manual artifacts (purple diamond markers) - only when show_artifacts is enabled
     if show_artifacts and manual_artifacts:
         # Get timestamps and RR values for manual artifacts
         manual_ts = []
         manual_rr = []
-        timestamps = plot_data['timestamps']
-        rr_values = plot_data['rr_values']
+        timestamps = plot_data["timestamps"]
+        rr_values = plot_data["rr_values"]
 
         for art in manual_artifacts:
-            plot_idx = art.get('plot_idx', 0)
+            plot_idx = art.get("plot_idx", 0)
             if 0 <= plot_idx < len(timestamps):
                 manual_ts.append(timestamps[plot_idx])
                 manual_rr.append(rr_values[plot_idx])
 
         if manual_ts:
-            fig.add_trace(ScatterType(
-                x=manual_ts,
-                y=manual_rr,
-                mode='markers',
-                name=f'Manual Artifacts ({len(manual_ts)})',
-                marker=dict(size=12, color='purple', symbol='diamond', line=dict(width=2, color='white')),
-                hovertemplate='Time: %{x}<br>RR: %{y} ms (MANUAL)<extra></extra>'
-            ))
+            fig.add_trace(
+                ScatterType(
+                    x=manual_ts,
+                    y=manual_rr,
+                    mode="markers",
+                    name=f"Manual Artifacts ({len(manual_ts)})",
+                    marker=dict(
+                        size=12,
+                        color="purple",
+                        symbol="diamond",
+                        line=dict(width=2, color="white"),
+                    ),
+                    hovertemplate="Time: %{x}<br>RR: %{y} ms (MANUAL)<extra></extra>",
+                )
+            )
 
     if show_variability:
-        changepoint_result = cached_quality_analysis(tuple(rr_list), tuple(timestamps_list))
+        changepoint_result = cached_quality_analysis(
+            tuple(rr_list), tuple(timestamps_list)
+        )
         st.session_state[f"changepoints_{participant_id}"] = changepoint_result
 
         if changepoint_result and changepoint_result.get("changepoint_indices"):
@@ -4823,15 +6147,20 @@ def render_rr_plot_fragment(participant_id: str):
                 if start_idx < n_ts and end_idx < n_ts:
                     cv = seg_stats.get("cv", 0)
                     if cv > 0.15:
-                        fill_color = 'rgba(255, 0, 0, 0.1)'
+                        fill_color = "rgba(255, 0, 0, 0.1)"
                     elif cv > 0.10:
-                        fill_color = 'rgba(255, 165, 0, 0.1)'
+                        fill_color = "rgba(255, 165, 0, 0.1)"
                     else:
-                        fill_color = 'rgba(0, 255, 0, 0.05)'
+                        fill_color = "rgba(0, 255, 0, 0.05)"
                     fig.add_shape(
-                        type="rect", x0=timestamps_list[start_idx], x1=timestamps_list[end_idx],
-                        y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                        fillcolor=fill_color, line=dict(width=0), layer="below"
+                        type="rect",
+                        x0=timestamps_list[start_idx],
+                        x1=timestamps_list[end_idx],
+                        y0=y_min - 0.05 * y_range,
+                        y1=y_max + 0.05 * y_range,
+                        fillcolor=fill_color,
+                        line=dict(width=0),
+                        layer="below",
                     )
 
     # Visualize gaps (skip for single-file VNS and Signal Inspection mode - timestamps are synthesized)
@@ -4839,28 +6168,42 @@ def render_rr_plot_fragment(participant_id: str):
     # PERFORMANCE: Limit gaps shown to prevent plot slowdown
     MAX_GAPS_SHOWN = 50
     enable_gap_visualization = not is_vns_data or vns_has_multiple_files
-    if show_gaps and gap_result.get("gaps") and enable_gap_visualization and not use_sequential_timestamps:
+    if (
+        show_gaps
+        and gap_result.get("gaps")
+        and enable_gap_visualization
+        and not use_sequential_timestamps
+    ):
         gaps_to_show = gap_result["gaps"]
         total_gaps = len(gaps_to_show)
         if total_gaps > MAX_GAPS_SHOWN:
             # Show largest gaps only when there are too many
-            gaps_to_show = sorted(gaps_to_show, key=lambda g: g["duration_s"], reverse=True)[:MAX_GAPS_SHOWN]
-            st.caption(f"Showing {MAX_GAPS_SHOWN} largest gaps of {total_gaps} total (raise threshold to reduce)")
+            gaps_to_show = sorted(
+                gaps_to_show, key=lambda g: g["duration_s"], reverse=True
+            )[:MAX_GAPS_SHOWN]
+            st.caption(
+                f"Showing {MAX_GAPS_SHOWN} largest gaps of {total_gaps} total (raise threshold to reduce)"
+            )
 
         for gap in gaps_to_show:
             fig.add_shape(
-                type="rect", x0=gap["start_time"], x1=gap["end_time"],
-                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                fillcolor='rgba(128, 128, 128, 0.3)',
-                line=dict(color='rgba(128, 128, 128, 0.8)', width=2, dash='dot'),
-                layer="below"
+                type="rect",
+                x0=gap["start_time"],
+                x1=gap["end_time"],
+                y0=y_min - 0.05 * y_range,
+                y1=y_max + 0.05 * y_range,
+                fillcolor="rgba(128, 128, 128, 0.3)",
+                line=dict(color="rgba(128, 128, 128, 0.8)", width=2, dash="dot"),
+                layer="below",
             )
             mid_time = gap["start_time"] + (gap["end_time"] - gap["start_time"]) / 2
             fig.add_annotation(
-                x=mid_time, y=y_min - 0.1 * y_range,
+                x=mid_time,
+                y=y_min - 0.1 * y_range,
                 text=f"GAP: {gap['duration_s']:.1f}s",
-                showarrow=False, font=dict(color='red', size=9),
-                bgcolor='rgba(255,255,255,0.8)'
+                showarrow=False,
+                font=dict(color="red", size=9),
+                bgcolor="rgba(255,255,255,0.8)",
             )
 
     # In Signal Inspection mode, show gap markers at sequential positions
@@ -4871,123 +6214,182 @@ def render_rr_plot_fragment(participant_id: str):
         MAX_GAPS_SHOWN = 50
         gaps_to_show = gaps_from_result[:MAX_GAPS_SHOWN]
         if len(gaps_from_result) > MAX_GAPS_SHOWN:
-            st.caption(f"Showing {MAX_GAPS_SHOWN} of {len(gaps_from_result)} signal loss markers")
+            st.caption(
+                f"Showing {MAX_GAPS_SHOWN} of {len(gaps_from_result)} signal loss markers"
+            )
 
         for gap_info in gaps_to_show:
             # Get the end index of the gap (beat after gap)
-            gap_end_idx = gap_info.get('end_idx', 0)
-            gap_duration = gap_info.get('duration_s', 0)
+            gap_end_idx = gap_info.get("end_idx", 0)
+            gap_duration = gap_info.get("duration_s", 0)
             # Map to sequential timestamp position
             if gap_end_idx < len(sequential_timestamps):
                 gap_ts = sequential_timestamps[gap_end_idx]
                 # Add a vertical line at the gap position (dashed gray)
                 fig.add_shape(
-                    type="line", x0=gap_ts, x1=gap_ts,
-                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                    line=dict(color='rgba(128, 128, 128, 0.8)', width=2, dash='dot'),
+                    type="line",
+                    x0=gap_ts,
+                    x1=gap_ts,
+                    y0=y_min - 0.05 * y_range,
+                    y1=y_max + 0.05 * y_range,
+                    line=dict(color="rgba(128, 128, 128, 0.8)", width=2, dash="dot"),
                 )
                 fig.add_annotation(
-                    x=gap_ts, y=y_min - 0.1 * y_range,
+                    x=gap_ts,
+                    y=y_min - 0.1 * y_range,
                     text=f"GAP: {gap_duration:.1f}s",
-                    showarrow=False, font=dict(color='gray', size=8),
-                    bgcolor='rgba(255,255,255,0.7)'
+                    showarrow=False,
+                    font=dict(color="gray", size=8),
+                    bgcolor="rgba(255,255,255,0.7)",
                 )
 
     # Condition sections overlay (from generated_events or condition_events)
-    condition_events = stored_data.get('condition_events', stored_data.get('generated_events', stored_data.get('music_events', [])))
+    condition_events = stored_data.get(
+        "condition_events",
+        stored_data.get("generated_events", stored_data.get("music_events", [])),
+    )
     if show_condition_sections and condition_events:
         # Dynamic color palette for any number of conditions
         _palette = [
-            'rgba(65, 105, 225, 0.15)', 'rgba(50, 205, 50, 0.15)',
-            'rgba(255, 140, 0, 0.15)', 'rgba(220, 20, 60, 0.15)',
-            'rgba(148, 103, 189, 0.15)', 'rgba(0, 191, 255, 0.15)',
-            'rgba(255, 215, 0, 0.15)', 'rgba(127, 255, 0, 0.15)',
+            "rgba(65, 105, 225, 0.15)",
+            "rgba(50, 205, 50, 0.15)",
+            "rgba(255, 140, 0, 0.15)",
+            "rgba(220, 20, 60, 0.15)",
+            "rgba(148, 103, 189, 0.15)",
+            "rgba(0, 191, 255, 0.15)",
+            "rgba(255, 215, 0, 0.15)",
+            "rgba(127, 255, 0, 0.15)",
         ]
         _line_palette = [
-            '#4169E1', '#32CD32', '#FF8C00', '#DC143C',
-            '#9467BD', '#00BFFF', '#FFD700', '#7FFF00',
+            "#4169E1",
+            "#32CD32",
+            "#FF8C00",
+            "#DC143C",
+            "#9467BD",
+            "#00BFFF",
+            "#FFD700",
+            "#7FFF00",
         ]
         condition_sections = {}
         for evt in condition_events:
             if isinstance(evt, dict):
-                label = evt.get('raw_label') or str(evt)
-                timestamp = evt.get('first_timestamp')
+                label = evt.get("raw_label") or str(evt)
+                timestamp = evt.get("first_timestamp")
             else:
-                label = evt.raw_label if hasattr(evt, 'raw_label') else str(evt)
-                timestamp = evt.first_timestamp if hasattr(evt, 'first_timestamp') else None
+                label = evt.raw_label if hasattr(evt, "raw_label") else str(evt)
+                timestamp = (
+                    evt.first_timestamp if hasattr(evt, "first_timestamp") else None
+                )
             if not timestamp:
                 continue
             if isinstance(timestamp, str):
                 from datetime import datetime
+
                 timestamp = datetime.fromisoformat(timestamp)
-            if label.endswith('_start'):
-                cond_type = label.replace('_start', '')
+            if label.endswith("_start"):
+                cond_type = label.replace("_start", "")
                 if cond_type not in condition_sections:
                     condition_sections[cond_type] = []
-                condition_sections[cond_type].append({'start': timestamp, 'end': None})
-            elif label.endswith('_end'):
-                cond_type = label.replace('_end', '')
+                condition_sections[cond_type].append({"start": timestamp, "end": None})
+            elif label.endswith("_end"):
+                cond_type = label.replace("_end", "")
                 if cond_type in condition_sections:
                     for sec in reversed(condition_sections[cond_type]):
-                        if sec['end'] is None:
-                            sec['end'] = timestamp
+                        if sec["end"] is None:
+                            sec["end"] = timestamp
                             break
 
         # Assign colors dynamically based on sorted condition names
         sorted_conditions = sorted(condition_sections.keys())
-        cond_color_map = {c: _palette[i % len(_palette)] for i, c in enumerate(sorted_conditions)}
-        cond_line_map = {c: _line_palette[i % len(_line_palette)] for i, c in enumerate(sorted_conditions)}
+        cond_color_map = {
+            c: _palette[i % len(_palette)] for i, c in enumerate(sorted_conditions)
+        }
+        # _line_palette available via sorted_conditions index if needed
 
         for cond_type, sections in condition_sections.items():
-            color = cond_color_map.get(cond_type, 'rgba(128, 128, 128, 0.1)')
+            color = cond_color_map.get(cond_type, "rgba(128, 128, 128, 0.1)")
             for sec in sections:
-                if sec['start'] and sec['end']:
+                if sec["start"] and sec["end"]:
                     fig.add_shape(
-                        type="rect", x0=sec['start'], x1=sec['end'],
-                        y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                        fillcolor=color, line=dict(width=0), layer="below"
+                        type="rect",
+                        x0=sec["start"],
+                        x1=sec["end"],
+                        y0=y_min - 0.05 * y_range,
+                        y1=y_max + 0.05 * y_range,
+                        fillcolor=color,
+                        line=dict(width=0),
+                        layer="below",
                     )
-                    mid_time = sec['start'] + (sec['end'] - sec['start']) / 2
+                    mid_time = sec["start"] + (sec["end"] - sec["start"]) / 2
                     fig.add_annotation(
-                        x=mid_time, y=y_max + 0.08 * y_range,
-                        text=cond_type.replace('_', ' ').title(),
-                        showarrow=False, font=dict(size=8, color='gray')
+                        x=mid_time,
+                        y=y_max + 0.08 * y_range,
+                        text=cond_type.replace("_", " ").title(),
+                        showarrow=False,
+                        font=dict(size=8, color="gray"),
                     )
 
     # Condition event lines
     if show_condition_events and condition_events:
         # Reuse dynamic color mapping
-        _line_palette_evt = ['#4169E1', '#32CD32', '#FF8C00', '#DC143C', '#9467BD', '#00BFFF', '#FFD700', '#7FFF00']
-        _seen_types = sorted({
-            (evt.get('raw_label') if isinstance(evt, dict) else getattr(evt, 'raw_label', '')).replace('_start', '').replace('_end', '')
-            for evt in condition_events
-        })
-        _evt_color_map = {c: _line_palette_evt[i % len(_line_palette_evt)] for i, c in enumerate(_seen_types)}
+        _line_palette_evt = [
+            "#4169E1",
+            "#32CD32",
+            "#FF8C00",
+            "#DC143C",
+            "#9467BD",
+            "#00BFFF",
+            "#FFD700",
+            "#7FFF00",
+        ]
+        _seen_types = sorted(
+            {
+                (
+                    evt.get("raw_label")
+                    if isinstance(evt, dict)
+                    else getattr(evt, "raw_label", "")
+                )
+                .replace("_start", "")
+                .replace("_end", "")
+                for evt in condition_events
+            }
+        )
+        _evt_color_map = {
+            c: _line_palette_evt[i % len(_line_palette_evt)]
+            for i, c in enumerate(_seen_types)
+        }
         for evt in condition_events:
             if isinstance(evt, dict):
-                label = evt.get('raw_label') or str(evt)
-                timestamp = evt.get('first_timestamp')
+                label = evt.get("raw_label") or str(evt)
+                timestamp = evt.get("first_timestamp")
             else:
-                label = evt.raw_label if hasattr(evt, 'raw_label') else str(evt)
-                timestamp = evt.first_timestamp if hasattr(evt, 'first_timestamp') else None
+                label = evt.raw_label if hasattr(evt, "raw_label") else str(evt)
+                timestamp = (
+                    evt.first_timestamp if hasattr(evt, "first_timestamp") else None
+                )
             if timestamp:
                 if isinstance(timestamp, str):
                     from datetime import datetime
+
                     timestamp = datetime.fromisoformat(timestamp)
-                cond_type = label.replace('_start', '').replace('_end', '')
-                color = _evt_color_map.get(cond_type, '#808080')
+                cond_type = label.replace("_start", "").replace("_end", "")
+                color = _evt_color_map.get(cond_type, "#808080")
                 fig.add_shape(
-                    type="line", x0=timestamp, x1=timestamp,
-                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                    line=dict(color=color, width=1, dash='dot'), opacity=0.5
+                    type="line",
+                    x0=timestamp,
+                    x1=timestamp,
+                    y0=y_min - 0.05 * y_range,
+                    y1=y_max + 0.05 * y_range,
+                    line=dict(color=color, width=1, dash="dot"),
+                    opacity=0.5,
                 )
 
     # Exclusion zones (red semi-transparent rectangles) - conditional on show_exclusions
-    exclusion_zones = stored_data.get('exclusion_zones', [])
+    exclusion_zones = stored_data.get("exclusion_zones", [])
     if show_exclusions and exclusion_zones:
         for zone in exclusion_zones:
-            zone_start = zone.get('start')
-            zone_end = zone.get('end')
+            zone_start = zone.get("start")
+            zone_end = zone.get("end")
             if zone_start and zone_end:
                 # Convert ISO strings back to datetime if needed
                 if isinstance(zone_start, str):
@@ -4998,23 +6400,27 @@ def render_rr_plot_fragment(participant_id: str):
                 # Draw exclusion zone as red rectangle
                 fig.add_shape(
                     type="rect",
-                    x0=zone_start, x1=zone_end,
-                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                    fillcolor='rgba(255, 0, 0, 0.2)',
-                    line=dict(color='rgba(255, 0, 0, 0.8)', width=2),
-                    layer="below"
+                    x0=zone_start,
+                    x1=zone_end,
+                    y0=y_min - 0.05 * y_range,
+                    y1=y_max + 0.05 * y_range,
+                    fillcolor="rgba(255, 0, 0, 0.2)",
+                    line=dict(color="rgba(255, 0, 0, 0.8)", width=2),
+                    layer="below",
                 )
                 # Add vertical label at start of exclusion zone (like event labels)
-                reason = zone.get('reason', '')[:15]  # Truncate long reasons
-                exclude_dur = zone.get('exclude_from_duration', True)
+                reason = zone.get("reason", "")[:15]  # Truncate long reasons
+                exclude_dur = zone.get("exclude_from_duration", True)
                 label_text = reason if reason else "Excluded"
                 if exclude_dur:
                     label_text += " [excl]"
                 fig.add_annotation(
-                    x=zone_start, y=y_max + 0.08 * y_range,  # Position at start
+                    x=zone_start,
+                    y=y_max + 0.08 * y_range,  # Position at start
                     text=label_text,
-                    showarrow=False, textangle=-90,  # Vertical like events
-                    font=dict(color='darkred', size=10)
+                    showarrow=False,
+                    textangle=-90,  # Vertical like events
+                    font=dict(color="darkred", size=10),
                 )
 
     # Show pending exclusion click points on the plot (only in Add Exclusions mode)
@@ -5034,30 +6440,36 @@ def render_rr_plot_fragment(participant_id: str):
             # Find closest RR value for y-position
             click_y_values.append(y_max + 0.02 * y_range)
 
-        fig.add_trace(ScatterType(
-            x=click_times,
-            y=click_y_values,
-            mode='markers',
-            name='Exclusion Points',
-            marker=dict(size=15, color='red', symbol='diamond'),
-            hovertemplate='Exclusion point: %{x}<extra></extra>'
-        ))
+        fig.add_trace(
+            ScatterType(
+                x=click_times,
+                y=click_y_values,
+                mode="markers",
+                name="Exclusion Points",
+                marker=dict(size=15, color="red", symbol="diamond"),
+                hovertemplate="Exclusion point: %{x}<extra></extra>",
+            )
+        )
 
         # Draw vertical lines and labels
         if len(pending_clicks) == 1:
             # One point - show START label
             fig.add_shape(
                 type="line",
-                x0=pending_clicks[0], x1=pending_clicks[0],
-                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                line=dict(color='red', width=2, dash='dash'),
-                opacity=0.7
+                x0=pending_clicks[0],
+                x1=pending_clicks[0],
+                y0=y_min - 0.05 * y_range,
+                y1=y_max + 0.05 * y_range,
+                line=dict(color="red", width=2, dash="dash"),
+                opacity=0.7,
             )
             fig.add_annotation(
-                x=pending_clicks[0], y=y_max + 0.12 * y_range,
+                x=pending_clicks[0],
+                y=y_max + 0.12 * y_range,
                 text="START",
-                showarrow=False, font=dict(color='red', size=10, weight='bold'),
-                bgcolor='rgba(255,255,255,0.9)'
+                showarrow=False,
+                font=dict(color="red", size=10, weight="bold"),
+                bgcolor="rgba(255,255,255,0.9)",
             )
         elif len(pending_clicks) >= 2:
             # Two points - show START and END labels with shaded region
@@ -5065,25 +6477,31 @@ def render_rr_plot_fragment(participant_id: str):
             for ts, label in zip(sorted_clicks, ["START", "END"]):
                 fig.add_shape(
                     type="line",
-                    x0=ts, x1=ts,
-                    y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
-                    line=dict(color='red', width=2, dash='dash'),
-                    opacity=0.7
+                    x0=ts,
+                    x1=ts,
+                    y0=y_min - 0.05 * y_range,
+                    y1=y_max + 0.05 * y_range,
+                    line=dict(color="red", width=2, dash="dash"),
+                    opacity=0.7,
                 )
                 fig.add_annotation(
-                    x=ts, y=y_max + 0.12 * y_range,
+                    x=ts,
+                    y=y_max + 0.12 * y_range,
                     text=label,
-                    showarrow=False, font=dict(color='red', size=10, weight='bold'),
-                    bgcolor='rgba(255,255,255,0.9)'
+                    showarrow=False,
+                    font=dict(color="red", size=10, weight="bold"),
+                    bgcolor="rgba(255,255,255,0.9)",
                 )
             # Draw shaded region
             fig.add_shape(
                 type="rect",
-                x0=sorted_clicks[0], x1=sorted_clicks[1],
-                y0=y_min - 0.05 * y_range, y1=y_max + 0.05 * y_range,
+                x0=sorted_clicks[0],
+                x1=sorted_clicks[1],
+                y0=y_min - 0.05 * y_range,
+                y1=y_max + 0.05 * y_range,
                 fillcolor="red",
                 opacity=0.1,
-                line=dict(width=0)
+                line=dict(width=0),
             )
 
     # Check current interaction mode (needed for conditional display below)
@@ -5093,9 +6511,9 @@ def render_rr_plot_fragment(participant_id: str):
     # Check if in click-two-points exclusion mode (must also be in Add Exclusions mode)
     exclusion_method_key = f"exclusion_method_{participant_id}"
     is_exclusion_click_mode_check = (
-        current_interaction_mode == "Add Exclusions" and
-        exclusion_method_key in st.session_state and
-        st.session_state[exclusion_method_key] == "Click two points on plot"
+        current_interaction_mode == "Add Exclusions"
+        and exclusion_method_key in st.session_state
+        and st.session_state[exclusion_method_key] == "Click two points on plot"
     )
 
     # Display interactive plot with click detection
@@ -5103,13 +6521,21 @@ def render_rr_plot_fragment(participant_id: str):
     col_mode_info, col_refresh = st.columns([5, 1])
     with col_mode_info:
         if is_exclusion_click_mode_check:
-            st.info("**Click two points** on the plot to define an exclusion zone (start → end)")
+            st.info(
+                "**Click two points** on the plot to define an exclusion zone (start → end)"
+            )
         elif current_interaction_mode == "Signal Inspection":
-            st.info("Click on a beat to mark/unmark it as a manual artifact (purple diamonds)")
+            st.info(
+                "Click on a beat to mark/unmark it as a manual artifact (purple diamonds)"
+            )
         elif current_interaction_mode == "Add Events":
             st.info("Click on the plot to add a new event at that timestamp")
     with col_refresh:
-        if st.button("Refresh", key=f"refresh_plot_{participant_id}", help="Refresh plot to show new markers (resets zoom)"):
+        if st.button(
+            "Refresh",
+            key=f"refresh_plot_{participant_id}",
+            help="Refresh plot to show new markers (resets zoom)",
+        ):
             st.rerun()
 
     # Store current zoom range in session state for potential restoration
@@ -5122,22 +6548,27 @@ def render_rr_plot_fragment(participant_id: str):
         hover_event=False,
         select_event=False,
         override_height=600,
-        key=f"plotly_events_{participant_id}"
+        key=f"plotly_events_{participant_id}",
     )
 
     # Handle click - check if we're in exclusion click mode
     exclusion_click_key = f"exclusion_clicks_{participant_id}"
     # Must verify BOTH that exclusion method is set AND we're in Add Exclusions mode
     is_exclusion_click_mode = (
-        current_interaction_mode == "Add Exclusions" and
-        exclusion_method_key in st.session_state and
-        st.session_state[exclusion_method_key] == "Click two points on plot"
+        current_interaction_mode == "Add Exclusions"
+        and exclusion_method_key in st.session_state
+        and st.session_state[exclusion_method_key] == "Click two points on plot"
     )
-    
+
     # Clear pending exclusion clicks if we switched away from Add Exclusions mode
     # (This prevents old clicks from blocking other modes)
-    if current_interaction_mode != "Add Exclusions" and exclusion_click_key in st.session_state:
-        if st.session_state[exclusion_click_key]:  # Only clear if there are pending clicks
+    if (
+        current_interaction_mode != "Add Exclusions"
+        and exclusion_click_key in st.session_state
+    ):
+        if st.session_state[
+            exclusion_click_key
+        ]:  # Only clear if there are pending clicks
             st.session_state[exclusion_click_key] = []
 
     # Handle click immediately
@@ -5146,13 +6577,15 @@ def render_rr_plot_fragment(participant_id: str):
 
     if selected_points and len(selected_points) > 0:
         clicked_point = selected_points[0]
-        if 'x' in clicked_point:
-            clicked_ts = get_pandas().to_datetime(clicked_point['x'])
-            clicked_time_str = clicked_ts.strftime("%H:%M:%S.%f")  # Include microseconds for uniqueness
+        if "x" in clicked_point:
+            clicked_ts = get_pandas().to_datetime(clicked_point["x"])
+            clicked_time_str = clicked_ts.strftime(
+                "%H:%M:%S.%f"
+            )  # Include microseconds for uniqueness
 
             # Check if this is a new click (not a re-processed one)
             last_click = st.session_state.get(last_click_key)
-            is_new_click = (last_click != clicked_time_str)
+            is_new_click = last_click != clicked_time_str
 
             # Check if we're in exclusion click mode
             if is_exclusion_click_mode:
@@ -5170,7 +6603,9 @@ def render_rr_plot_fragment(participant_id: str):
                     # Add this click to the list
                     st.session_state[exclusion_click_key].append(clicked_ts)
                     display_time = clicked_ts.strftime("%H:%M:%S")
-                    st.toast(f"Exclusion point {len(st.session_state[exclusion_click_key])}: {display_time}")
+                    st.toast(
+                        f"Exclusion point {len(st.session_state[exclusion_click_key])}: {display_time}"
+                    )
 
                     # Full rerun for second point so the confirmation form
                     # and exclusion zones list (outside fragment) update immediately
@@ -5198,11 +6633,12 @@ def render_rr_plot_fragment(participant_id: str):
                     return
 
                 # Find nearest beat index to clicked timestamp
-                timestamps = plot_data['timestamps']
-                rr_values = plot_data['rr_values']
+                timestamps = plot_data["timestamps"]
+                rr_values = plot_data["rr_values"]
 
                 # Convert clicked timestamp to comparable format
                 import numpy as np
+
                 ts_array = get_pandas().to_datetime(timestamps)
 
                 # Ensure both timestamps have matching timezone awareness
@@ -5216,7 +6652,9 @@ def render_rr_plot_fragment(participant_id: str):
 
                 # Only mark if click is within 2 seconds of a beat
                 if time_diffs[nearest_idx] > 2.0:
-                    st.info(f"Click closer to a beat to mark it. Nearest beat is {time_diffs[nearest_idx]:.1f}s away.")
+                    st.info(
+                        f"Click closer to a beat to mark it. Nearest beat is {time_diffs[nearest_idx]:.1f}s away."
+                    )
                     return
 
                 # Store this click as processed BEFORE modifying state
@@ -5235,20 +6673,26 @@ def render_rr_plot_fragment(participant_id: str):
                 artifact_exclusions = st.session_state[artifact_exclusions_key]
 
                 # Get original index for this beat
-                original_idx = plot_data.get('original_indices', list(range(len(timestamps))))[nearest_idx]
+                original_idx = plot_data.get(
+                    "original_indices", list(range(len(timestamps)))
+                )[nearest_idx]
                 clicked_rr = rr_values[nearest_idx]
-                clicked_ts_str = get_pandas().to_datetime(timestamps[nearest_idx]).strftime('%H:%M:%S.%f')
+                clicked_ts_str = (
+                    get_pandas()
+                    .to_datetime(timestamps[nearest_idx])
+                    .strftime("%H:%M:%S.%f")
+                )
 
                 # Check if this beat is a detected artifact (from threshold detection)
                 # Artifacts are stored in session state, not plot_data
                 artifact_data = st.session_state.get(f"artifacts_{participant_id}", {})
-                detected_artifact_indices = artifact_data.get('artifact_indices', [])
+                detected_artifact_indices = artifact_data.get("artifact_indices", [])
                 is_detected_artifact = original_idx in detected_artifact_indices
 
                 # Check if this beat is a manual artifact
                 existing_manual_entry = None
                 for entry in manual_artifacts:
-                    if entry.get('original_idx') == original_idx:
+                    if entry.get("original_idx") == original_idx:
                         existing_manual_entry = entry
                         break
 
@@ -5265,27 +6709,37 @@ def render_rr_plot_fragment(participant_id: str):
                     if is_excluded:
                         # Re-include detected artifact (was excluded, now re-mark it)
                         artifact_exclusions.discard(original_idx)
-                        st.toast(f"Re-enabled detected artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
+                        st.toast(
+                            f"Re-enabled detected artifact at {clicked_ts_str} (RR={clicked_rr}ms)"
+                        )
                     else:
                         # Exclude detected artifact (unmark it)
                         artifact_exclusions.add(original_idx)
-                        st.toast(f"Excluded detected artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
+                        st.toast(
+                            f"Excluded detected artifact at {clicked_ts_str} (RR={clicked_rr}ms)"
+                        )
                     st.session_state[artifact_exclusions_key] = artifact_exclusions
                 elif existing_manual_entry:
                     # Remove from manual artifacts (toggle off)
                     manual_artifacts.remove(existing_manual_entry)
-                    st.toast(f"Removed manual artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
+                    st.toast(
+                        f"Removed manual artifact at {clicked_ts_str} (RR={clicked_rr}ms)"
+                    )
                     st.session_state[manual_artifact_key] = manual_artifacts
                 else:
                     # Add to manual artifacts (toggle on)
-                    manual_artifacts.append({
-                        'original_idx': original_idx,
-                        'plot_idx': nearest_idx,
-                        'timestamp': clicked_ts_str,
-                        'rr_value': clicked_rr,
-                        'source': 'manual'
-                    })
-                    st.toast(f"Marked as artifact at {clicked_ts_str} (RR={clicked_rr}ms)")
+                    manual_artifacts.append(
+                        {
+                            "original_idx": original_idx,
+                            "plot_idx": nearest_idx,
+                            "timestamp": clicked_ts_str,
+                            "rr_value": clicked_rr,
+                            "source": "manual",
+                        }
+                    )
+                    st.toast(
+                        f"Marked as artifact at {clicked_ts_str} (RR={clicked_rr}ms)"
+                    )
                     st.session_state[manual_artifact_key] = manual_artifacts
 
                 # Mark this click as just processed to prevent reprocessing after rerun
@@ -5304,14 +6758,22 @@ def render_rr_plot_fragment(participant_id: str):
 
             col_evt, col_custom, col_add = st.columns([2, 2, 1])
             with col_evt:
-                quick_events = ["measurement_start", "measurement_end", "pause_start", "pause_end",
-                               "rest_pre_start", "rest_pre_end", "rest_post_start", "rest_post_end",
-                               "Custom..."]
+                quick_events = [
+                    "measurement_start",
+                    "measurement_end",
+                    "pause_start",
+                    "pause_end",
+                    "rest_pre_start",
+                    "rest_pre_end",
+                    "rest_post_start",
+                    "rest_post_end",
+                    "Custom...",
+                ]
                 selected_evt = st.selectbox(
                     "Event type",
                     options=quick_events,
                     key=f"quick_evt_{participant_id}_{clicked_time_str}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
                 )
 
             with col_custom:
@@ -5320,36 +6782,53 @@ def render_rr_plot_fragment(participant_id: str):
                         "Custom label",
                         key=f"custom_evt_{participant_id}_{clicked_time_str}",
                         placeholder="Enter event name...",
-                        label_visibility="collapsed"
+                        label_visibility="collapsed",
                     )
                 else:
                     custom_evt_label = None
 
             with col_add:
-                if st.button("+ Add", key=f"add_click_{participant_id}_{clicked_time_str}", type="primary"):
+                if st.button(
+                    "+ Add",
+                    key=f"add_click_{participant_id}_{clicked_time_str}",
+                    type="primary",
+                ):
                     from rrational.prep.summaries import EventStatus
 
                     # Determine label
-                    event_label = custom_evt_label if selected_evt == "Custom..." else selected_evt
+                    event_label = (
+                        custom_evt_label
+                        if selected_evt == "Custom..."
+                        else selected_evt
+                    )
                     if not event_label:
                         st.error("Enter a custom event name")
                     else:
                         # Use clicked timestamp with proper timezone
                         if clicked_ts.tzinfo is None:
-                            clicked_ts = clicked_ts.tz_localize('UTC')
+                            clicked_ts = clicked_ts.tz_localize("UTC")
 
                         new_event = EventStatus(
                             raw_label=event_label,
-                            canonical=st.session_state.normalizer.normalize(event_label),
+                            canonical=st.session_state.normalizer.normalize(
+                                event_label
+                            ),
                             count=1,
                             first_timestamp=clicked_ts,
                             last_timestamp=clicked_ts,
                         )
 
                         if participant_id not in st.session_state.participant_events:
-                            st.session_state.participant_events[participant_id] = {'events': [], 'manual': []}
-                        st.session_state.participant_events[participant_id]['manual'].append(new_event)
-                        st.toast(f"Added '{event_label}' at {clicked_time_str} - click 'Refresh Plot' or interact with plot to see marker")
+                            st.session_state.participant_events[participant_id] = {
+                                "events": [],
+                                "manual": [],
+                            }
+                        st.session_state.participant_events[participant_id][
+                            "manual"
+                        ].append(new_event)
+                        st.toast(
+                            f"Added '{event_label}' at {clicked_time_str} - click 'Refresh Plot' or interact with plot to see marker"
+                        )
 
 
 def _load_project(project_path: Path | str | None) -> None:
@@ -5375,16 +6854,28 @@ def _load_project(project_path: Path | str | None) -> None:
     st.session_state.project_manager = pm
 
     # Update recent projects and save as last project for auto-load
-    add_recent_project(project_path, pm.metadata.name if pm.metadata else project_path.name)
+    add_recent_project(
+        project_path, pm.metadata.name if pm.metadata else project_path.name
+    )
     save_last_project(project_path)
 
     # Clear and reload config from project
-    for key in ["groups", "all_events", "sections", "event_sequences",
-                "participant_groups", "participant_randomizations",
-                "participant_sequences", "participant_labels",
-                "event_order", "manual_events",
-                # Legacy keys
-                "playlist_groups", "participant_playlists", "music_labels"]:
+    for key in [
+        "groups",
+        "all_events",
+        "sections",
+        "event_sequences",
+        "participant_groups",
+        "participant_randomizations",
+        "participant_sequences",
+        "participant_labels",
+        "event_order",
+        "manual_events",
+        # Legacy keys
+        "playlist_groups",
+        "participant_playlists",
+        "music_labels",
+    ]:
         if key in st.session_state:
             del st.session_state[key]
 
@@ -5399,6 +6890,7 @@ def _load_project(project_path: Path | str | None) -> None:
 def main():
     """Main Streamlit app."""
     import time as _time
+
     _script_start = _time.time()
 
     # Auto-load last project on startup (only on first run)
@@ -5406,6 +6898,7 @@ def main():
         st.session_state.startup_complete = True
         if not TEST_MODE:
             from rrational.gui.persistence import get_last_project
+
             last_project = get_last_project()
             if last_project:
                 # Auto-load the last used project
@@ -5414,10 +6907,13 @@ def main():
                 st.rerun()
 
     # Project selection gate - show welcome screen if no project selected
-    if st.session_state.get("show_welcome", True) and not st.session_state.get("current_project"):
+    if st.session_state.get("show_welcome", True) and not st.session_state.get(
+        "current_project"
+    ):
         # Don't show welcome in TEST_MODE
         if not TEST_MODE:
             from rrational.gui.welcome import render_welcome_screen
+
             result = render_welcome_screen()
             if result is not None:
                 if result == "":  # Temporary workspace
@@ -5436,7 +6932,9 @@ def main():
         st.info("**Test mode active** - Using demo data from `data/demo/hrv_logger`")
     elif st.session_state.get("demo_mode"):
         st.title("RRational [DEMO]")
-        st.info("**Demo mode** - Exploring sample data (12 participants). Changes are not saved.")
+        st.info(
+            "**Demo mode** - Exploring sample data (12 participants). Changes are not saved."
+        )
     else:
         st.title("RRational")
 
@@ -5444,7 +6942,9 @@ def main():
     _current_project = st.session_state.get("current_project")
     if _current_project:
         _pm = st.session_state.get("project_manager")
-        _project_name = _pm.metadata.name if _pm and _pm.metadata else Path(_current_project).name
+        _project_name = (
+            _pm.metadata.name if _pm and _pm.metadata else Path(_current_project).name
+        )
         st.markdown(f"#### Project: {_project_name}")
     elif st.session_state.get("demo_mode"):
         st.markdown("#### Demo Data")
@@ -5457,7 +6957,8 @@ def main():
         st.session_state.active_page = "Data"
 
     # CSS for compact sidebar navigation
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     /* Compact sidebar navigation */
     section[data-testid="stSidebar"] .stButton button {
@@ -5468,7 +6969,9 @@ def main():
         padding-top: 1rem;
     }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     with st.sidebar:
         # Navigation buttons - no emojis
@@ -5477,11 +6980,17 @@ def main():
         for page_id in pages:
             # Highlight active page with primary button
             if st.session_state.active_page == page_id:
-                st.button(page_id, key=f"nav_{page_id}", width='stretch', type="primary")
+                st.button(
+                    page_id, key=f"nav_{page_id}", width="stretch", type="primary"
+                )
             else:
-                if st.button(page_id, key=f"nav_{page_id}", width='stretch', type="secondary"):
+                if st.button(
+                    page_id, key=f"nav_{page_id}", width="stretch", type="secondary"
+                ):
                     st.session_state.active_page = page_id
-                    st.session_state._scroll_to_top = True  # Scroll to top on tab switch
+                    st.session_state._scroll_to_top = (
+                        True  # Scroll to top on tab switch
+                    )
                     # Extra scroll trigger for Setup tab (content renders after main scroll)
                     if page_id == "Setup":
                         st.session_state._setup_scroll_to_top = True
@@ -5530,11 +7039,20 @@ def main():
             render_settings_panel()
 
         # Help links
-        st.link_button("Documentation", "https://rrational.readthedocs.io", use_container_width=True)
-        st.link_button("Report a Bug", "https://github.com/saiko-psych/rrational/issues/new/choose", use_container_width=True)
+        st.link_button(
+            "Documentation",
+            "https://rrational.readthedocs.io",
+            use_container_width=True,
+        )
+        st.link_button(
+            "Report a Bug",
+            "https://github.com/saiko-psych/rrational/issues/new/choose",
+            use_container_width=True,
+        )
 
         # Version & debug info
-        from rrational import __version__, get_build_info
+        from rrational import get_build_info
+
         _build = get_build_info()
         _version_str = f"v{_build['version']}"
         if _build.get("git_commit"):
@@ -5585,13 +7103,12 @@ def main():
                 }, 100);  // 100ms delay for content to render
             </script>
             """,
-            height=0
+            height=0,
         )
 
     # ================== PAGE: DATA ==================
     if selected_page == "Data":
         _get_render_data_tab()()
-
 
     # ================== TAB: PARTICIPANTS ==================
     elif selected_page == "Participants":
@@ -5600,7 +7117,6 @@ def main():
         if not st.session_state.summaries:
             st.info("Load data in the **Data** tab first to view participant details.")
         else:
-
             participant_list = get_participant_list()  # Cached for performance
 
             # Initialize selected participant index
@@ -5614,17 +7130,22 @@ def main():
                 st.session_state.current_participant_idx = 0
 
             current_idx = st.session_state.current_participant_idx
-            selected_participant = participant_list[current_idx] if participant_list else None
+            selected_participant = (
+                participant_list[current_idx] if participant_list else None
+            )
 
             # Navigation row
             col1, col2, col3 = st.columns([3, 1, 1])
 
             with col1:
+
                 def on_select_change():
                     # Find index of selected participant
                     selected = st.session_state.participant_selector
                     if selected in participant_list:
-                        st.session_state.current_participant_idx = participant_list.index(selected)
+                        st.session_state.current_participant_idx = (
+                            participant_list.index(selected)
+                        )
                         st.session_state.scroll_to_top_trigger = True
 
                 st.selectbox(
@@ -5633,15 +7154,18 @@ def main():
                     index=current_idx,
                     key="participant_selector",
                     label_visibility="collapsed",
-                    on_change=on_select_change
+                    on_change=on_select_change,
                 )
 
             with col2:
+
                 def go_previous():
                     if st.session_state.current_participant_idx > 0:
                         st.session_state.current_participant_idx -= 1
                         # Sync selectbox key with new index
-                        new_participant = participant_list[st.session_state.current_participant_idx]
+                        new_participant = participant_list[
+                            st.session_state.current_participant_idx
+                        ]
                         st.session_state.participant_selector = new_participant
                         st.session_state.scroll_to_top_trigger = True
 
@@ -5649,16 +7173,22 @@ def main():
                     "Previous",
                     disabled=current_idx == 0,
                     key="prev_btn",
-                    width='stretch',
-                    on_click=go_previous
+                    width="stretch",
+                    on_click=go_previous,
                 )
 
             with col3:
+
                 def go_next():
-                    if st.session_state.current_participant_idx < len(participant_list) - 1:
+                    if (
+                        st.session_state.current_participant_idx
+                        < len(participant_list) - 1
+                    ):
                         st.session_state.current_participant_idx += 1
                         # Sync selectbox key with new index
-                        new_participant = participant_list[st.session_state.current_participant_idx]
+                        new_participant = participant_list[
+                            st.session_state.current_participant_idx
+                        ]
                         st.session_state.participant_selector = new_participant
                         st.session_state.scroll_to_top_trigger = True
 
@@ -5666,46 +7196,75 @@ def main():
                     "Next",
                     disabled=current_idx >= len(participant_list) - 1,
                     key="next_btn",
-                    width='stretch',
-                    on_click=go_next
+                    width="stretch",
+                    on_click=go_next,
                 )
 
             # Scroll to top when navigating between participants
             if st.session_state.get("scroll_to_top_trigger", False):
                 st.session_state.scroll_to_top_trigger = False
-                st.components.v1.html("""
+                st.components.v1.html(
+                    """
                     <script>
                         var streamlitDoc = window.parent.document;
                         var appContainer = streamlitDoc.querySelector('[data-testid="stAppViewContainer"]');
                         if (appContainer) appContainer.scrollTop = 0;
                     </script>
-                """, height=0)
+                """,
+                    height=0,
+                )
 
             # Update selected_participant from current index
-            selected_participant = participant_list[st.session_state.current_participant_idx] if participant_list else None
+            selected_participant = (
+                participant_list[st.session_state.current_participant_idx]
+                if participant_list
+                else None
+            )
 
             # Participant info header
             if selected_participant:
                 summary = get_summary_dict().get(selected_participant)
 
                 # Get group with label
-                assigned_group = st.session_state.participant_groups.get(selected_participant, "Default")
-                group_label = st.session_state.groups.get(assigned_group, {}).get("label", assigned_group)
-                group_display = f"{group_label}" if group_label != assigned_group else assigned_group
+                assigned_group = st.session_state.participant_groups.get(
+                    selected_participant, "Default"
+                )
+                group_label = st.session_state.groups.get(assigned_group, {}).get(
+                    "label", assigned_group
+                )
+                group_display = (
+                    f"{group_label}"
+                    if group_label != assigned_group
+                    else assigned_group
+                )
 
                 # Get randomization with label (check event_sequences first, then custom labels)
-                assigned_randomization = st.session_state.get("participant_randomizations", {}).get(selected_participant, "")
+                assigned_randomization = st.session_state.get(
+                    "participant_randomizations", {}
+                ).get(selected_participant, "")
                 if assigned_randomization:
                     # Try event_sequences first, then custom randomization_labels
-                    if assigned_randomization in st.session_state.get("event_sequences", {}):
-                        rand_label = st.session_state.event_sequences[assigned_randomization].get("label", assigned_randomization)
+                    if assigned_randomization in st.session_state.get(
+                        "event_sequences", {}
+                    ):
+                        rand_label = st.session_state.event_sequences[
+                            assigned_randomization
+                        ].get("label", assigned_randomization)
                     else:
-                        rand_label = st.session_state.get("randomization_labels", {}).get(assigned_randomization, assigned_randomization)
-                    rand_display = f"{rand_label}" if rand_label != assigned_randomization else assigned_randomization
+                        rand_label = st.session_state.get(
+                            "randomization_labels", {}
+                        ).get(assigned_randomization, assigned_randomization)
+                    rand_display = (
+                        f"{rand_label}"
+                        if rand_label != assigned_randomization
+                        else assigned_randomization
+                    )
                 else:
                     rand_display = "Not assigned"
 
-                st.markdown(f"**{selected_participant}** | Group: {group_display} | Randomization: {rand_display} | ({current_idx + 1} of {len(participant_list)})")
+                st.markdown(
+                    f"**{selected_participant}** | Group: {group_display} | Randomization: {rand_display} | ({current_idx + 1} of {len(participant_list)})"
+                )
 
                 # Metrics row
                 col1, col2, col3, col4 = st.columns(4)
@@ -5727,11 +7286,15 @@ def main():
 
                     # ISSUE 1 FIX: Display duplicate details in expandable section
                     if summary.duplicate_details:
-                        with st.expander(f"Show Duplicate Details ({len(summary.duplicate_details)} duplicates)"):
+                        with st.expander(
+                            f"Show Duplicate Details ({len(summary.duplicate_details)} duplicates)"
+                        ):
                             # Show first 10 duplicates by default
                             num_to_show = min(10, len(summary.duplicate_details))
 
-                            for i, dup in enumerate(summary.duplicate_details[:num_to_show]):
+                            for i, dup in enumerate(
+                                summary.duplicate_details[:num_to_show]
+                            ):
                                 st.text(
                                     f"Line {dup.original_line} (original) duplicated at Line {dup.duplicate_line}: "
                                     f"date={dup.date_str}, rr={dup.rr_str}, elapsed={dup.elapsed_str}"
@@ -5739,7 +7302,10 @@ def main():
 
                             # Show remaining duplicates if user wants to see more
                             if len(summary.duplicate_details) > 10:
-                                if st.button(f"Show all {len(summary.duplicate_details)} duplicates", key=f"show_all_dups_{selected_participant}"):
+                                if st.button(
+                                    f"Show all {len(summary.duplicate_details)} duplicates",
+                                    key=f"show_all_dups_{selected_participant}",
+                                ):
                                     st.markdown("**All Duplicates:**")
                                     for dup in summary.duplicate_details:
                                         st.text(
@@ -5749,16 +7315,22 @@ def main():
 
                 # Recording date/time
                 if summary.recording_datetime:
-                    st.info(f" Recording Date: {summary.recording_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+                    st.info(
+                        f" Recording Date: {summary.recording_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
 
                 # Show VNS multi-file info (displayed early, before loading full data)
-                source_app_check = getattr(summary, 'source_app', 'HRV Logger')
+                source_app_check = getattr(summary, "source_app", "HRV Logger")
                 if source_app_check == "VNS Analyse":
-                    vns_paths_check = getattr(summary, 'vns_paths', None) or (
-                        [getattr(summary, 'vns_path', None)] if getattr(summary, 'vns_path', None) else []
+                    vns_paths_check = getattr(summary, "vns_paths", None) or (
+                        [getattr(summary, "vns_path", None)]
+                        if getattr(summary, "vns_path", None)
+                        else []
                     )
                     if len(vns_paths_check) > 1:
-                        st.info(f" Multiple VNS Files: {len(vns_paths_check)} recordings found")
+                        st.info(
+                            f" Multiple VNS Files: {len(vns_paths_check)} recordings found"
+                        )
 
                 # Check for saved .rrational files and artifact corrections
                 from rrational.gui.rrational_export import find_rrational_files
@@ -5767,8 +7339,12 @@ def main():
                 data_dir = st.session_state.get("data_dir", "")
                 project_path = st.session_state.get("current_project")
 
-                ready_files = find_rrational_files(selected_participant, data_dir, project_path)
-                saved_artifacts = load_artifact_corrections(selected_participant, data_dir, project_path, section_key=None)
+                ready_files = find_rrational_files(
+                    selected_participant, data_dir, project_path
+                )
+                saved_artifacts = load_artifact_corrections(
+                    selected_participant, data_dir, project_path, section_key=None
+                )
 
                 # Show status badges
                 status_parts = []
@@ -5779,9 +7355,18 @@ def main():
                     if "sections" in saved_artifacts:
                         sections = saved_artifacts.get("sections", {})
                         n_sections = len(sections)
-                        total_algo = sum(len(s.get("algorithm_artifact_indices", [])) for s in sections.values())
-                        total_manual = sum(len(s.get("manual_artifacts", [])) for s in sections.values())
-                        total_excluded = sum(len(s.get("excluded_artifact_indices", [])) for s in sections.values())
+                        total_algo = sum(
+                            len(s.get("algorithm_artifact_indices", []))
+                            for s in sections.values()
+                        )
+                        total_manual = sum(
+                            len(s.get("manual_artifacts", []))
+                            for s in sections.values()
+                        )
+                        total_excluded = sum(
+                            len(s.get("excluded_artifact_indices", []))
+                            for s in sections.values()
+                        )
 
                         if total_algo or total_manual or total_excluded:
                             art_parts = []
@@ -5791,13 +7376,24 @@ def main():
                                 art_parts.append(f"**{total_manual}** manual")
                             if total_excluded:
                                 art_parts.append(f"**{total_excluded}** excluded")
-                            section_info = f" ({n_sections} section{'s' if n_sections > 1 else ''})" if n_sections > 1 else ""
-                            status_parts.append(" + ".join(art_parts) + f" artifacts saved{section_info}")
+                            section_info = (
+                                f" ({n_sections} section{'s' if n_sections > 1 else ''})"
+                                if n_sections > 1
+                                else ""
+                            )
+                            status_parts.append(
+                                " + ".join(art_parts)
+                                + f" artifacts saved{section_info}"
+                            )
                     else:
                         # Legacy format (v1.2 and earlier)
-                        n_algo = len(saved_artifacts.get("algorithm_artifact_indices", []))
+                        n_algo = len(
+                            saved_artifacts.get("algorithm_artifact_indices", [])
+                        )
                         n_manual = len(saved_artifacts.get("manual_artifacts", []))
-                        n_excluded = len(saved_artifacts.get("excluded_artifact_indices", []))
+                        n_excluded = len(
+                            saved_artifacts.get("excluded_artifact_indices", [])
+                        )
                         if n_algo or n_manual or n_excluded:
                             art_parts = []
                             if n_algo:
@@ -5806,7 +7402,9 @@ def main():
                                 art_parts.append(f"**{n_manual}** manual")
                             if n_excluded:
                                 art_parts.append(f"**{n_excluded}** excluded")
-                            status_parts.append(" + ".join(art_parts) + " artifacts saved")
+                            status_parts.append(
+                                " + ".join(art_parts) + " artifacts saved"
+                            )
 
                 if status_parts:
                     st.success(f"Saved data: {' | '.join(status_parts)}")
@@ -5817,7 +7415,11 @@ def main():
                 if artifacts_loaded_key not in st.session_state:
                     st.session_state[artifacts_loaded_key] = True  # Mark as loaded
 
-                    from rrational.gui.persistence import load_artifact_corrections, load_artifact_corrections_from_rrational, get_merged_artifacts_for_display
+                    from rrational.gui.persistence import (
+                        load_artifact_corrections,
+                        load_artifact_corrections_from_rrational,
+                        get_merged_artifacts_for_display,
+                    )
                     from rrational.gui.rrational_export import find_rrational_files
 
                     data_dir_load = str(st.session_state.get("data_dir", ""))
@@ -5832,8 +7434,12 @@ def main():
                     )
 
                     if saved:
-                        manual_artifact_key_load = f"manual_artifacts_{selected_participant}"
-                        artifact_exclusions_key_load = f"artifact_exclusions_{selected_participant}"
+                        manual_artifact_key_load = (
+                            f"manual_artifacts_{selected_participant}"
+                        )
+                        artifact_exclusions_key_load = (
+                            f"artifact_exclusions_{selected_participant}"
+                        )
                         artifacts_key_load = f"artifacts_{selected_participant}"
 
                         # Handle v1.3+ format with sections
@@ -5842,47 +7448,77 @@ def main():
                             merged = get_merged_artifacts_for_display(
                                 selected_participant, data_dir_load, project_path_load
                             )
-                            st.session_state[manual_artifact_key_load] = merged.get("manual_artifacts", [])
-                            st.session_state[artifact_exclusions_key_load] = set(merged.get("excluded_artifact_indices", []))
+                            st.session_state[manual_artifact_key_load] = merged.get(
+                                "manual_artifacts", []
+                            )
+                            st.session_state[artifact_exclusions_key_load] = set(
+                                merged.get("excluded_artifact_indices", [])
+                            )
 
                             # For algorithm artifacts, merge and track sections
                             if merged.get("algorithm_artifact_indices"):
                                 sections_info = merged.get("sections_info", {})
                                 # Get method from first section (they might differ)
-                                first_section = list(sections_info.values())[0] if sections_info else {}
+                                first_section = (
+                                    list(sections_info.values())[0]
+                                    if sections_info
+                                    else {}
+                                )
                                 loaded_artifact_data = {
-                                    "artifact_indices": merged.get("algorithm_artifact_indices", []),
-                                    "indices_by_type": merged.get("indices_by_type", {}),
+                                    "artifact_indices": merged.get(
+                                        "algorithm_artifact_indices", []
+                                    ),
+                                    "indices_by_type": merged.get(
+                                        "indices_by_type", {}
+                                    ),
                                     "method": first_section.get("method"),
                                     "restored_from_save": True,
                                     "sections_info": sections_info,  # Track per-section info
                                 }
-                                st.session_state[artifacts_key_load] = loaded_artifact_data
+                                st.session_state[artifacts_key_load] = (
+                                    loaded_artifact_data
+                                )
 
                             # Store info for persistent notification
-                            total_algo = len(merged.get("algorithm_artifact_indices", []))
+                            total_algo = len(
+                                merged.get("algorithm_artifact_indices", [])
+                            )
                             total_manual = len(merged.get("manual_artifacts", []))
-                            total_excluded = len(merged.get("excluded_artifact_indices", []))
+                            total_excluded = len(
+                                merged.get("excluded_artifact_indices", [])
+                            )
                             if total_algo or total_manual or total_excluded:
                                 n_sections = len(saved.get("sections", {}))
-                                st.session_state[f"artifacts_loaded_info_{selected_participant}"] = {
+                                st.session_state[
+                                    f"artifacts_loaded_info_{selected_participant}"
+                                ] = {
                                     "saved_at": saved.get("last_modified"),
                                     "n_algorithm": total_algo,
                                     "n_manual": total_manual,
                                     "n_excluded": total_excluded,
                                     "n_sections": n_sections,
                                 }
-                                section_label = f" from {n_sections} section{'s' if n_sections > 1 else ''}" if n_sections > 1 else ""
+                                section_label = (
+                                    f" from {n_sections} section{'s' if n_sections > 1 else ''}"
+                                    if n_sections > 1
+                                    else ""
+                                )
                                 st.toast(f"Loaded artifact corrections{section_label}")
                         else:
                             # Legacy format (v1.2 and earlier)
-                            st.session_state[manual_artifact_key_load] = saved.get("manual_artifacts", [])
-                            st.session_state[artifact_exclusions_key_load] = set(saved.get("excluded_artifact_indices", []))
+                            st.session_state[manual_artifact_key_load] = saved.get(
+                                "manual_artifacts", []
+                            )
+                            st.session_state[artifact_exclusions_key_load] = set(
+                                saved.get("excluded_artifact_indices", [])
+                            )
 
                             # Restore algorithm artifacts if present
                             if "algorithm_artifact_indices" in saved:
                                 loaded_artifact_data = {
-                                    "artifact_indices": saved.get("algorithm_artifact_indices", []),
+                                    "artifact_indices": saved.get(
+                                        "algorithm_artifact_indices", []
+                                    ),
                                     "method": saved.get("algorithm_method"),
                                     "threshold": saved.get("algorithm_threshold"),
                                     "restored_from_save": True,
@@ -5892,36 +7528,70 @@ def main():
                                 if "scope" in saved:
                                     loaded_artifact_data["scope"] = saved["scope"]
                                 if "corrected_rr" in saved:
-                                    loaded_artifact_data["corrected_rr"] = saved["corrected_rr"]
-                                st.session_state[artifacts_key_load] = loaded_artifact_data
+                                    loaded_artifact_data["corrected_rr"] = saved[
+                                        "corrected_rr"
+                                    ]
+                                st.session_state[artifacts_key_load] = (
+                                    loaded_artifact_data
+                                )
 
                             # Store info for persistent notification
-                            has_any = (saved.get("manual_artifacts") or
-                                      saved.get("excluded_artifact_indices") or
-                                      saved.get("algorithm_artifact_indices"))
+                            has_any = (
+                                saved.get("manual_artifacts")
+                                or saved.get("excluded_artifact_indices")
+                                or saved.get("algorithm_artifact_indices")
+                            )
                             if has_any:
-                                st.session_state[f"artifacts_loaded_info_{selected_participant}"] = {
+                                st.session_state[
+                                    f"artifacts_loaded_info_{selected_participant}"
+                                ] = {
                                     "saved_at": saved.get("saved_at"),
                                     "algorithm_method": saved.get("algorithm_method"),
-                                    "algorithm_threshold": saved.get("algorithm_threshold"),
-                                    "n_algorithm": len(saved.get("algorithm_artifact_indices", [])),
+                                    "algorithm_threshold": saved.get(
+                                        "algorithm_threshold"
+                                    ),
+                                    "n_algorithm": len(
+                                        saved.get("algorithm_artifact_indices", [])
+                                    ),
                                     "n_manual": len(saved.get("manual_artifacts", [])),
-                                    "n_excluded": len(saved.get("excluded_artifact_indices", [])),
+                                    "n_excluded": len(
+                                        saved.get("excluded_artifact_indices", [])
+                                    ),
                                 }
-                                st.toast("Loaded artifact corrections from saved session")
+                                st.toast(
+                                    "Loaded artifact corrections from saved session"
+                                )
                     else:
                         # Fallback: try .rrational file
-                        ready_files = find_rrational_files(selected_participant, data_dir_load, project_path_load)
+                        ready_files = find_rrational_files(
+                            selected_participant, data_dir_load, project_path_load
+                        )
                         if ready_files:
-                            from_rrational = load_artifact_corrections_from_rrational(ready_files[0])
+                            from_rrational = load_artifact_corrections_from_rrational(
+                                ready_files[0]
+                            )
                             if from_rrational:
-                                manual_artifact_key_load = f"manual_artifacts_{selected_participant}"
-                                artifact_exclusions_key_load = f"artifact_exclusions_{selected_participant}"
-                                st.session_state[manual_artifact_key_load] = from_rrational.get("manual_artifacts", [])
-                                st.session_state[artifact_exclusions_key_load] = set(from_rrational.get("excluded_artifact_indices", []))
-                                source_name = Path(from_rrational.get("source_file", "")).name
-                                st.toast(f"Restored artifact markings from {source_name}")
-                                st.session_state[f"artifacts_from_rrational_{selected_participant}"] = source_name
+                                manual_artifact_key_load = (
+                                    f"manual_artifacts_{selected_participant}"
+                                )
+                                artifact_exclusions_key_load = (
+                                    f"artifact_exclusions_{selected_participant}"
+                                )
+                                st.session_state[manual_artifact_key_load] = (
+                                    from_rrational.get("manual_artifacts", [])
+                                )
+                                st.session_state[artifact_exclusions_key_load] = set(
+                                    from_rrational.get("excluded_artifact_indices", [])
+                                )
+                                source_name = Path(
+                                    from_rrational.get("source_file", "")
+                                ).name
+                                st.toast(
+                                    f"Restored artifact markings from {source_name}"
+                                )
+                                st.session_state[
+                                    f"artifacts_from_rrational_{selected_participant}"
+                                ] = source_name
 
                 # RR Interval Plot with Event Markers
                 st.markdown("---")
@@ -5933,86 +7603,137 @@ def main():
                     interaction_mode = "Add Events"
 
                     # Load recording data based on source app (HRV Logger or VNS)
-                    source_app = getattr(summary, 'source_app', 'HRV Logger')
+                    source_app = getattr(summary, "source_app", "HRV Logger")
 
                     if source_app == "VNS Analyse":
                         # Load VNS recording
-                        vns_paths = getattr(summary, 'vns_paths', None)
+                        vns_paths = getattr(summary, "vns_paths", None)
                         if vns_paths:
                             # Use stored paths (supports multiple files)
                             recording_data = cached_load_vns_recording(
                                 tuple(str(p) for p in vns_paths),
                                 selected_participant,
-                                use_corrected=st.session_state.get("vns_use_corrected", False),
+                                use_corrected=st.session_state.get(
+                                    "vns_use_corrected", False
+                                ),
                             )
-                        elif getattr(summary, 'vns_path', None):
+                        elif getattr(summary, "vns_path", None):
                             # Fallback: single path (old cached summary)
                             recording_data = cached_load_vns_recording(
                                 (str(summary.vns_path),),
                                 selected_participant,
-                                use_corrected=st.session_state.get("vns_use_corrected", False),
+                                use_corrected=st.session_state.get(
+                                    "vns_use_corrected", False
+                                ),
                             )
                         else:
                             # Re-discover VNS recordings
                             from rrational.io.vns_analyse import discover_vns_recordings
+
                             vns_bundles = discover_vns_recordings(
                                 Path(st.session_state.data_dir),
-                                pattern=st.session_state.id_pattern
+                                pattern=st.session_state.id_pattern,
                             )
-                            vns_bundle = next((b for b in vns_bundles if b.participant_id == selected_participant), None)
+                            vns_bundle = next(
+                                (
+                                    b
+                                    for b in vns_bundles
+                                    if b.participant_id == selected_participant
+                                ),
+                                None,
+                            )
                             if vns_bundle:
                                 recording_data = cached_load_vns_recording(
                                     tuple(str(p) for p in vns_bundle.file_paths),
                                     selected_participant,
-                                    use_corrected=st.session_state.get("vns_use_corrected", False),
+                                    use_corrected=st.session_state.get(
+                                        "vns_use_corrected", False
+                                    ),
                                 )
                             else:
-                                st.error(f"No VNS recording found for {selected_participant}")
-                                recording_data = {'rr_intervals': [], 'events': [], 'raw_events': []}
-                    elif source_app not in ("HRV Logger", "VNS Analyse", "Unknown") and getattr(summary, 'rr_paths', None):
+                                st.error(
+                                    f"No VNS recording found for {selected_participant}"
+                                )
+                                recording_data = {
+                                    "rr_intervals": [],
+                                    "events": [],
+                                    "raw_events": [],
+                                }
+                    elif source_app not in (
+                        "HRV Logger",
+                        "VNS Analyse",
+                        "Unknown",
+                    ) and getattr(summary, "rr_paths", None):
                         # Load generic RR format (Polar, Empatica, Elite HRV, Kubios, etc.)
                         from rrational.io.generic_rr import load_generic_rr
+
                         rr_path = summary.rr_paths[0]
-                        rec = load_generic_rr(rr_path, participant_id=selected_participant)
+                        rec = load_generic_rr(
+                            rr_path, participant_id=selected_participant
+                        )
                         recording_data = {
-                            'rr_intervals': [(rr.timestamp, rr.rr_ms, rr.elapsed_ms or 0) for rr in rec.rr_intervals],
-                            'events': [],
-                            'raw_events': [],
+                            "rr_intervals": [
+                                (rr.timestamp, rr.rr_ms, rr.elapsed_ms or 0)
+                                for rr in rec.rr_intervals
+                            ],
+                            "events": [],
+                            "raw_events": [],
                         }
-                    elif getattr(summary, 'rr_paths', None):
+                    elif getattr(summary, "rr_paths", None):
                         # Load HRV Logger recording using stored paths
-                        events_paths = getattr(summary, 'events_paths', []) or []
+                        events_paths = getattr(summary, "events_paths", []) or []
                         recording_data = cached_load_recording(
                             tuple(str(p) for p in summary.rr_paths),
                             tuple(str(p) for p in events_paths),
-                            selected_participant
+                            selected_participant,
                         )
                     else:
                         # Fallback: re-discover recordings (for old cached summaries)
-                        bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-                        bundle = next(b for b in bundles if b.participant_id == selected_participant)
+                        bundles = cached_discover_recordings(
+                            st.session_state.data_dir, st.session_state.id_pattern
+                        )
+                        bundle = next(
+                            b
+                            for b in bundles
+                            if b.participant_id == selected_participant
+                        )
                         recording_data = cached_load_recording(
                             tuple(str(p) for p in bundle.rr_paths),
                             tuple(str(p) for p in bundle.events_paths),
-                            selected_participant
+                            selected_participant,
                         )
 
                     # Display VNS multi-file info (gaps/overlaps) after loading
                     if source_app == "VNS Analyse" and recording_data:
-                        file_segments = recording_data.get('file_segments')
-                        gaps = recording_data.get('gaps')
-                        overlaps = recording_data.get('overlaps')
+                        file_segments = recording_data.get("file_segments")
+                        gaps = recording_data.get("gaps")
+                        overlaps = recording_data.get("overlaps")
 
                         # Store VNS multi-file info for gap detection in plot
-                        vns_has_multiple_files = file_segments and len(file_segments) > 1
-                        st.session_state[f"vns_multiple_files_{selected_participant}"] = vns_has_multiple_files
+                        vns_has_multiple_files = (
+                            file_segments and len(file_segments) > 1
+                        )
+                        st.session_state[
+                            f"vns_multiple_files_{selected_participant}"
+                        ] = vns_has_multiple_files
 
                         if file_segments and len(file_segments) > 1:
-                            with st.expander(f"Recording Segments ({len(file_segments)} files)", expanded=False):
+                            with st.expander(
+                                f"Recording Segments ({len(file_segments)} files)",
+                                expanded=False,
+                            ):
                                 for i, seg in enumerate(file_segments, 1):
-                                    duration_min = seg['duration_ms'] / 60000
-                                    start_str = seg['start_time'].strftime('%Y-%m-%d %H:%M:%S') if seg['start_time'] else 'Unknown'
-                                    end_str = seg['end_time'].strftime('%H:%M:%S') if seg['end_time'] else 'Unknown'
+                                    duration_min = seg["duration_ms"] / 60000
+                                    start_str = (
+                                        seg["start_time"].strftime("%Y-%m-%d %H:%M:%S")
+                                        if seg["start_time"]
+                                        else "Unknown"
+                                    )
+                                    end_str = (
+                                        seg["end_time"].strftime("%H:%M:%S")
+                                        if seg["end_time"]
+                                        else "Unknown"
+                                    )
                                     st.markdown(
                                         f"**File {i}:** {seg['file_name']}  \n"
                                         f"Start: {start_str} | End: {end_str} | "
@@ -6021,7 +7742,7 @@ def main():
 
                         if gaps:
                             for gap in gaps:
-                                gap_min = gap['gap_duration_s'] / 60
+                                gap_min = gap["gap_duration_s"] / 60
                                 st.warning(
                                     f"**Gap detected:** {gap_min:.1f} min gap between recordings  \n"
                                     f"From {gap['gap_start'].strftime('%H:%M:%S')} to {gap['gap_end'].strftime('%H:%M:%S')}"
@@ -6029,7 +7750,7 @@ def main():
 
                         if overlaps:
                             for ov in overlaps:
-                                ov_sec = ov['overlap_duration_s']
+                                ov_sec = ov["overlap_duration_s"]
                                 st.error(
                                     f"**Overlap detected:** {ov_sec:.1f} sec overlap between files  \n"
                                     f"{ov['file1']} and {ov['file2']}  \n"
@@ -6047,7 +7768,9 @@ def main():
                         from rrational.prep.summaries import EventStatus
                         from datetime import datetime
 
-                        saved_events = load_participant_events(selected_participant, st.session_state.data_dir)
+                        saved_events = load_participant_events(
+                            selected_participant, st.session_state.data_dir
+                        )
                         if saved_events:
                             # Load from saved YAML - convert dicts back to EventStatus
                             def dict_to_event(d):
@@ -6066,72 +7789,112 @@ def main():
 
                             # Also load exclusion zones with datetime conversion
                             exclusion_zones = []
-                            for zone in saved_events.get('exclusion_zones', []):
+                            for zone in saved_events.get("exclusion_zones", []):
                                 zone_copy = dict(zone)
                                 # Convert ISO strings back to datetime
-                                if zone_copy.get('start') and isinstance(zone_copy['start'], str):
-                                    zone_copy['start'] = datetime.fromisoformat(zone_copy['start'])
-                                if zone_copy.get('end') and isinstance(zone_copy['end'], str):
-                                    zone_copy['end'] = datetime.fromisoformat(zone_copy['end'])
+                                if zone_copy.get("start") and isinstance(
+                                    zone_copy["start"], str
+                                ):
+                                    zone_copy["start"] = datetime.fromisoformat(
+                                        zone_copy["start"]
+                                    )
+                                if zone_copy.get("end") and isinstance(
+                                    zone_copy["end"], str
+                                ):
+                                    zone_copy["end"] = datetime.fromisoformat(
+                                        zone_copy["end"]
+                                    )
                                 exclusion_zones.append(zone_copy)
 
-                            st.session_state.participant_events[selected_participant] = {
-                                'events': [dict_to_event(e) for e in saved_events.get('events', [])],
-                                'manual': [dict_to_event(e) for e in saved_events.get('manual', [])],
-                                'music_events': [dict_to_event(e) for e in saved_events.get('music_events', [])],
-                                'exclusion_zones': exclusion_zones,
+                            st.session_state.participant_events[
+                                selected_participant
+                            ] = {
+                                "events": [
+                                    dict_to_event(e)
+                                    for e in saved_events.get("events", [])
+                                ],
+                                "manual": [
+                                    dict_to_event(e)
+                                    for e in saved_events.get("manual", [])
+                                ],
+                                "music_events": [
+                                    dict_to_event(e)
+                                    for e in saved_events.get("music_events", [])
+                                ],
+                                "exclusion_zones": exclusion_zones,
                             }
                         else:
                             # Load from original recording - use raw events, not grouped EventStatus
                             # Fix: Events with same label but different timestamps should be kept separate
                             from rrational.prep.summaries import EventStatus
-                            raw_events = recording_data.get('events', [])
+
+                            raw_events = recording_data.get("events", [])
                             # Deduplicate by (timestamp, label) - keep unique combinations
                             seen = set()
                             unique_events = []
                             for label, ts in raw_events:
-                                key = (ts.isoformat() if ts else '', label.strip().lower())
+                                key = (
+                                    ts.isoformat() if ts else "",
+                                    label.strip().lower(),
+                                )
                                 if key not in seen:
                                     seen.add(key)
                                     # Get canonical name from normalizer
-                                    canonical = st.session_state.normalizer.normalize(label) if hasattr(st.session_state, 'normalizer') else None
-                                    unique_events.append(EventStatus(
-                                        raw_label=label,
-                                        canonical=canonical,
-                                        count=1,
-                                        first_timestamp=ts,
-                                        last_timestamp=ts,
-                                    ))
-                            st.session_state.participant_events[selected_participant] = {
-                                'events': unique_events,
-                                'manual': st.session_state.manual_events.get(selected_participant, []).copy(),
-                                'music_events': [],
-                                'exclusion_zones': [],
+                                    canonical = (
+                                        st.session_state.normalizer.normalize(label)
+                                        if hasattr(st.session_state, "normalizer")
+                                        else None
+                                    )
+                                    unique_events.append(
+                                        EventStatus(
+                                            raw_label=label,
+                                            canonical=canonical,
+                                            count=1,
+                                            first_timestamp=ts,
+                                            last_timestamp=ts,
+                                        )
+                                    )
+                            st.session_state.participant_events[
+                                selected_participant
+                            ] = {
+                                "events": unique_events,
+                                "manual": st.session_state.manual_events.get(
+                                    selected_participant, []
+                                ).copy(),
+                                "music_events": [],
+                                "exclusion_zones": [],
                             }
 
                         # Also load saved section validations (disambiguation choices)
-                        from rrational.gui.shared import load_and_restore_section_validations
+                        from rrational.gui.shared import (
+                            load_and_restore_section_validations,
+                        )
+
                         load_and_restore_section_validations(selected_participant)
 
                     # Get cleaned RR intervals using CACHED function
                     config_dict = {
                         "rr_min_ms": st.session_state.cleaning_config.rr_min_ms,
                         "rr_max_ms": st.session_state.cleaning_config.rr_max_ms,
-                        "sudden_change_pct": st.session_state.cleaning_config.sudden_change_pct
+                        "sudden_change_pct": st.session_state.cleaning_config.sudden_change_pct,
                     }
-                    is_vns = (source_app == "VNS Analyse")
+                    is_vns = source_app == "VNS Analyse"
                     rr_with_timestamps, stats, _ = cached_clean_rr_intervals(
-                        tuple(recording_data['rr_intervals']),
+                        tuple(recording_data["rr_intervals"]),
                         config_dict,
-                        is_vns_data=is_vns
+                        is_vns_data=is_vns,
                     )
 
                     # Check plotly availability (triggers lazy import)
                     go, _ = get_plotly()
                     if go is None:
-                        st.warning("Plotly is not installed. Please install it with: `pip install plotly streamlit-plotly-events`")
+                        st.warning(
+                            "Plotly is not installed. Please install it with: `pip install plotly streamlit-plotly-events`"
+                        )
                     elif not rr_with_timestamps:
-                        st.warning("No RR interval data available for visualization. The data may be empty or all intervals were filtered out.")
+                        st.warning(
+                            "No RR interval data available for visualization. The data may be empty or all intervals were filtered out."
+                        )
                     else:
                         # Unpack cached data - VNS has 3 elements (with flag), HRV Logger has 2
                         if is_vns:
@@ -6140,15 +7903,23 @@ def main():
                             # Issue #11 fix: Use RAW data for visualization (not cleaned)
                             # Cleaning cascade can remove large portions of data after artifacts,
                             # but users need to see ALL data to understand measurement restarts
-                            raw_rr_data = recording_data['rr_intervals']
-                            timestamps = tuple(ts for ts, rr, _ in raw_rr_data if ts is not None)
-                            rr_values = tuple(rr for ts, rr, _ in raw_rr_data if ts is not None)
+                            raw_rr_data = recording_data["rr_intervals"]
+                            timestamps = tuple(
+                                ts for ts, rr, _ in raw_rr_data if ts is not None
+                            )
+                            rr_values = tuple(
+                                rr for ts, rr, _ in raw_rr_data if ts is not None
+                            )
                             flags = None
 
                         # Get plot resolution from session state (use saved settings as default)
                         resolution_key = f"plot_resolution_{selected_participant}"
-                        saved_resolution = st.session_state.get("app_settings", {}).get("plot_resolution", 5000)
-                        plot_resolution = st.session_state.get(resolution_key, saved_resolution)
+                        saved_resolution = st.session_state.get("app_settings", {}).get(
+                            "plot_resolution", 5000
+                        )
+                        plot_resolution = st.session_state.get(
+                            resolution_key, saved_resolution
+                        )
 
                         # Get CACHED plot data and store in session state for fragment
                         plot_data = cached_get_plot_data(
@@ -6156,17 +7927,19 @@ def main():
                             tuple(rr_values),
                             selected_participant,
                             downsample_threshold=plot_resolution,
-                            flags_tuple=tuple(flags) if flags else None
+                            flags_tuple=tuple(flags) if flags else None,
                         )
                         # Add source_app for gap detection logic
                         plot_data = dict(plot_data)  # Make mutable copy
-                        plot_data['source_app'] = source_app
-                        st.session_state[f"plot_data_{selected_participant}"] = plot_data
+                        plot_data["source_app"] = source_app
+                        st.session_state[f"plot_data_{selected_participant}"] = (
+                            plot_data
+                        )
 
                         # Store FULL (non-downsampled) data for section validation
                         st.session_state[f"full_rr_data_{selected_participant}"] = {
-                            'timestamps': list(timestamps),
-                            'rr_values': list(rr_values),
+                            "timestamps": list(timestamps),
+                            "rr_values": list(rr_values),
                         }
 
                         # Mode selector for plot interaction (Events, Exclusions, or Signal Inspection)
@@ -6178,7 +7951,7 @@ def main():
                                 ["Add Events", "Add Exclusions", "Signal Inspection"],
                                 key=f"plot_mode_{selected_participant}",
                                 horizontal=True,
-                                label_visibility="collapsed"
+                                label_visibility="collapsed",
                             )
                         with col_mode2:
                             # Signal Inspection mode info (controls moved to fragment for speed)
@@ -6187,7 +7960,7 @@ def main():
 
                         with col_mode3:
                             # Plot resolution slider - allow up to all points
-                            n_total = plot_data['n_original']
+                            n_total = plot_data["n_original"]
                             # Only show slider if dataset is large enough to benefit from downsampling
                             if n_total > 1000:
                                 max_points = n_total  # Allow showing all points
@@ -6207,7 +7980,7 @@ def main():
                                     value=min(default_points, max_points),
                                     step=1000,
                                     key=resolution_key,
-                                    help=f"Number of points to display ({n_total:,} total). Higher = more detail but slower."
+                                    help=f"Number of points to display ({n_total:,} total). Higher = more detail but slower.",
                                 )
                             else:
                                 st.caption(f"Showing all {n_total:,} points")
@@ -6220,17 +7993,29 @@ def main():
 
                 # ================== POWER SPECTRUM (available in all modes) ==================
                 _psd_key = f"show_psd_{selected_participant}"
-                with st.expander("Power Spectrum (PSD)", expanded=st.session_state.get(_psd_key, False)):
+                with st.expander(
+                    "Power Spectrum (PSD)",
+                    expanded=st.session_state.get(_psd_key, False),
+                ):
                     st.session_state[_psd_key] = True  # Track expanded state
-                    _full_rr = st.session_state.get(f"full_rr_data_{selected_participant}", {})
+                    _full_rr = st.session_state.get(
+                        f"full_rr_data_{selected_participant}", {}
+                    )
                     rr_for_psd = _full_rr.get("rr_values")
                     if rr_for_psd and len(rr_for_psd) >= 100:
-                        from rrational.gui.plots.analysis_plots import create_frequency_domain_plot
+                        from rrational.gui.plots.analysis_plots import (
+                            create_frequency_domain_plot,
+                        )
+
                         psd_fig, psd_stats = create_frequency_domain_plot(
                             rr_for_psd, selected_participant
                         )
                         if psd_fig is not None:
-                            st.plotly_chart(psd_fig, use_container_width=True, key=f"psd_chart_{selected_participant}")
+                            st.plotly_chart(
+                                psd_fig,
+                                use_container_width=True,
+                                key=f"psd_chart_{selected_participant}",
+                            )
                             if psd_stats:
                                 cols = st.columns(len(psd_stats))
                                 for col, (label, value) in zip(cols, psd_stats.items()):
@@ -6240,10 +8025,14 @@ def main():
                                         else:
                                             st.metric(label, value)
                         else:
-                            st.info("Could not compute PSD. Ensure NeuroKit2 and SciPy are installed.")
+                            st.info(
+                                "Could not compute PSD. Ensure NeuroKit2 and SciPy are installed."
+                            )
                     elif rr_for_psd:
-                        st.info(f"Need at least 100 beats for PSD (have {len(rr_for_psd)}). "
-                                "300+ beats recommended for reliable frequency analysis.")
+                        st.info(
+                            f"Need at least 100 beats for PSD (have {len(rr_for_psd)}). "
+                            "300+ beats recommended for reliable frequency analysis."
+                        )
                     else:
                         st.info("Load a participant and generate the tachogram first.")
 
@@ -6255,10 +8044,13 @@ def main():
                     with col_excl_help:
                         with st.popover("Help"):
                             from rrational.gui.help_text import EXCLUSION_ZONES_HELP
+
                             st.markdown(EXCLUSION_ZONES_HELP)
 
                     # Set exclusion method (click two points only)
-                    st.session_state[f"exclusion_method_{selected_participant}"] = "Click two points on plot"
+                    st.session_state[f"exclusion_method_{selected_participant}"] = (
+                        "Click two points on plot"
+                    )
 
                     # Clear selection button - always visible when there are pending clicks
                     click_key = f"exclusion_clicks_{selected_participant}"
@@ -6267,12 +8059,20 @@ def main():
                     col_info, col_clear = st.columns([4, 1])
                     with col_info:
                         if len(pending_clicks) == 0:
-                            st.caption("Click on the plot to set the **start point** of an exclusion zone.")
+                            st.caption(
+                                "Click on the plot to set the **start point** of an exclusion zone."
+                            )
                         elif len(pending_clicks) == 1:
-                            st.caption(f"Start: **{pending_clicks[0].strftime('%H:%M:%S')}** — Click to set **end point**.")
+                            st.caption(
+                                f"Start: **{pending_clicks[0].strftime('%H:%M:%S')}** — Click to set **end point**."
+                            )
                     with col_clear:
                         if pending_clicks:
-                            if st.button("X Clear", key=f"clear_selection_{selected_participant}", type="secondary"):
+                            if st.button(
+                                "X Clear",
+                                key=f"clear_selection_{selected_participant}",
+                                type="secondary",
+                            ):
                                 # Clear the pending clicks list, but keep last_click_key
                                 # so the same click won't be re-added on rerun
                                 st.session_state[click_key] = []
@@ -6280,17 +8080,31 @@ def main():
                                 st.rerun()
 
                     # Initialize exclusion zones in session state if needed
-                    if 'exclusion_zones' not in st.session_state.participant_events.get(selected_participant, {}):
-                        if selected_participant not in st.session_state.participant_events:
-                            st.session_state.participant_events[selected_participant] = {'events': [], 'manual': [], 'exclusion_zones': []}
+                    if "exclusion_zones" not in st.session_state.participant_events.get(
+                        selected_participant, {}
+                    ):
+                        if (
+                            selected_participant
+                            not in st.session_state.participant_events
+                        ):
+                            st.session_state.participant_events[
+                                selected_participant
+                            ] = {"events": [], "manual": [], "exclusion_zones": []}
                         else:
-                            st.session_state.participant_events[selected_participant]['exclusion_zones'] = []
+                            st.session_state.participant_events[selected_participant][
+                                "exclusion_zones"
+                            ] = []
 
-                    exclusion_zones = st.session_state.participant_events[selected_participant].get('exclusion_zones', [])
+                    exclusion_zones = st.session_state.participant_events[
+                        selected_participant
+                    ].get("exclusion_zones", [])
 
                     # Check for pending click points (from click-two-points mode)
                     click_key = f"exclusion_clicks_{selected_participant}"
-                    if click_key in st.session_state and len(st.session_state[click_key]) >= 2:
+                    if (
+                        click_key in st.session_state
+                        and len(st.session_state[click_key]) >= 2
+                    ):
                         clicks = st.session_state[click_key]
                         start_click, end_click = sorted(clicks[:2])
                         st.success("Selected zone - adjust times below if needed:")
@@ -6302,32 +8116,44 @@ def main():
                                 "Start time (HH:MM:SS)",
                                 value=start_click.strftime("%H:%M:%S"),
                                 key=f"excl_start_time_{selected_participant}",
-                                help="Edit the start time in HH:MM:SS format"
+                                help="Edit the start time in HH:MM:SS format",
                             )
                         with col_end:
                             edited_end_str = st.text_input(
                                 "End time (HH:MM:SS)",
                                 value=end_click.strftime("%H:%M:%S"),
                                 key=f"excl_end_time_{selected_participant}",
-                                help="Edit the end time in HH:MM:SS format"
+                                help="Edit the end time in HH:MM:SS format",
                             )
 
                         # Parse edited times and combine with original date
                         import datetime
+
                         try:
-                            edited_start_time = datetime.datetime.strptime(edited_start_str, "%H:%M:%S").time()
+                            edited_start_time = datetime.datetime.strptime(
+                                edited_start_str, "%H:%M:%S"
+                            ).time()
                         except ValueError:
                             st.error("Invalid start time format. Use HH:MM:SS")
                             edited_start_time = start_click.time()
                         try:
-                            edited_end_time = datetime.datetime.strptime(edited_end_str, "%H:%M:%S").time()
+                            edited_end_time = datetime.datetime.strptime(
+                                edited_end_str, "%H:%M:%S"
+                            ).time()
                         except ValueError:
                             st.error("Invalid end time format. Use HH:MM:SS")
                             edited_end_time = end_click.time()
 
-                        final_start = datetime.datetime.combine(start_click.date(), edited_start_time)
-                        final_end = datetime.datetime.combine(end_click.date(), edited_end_time)
-                        if final_start.tzinfo is None and start_click.tzinfo is not None:
+                        final_start = datetime.datetime.combine(
+                            start_click.date(), edited_start_time
+                        )
+                        final_end = datetime.datetime.combine(
+                            end_click.date(), edited_end_time
+                        )
+                        if (
+                            final_start.tzinfo is None
+                            and start_click.tzinfo is not None
+                        ):
                             final_start = final_start.replace(tzinfo=start_click.tzinfo)
                         if final_end.tzinfo is None and end_click.tzinfo is not None:
                             final_end = final_end.replace(tzinfo=end_click.tzinfo)
@@ -6337,26 +8163,32 @@ def main():
                             reason_click = st.text_input(
                                 "Reason (optional)",
                                 key=f"excl_reason_click_{selected_participant}",
-                                placeholder="e.g., Bathroom break"
+                                placeholder="e.g., Bathroom break",
                             )
                         with col_form2:
                             exclude_dur_click = st.checkbox(
                                 "Exclude from duration",
                                 value=True,
-                                key=f"excl_dur_click_{selected_participant}"
+                                key=f"excl_dur_click_{selected_participant}",
                             )
 
                         col_confirm, col_cancel = st.columns(2)
                         last_click_key = f"last_click_{selected_participant}"
                         with col_confirm:
-                            if st.button("Add Exclusion Zone", key=f"confirm_excl_{selected_participant}", type="primary"):
+                            if st.button(
+                                "Add Exclusion Zone",
+                                key=f"confirm_excl_{selected_participant}",
+                                type="primary",
+                            ):
                                 new_zone = {
-                                    'start': final_start,
-                                    'end': final_end,
-                                    'reason': reason_click,
-                                    'exclude_from_duration': exclude_dur_click
+                                    "start": final_start,
+                                    "end": final_end,
+                                    "reason": reason_click,
+                                    "exclude_from_duration": exclude_dur_click,
                                 }
-                                st.session_state.participant_events[selected_participant]['exclusion_zones'].append(new_zone)
+                                st.session_state.participant_events[
+                                    selected_participant
+                                ]["exclusion_zones"].append(new_zone)
                                 st.session_state[click_key] = []
                                 # Clear last click to allow new selections
                                 if last_click_key in st.session_state:
@@ -6364,15 +8196,24 @@ def main():
                                 show_toast("Exclusion zone added", icon="success")
                                 st.rerun()
                         with col_cancel:
-                            if st.button("Cancel", key=f"cancel_excl_{selected_participant}"):
+                            if st.button(
+                                "Cancel", key=f"cancel_excl_{selected_participant}"
+                            ):
                                 st.session_state[click_key] = []
                                 # Clear last click to allow new selections
                                 if last_click_key in st.session_state:
                                     del st.session_state[last_click_key]
                                 st.rerun()
-                    elif click_key in st.session_state and len(st.session_state[click_key]) == 1:
-                        st.warning(f"Start point set: **{st.session_state[click_key][0].strftime('%H:%M:%S')}** - Now click on plot to set **end point**")
-                        if st.button("Cancel", key=f"cancel_click1_{selected_participant}"):
+                    elif (
+                        click_key in st.session_state
+                        and len(st.session_state[click_key]) == 1
+                    ):
+                        st.warning(
+                            f"Start point set: **{st.session_state[click_key][0].strftime('%H:%M:%S')}** - Now click on plot to set **end point**"
+                        )
+                        if st.button(
+                            "Cancel", key=f"cancel_click1_{selected_participant}"
+                        ):
                             st.session_state[click_key] = []
                             last_click_key = f"last_click_{selected_participant}"
                             if last_click_key in st.session_state:
@@ -6385,44 +8226,64 @@ def main():
                         with col_zones_header:
                             st.markdown("**Current Exclusion Zones:**")
                         with col_save:
-                            if st.button("Save", key=f"save_exclusions_{selected_participant}", type="primary", help="Save exclusion zones to disk"):
-                                from rrational.gui.persistence import save_participant_events
-                                save_participant_events(selected_participant, st.session_state.participant_events[selected_participant], st.session_state.data_dir)
+                            if st.button(
+                                "Save",
+                                key=f"save_exclusions_{selected_participant}",
+                                type="primary",
+                                help="Save exclusion zones to disk",
+                            ):
+                                from rrational.gui.persistence import (
+                                    save_participant_events,
+                                )
+
+                                save_participant_events(
+                                    selected_participant,
+                                    st.session_state.participant_events[
+                                        selected_participant
+                                    ],
+                                    st.session_state.data_dir,
+                                )
                                 show_toast("Exclusion zones saved", icon="success")
 
                         for idx, zone in enumerate(exclusion_zones):
-                            zone_start = zone.get('start', 'N/A')
-                            zone_end = zone.get('end', 'N/A')
-                            zone_reason = zone.get('reason', '')
-                            exclude_duration = zone.get('exclude_from_duration', True)
+                            zone_start = zone.get("start", "N/A")
+                            zone_end = zone.get("end", "N/A")
+                            zone_reason = zone.get("reason", "")
+                            exclude_duration = zone.get("exclude_from_duration", True)
 
                             # Format timestamps for display
-                            if hasattr(zone_start, 'strftime'):
-                                start_str = zone_start.strftime('%H:%M:%S')
+                            if hasattr(zone_start, "strftime"):
+                                start_str = zone_start.strftime("%H:%M:%S")
                             elif isinstance(zone_start, str):
                                 start_str = zone_start[:19]
                             else:
-                                start_str = 'N/A'
+                                start_str = "N/A"
 
-                            if hasattr(zone_end, 'strftime'):
-                                end_str = zone_end.strftime('%H:%M:%S')
+                            if hasattr(zone_end, "strftime"):
+                                end_str = zone_end.strftime("%H:%M:%S")
                             elif isinstance(zone_end, str):
                                 end_str = zone_end[:19]
                             else:
-                                end_str = 'N/A'
+                                end_str = "N/A"
 
                             col_zone, col_edit, col_del = st.columns([4, 1, 1])
                             with col_zone:
                                 duration_icon = "[excl]" if exclude_duration else ""
                                 reason_text = f" - {zone_reason}" if zone_reason else ""
-                                st.write(f"{idx+1}. **{start_str}** → **{end_str}** {duration_icon}{reason_text}")
+                                st.write(
+                                    f"{idx + 1}. **{start_str}** → **{end_str}** {duration_icon}{reason_text}"
+                                )
                             with col_edit:
                                 edit_key = f"edit_zone_{selected_participant}_{idx}"
                                 if st.button("Edit", key=f"btn_{edit_key}"):
-                                    st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+                                    st.session_state[
+                                        edit_key
+                                    ] = not st.session_state.get(edit_key, False)
                                     st.rerun()
                             with col_del:
-                                if st.button("X", key=f"del_zone_{selected_participant}_{idx}"):
+                                if st.button(
+                                    "X", key=f"del_zone_{selected_participant}_{idx}"
+                                ):
                                     exclusion_zones.pop(idx)
                                     st.rerun()
 
@@ -6432,59 +8293,95 @@ def main():
                                 with st.container():
                                     st.markdown("---")
                                     import datetime
+
                                     col_e1, col_e2 = st.columns(2)
                                     with col_e1:
                                         new_start = st.text_input(
                                             "Start (HH:MM:SS)",
                                             value=start_str,
-                                            key=f"edit_start_{selected_participant}_{idx}"
+                                            key=f"edit_start_{selected_participant}_{idx}",
                                         )
                                     with col_e2:
                                         new_end = st.text_input(
                                             "End (HH:MM:SS)",
                                             value=end_str,
-                                            key=f"edit_end_{selected_participant}_{idx}"
+                                            key=f"edit_end_{selected_participant}_{idx}",
                                         )
                                     col_e3, col_e4 = st.columns(2)
                                     with col_e3:
                                         new_reason = st.text_input(
                                             "Reason",
                                             value=zone_reason,
-                                            key=f"edit_reason_{selected_participant}_{idx}"
+                                            key=f"edit_reason_{selected_participant}_{idx}",
                                         )
                                     with col_e4:
                                         new_exclude_dur = st.checkbox(
                                             "Exclude from duration",
                                             value=exclude_duration,
-                                            key=f"edit_excl_dur_{selected_participant}_{idx}"
+                                            key=f"edit_excl_dur_{selected_participant}_{idx}",
                                         )
                                     col_save_edit, col_cancel_edit = st.columns(2)
                                     with col_save_edit:
-                                        if st.button("Save Changes", key=f"save_edit_{selected_participant}_{idx}"):
+                                        if st.button(
+                                            "Save Changes",
+                                            key=f"save_edit_{selected_participant}_{idx}",
+                                        ):
                                             try:
                                                 # Parse new times
-                                                new_start_time = datetime.datetime.strptime(new_start, "%H:%M:%S").time()
-                                                new_end_time = datetime.datetime.strptime(new_end, "%H:%M:%S").time()
+                                                new_start_time = (
+                                                    datetime.datetime.strptime(
+                                                        new_start, "%H:%M:%S"
+                                                    ).time()
+                                                )
+                                                new_end_time = (
+                                                    datetime.datetime.strptime(
+                                                        new_end, "%H:%M:%S"
+                                                    ).time()
+                                                )
                                                 # Use original date
-                                                orig_date = zone_start.date() if hasattr(zone_start, 'date') else datetime.date.today()
-                                                new_start_dt = datetime.datetime.combine(orig_date, new_start_time)
-                                                new_end_dt = datetime.datetime.combine(orig_date, new_end_time)
+                                                orig_date = (
+                                                    zone_start.date()
+                                                    if hasattr(zone_start, "date")
+                                                    else datetime.date.today()
+                                                )
+                                                new_start_dt = (
+                                                    datetime.datetime.combine(
+                                                        orig_date, new_start_time
+                                                    )
+                                                )
+                                                new_end_dt = datetime.datetime.combine(
+                                                    orig_date, new_end_time
+                                                )
                                                 # Preserve timezone if present
-                                                if hasattr(zone_start, 'tzinfo') and zone_start.tzinfo:
-                                                    new_start_dt = new_start_dt.replace(tzinfo=zone_start.tzinfo)
-                                                    new_end_dt = new_end_dt.replace(tzinfo=zone_start.tzinfo)
+                                                if (
+                                                    hasattr(zone_start, "tzinfo")
+                                                    and zone_start.tzinfo
+                                                ):
+                                                    new_start_dt = new_start_dt.replace(
+                                                        tzinfo=zone_start.tzinfo
+                                                    )
+                                                    new_end_dt = new_end_dt.replace(
+                                                        tzinfo=zone_start.tzinfo
+                                                    )
                                                 # Update zone
-                                                zone['start'] = new_start_dt
-                                                zone['end'] = new_end_dt
-                                                zone['reason'] = new_reason
-                                                zone['exclude_from_duration'] = new_exclude_dur
+                                                zone["start"] = new_start_dt
+                                                zone["end"] = new_end_dt
+                                                zone["reason"] = new_reason
+                                                zone["exclude_from_duration"] = (
+                                                    new_exclude_dur
+                                                )
                                                 st.session_state[edit_key] = False
                                                 st.toast("Zone updated")
                                                 st.rerun()
                                             except ValueError:
-                                                st.error("Invalid time format. Use HH:MM:SS")
+                                                st.error(
+                                                    "Invalid time format. Use HH:MM:SS"
+                                                )
                                     with col_cancel_edit:
-                                        if st.button("Cancel", key=f"cancel_edit_{selected_participant}_{idx}"):
+                                        if st.button(
+                                            "Cancel",
+                                            key=f"cancel_edit_{selected_participant}_{idx}",
+                                        ):
                                             st.session_state[edit_key] = False
                                             st.rerun()
                                     st.markdown("---")
@@ -6495,23 +8392,28 @@ def main():
                     with st.expander("Manual Entry", expanded=False):
                         # Get first RR timestamp as reference
                         first_rr_time = None
-                        if 'rr_intervals' in recording_data and recording_data['rr_intervals']:
-                            first_rr_time = recording_data['rr_intervals'][0][0]
+                        if (
+                            "rr_intervals" in recording_data
+                            and recording_data["rr_intervals"]
+                        ):
+                            first_rr_time = recording_data["rr_intervals"][0][0]
 
                         col_start, col_end = st.columns(2)
                         with col_start:
                             manual_start = st.text_input(
                                 "Start time (HH:MM:SS)",
-                                value=first_rr_time.strftime("%H:%M:%S") if first_rr_time and hasattr(first_rr_time, 'strftime') else "10:00:00",
+                                value=first_rr_time.strftime("%H:%M:%S")
+                                if first_rr_time and hasattr(first_rr_time, "strftime")
+                                else "10:00:00",
                                 key=f"manual_excl_start_{selected_participant}",
-                                placeholder="HH:MM:SS"
+                                placeholder="HH:MM:SS",
                             )
                         with col_end:
                             manual_end = st.text_input(
                                 "End time (HH:MM:SS)",
                                 value="",
                                 key=f"manual_excl_end_{selected_participant}",
-                                placeholder="HH:MM:SS"
+                                placeholder="HH:MM:SS",
                             )
 
                         col_r, col_d = st.columns(2)
@@ -6519,38 +8421,61 @@ def main():
                             manual_reason = st.text_input(
                                 "Reason (optional)",
                                 key=f"manual_excl_reason_{selected_participant}",
-                                placeholder="e.g., Extra break"
+                                placeholder="e.g., Extra break",
                             )
                         with col_d:
                             manual_exclude_dur = st.checkbox(
                                 "Exclude from duration",
                                 value=True,
-                                key=f"manual_excl_dur_{selected_participant}"
+                                key=f"manual_excl_dur_{selected_participant}",
                             )
 
                         def add_manual_exclusion():
                             import datetime as dt
+
                             try:
                                 parts = manual_start.strip().split(":")
-                                start_time = dt.time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+                                start_time = dt.time(
+                                    int(parts[0]),
+                                    int(parts[1]),
+                                    int(parts[2]) if len(parts) > 2 else 0,
+                                )
                                 parts = manual_end.strip().split(":")
-                                end_time = dt.time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+                                end_time = dt.time(
+                                    int(parts[0]),
+                                    int(parts[1]),
+                                    int(parts[2]) if len(parts) > 2 else 0,
+                                )
 
                                 if first_rr_time:
-                                    start_dt = first_rr_time.replace(hour=start_time.hour, minute=start_time.minute, second=start_time.second)
-                                    end_dt = first_rr_time.replace(hour=end_time.hour, minute=end_time.minute, second=end_time.second)
+                                    start_dt = first_rr_time.replace(
+                                        hour=start_time.hour,
+                                        minute=start_time.minute,
+                                        second=start_time.second,
+                                    )
+                                    end_dt = first_rr_time.replace(
+                                        hour=end_time.hour,
+                                        minute=end_time.minute,
+                                        second=end_time.second,
+                                    )
                                     new_zone = {
-                                        'start': start_dt,
-                                        'end': end_dt,
-                                        'reason': manual_reason,
-                                        'exclude_from_duration': manual_exclude_dur
+                                        "start": start_dt,
+                                        "end": end_dt,
+                                        "reason": manual_reason,
+                                        "exclude_from_duration": manual_exclude_dur,
                                     }
-                                    st.session_state.participant_events[selected_participant]['exclusion_zones'].append(new_zone)
+                                    st.session_state.participant_events[
+                                        selected_participant
+                                    ]["exclusion_zones"].append(new_zone)
                                     st.toast("Exclusion zone added")
                             except (ValueError, IndexError):
                                 st.error("Invalid time format. Use HH:MM:SS")
 
-                        st.button("+ Add Exclusion Zone", key=f"add_manual_excl_{selected_participant}", on_click=add_manual_exclusion)
+                        st.button(
+                            "+ Add Exclusion Zone",
+                            key=f"add_manual_excl_{selected_participant}",
+                            on_click=add_manual_exclusion,
+                        )
 
                 # ================== SIGNAL INSPECTION (artifact correction mode) ==================
                 if interaction_mode == "Signal Inspection":
@@ -6566,8 +8491,12 @@ def main():
                     sections = st.session_state.get("sections", {})
 
                     # Filter sections to only those valid for this participant
-                    participant_data = st.session_state.participant_events.get(selected_participant, {})
-                    event_list = participant_data.get('events', []) + participant_data.get('manual', [])
+                    participant_data = st.session_state.participant_events.get(
+                        selected_participant, {}
+                    )
+                    event_list = participant_data.get(
+                        "events", []
+                    ) + participant_data.get("manual", [])
 
                     # Build set of event names this participant has (both canonical and raw)
                     # Handle both dict and object events (same as artifact detection code)
@@ -6598,7 +8527,9 @@ def main():
                             end_events = [section_def["end_event"]]
 
                         # Check if participant has at least one start and one end event
-                        has_start = any(e in participant_event_names for e in start_events)
+                        has_start = any(
+                            e in participant_event_names for e in start_events
+                        )
                         has_end = any(e in participant_event_names for e in end_events)
 
                         if has_start and has_end:
@@ -6608,14 +8539,16 @@ def main():
 
                     # Track previous selection to detect changes
                     prev_section_key = f"_prev_section_{selected_participant}"
-                    prev_section = st.session_state.get(prev_section_key, "Full recording")
+                    prev_section = st.session_state.get(
+                        prev_section_key, "Full recording"
+                    )
 
                     selected_section = st.selectbox(
                         "View section",
                         options=section_options,
                         index=0,
                         key=f"signal_inspection_section_{selected_participant}",
-                        help="Focus the plot on a specific section for detailed inspection"
+                        help="Focus the plot on a specific section for detailed inspection",
                     )
 
                     # If section changed, we need to update session state and rerun
@@ -6624,12 +8557,18 @@ def main():
                     st.session_state[prev_section_key] = selected_section
 
                     if not valid_sections and sections:
-                        st.caption("No sections available for this participant (missing events)")
+                        st.caption(
+                            "No sections available for this participant (missing events)"
+                        )
 
                     # Show section time range info if a section is selected
-                    if selected_section != "Full recording" and selected_section in sections:
+                    if (
+                        selected_section != "Full recording"
+                        and selected_section in sections
+                    ):
                         # Use centralized validation to get section boundaries
                         from rrational.gui.shared import get_section_time_range
+
                         normalizer = st.session_state.get("normalizer")
 
                         start_time, end_time = get_section_time_range(
@@ -6641,14 +8580,28 @@ def main():
 
                         if start_time and end_time:
                             # Calculate section stats (normalize for safe subtraction)
-                            section_start_str = start_time.strftime('%H:%M:%S') if hasattr(start_time, 'strftime') else str(start_time)
-                            section_end_str = end_time.strftime('%H:%M:%S') if hasattr(end_time, 'strftime') else str(end_time)
+                            section_start_str = (
+                                start_time.strftime("%H:%M:%S")
+                                if hasattr(start_time, "strftime")
+                                else str(start_time)
+                            )
+                            section_end_str = (
+                                end_time.strftime("%H:%M:%S")
+                                if hasattr(end_time, "strftime")
+                                else str(end_time)
+                            )
                             start_norm = _normalize_ts(start_time)
                             end_norm = _normalize_ts(end_time)
-                            section_duration = (end_norm - start_norm).total_seconds() if start_norm and end_norm else 0
+                            section_duration = (
+                                (end_norm - start_norm).total_seconds()
+                                if start_norm and end_norm
+                                else 0
+                            )
 
                             # Store for plot fragment to use
-                            st.session_state[f"inspection_section_range_{selected_participant}"] = (start_time, end_time)
+                            st.session_state[
+                                f"inspection_section_range_{selected_participant}"
+                            ] = (start_time, end_time)
 
                             col_sec1, col_sec2, col_sec3 = st.columns(3)
                             with col_sec1:
@@ -6661,11 +8614,17 @@ def main():
                                     secs = int(section_duration % 60)
                                     st.caption(f"Duration: {mins}:{secs:02d}")
                         else:
-                            st.warning(f"Section '{selected_section}' events not found in this participant's data")
-                            st.session_state[f"inspection_section_range_{selected_participant}"] = None
+                            st.warning(
+                                f"Section '{selected_section}' events not found in this participant's data"
+                            )
+                            st.session_state[
+                                f"inspection_section_range_{selected_participant}"
+                            ] = None
                     else:
                         # Clear section range when "Full recording" selected
-                        st.session_state[f"inspection_section_range_{selected_participant}"] = None
+                        st.session_state[
+                            f"inspection_section_range_{selected_participant}"
+                        ] = None
 
                     # If section changed, rerun so the plot sees the new range
                     if section_changed:
@@ -6678,16 +8637,21 @@ def main():
                     artifact_result = st.session_state.get(artifact_key, {})
 
                     if artifact_result:
-                        total_artifacts = artifact_result.get('total_artifacts', 0)
-                        artifact_ratio = artifact_result.get('artifact_ratio', 0.0)
-                        by_type = artifact_result.get('by_type', {})
+                        total_artifacts = artifact_result.get("total_artifacts", 0)
+                        by_type = artifact_result.get("by_type", {})
 
                         # Include manual artifacts in total count
-                        manual_artifact_key_stats = f"manual_artifacts_{selected_participant}"
-                        manual_count = len(st.session_state.get(manual_artifact_key_stats, []))
+                        manual_artifact_key_stats = (
+                            f"manual_artifacts_{selected_participant}"
+                        )
+                        manual_count = len(
+                            st.session_state.get(manual_artifact_key_stats, [])
+                        )
                         total_with_manual = total_artifacts + manual_count
                         n_beats = len(rr_values) if rr_values else 1
-                        artifact_ratio_with_manual = total_with_manual / n_beats if n_beats > 0 else 0
+                        artifact_ratio_with_manual = (
+                            total_with_manual / n_beats if n_beats > 0 else 0
+                        )
 
                         # Artifact statistics
                         col_a1, col_a2, col_a3 = st.columns(3)
@@ -6701,10 +8665,17 @@ def main():
                                 badge = "[!!]"
                             else:
                                 badge = "[X]"
-                            display_count = f"{total_artifacts}" if manual_count == 0 else f"{total_artifacts}+{manual_count}"
+                            display_count = (
+                                f"{total_artifacts}"
+                                if manual_count == 0
+                                else f"{total_artifacts}+{manual_count}"
+                            )
                             st.metric("Artifacts Detected", f"{badge} {display_count}")
                         with col_a2:
-                            st.metric("Artifact Rate", f"{artifact_ratio_with_manual*100:.2f}%")
+                            st.metric(
+                                "Artifact Rate",
+                                f"{artifact_ratio_with_manual * 100:.2f}%",
+                            )
                         with col_a3:
                             # Show artifact types breakdown
                             if by_type or manual_count > 0:
@@ -6712,53 +8683,90 @@ def main():
                                 if manual_count > 0:
                                     type_parts.append(f"manual: {manual_count}")
                                 type_str = ", ".join(type_parts)
-                                st.metric("Types", type_str[:40])  # Truncate if too long
+                                st.metric(
+                                    "Types", type_str[:40]
+                                )  # Truncate if too long
 
                         # Quality recommendations (uses combined artifact ratio)
                         st.markdown("##### Artifact Quality Assessment")
                         if artifact_ratio_with_manual < 0.02:
-                            st.success("**Excellent quality** - Less than 2% artifacts. Data is suitable for all HRV analyses.")
+                            st.success(
+                                "**Excellent quality** - Less than 2% artifacts. Data is suitable for all HRV analyses."
+                            )
                         elif artifact_ratio_with_manual < 0.05:
-                            st.info("**Good quality** - 2-5% artifacts. Suitable for most HRV analyses with correction.")
+                            st.info(
+                                "**Good quality** - 2-5% artifacts. Suitable for most HRV analyses with correction."
+                            )
                         elif artifact_ratio_with_manual < 0.10:
-                            st.warning("**Acceptable quality** - 5-10% artifacts. Consider excluding high-artifact segments or using robust methods.")
+                            st.warning(
+                                "**Acceptable quality** - 5-10% artifacts. Consider excluding high-artifact segments or using robust methods."
+                            )
                         else:
-                            st.error("**Poor quality** - >10% artifacts. Consider excluding this recording or identifying problematic sections.")
+                            st.error(
+                                "**Poor quality** - >10% artifacts. Consider excluding this recording or identifying problematic sections."
+                            )
 
                         # Artifact details table
                         st.markdown("---")
                         st.markdown("##### Artifact Details")
-                        artifact_indices = artifact_result.get('artifact_indices', [])
-                        artifact_timestamps = artifact_result.get('artifact_timestamps', [])
-                        artifact_rr = artifact_result.get('artifact_rr', [])
-                        detection_method = artifact_result.get('method', 'unknown')
+                        artifact_indices = artifact_result.get("artifact_indices", [])
+                        artifact_timestamps = artifact_result.get(
+                            "artifact_timestamps", []
+                        )
+                        artifact_rr = artifact_result.get("artifact_rr", [])
+                        detection_method = artifact_result.get("method", "unknown")
 
                         if artifact_indices and len(artifact_indices) > 0:
                             # Show first 20 artifacts in a table
-                            with st.expander(f"View Artifact List ({len(artifact_indices)} artifacts)", expanded=False):
+                            with st.expander(
+                                f"View Artifact List ({len(artifact_indices)} artifacts)",
+                                expanded=False,
+                            ):
                                 artifact_data = []
-                                for i, (idx, ts, rr) in enumerate(zip(
-                                    artifact_indices[:50],
-                                    artifact_timestamps[:50] if artifact_timestamps else [None]*50,
-                                    artifact_rr[:50] if artifact_rr else [None]*50
-                                )):
-                                    ts_str = ts.strftime('%H:%M:%S') if ts and hasattr(ts, 'strftime') else str(ts)[:8] if ts else "N/A"
-                                    artifact_data.append({
-                                        "#": i + 1,
-                                        "Index": idx,
-                                        "Time": ts_str,
-                                        "RR (ms)": f"{rr:.0f}" if rr else "N/A",
-                                        "Method": detection_method,
-                                    })
+                                for i, (idx, ts, rr) in enumerate(
+                                    zip(
+                                        artifact_indices[:50],
+                                        artifact_timestamps[:50]
+                                        if artifact_timestamps
+                                        else [None] * 50,
+                                        artifact_rr[:50]
+                                        if artifact_rr
+                                        else [None] * 50,
+                                    )
+                                ):
+                                    ts_str = (
+                                        ts.strftime("%H:%M:%S")
+                                        if ts and hasattr(ts, "strftime")
+                                        else str(ts)[:8]
+                                        if ts
+                                        else "N/A"
+                                    )
+                                    artifact_data.append(
+                                        {
+                                            "#": i + 1,
+                                            "Index": idx,
+                                            "Time": ts_str,
+                                            "RR (ms)": f"{rr:.0f}" if rr else "N/A",
+                                            "Method": detection_method,
+                                        }
+                                    )
                                 if artifact_data:
-                                    st.dataframe(get_pandas().DataFrame(artifact_data), hide_index=True, width="stretch")
+                                    st.dataframe(
+                                        get_pandas().DataFrame(artifact_data),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
                                 if len(artifact_indices) > 50:
-                                    st.caption(f"Showing first 50 of {len(artifact_indices)} artifacts")
+                                    st.caption(
+                                        f"Showing first 50 of {len(artifact_indices)} artifacts"
+                                    )
 
                         # Manual artifact marking section
                         st.markdown("---")
                         st.markdown("##### Manual Artifact Marking")
-                        st.caption("Click on a beat in the plot to toggle manual artifact marking (purple diamonds)")
+                        st.caption(
+                            "Click on a beat in the plot to toggle manual artifact marking (purple diamonds)"
+                        )
 
                         # Manual artifacts session state keys (loaded automatically before plot)
                         manual_artifact_key = f"manual_artifacts_{selected_participant}"
@@ -6770,71 +8778,115 @@ def main():
                         if manual_artifacts:
                             col_man1, col_man2 = st.columns([3, 1])
                             with col_man1:
-                                st.write(f"**{len(manual_artifacts)} manually marked artifacts** (purple diamonds)")
+                                st.write(
+                                    f"**{len(manual_artifacts)} manually marked artifacts** (purple diamonds)"
+                                )
                             with col_man2:
-                                if st.button("Clear all", key=f"clear_manual_art_{selected_participant}", type="secondary"):
+                                if st.button(
+                                    "Clear all",
+                                    key=f"clear_manual_art_{selected_participant}",
+                                    type="secondary",
+                                ):
                                     st.session_state[manual_artifact_key] = []
                                     st.rerun()
 
                             # Show table of manual artifacts
-                            with st.expander(f"View Manual Artifacts ({len(manual_artifacts)})", expanded=False):
+                            with st.expander(
+                                f"View Manual Artifacts ({len(manual_artifacts)})",
+                                expanded=False,
+                            ):
                                 manual_data = []
                                 for i, art in enumerate(manual_artifacts):
-                                    manual_data.append({
-                                        "#": i + 1,
-                                        "Time": art.get('timestamp', 'N/A')[:8],
-                                        "RR (ms)": f"{art.get('rr_value', 0):.0f}",
-                                        "Index": art.get('original_idx', 'N/A'),
-                                    })
-                                st.dataframe(get_pandas().DataFrame(manual_data), hide_index=True, width="stretch")
-                                st.caption("Click on marked beats in the plot to remove them")
+                                    manual_data.append(
+                                        {
+                                            "#": i + 1,
+                                            "Time": art.get("timestamp", "N/A")[:8],
+                                            "RR (ms)": f"{art.get('rr_value', 0):.0f}",
+                                            "Index": art.get("original_idx", "N/A"),
+                                        }
+                                    )
+                                st.dataframe(
+                                    get_pandas().DataFrame(manual_data),
+                                    hide_index=True,
+                                    width="stretch",
+                                )
+                                st.caption(
+                                    "Click on marked beats in the plot to remove them"
+                                )
                         else:
-                            st.info("Click on beats in the plot to mark them as artifacts")
+                            st.info(
+                                "Click on beats in the plot to mark them as artifacts"
+                            )
 
                         # Save corrected data section
                         st.markdown("---")
                         st.markdown("##### Export Corrected Data")
-                        
+
                         # Get current plot data and artifact info
-                        plot_data_export = st.session_state.get(f"plot_data_{selected_participant}", {})
-                        artifact_result_export = st.session_state.get(f"artifacts_{selected_participant}", {})
-                        
-                        if plot_data_export and 'timestamps' in plot_data_export:
-                            ts_export = plot_data_export['timestamps']
-                            rr_export = plot_data_export['rr_values']
-                            
+                        plot_data_export = st.session_state.get(
+                            f"plot_data_{selected_participant}", {}
+                        )
+                        artifact_result_export = st.session_state.get(
+                            f"artifacts_{selected_participant}", {}
+                        )
+
+                        if plot_data_export and "timestamps" in plot_data_export:
+                            ts_export = plot_data_export["timestamps"]
+                            rr_export = plot_data_export["rr_values"]
+
                             # Collect all artifact indices (algorithm + manual)
-                            algo_indices = set(artifact_result_export.get('artifact_indices', []))
-                            manual_indices = set(art.get('plot_idx', -1) for art in manual_artifacts)
+                            algo_indices = set(
+                                artifact_result_export.get("artifact_indices", [])
+                            )
+                            manual_indices = set(
+                                art.get("plot_idx", -1) for art in manual_artifacts
+                            )
                             all_artifact_idx = algo_indices | manual_indices
 
                             # Use corrected RR from NeuroKit2's signal_fixpeaks (stored in artifact_result)
-                            corrected_rr = artifact_result_export.get('corrected_rr', rr_export)
-                            if corrected_rr is None or len(corrected_rr) != len(rr_export):
+                            corrected_rr = artifact_result_export.get(
+                                "corrected_rr", rr_export
+                            )
+                            if corrected_rr is None or len(corrected_rr) != len(
+                                rr_export
+                            ):
                                 corrected_rr = rr_export
-                            
+
                             # Create DataFrame for export
                             import io
+
                             export_data = []
-                            for i, (ts, rr_orig, rr_corr) in enumerate(zip(ts_export, rr_export, corrected_rr)):
-                                ts_str = ts.strftime('%Y-%m-%d %H:%M:%S.%f') if hasattr(ts, 'strftime') else str(ts)
+                            for i, (ts, rr_orig, rr_corr) in enumerate(
+                                zip(ts_export, rr_export, corrected_rr)
+                            ):
+                                ts_str = (
+                                    ts.strftime("%Y-%m-%d %H:%M:%S.%f")
+                                    if hasattr(ts, "strftime")
+                                    else str(ts)
+                                )
                                 is_artifact = i in all_artifact_idx
-                                export_data.append({
-                                    'timestamp': ts_str,
-                                    'rr_ms': rr_orig,
-                                    'nn_ms': round(rr_corr, 1),
-                                    'is_artifact': is_artifact,
-                                    'artifact_source': 'algorithm' if i in algo_indices else ('manual' if i in manual_indices else '')
-                                })
-                            
+                                export_data.append(
+                                    {
+                                        "timestamp": ts_str,
+                                        "rr_ms": rr_orig,
+                                        "nn_ms": round(rr_corr, 1),
+                                        "is_artifact": is_artifact,
+                                        "artifact_source": "algorithm"
+                                        if i in algo_indices
+                                        else ("manual" if i in manual_indices else ""),
+                                    }
+                                )
+
                             df_export = get_pandas().DataFrame(export_data)
                             csv_buffer = io.StringIO()
                             df_export.to_csv(csv_buffer, index=False)
                             csv_data = csv_buffer.getvalue()
-                            
+
                             col_exp1, col_exp2 = st.columns([2, 1])
                             with col_exp1:
-                                st.caption(f"{len(ts_export)} beats | {len(all_artifact_idx)} artifacts corrected")
+                                st.caption(
+                                    f"{len(ts_export)} beats | {len(all_artifact_idx)} artifacts corrected"
+                                )
                             with col_exp2:
                                 st.download_button(
                                     "Download CSV",
@@ -6842,7 +8894,7 @@ def main():
                                     file_name=f"{selected_participant}_corrected.csv",
                                     mime="text/csv",
                                     key=f"download_corrected_{selected_participant}",
-                                    type="primary"
+                                    type="primary",
                                 )
                         else:
                             st.caption("Load participant data to enable export")
@@ -6852,20 +8904,33 @@ def main():
                         st.markdown("##### Artifact Status")
 
                         # Get exclusion data
-                        artifact_exclusions_key = f"artifact_exclusions_{selected_participant}"
-                        artifact_exclusions = st.session_state.get(artifact_exclusions_key, set())
+                        artifact_exclusions_key = (
+                            f"artifact_exclusions_{selected_participant}"
+                        )
+                        artifact_exclusions = st.session_state.get(
+                            artifact_exclusions_key, set()
+                        )
 
                         # Get algorithm artifact data
-                        artifact_data_insp_check = st.session_state.get(f"artifacts_{selected_participant}", {})
-                        n_algo_insp = len(artifact_data_insp_check.get('artifact_indices', []))
+                        artifact_data_insp_check = st.session_state.get(
+                            f"artifacts_{selected_participant}", {}
+                        )
+                        n_algo_insp = len(
+                            artifact_data_insp_check.get("artifact_indices", [])
+                        )
 
                         # Count corrections
                         n_manual = len(manual_artifacts)
-                        n_excluded = len(artifact_exclusions) if artifact_exclusions else 0
-                        has_corrections = n_manual > 0 or n_excluded > 0 or n_algo_insp > 0
+                        n_excluded = (
+                            len(artifact_exclusions) if artifact_exclusions else 0
+                        )
+                        has_corrections = (
+                            n_manual > 0 or n_excluded > 0 or n_algo_insp > 0
+                        )
 
                         # Check if saved corrections exist
                         from rrational.gui.persistence import load_artifact_corrections
+
                         saved_corrections = load_artifact_corrections(
                             selected_participant,
                             data_dir=str(st.session_state.get("data_dir", "")),
@@ -6877,7 +8942,9 @@ def main():
                             # Build summary text
                             corr_parts = []
                             if n_algo_insp > 0:
-                                corr_parts.append(f"**{n_algo_insp}** algorithm-detected")
+                                corr_parts.append(
+                                    f"**{n_algo_insp}** algorithm-detected"
+                                )
                             if n_manual > 0:
                                 corr_parts.append(f"**{n_manual}** manually marked")
                             if n_excluded > 0:
@@ -6887,48 +8954,79 @@ def main():
                             if has_saved:
                                 st.success("Saved")
                             else:
-                                st.caption("Use **Save Artifact Corrections** in sidebar to save")
+                                st.caption(
+                                    "Use **Save Artifact Corrections** in sidebar to save"
+                                )
 
                             # Reset buttons
                             col_reset1, col_reset2 = st.columns(2)
                             with col_reset1:
                                 # Reset to Original - keeps algorithm artifacts, clears manual changes
                                 if n_manual > 0 or n_excluded > 0:
-                                    if st.button("Reset to Original", key=f"reset_to_original_{selected_participant}",
-                                                help="Clear manual markings and exclusions, keep algorithm detection"):
+                                    if st.button(
+                                        "Reset to Original",
+                                        key=f"reset_to_original_{selected_participant}",
+                                        help="Clear manual markings and exclusions, keep algorithm detection",
+                                    ):
                                         st.session_state[manual_artifact_key] = []
-                                        st.session_state[artifact_exclusions_key] = set()
-                                        st.toast("Reset to original algorithm detection")
+                                        st.session_state[artifact_exclusions_key] = (
+                                            set()
+                                        )
+                                        st.toast(
+                                            "Reset to original algorithm detection"
+                                        )
                                         st.rerun()
                             with col_reset2:
                                 # Reset All - clears everything and deletes saved file
-                                if st.button("Reset All", key=f"reset_artifacts_{selected_participant}", type="secondary",
-                                            help="Clear ALL markings and delete saved file"):
+                                if st.button(
+                                    "Reset All",
+                                    key=f"reset_artifacts_{selected_participant}",
+                                    type="secondary",
+                                    help="Clear ALL markings and delete saved file",
+                                ):
                                     # Clear session state
                                     st.session_state[manual_artifact_key] = []
                                     st.session_state[artifact_exclusions_key] = set()
                                     # Clear loaded flag so fresh load can happen
-                                    artifacts_loaded_key = f"artifacts_loaded_{selected_participant}"
+                                    artifacts_loaded_key = (
+                                        f"artifacts_loaded_{selected_participant}"
+                                    )
                                     if artifacts_loaded_key in st.session_state:
                                         del st.session_state[artifacts_loaded_key]
                                     # Clear loaded info
-                                    loaded_info_key = f"artifacts_loaded_info_{selected_participant}"
+                                    loaded_info_key = (
+                                        f"artifacts_loaded_info_{selected_participant}"
+                                    )
                                     if loaded_info_key in st.session_state:
                                         del st.session_state[loaded_info_key]
                                     # Clear rrational source indicator
-                                    if f"artifacts_from_rrational_{selected_participant}" in st.session_state:
-                                        del st.session_state[f"artifacts_from_rrational_{selected_participant}"]
+                                    if (
+                                        f"artifacts_from_rrational_{selected_participant}"
+                                        in st.session_state
+                                    ):
+                                        del st.session_state[
+                                            f"artifacts_from_rrational_{selected_participant}"
+                                        ]
                                     # Delete saved file
-                                    from rrational.gui.persistence import delete_artifact_corrections
+                                    from rrational.gui.persistence import (
+                                        delete_artifact_corrections,
+                                    )
+
                                     delete_artifact_corrections(
                                         selected_participant,
-                                        data_dir=str(st.session_state.get("data_dir", "")),
-                                        project_path=st.session_state.get("current_project"),
+                                        data_dir=str(
+                                            st.session_state.get("data_dir", "")
+                                        ),
+                                        project_path=st.session_state.get(
+                                            "current_project"
+                                        ),
                                     )
                                     st.toast("Reset all artifact corrections")
                                     st.rerun()
                         else:
-                            st.caption("Click on beats in the plot to mark/unmark artifacts")
+                            st.caption(
+                                "Click on beats in the plot to mark/unmark artifacts"
+                            )
 
                         # Instructions
                         st.markdown("---")
@@ -6942,7 +9040,9 @@ def main():
                         - Use **Add Exclusions** mode to exclude problematic regions
                         """)
                     else:
-                        st.info("Enable 'Show artifacts' in plot options to see artifact detection results.")
+                        st.info(
+                            "Enable 'Show artifacts' in plot options to see artifact detection results."
+                        )
 
                 # ================== SIGNAL QUALITY & EVENTS (only in events mode) ==================
                 if interaction_mode == "Add Events":
@@ -6954,19 +9054,21 @@ def main():
                     if gap_key in st.session_state:
                         gap_info = st.session_state[gap_key]
                         # Determine badge for expander title
-                        if gap_info.get('vns_note'):
+                        if gap_info.get("vns_note"):
                             gap_title = "Time Gap Analysis (N/A for VNS data)"
-                        elif gap_info['total_gaps'] == 0:
+                        elif gap_info["total_gaps"] == 0:
                             gap_title = "Time Gap Analysis (No gaps)"
                         else:
-                            gap_badge = "[!]" if gap_info['total_gaps'] <= 2 else "[X]"
+                            gap_badge = "[!]" if gap_info["total_gaps"] <= 2 else "[X]"
                             gap_title = f"Time Gap Analysis ({gap_badge} {gap_info['total_gaps']} gaps)"
 
                         with st.expander(gap_title, expanded=False):
-                            st.caption("Identifies time gaps >2 seconds between consecutive beats (recording interruptions, Bluetooth disconnections, device errors)")
+                            st.caption(
+                                "Identifies time gaps >2 seconds between consecutive beats (recording interruptions, Bluetooth disconnections, device errors)"
+                            )
 
                             # Check if VNS data (gap detection not applicable)
-                            if gap_info.get('vns_note'):
+                            if gap_info.get("vns_note"):
                                 st.info(
                                     "**Gap detection not applicable for VNS data.** "
                                     "VNS files only contain RR intervals without real timestamps. "
@@ -6975,27 +9077,58 @@ def main():
                             else:
                                 col_g1, col_g2, col_g3 = st.columns(3)
                                 with col_g1:
-                                    gap_badge = "[OK]" if gap_info['total_gaps'] == 0 else ("[!]" if gap_info['total_gaps'] <= 2 else "[X]")
-                                    st.metric("Gaps Detected", f"{gap_badge} {gap_info['total_gaps']}")
+                                    gap_badge = (
+                                        "[OK]"
+                                        if gap_info["total_gaps"] == 0
+                                        else (
+                                            "[!]"
+                                            if gap_info["total_gaps"] <= 2
+                                            else "[X]"
+                                        )
+                                    )
+                                    st.metric(
+                                        "Gaps Detected",
+                                        f"{gap_badge} {gap_info['total_gaps']}",
+                                    )
                                 with col_g2:
-                                    st.metric("Total Gap Time", f"{gap_info['total_gap_duration_s']:.1f}s")
+                                    st.metric(
+                                        "Total Gap Time",
+                                        f"{gap_info['total_gap_duration_s']:.1f}s",
+                                    )
                                 with col_g3:
-                                    st.metric("Gap Ratio", f"{gap_info['gap_ratio']*100:.2f}%")
+                                    st.metric(
+                                        "Gap Ratio",
+                                        f"{gap_info['gap_ratio'] * 100:.2f}%",
+                                    )
 
-                                if gap_info['gaps']:
+                                if gap_info["gaps"]:
                                     st.markdown("**Gap Details:**")
                                     gap_data = []
-                                    for i, gap in enumerate(gap_info['gaps']):
-                                        start_str = gap['start_time'].strftime('%H:%M:%S') if gap.get('start_time') else "?"
-                                        end_str = gap['end_time'].strftime('%H:%M:%S') if gap.get('end_time') else "?"
-                                        gap_data.append({
-                                            "Gap #": i + 1,
-                                            "Start Time": start_str,
-                                            "End Time": end_str,
-                                            "Duration (s)": f"{gap['duration_s']:.1f}",
-                                            "Beat Index": f"{gap['start_idx']} → {gap['end_idx']}"
-                                        })
-                                    st.dataframe(get_pandas().DataFrame(gap_data), width='stretch', hide_index=True)
+                                    for i, gap in enumerate(gap_info["gaps"]):
+                                        start_str = (
+                                            gap["start_time"].strftime("%H:%M:%S")
+                                            if gap.get("start_time")
+                                            else "?"
+                                        )
+                                        end_str = (
+                                            gap["end_time"].strftime("%H:%M:%S")
+                                            if gap.get("end_time")
+                                            else "?"
+                                        )
+                                        gap_data.append(
+                                            {
+                                                "Gap #": i + 1,
+                                                "Start Time": start_str,
+                                                "End Time": end_str,
+                                                "Duration (s)": f"{gap['duration_s']:.1f}",
+                                                "Beat Index": f"{gap['start_idx']} → {gap['end_idx']}",
+                                            }
+                                        )
+                                    st.dataframe(
+                                        get_pandas().DataFrame(gap_data),
+                                        width="stretch",
+                                        hide_index=True,
+                                    )
 
                                     # Recommendations for gaps
                                     st.markdown("##### Recommendations for Gaps:")
@@ -7018,87 +9151,142 @@ def main():
                                     st.markdown("##### Auto-Create Gap Events")
                                     col_gap_btn1, col_gap_btn2 = st.columns([1, 2])
                                     with col_gap_btn1:
-                                        if st.button("Create Gap Events", key=f"auto_gap_{selected_participant}"):
-                                            from rrational.prep.summaries import EventStatus
+                                        if st.button(
+                                            "Create Gap Events",
+                                            key=f"auto_gap_{selected_participant}",
+                                        ):
+                                            from rrational.prep.summaries import (
+                                                EventStatus,
+                                            )
+
                                             events_added = 0
-                                            for gap in gap_info['gaps']:
+                                            for gap in gap_info["gaps"]:
                                                 # Create gap_start event
-                                                if gap.get('start_time'):
+                                                if gap.get("start_time"):
                                                     gap_start_event = EventStatus(
                                                         raw_label="gap_start",
                                                         canonical="gap_start",
-                                                        first_timestamp=gap['start_time'],
-                                                        last_timestamp=gap['start_time']
+                                                        first_timestamp=gap[
+                                                            "start_time"
+                                                        ],
+                                                        last_timestamp=gap[
+                                                            "start_time"
+                                                        ],
                                                     )
-                                                    st.session_state.participant_events[selected_participant]['manual'].append(gap_start_event)
+                                                    st.session_state.participant_events[
+                                                        selected_participant
+                                                    ]["manual"].append(gap_start_event)
                                                     events_added += 1
 
                                                 # Create gap_end event
-                                                if gap.get('end_time'):
+                                                if gap.get("end_time"):
                                                     gap_end_event = EventStatus(
                                                         raw_label="gap_end",
                                                         canonical="gap_end",
-                                                        first_timestamp=gap['end_time'],
-                                                        last_timestamp=gap['end_time']
+                                                        first_timestamp=gap["end_time"],
+                                                        last_timestamp=gap["end_time"],
                                                     )
-                                                    st.session_state.participant_events[selected_participant]['manual'].append(gap_end_event)
+                                                    st.session_state.participant_events[
+                                                        selected_participant
+                                                    ]["manual"].append(gap_end_event)
                                                     events_added += 1
 
-                                            show_toast(f"Created {events_added} gap boundary events", icon="success")
+                                            show_toast(
+                                                f"Created {events_added} gap boundary events",
+                                                icon="success",
+                                            )
                                             st.rerun()
                                     with col_gap_btn2:
-                                        st.caption("Creates `gap_start` and `gap_end` events for each detected gap. Use these to exclude gap periods from analysis.")
+                                        st.caption(
+                                            "Creates `gap_start` and `gap_end` events for each detected gap. Use these to exclude gap periods from analysis."
+                                        )
                                 else:
-                                    st.success("No time gaps detected - recording appears continuous")
+                                    st.success(
+                                        "No time gaps detected - recording appears continuous"
+                                    )
 
                     # Variability Changepoint Analysis Expander
                     if changepoint_key in st.session_state:
                         cp_info = st.session_state[changepoint_key]
                         # Determine badge for expander title
-                        high_var_count = sum(1 for s in cp_info.get('segment_stats', []) if s['cv'] > 0.15)
+                        high_var_count = sum(
+                            1
+                            for s in cp_info.get("segment_stats", [])
+                            if s["cv"] > 0.15
+                        )
                         if high_var_count == 0:
                             var_title = f"Variability Analysis (Score: {cp_info['quality_score']}/100)"
                         else:
                             var_title = f"Variability Analysis ({high_var_count} high-CV segments)"
 
                         with st.expander(var_title, expanded=False):
-                            st.caption("Uses NeuroKit2's signal_changepoints() with PELT algorithm to detect variance changes (movement artifacts, electrode issues, physiological changes)")
+                            st.caption(
+                                "Uses NeuroKit2's signal_changepoints() with PELT algorithm to detect variance changes (movement artifacts, electrode issues, physiological changes)"
+                            )
 
                             col_q1, col_q2, col_q3 = st.columns(3)
                             with col_q1:
-                                st.metric("Quality Score", f"{cp_info['quality_score']}/100")
+                                st.metric(
+                                    "Quality Score", f"{cp_info['quality_score']}/100"
+                                )
                             with col_q2:
-                                st.metric("Segments Detected", cp_info['n_segments'])
+                                st.metric("Segments Detected", cp_info["n_segments"])
                             with col_q3:
-                                st.metric("Changepoints", len(cp_info['changepoint_indices']))
+                                st.metric(
+                                    "Changepoints", len(cp_info["changepoint_indices"])
+                                )
 
-                            if cp_info['segment_stats']:
+                            if cp_info["segment_stats"]:
                                 st.markdown("**Segment Details:**")
                                 seg_data = []
-                                for i, seg in enumerate(cp_info['segment_stats']):
-                                    cv_pct = seg['cv'] * 100
-                                    quality = "[OK] Good" if cv_pct < 10 else ("Moderate" if cv_pct < 15 else "[X] High")
+                                for i, seg in enumerate(cp_info["segment_stats"]):
+                                    cv_pct = seg["cv"] * 100
+                                    quality = (
+                                        "[OK] Good"
+                                        if cv_pct < 10
+                                        else ("Moderate" if cv_pct < 15 else "[X] High")
+                                    )
 
                                     # Format timestamps
-                                    start_str = seg.get('start_time').strftime('%H:%M:%S') if seg.get('start_time') else "?"
-                                    end_str = seg.get('end_time').strftime('%H:%M:%S') if seg.get('end_time') else "?"
+                                    start_str = (
+                                        seg.get("start_time").strftime("%H:%M:%S")
+                                        if seg.get("start_time")
+                                        else "?"
+                                    )
+                                    end_str = (
+                                        seg.get("end_time").strftime("%H:%M:%S")
+                                        if seg.get("end_time")
+                                        else "?"
+                                    )
 
-                                    seg_data.append({
-                                        "Segment": i + 1,
-                                        "Start Time": start_str,
-                                        "End Time": end_str,
-                                        "Beats": seg['n_beats'],
-                                        "Mean RR (ms)": f"{seg['mean_rr']:.0f}",
-                                        "Std (ms)": f"{seg['std_rr']:.1f}",
-                                        "CV (%)": f"{cv_pct:.1f}",
-                                        "Quality": quality
-                                    })
-                                st.dataframe(get_pandas().DataFrame(seg_data), width='stretch', hide_index=True)
+                                    seg_data.append(
+                                        {
+                                            "Segment": i + 1,
+                                            "Start Time": start_str,
+                                            "End Time": end_str,
+                                            "Beats": seg["n_beats"],
+                                            "Mean RR (ms)": f"{seg['mean_rr']:.0f}",
+                                            "Std (ms)": f"{seg['std_rr']:.1f}",
+                                            "CV (%)": f"{cv_pct:.1f}",
+                                            "Quality": quality,
+                                        }
+                                    )
+                                st.dataframe(
+                                    get_pandas().DataFrame(seg_data),
+                                    width="stretch",
+                                    hide_index=True,
+                                )
 
                                 # Check for high variability segments
-                                high_var_segments = [s for s in cp_info['segment_stats'] if s['cv'] > 0.15]
+                                high_var_segments = [
+                                    s
+                                    for s in cp_info["segment_stats"]
+                                    if s["cv"] > 0.15
+                                ]
                                 if high_var_segments:
-                                    st.markdown("##### Recommendations for High Variability:")
+                                    st.markdown(
+                                        "##### Recommendations for High Variability:"
+                                    )
                                     st.markdown("""
                                     **What high variability (CV > 15%) may indicate:**
                                     - Movement artifacts (participant moved during recording)
@@ -7120,7 +9308,9 @@ def main():
 
                                     # Auto-create variability boundary events
                                     st.markdown("##### Auto-Create Variability Events")
-                                    col_var_thresh, col_var_btn, col_var_desc = st.columns([1, 1, 2])
+                                    col_var_thresh, col_var_btn, col_var_desc = (
+                                        st.columns([1, 1, 2])
+                                    )
                                     with col_var_thresh:
                                         cv_threshold = st.number_input(
                                             "CV threshold (%)",
@@ -7129,45 +9319,75 @@ def main():
                                             value=15.0,
                                             step=1.0,
                                             key=f"cv_thresh_{selected_participant}",
-                                            help="Create boundary events for segments with CV above this threshold"
+                                            help="Create boundary events for segments with CV above this threshold",
                                         )
                                     with col_var_btn:
-                                        if st.button("Create Variability Events", key=f"auto_var_{selected_participant}"):
-                                            from rrational.prep.summaries import EventStatus
+                                        if st.button(
+                                            "Create Variability Events",
+                                            key=f"auto_var_{selected_participant}",
+                                        ):
+                                            from rrational.prep.summaries import (
+                                                EventStatus,
+                                            )
+
                                             events_added = 0
                                             cv_thresh_decimal = cv_threshold / 100.0
 
-                                            for seg in cp_info['segment_stats']:
-                                                if seg['cv'] > cv_thresh_decimal:
+                                            for seg in cp_info["segment_stats"]:
+                                                if seg["cv"] > cv_thresh_decimal:
                                                     # Create high_variability_start event
-                                                    if seg.get('start_time'):
+                                                    if seg.get("start_time"):
                                                         var_start_event = EventStatus(
                                                             raw_label="high_variability_start",
                                                             canonical="high_variability_start",
-                                                            first_timestamp=seg['start_time'],
-                                                            last_timestamp=seg['start_time']
+                                                            first_timestamp=seg[
+                                                                "start_time"
+                                                            ],
+                                                            last_timestamp=seg[
+                                                                "start_time"
+                                                            ],
                                                         )
-                                                        st.session_state.participant_events[selected_participant]['manual'].append(var_start_event)
+                                                        st.session_state.participant_events[
+                                                            selected_participant
+                                                        ]["manual"].append(
+                                                            var_start_event
+                                                        )
                                                         events_added += 1
 
                                                     # Create high_variability_end event
-                                                    if seg.get('end_time'):
+                                                    if seg.get("end_time"):
                                                         var_end_event = EventStatus(
                                                             raw_label="high_variability_end",
                                                             canonical="high_variability_end",
-                                                            first_timestamp=seg['end_time'],
-                                                            last_timestamp=seg['end_time']
+                                                            first_timestamp=seg[
+                                                                "end_time"
+                                                            ],
+                                                            last_timestamp=seg[
+                                                                "end_time"
+                                                            ],
                                                         )
-                                                        st.session_state.participant_events[selected_participant]['manual'].append(var_end_event)
+                                                        st.session_state.participant_events[
+                                                            selected_participant
+                                                        ]["manual"].append(
+                                                            var_end_event
+                                                        )
                                                         events_added += 1
 
                                             if events_added > 0:
-                                                show_toast(f"Created {events_added} variability boundary events", icon="success")
+                                                show_toast(
+                                                    f"Created {events_added} variability boundary events",
+                                                    icon="success",
+                                                )
                                             else:
-                                                show_toast("No segments above threshold", icon="info")
+                                                show_toast(
+                                                    "No segments above threshold",
+                                                    icon="info",
+                                                )
                                             st.rerun()
                                     with col_var_desc:
-                                        st.caption(f"Creates `high_variability_start` and `high_variability_end` events for segments with CV > {cv_threshold:.0f}%")
+                                        st.caption(
+                                            f"Creates `high_variability_start` and `high_variability_end` events for segments with CV > {cv_threshold:.0f}%"
+                                        )
 
                             st.caption("""
                             **Legend**:
@@ -7187,12 +9407,23 @@ def main():
                         """)
 
                         # Ensure participant is initialized in events dict
-                        if selected_participant not in st.session_state.participant_events:
-                            st.session_state.participant_events[selected_participant] = {'events': [], 'manual': []}
+                        if (
+                            selected_participant
+                            not in st.session_state.participant_events
+                        ):
+                            st.session_state.participant_events[
+                                selected_participant
+                            ] = {"events": [], "manual": []}
 
                         # Get existing events for boundary selection
-                        stored_data = st.session_state.participant_events.get(selected_participant, {'events': [], 'manual': []})
-                        raw_events = stored_data.get('events', []) + stored_data.get('manual', []) + stored_data.get('generated_events', [])
+                        stored_data = st.session_state.participant_events.get(
+                            selected_participant, {"events": [], "manual": []}
+                        )
+                        raw_events = (
+                            stored_data.get("events", [])
+                            + stored_data.get("manual", [])
+                            + stored_data.get("generated_events", [])
+                        )
 
                         # Helper to handle dicts (defensive for stale session state)
                         def get_event_attr(evt, attr, default=None):
@@ -7204,8 +9435,8 @@ def main():
                         # Build list of available events with timestamps
                         available_events = {}
                         for evt in raw_events:
-                            canonical = get_event_attr(evt, 'canonical')
-                            first_ts = get_event_attr(evt, 'first_timestamp')
+                            canonical = get_event_attr(evt, "canonical")
+                            first_ts = get_event_attr(evt, "first_timestamp")
                             if canonical and first_ts:
                                 available_events[canonical] = first_ts
 
@@ -7216,7 +9447,7 @@ def main():
                             "Define range using:",
                             options=["Existing events", "Manual times"],
                             horizontal=True,
-                            key=f"range_mode_{selected_participant}"
+                            key=f"range_mode_{selected_participant}",
                         )
 
                         start_time = None
@@ -7231,24 +9462,30 @@ def main():
                                         "Start event",
                                         options=event_list,
                                         key=f"gen_start_event_{selected_participant}",
-                                        help="Events will be generated starting from this time"
+                                        help="Events will be generated starting from this time",
                                     )
                                     if start_event:
                                         start_time = available_events[start_event]
-                                        st.caption(f"Time: {start_time.strftime('%H:%M:%S') if start_time else 'N/A'}")
+                                        st.caption(
+                                            f"Time: {start_time.strftime('%H:%M:%S') if start_time else 'N/A'}"
+                                        )
 
                                 with col_end:
                                     end_event = st.selectbox(
                                         "End event",
                                         options=event_list,
                                         key=f"gen_end_event_{selected_participant}",
-                                        help="Events will be generated up to this time"
+                                        help="Events will be generated up to this time",
                                     )
                                     if end_event:
                                         end_time = available_events[end_event]
-                                        st.caption(f"Time: {end_time.strftime('%H:%M:%S') if end_time else 'N/A'}")
+                                        st.caption(
+                                            f"Time: {end_time.strftime('%H:%M:%S') if end_time else 'N/A'}"
+                                        )
                             else:
-                                st.warning("No events detected yet. Add events first or use manual times.")
+                                st.warning(
+                                    "No events detected yet. Add events first or use manual times."
+                                )
 
                         else:  # Manual times
                             col_start, col_end = st.columns(2)
@@ -7256,27 +9493,36 @@ def main():
                                 start_time_str = st.text_input(
                                     "Start time (HH:MM:SS)",
                                     value="00:00:00",
-                                    key=f"gen_start_manual_{selected_participant}"
+                                    key=f"gen_start_manual_{selected_participant}",
                                 )
                             with col_end:
                                 end_time_str = st.text_input(
                                     "End time (HH:MM:SS)",
                                     value="01:00:00",
-                                    key=f"gen_end_manual_{selected_participant}"
+                                    key=f"gen_end_manual_{selected_participant}",
                                 )
 
                             # Parse manual times (use recording start date as base)
                             try:
                                 from datetime import datetime, timedelta
+
                                 # Get recording base date from summary
                                 summary = get_summary_dict().get(selected_participant)
-                                base_date = summary.recording_datetime.date() if summary and summary.recording_datetime else datetime.now().date()
+                                base_date = (
+                                    summary.recording_datetime.date()
+                                    if summary and summary.recording_datetime
+                                    else datetime.now().date()
+                                )
 
-                                h, m, s = map(int, start_time_str.split(':'))
-                                start_time = datetime.combine(base_date, datetime.min.time()) + timedelta(hours=h, minutes=m, seconds=s)
+                                h, m, s = map(int, start_time_str.split(":"))
+                                start_time = datetime.combine(
+                                    base_date, datetime.min.time()
+                                ) + timedelta(hours=h, minutes=m, seconds=s)
 
-                                h, m, s = map(int, end_time_str.split(':'))
-                                end_time = datetime.combine(base_date, datetime.min.time()) + timedelta(hours=h, minutes=m, seconds=s)
+                                h, m, s = map(int, end_time_str.split(":"))
+                                end_time = datetime.combine(
+                                    base_date, datetime.min.time()
+                                ) + timedelta(hours=h, minutes=m, seconds=s)
                             except Exception:
                                 st.error("Invalid time format. Use HH:MM:SS")
 
@@ -7292,28 +9538,47 @@ def main():
                                 value=5,
                                 step=1,
                                 key=f"event_interval_{selected_participant}",
-                                help="Duration of each condition/phase"
+                                help="Duration of each condition/phase",
                             )
 
                         with col_labels:
                             # Pre-fill from event sequence assignment if available
-                            _seq_id = st.session_state.get("participant_sequences", {}).get(selected_participant, "") or \
-                                      st.session_state.get("participant_randomizations", {}).get(selected_participant, "")
-                            _seq_data = st.session_state.get("event_sequences", {}).get(_seq_id, {})
-                            _cond_order = _seq_data.get("condition_order", _seq_data.get("music_order", []))
-                            _default_labels = "\n".join(_cond_order) if _cond_order else "condition_1\ncondition_2\ncondition_3"
+                            _seq_id = st.session_state.get(
+                                "participant_sequences", {}
+                            ).get(selected_participant, "") or st.session_state.get(
+                                "participant_randomizations", {}
+                            ).get(selected_participant, "")
+                            _seq_data = st.session_state.get("event_sequences", {}).get(
+                                _seq_id, {}
+                            )
+                            _cond_order = _seq_data.get(
+                                "condition_order", _seq_data.get("music_order", [])
+                            )
+                            _default_labels = (
+                                "\n".join(_cond_order)
+                                if _cond_order
+                                else "condition_1\ncondition_2\ncondition_3"
+                            )
                             condition_labels = st.text_area(
                                 "Condition labels (one per line)",
                                 value=_default_labels,
                                 height=100,
                                 key=f"condition_labels_{selected_participant}",
-                                help="Labels for each condition that cycles. Pre-filled from sequence assignment if available."
+                                help="Labels for each condition that cycles. Pre-filled from sequence assignment if available.",
                             )
 
                         # Parse condition labels
-                        condition_label_list = [line.strip() for line in condition_labels.strip().split('\n') if line.strip()]
+                        condition_label_list = [
+                            line.strip()
+                            for line in condition_labels.strip().split("\n")
+                            if line.strip()
+                        ]
                         if not condition_label_list:
-                            condition_label_list = ["condition_1", "condition_2", "condition_3"]
+                            condition_label_list = [
+                                "condition_1",
+                                "condition_2",
+                                "condition_3",
+                            ]
 
                         # Preview
                         st.markdown("**Preview:**")
@@ -7321,19 +9586,39 @@ def main():
                             # Normalize for safe subtraction (handle timezone-aware/naive mix)
                             start_norm = _normalize_ts(start_time)
                             end_norm = _normalize_ts(end_time)
-                            duration_min = (end_norm - start_norm).total_seconds() / 60 if start_norm and end_norm else 0
+                            duration_min = (
+                                (end_norm - start_norm).total_seconds() / 60
+                                if start_norm and end_norm
+                                else 0
+                            )
                             num_segments = int(duration_min / event_interval_min)
-                            st.write(f"Cycle: {' → '.join(condition_label_list)} → (repeat)")
-                            st.caption(f"Duration: {duration_min:.1f} min → ~{num_segments} segments of {event_interval_min} min each")
+                            st.write(
+                                f"Cycle: {' → '.join(condition_label_list)} → (repeat)"
+                            )
+                            st.caption(
+                                f"Duration: {duration_min:.1f} min → ~{num_segments} segments of {event_interval_min} min each"
+                            )
                         else:
-                            st.write(f"Cycle: {' → '.join(condition_label_list)} → (repeat)")
+                            st.write(
+                                f"Cycle: {' → '.join(condition_label_list)} → (repeat)"
+                            )
                             st.caption("Select start and end times above")
 
                         # Generate button (normalize for safe comparison)
-                        start_ts_norm = _normalize_ts(start_time) if start_time else None
+                        start_ts_norm = (
+                            _normalize_ts(start_time) if start_time else None
+                        )
                         end_ts_norm = _normalize_ts(end_time) if end_time else None
-                        can_generate = start_ts_norm is not None and end_ts_norm is not None and start_ts_norm < end_ts_norm
-                        if st.button("Generate Events", key=f"gen_events_{selected_participant}", disabled=not can_generate):
+                        can_generate = (
+                            start_ts_norm is not None
+                            and end_ts_norm is not None
+                            and start_ts_norm < end_ts_norm
+                        )
+                        if st.button(
+                            "Generate Events",
+                            key=f"gen_events_{selected_participant}",
+                            disabled=not can_generate,
+                        ):
                             from rrational.prep.summaries import EventStatus
                             from datetime import timedelta
 
@@ -7342,10 +9627,19 @@ def main():
                             num_conditions = len(condition_label_list)
 
                             # Initialize generated_events list if not present
-                            if 'generated_events' not in st.session_state.participant_events[selected_participant]:
-                                st.session_state.participant_events[selected_participant]['generated_events'] = []
+                            if (
+                                "generated_events"
+                                not in st.session_state.participant_events[
+                                    selected_participant
+                                ]
+                            ):
+                                st.session_state.participant_events[
+                                    selected_participant
+                                ]["generated_events"] = []
                             # Clear existing generated events before generating new ones
-                            st.session_state.participant_events[selected_participant]['generated_events'] = []
+                            st.session_state.participant_events[selected_participant][
+                                "generated_events"
+                            ] = []
 
                             # Generate events for the selected time range
                             current_time = start_time
@@ -7353,20 +9647,26 @@ def main():
 
                             while current_time < end_time:
                                 # Create condition start event
-                                label = condition_label_list[condition_idx % num_conditions]
+                                label = condition_label_list[
+                                    condition_idx % num_conditions
+                                ]
                                 event_label = f"{label}_start"
 
                                 new_event = EventStatus(
                                     raw_label=event_label,
                                     canonical=event_label,
                                     first_timestamp=current_time,
-                                    last_timestamp=current_time
+                                    last_timestamp=current_time,
                                 )
-                                st.session_state.participant_events[selected_participant]['generated_events'].append(new_event)
+                                st.session_state.participant_events[
+                                    selected_participant
+                                ]["generated_events"].append(new_event)
                                 events_added += 1
 
                                 # Calculate end time for this condition segment
-                                segment_end = current_time + timedelta(seconds=interval_seconds)
+                                segment_end = current_time + timedelta(
+                                    seconds=interval_seconds
+                                )
                                 if segment_end > end_time:
                                     segment_end = end_time
 
@@ -7375,18 +9675,26 @@ def main():
                                     raw_label=f"{label}_end",
                                     canonical=f"{label}_end",
                                     first_timestamp=segment_end,
-                                    last_timestamp=segment_end
+                                    last_timestamp=segment_end,
                                 )
-                                st.session_state.participant_events[selected_participant]['generated_events'].append(end_event)
+                                st.session_state.participant_events[
+                                    selected_participant
+                                ]["generated_events"].append(end_event)
                                 events_added += 1
 
                                 current_time = segment_end
                                 condition_idx += 1
 
                             if events_added > 0:
-                                show_toast(f"Created {events_added} section events", icon="success")
+                                show_toast(
+                                    f"Created {events_added} section events",
+                                    icon="success",
+                                )
                             else:
-                                show_toast("No events created - check time range", icon="warning")
+                                show_toast(
+                                    "No events created - check time range",
+                                    icon="warning",
+                                )
                             st.rerun()
 
                         if not can_generate and start_time and end_time:
@@ -7408,7 +9716,9 @@ def main():
                     st.markdown("**Events Detected:**")
 
                     # Get events from session state (already initialized above for the plot)
-                    stored_data = st.session_state.participant_events[selected_participant]
+                    stored_data = st.session_state.participant_events[
+                        selected_participant
+                    ]
 
                     # Helper to ensure items are EventStatus objects (handles stale session state with dicts)
                     def ensure_event_status(item):
@@ -7416,6 +9726,7 @@ def main():
                         if isinstance(item, dict):
                             from rrational.prep.summaries import EventStatus
                             from datetime import datetime as dt
+
                             ts = item.get("first_timestamp")
                             if ts and isinstance(ts, str):
                                 ts = dt.fromisoformat(ts)
@@ -7431,10 +9742,12 @@ def main():
                         return item
 
                     # Ensure all events are EventStatus objects, not dicts
-                    all_events = [ensure_event_status(e) for e in stored_data['events'] + stored_data['manual']]
+                    all_events = [
+                        ensure_event_status(e)
+                        for e in stored_data["events"] + stored_data["manual"]
+                    ]
 
                     if all_events:
-
                         # Helper function to safely compare datetimes (handle timezone-aware/naive mix)
                         def safe_compare_timestamps(ts1, ts2):
                             """Compare two timestamps, handling timezone-aware/naive mix."""
@@ -7442,6 +9755,7 @@ def main():
                                 return 0  # Equal if either is None
                             # Make both timezone-aware or both timezone-naive
                             import datetime
+
                             if ts1.tzinfo is None and ts2.tzinfo is not None:
                                 ts1 = ts1.replace(tzinfo=datetime.timezone.utc)
                             elif ts1.tzinfo is not None and ts2.tzinfo is None:
@@ -7451,35 +9765,59 @@ def main():
                         # Check timestamp order and display warning if needed
                         is_chronological = True
                         for i in range(len(all_events) - 1):
-                            if all_events[i].first_timestamp and all_events[i+1].first_timestamp:
-                                if safe_compare_timestamps(all_events[i].first_timestamp, all_events[i+1].first_timestamp) > 0:
+                            if (
+                                all_events[i].first_timestamp
+                                and all_events[i + 1].first_timestamp
+                            ):
+                                if (
+                                    safe_compare_timestamps(
+                                        all_events[i].first_timestamp,
+                                        all_events[i + 1].first_timestamp,
+                                    )
+                                    > 0
+                                ):
                                     is_chronological = False
                                     break
 
                         if not is_chronological:
-                            st.error("**Events are NOT in chronological order!** Click 'Auto-Sort by Timestamp' to fix.")
+                            st.error(
+                                "**Events are NOT in chronological order!** Click 'Auto-Sort by Timestamp' to fix."
+                            )
 
                     # Quick Add Event Section
                     st.markdown("### + Add Event")
 
                     # Get first RR timestamp as reference
                     first_rr_time = None
-                    if 'rr_intervals' in recording_data and recording_data['rr_intervals']:
-                        first_rr_time = recording_data['rr_intervals'][0][0]  # (timestamp, rr_ms, elapsed)
+                    if (
+                        "rr_intervals" in recording_data
+                        and recording_data["rr_intervals"]
+                    ):
+                        first_rr_time = recording_data["rr_intervals"][0][
+                            0
+                        ]  # (timestamp, rr_ms, elapsed)
 
                     col_add1, col_add2, col_add3 = st.columns([2, 2, 1])
 
                     with col_add1:
                         # Quick event type selector
-                        quick_events = ["measurement_start", "measurement_end", "pause_start", "pause_end",
-                                       "rest_pre_start", "rest_pre_end", "rest_post_start", "rest_post_end",
-                                       "Custom..."]
+                        quick_events = [
+                            "measurement_start",
+                            "measurement_end",
+                            "pause_start",
+                            "pause_end",
+                            "rest_pre_start",
+                            "rest_pre_end",
+                            "rest_post_start",
+                            "rest_post_end",
+                            "Custom...",
+                        ]
                         selected_quick_event = st.selectbox(
                             "Event type",
                             options=quick_events,
                             key=f"quick_event_type_{selected_participant}",
                             label_visibility="collapsed",
-                            placeholder="Select event type..."
+                            placeholder="Select event type...",
                         )
 
                         # Custom label input if "Custom..." selected
@@ -7487,7 +9825,7 @@ def main():
                             custom_label = st.text_input(
                                 "Custom label",
                                 key=f"custom_event_label_{selected_participant}",
-                                placeholder="Enter event label..."
+                                placeholder="Enter event label...",
                             )
                         else:
                             custom_label = None
@@ -7497,7 +9835,7 @@ def main():
                         import datetime as dt
 
                         # Default time from first RR timestamp
-                        if first_rr_time and hasattr(first_rr_time, 'strftime'):
+                        if first_rr_time and hasattr(first_rr_time, "strftime"):
                             default_time_str = first_rr_time.strftime("%H:%M:%S")
                         else:
                             default_time_str = "10:00:00"
@@ -7507,11 +9845,11 @@ def main():
                         if time_key not in st.session_state:
                             st.session_state[time_key] = default_time_str
 
-                        event_time_str = st.text_input(
+                        _event_time_str = st.text_input(  # noqa: F841
                             "Time (HH:MM:SS)",
                             key=time_key,
                             placeholder="HH:MM:SS",
-                            help="Enter time as HH:MM:SS (e.g., 10:30:45)"
+                            help="Enter time as HH:MM:SS (e.g., 10:30:45)",
                         )
 
                         # Parse the time string
@@ -7520,7 +9858,9 @@ def main():
                             try:
                                 parts = time_str.strip().split(":")
                                 if len(parts) == 3:
-                                    return dt.time(int(parts[0]), int(parts[1]), int(parts[2]))
+                                    return dt.time(
+                                        int(parts[0]), int(parts[1]), int(parts[2])
+                                    )
                                 elif len(parts) == 2:
                                     return dt.time(int(parts[0]), int(parts[1]), 0)
                                 else:
@@ -7532,22 +9872,33 @@ def main():
                         use_offset = st.checkbox(
                             "Use offset from start instead",
                             key=f"use_offset_{selected_participant}",
-                            help="Enter time as offset (minutes:seconds) from recording start"
+                            help="Enter time as offset (minutes:seconds) from recording start",
                         )
 
                         # Initialize offset values (prevents UnboundLocalError in callback)
-                        offset_min = 0
-                        offset_sec = 0
+                        _offset_min = 0  # noqa: F841
+                        _offset_sec = 0  # noqa: F841
                         if use_offset:
                             col_min, col_sec = st.columns(2)
                             with col_min:
-                                offset_min = st.number_input("Min", min_value=0, max_value=180, value=0,
-                                                            key=f"offset_min_{selected_participant}")
+                                _offset_min = st.number_input(  # noqa: F841
+                                    "Min",
+                                    min_value=0,
+                                    max_value=180,
+                                    value=0,
+                                    key=f"offset_min_{selected_participant}",
+                                )
                             with col_sec:
-                                offset_sec = st.number_input("Sec", min_value=0, max_value=59, value=0,
-                                                            key=f"offset_sec_{selected_participant}")
+                                _offset_sec = st.number_input(  # noqa: F841
+                                    "Sec",
+                                    min_value=0,
+                                    max_value=59,
+                                    value=0,
+                                    key=f"offset_sec_{selected_participant}",
+                                )
 
                     with col_add3:
+
                         def add_quick_event():
                             """Add event with selected type and time."""
                             from rrational.prep.summaries import EventStatus
@@ -7555,15 +9906,31 @@ def main():
 
                             # Read values from session state (not closure variables!)
                             # This ensures we get the CURRENT input values, not stale ones
-                            curr_quick_event = st.session_state.get(f"quick_event_type_{selected_participant}")
-                            curr_custom_label = st.session_state.get(f"custom_event_label_{selected_participant}")
-                            curr_time_str = st.session_state.get(f"event_time_{selected_participant}", "")
-                            curr_use_offset = st.session_state.get(f"use_offset_{selected_participant}", False)
-                            curr_offset_min = st.session_state.get(f"offset_min_{selected_participant}", 0)
-                            curr_offset_sec = st.session_state.get(f"offset_sec_{selected_participant}", 0)
+                            curr_quick_event = st.session_state.get(
+                                f"quick_event_type_{selected_participant}"
+                            )
+                            curr_custom_label = st.session_state.get(
+                                f"custom_event_label_{selected_participant}"
+                            )
+                            curr_time_str = st.session_state.get(
+                                f"event_time_{selected_participant}", ""
+                            )
+                            curr_use_offset = st.session_state.get(
+                                f"use_offset_{selected_participant}", False
+                            )
+                            curr_offset_min = st.session_state.get(
+                                f"offset_min_{selected_participant}", 0
+                            )
+                            curr_offset_sec = st.session_state.get(
+                                f"offset_sec_{selected_participant}", 0
+                            )
 
                             # Determine label
-                            label = curr_custom_label if curr_quick_event == "Custom..." else curr_quick_event
+                            label = (
+                                curr_custom_label
+                                if curr_quick_event == "Custom..."
+                                else curr_quick_event
+                            )
                             if not label:
                                 show_toast("Please enter an event label", icon="error")
                                 return
@@ -7571,13 +9938,18 @@ def main():
                             # Determine timestamp
                             if curr_use_offset and first_rr_time:
                                 # Calculate from offset
-                                offset_delta = dt.timedelta(minutes=curr_offset_min, seconds=curr_offset_sec)
+                                offset_delta = dt.timedelta(
+                                    minutes=curr_offset_min, seconds=curr_offset_sec
+                                )
                                 event_timestamp = first_rr_time + offset_delta
                             else:
                                 # Parse the time string
                                 parsed_time = parse_time_str(curr_time_str)
                                 if not parsed_time:
-                                    show_toast("Invalid time format. Use HH:MM:SS", icon="error")
+                                    show_toast(
+                                        "Invalid time format. Use HH:MM:SS",
+                                        icon="error",
+                                    )
                                     return
 
                                 # Use the parsed time with the recording date
@@ -7586,36 +9958,59 @@ def main():
                                         hour=parsed_time.hour,
                                         minute=parsed_time.minute,
                                         second=parsed_time.second,
-                                        microsecond=0
+                                        microsecond=0,
                                     )
                                 else:
                                     # Fallback to today's date
                                     event_timestamp = dt.datetime.combine(
                                         dt.date.today(),
                                         parsed_time,
-                                        tzinfo=dt.timezone.utc
+                                        tzinfo=dt.timezone.utc,
                                     )
 
                             # Normalize the label
                             canonical = st.session_state.normalizer.normalize(label)
 
                             # Check for duplicate events (same label/canonical and close timestamp)
-                            if selected_participant in st.session_state.participant_events:
-                                existing_data = st.session_state.participant_events[selected_participant]
-                                existing_events = existing_data.get('events', []) + existing_data.get('manual', [])
+                            if (
+                                selected_participant
+                                in st.session_state.participant_events
+                            ):
+                                existing_data = st.session_state.participant_events[
+                                    selected_participant
+                                ]
+                                existing_events = existing_data.get(
+                                    "events", []
+                                ) + existing_data.get("manual", [])
                                 for existing in existing_events:
                                     # Check if same label (raw or canonical)
                                     same_label = (
-                                        existing.raw_label.lower() == label.lower() or
-                                        (existing.canonical and existing.canonical == canonical)
+                                        existing.raw_label.lower() == label.lower()
+                                        or (
+                                            existing.canonical
+                                            and existing.canonical == canonical
+                                        )
                                     )
                                     # Check if timestamp within 1 second (normalize to handle timezone mix)
                                     if same_label and existing.first_timestamp:
-                                        existing_ts_norm = _normalize_ts(existing.first_timestamp)
+                                        existing_ts_norm = _normalize_ts(
+                                            existing.first_timestamp
+                                        )
                                         event_ts_norm = _normalize_ts(event_timestamp)
-                                        time_diff = abs((existing_ts_norm - event_ts_norm).total_seconds()) if existing_ts_norm and event_ts_norm else float('inf')
+                                        time_diff = (
+                                            abs(
+                                                (
+                                                    existing_ts_norm - event_ts_norm
+                                                ).total_seconds()
+                                            )
+                                            if existing_ts_norm and event_ts_norm
+                                            else float("inf")
+                                        )
                                         if time_diff < 1:
-                                            show_toast(f"Event '{label}' already exists at this time", icon="warning")
+                                            show_toast(
+                                                f"Event '{label}' already exists at this time",
+                                                icon="warning",
+                                            )
                                             return
 
                             new_event = EventStatus(
@@ -7627,10 +10022,20 @@ def main():
                             )
 
                             # Add to participant events
-                            if selected_participant not in st.session_state.participant_events:
-                                st.session_state.participant_events[selected_participant] = {'events': [], 'manual': []}
-                            st.session_state.participant_events[selected_participant]['manual'].append(new_event)
-                            show_toast(f"Added '{label}' at {event_timestamp.strftime('%H:%M:%S')}", icon="success")
+                            if (
+                                selected_participant
+                                not in st.session_state.participant_events
+                            ):
+                                st.session_state.participant_events[
+                                    selected_participant
+                                ] = {"events": [], "manual": []}
+                            st.session_state.participant_events[selected_participant][
+                                "manual"
+                            ].append(new_event)
+                            show_toast(
+                                f"Added '{label}' at {event_timestamp.strftime('%H:%M:%S')}",
+                                icon="success",
+                            )
 
                         st.write("")  # Spacer
                         st.button(
@@ -7638,19 +10043,27 @@ def main():
                             key=f"add_event_{selected_participant}",
                             on_click=add_quick_event,
                             type="primary",
-                            width='stretch'
+                            width="stretch",
                         )
 
                     st.markdown("---")
 
                     # Section Validation - validates sections defined in Sections tab
                     with st.expander("Section Validation", expanded=True):
-                        st.caption("Validates sections and saves disambiguation choices. "
-                                   "Data is stored in `{participant}_section_validations.yml`.")
+                        st.caption(
+                            "Validates sections and saves disambiguation choices. "
+                            "Data is stored in `{participant}_section_validations.yml`."
+                        )
 
                         # Get participant's events from session state
-                        participant_events_data = st.session_state.participant_events.get(selected_participant, {})
-                        saved_events = participant_events_data.get("events", []) + participant_events_data.get("manual", [])
+                        participant_events_data = (
+                            st.session_state.participant_events.get(
+                                selected_participant, {}
+                            )
+                        )
+                        saved_events = participant_events_data.get(
+                            "events", []
+                        ) + participant_events_data.get("manual", [])
 
                         # Get sections from session state
                         sections = st.session_state.get("sections", {})
@@ -7660,41 +10073,60 @@ def main():
                         full_rr_key = f"full_rr_data_{selected_participant}"
                         full_rr_data = st.session_state.get(full_rr_key, {})
                         summary = get_summary_dict().get(selected_participant)
-                        is_hrv_logger = (getattr(summary, 'source_app', 'HRV Logger') == "HRV Logger") if summary else True
+                        is_hrv_logger = (
+                            (
+                                getattr(summary, "source_app", "HRV Logger")
+                                == "HRV Logger"
+                            )
+                            if summary
+                            else True
+                        )
 
                         # Prepare RR data for section calculation if HRV Logger
                         rr_timestamps = []
                         rr_values_ms = []
                         if is_hrv_logger and full_rr_data:
-                            rr_timestamps = full_rr_data.get('timestamps', [])
-                            rr_values_ms = full_rr_data.get('rr_values', [])
+                            rr_timestamps = full_rr_data.get("timestamps", [])
+                            rr_values_ms = full_rr_data.get("rr_values", [])
 
                         if not sections:
-                            st.info("No sections defined. Define sections in the **Sections** tab (under Setup).")
+                            st.info(
+                                "No sections defined. Define sections in the **Sections** tab (under Setup)."
+                            )
                         elif not saved_events:
-                            st.warning("No events found. Events are needed for section validation.")
+                            st.warning(
+                                "No events found. Events are needed for section validation."
+                            )
                         else:
                             # Helper to normalize timestamps
                             def normalize_ts(ts):
                                 if ts is None:
                                     return None
-                                if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
+                                if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
                                     return ts.replace(tzinfo=None)
                                 return ts
 
                             # Get exclusion zones for duration calculation
-                            stored_data = st.session_state.participant_events.get(selected_participant, {})
-                            participant_exclusion_zones = stored_data.get('exclusion_zones', [])
+                            stored_data = st.session_state.participant_events.get(
+                                selected_participant, {}
+                            )
+                            participant_exclusion_zones = stored_data.get(
+                                "exclusion_zones", []
+                            )
 
                             def calc_excluded_time(start_ts, end_ts):
                                 """Calculate excluded time in seconds."""
-                                if not participant_exclusion_zones or not start_ts or not end_ts:
+                                if (
+                                    not participant_exclusion_zones
+                                    or not start_ts
+                                    or not end_ts
+                                ):
                                     return 0.0
                                 total = 0.0
                                 for zone in participant_exclusion_zones:
-                                    if not zone.get('exclude_from_duration', True):
+                                    if not zone.get("exclude_from_duration", True):
                                         continue
-                                    zs, ze = zone.get('start'), zone.get('end')
+                                    zs, ze = zone.get("start"), zone.get("end")
                                     if not zs or not ze:
                                         continue
                                     zs = normalize_ts(zs)
@@ -7707,29 +10139,50 @@ def main():
 
                             def calc_rr_duration(start_ts, end_ts):
                                 """Calculate duration by summing RR intervals within time range."""
-                                if not rr_timestamps or not rr_values_ms or not start_ts or not end_ts:
+                                if (
+                                    not rr_timestamps
+                                    or not rr_values_ms
+                                    or not start_ts
+                                    or not end_ts
+                                ):
                                     return None
                                 start_ts = normalize_ts(start_ts)
                                 end_ts = normalize_ts(end_ts)
                                 total_ms = 0
                                 for ts, rr in zip(rr_timestamps, rr_values_ms):
-                                    ts_norm = normalize_ts(ts) if hasattr(ts, 'tzinfo') else ts
+                                    ts_norm = (
+                                        normalize_ts(ts)
+                                        if hasattr(ts, "tzinfo")
+                                        else ts
+                                    )
                                     if start_ts <= ts_norm < end_ts:
                                         total_ms += rr
                                 return total_ms / 1000 / 60  # Convert to minutes
 
                             # Get participant's group and filter sections by group-specific selections
-                            participant_group = st.session_state.participant_groups.get(selected_participant, "Default")
-                            group_data = st.session_state.groups.get(participant_group, {})
+                            participant_group = st.session_state.participant_groups.get(
+                                selected_participant, "Default"
+                            )
+                            group_data = st.session_state.groups.get(
+                                participant_group, {}
+                            )
                             selected_sections = group_data.get("selected_sections", [])
 
                             # Filter sections to validate based on group's selected sections
                             if selected_sections:
-                                sections_to_validate = {k: v for k, v in sections.items() if k in selected_sections}
-                                st.caption(f"Showing sections for **{group_data.get('label', participant_group)}** group ({len(sections_to_validate)} of {len(sections)} sections)")
+                                sections_to_validate = {
+                                    k: v
+                                    for k, v in sections.items()
+                                    if k in selected_sections
+                                }
+                                st.caption(
+                                    f"Showing sections for **{group_data.get('label', participant_group)}** group ({len(sections_to_validate)} of {len(sections)} sections)"
+                                )
                             else:
                                 sections_to_validate = sections
-                                st.caption(f"No group-specific sections configured - showing all {len(sections)} sections")
+                                st.caption(
+                                    f"No group-specific sections configured - showing all {len(sections)} sections"
+                                )
 
                             # Use centralized validation system
                             from rrational.gui.shared import (
@@ -7750,13 +10203,19 @@ def main():
                             needs_save = False
 
                             for section_code, result in validation_results.items():
-                                section_data = sections_to_validate.get(section_code, {})
+                                section_data = sections_to_validate.get(
+                                    section_code, {}
+                                )
                                 label = section_data.get("label", section_code)
-                                expected_dur = section_data.get("expected_duration_min", 0)
+                                expected_dur = section_data.get(
+                                    "expected_duration_min", 0
+                                )
                                 tolerance = section_data.get("tolerance_min", 1)
 
                                 # Check if we have candidates for disambiguation
-                                has_candidates = result.start_candidates and result.end_candidates
+                                has_candidates = (
+                                    result.start_candidates and result.end_candidates
+                                )
 
                                 # If invalid and no candidates to choose from, show error and skip
                                 if not result.is_valid and not has_candidates:
@@ -7771,24 +10230,46 @@ def main():
                                     current_end_ts = validated.end_event.timestamp
                                 else:
                                     # Fallback to first candidates when validation failed
-                                    current_start_ts = result.start_candidates[0].timestamp if result.start_candidates else None
-                                    current_end_ts = result.end_candidates[0].timestamp if result.end_candidates else None
+                                    current_start_ts = (
+                                        result.start_candidates[0].timestamp
+                                        if result.start_candidates
+                                        else None
+                                    )
+                                    current_end_ts = (
+                                        result.end_candidates[0].timestamp
+                                        if result.end_candidates
+                                        else None
+                                    )
 
                                 # Show disambiguation UI if multiple candidates OR if invalid (to let user fix)
-                                if result.needs_disambiguation or (not result.is_valid and has_candidates):
+                                if result.needs_disambiguation or (
+                                    not result.is_valid and has_candidates
+                                ):
                                     with st.container():
                                         if not result.is_valid:
-                                            st.warning(f"**{label}**: {result.error_message} - please select correct events:")
+                                            st.warning(
+                                                f"**{label}**: {result.error_message} - please select correct events:"
+                                            )
                                         else:
-                                            st.write(f"**{label}** (multiple events found - please select):")
+                                            st.write(
+                                                f"**{label}** (multiple events found - please select):"
+                                            )
                                         col1, col2 = st.columns(2)
 
                                         with col1:
-                                            start_options = [c.display_label() for c in result.start_candidates]
+                                            start_options = [
+                                                c.display_label()
+                                                for c in result.start_candidates
+                                            ]
                                             current_start_idx = next(
-                                                (i for i, c in enumerate(result.start_candidates)
-                                                 if c.timestamp == current_start_ts),
-                                                0
+                                                (
+                                                    i
+                                                    for i, c in enumerate(
+                                                        result.start_candidates
+                                                    )
+                                                    if c.timestamp == current_start_ts
+                                                ),
+                                                0,
                                             )
                                             new_start_idx = st.selectbox(
                                                 "Start event",
@@ -7800,11 +10281,19 @@ def main():
                                             )
 
                                         with col2:
-                                            end_options = [c.display_label() for c in result.end_candidates]
+                                            end_options = [
+                                                c.display_label()
+                                                for c in result.end_candidates
+                                            ]
                                             current_end_idx = next(
-                                                (i for i, c in enumerate(result.end_candidates)
-                                                 if c.timestamp == current_end_ts),
-                                                0
+                                                (
+                                                    i
+                                                    for i, c in enumerate(
+                                                        result.end_candidates
+                                                    )
+                                                    if c.timestamp == current_end_ts
+                                                ),
+                                                0,
                                             )
                                             new_end_idx = st.selectbox(
                                                 "End event",
@@ -7816,7 +10305,10 @@ def main():
                                             )
 
                                         # Update if selection changed
-                                        if new_start_idx != current_start_idx or new_end_idx != current_end_idx:
+                                        if (
+                                            new_start_idx != current_start_idx
+                                            or new_end_idx != current_end_idx
+                                        ):
                                             save_section_selection(
                                                 selected_participant,
                                                 section_code,
@@ -7826,56 +10318,98 @@ def main():
                                             needs_save = True
 
                                         # Use selected timestamps
-                                        start_ts = result.start_candidates[new_start_idx].timestamp
-                                        end_ts = result.end_candidates[new_end_idx].timestamp
+                                        start_ts = result.start_candidates[
+                                            new_start_idx
+                                        ].timestamp
+                                        end_ts = result.end_candidates[
+                                            new_end_idx
+                                        ].timestamp
                                 else:
                                     start_ts = current_start_ts
                                     end_ts = current_end_ts
 
                                 # Validate start < end after user selection (normalize for timezone compatibility)
-                                if start_ts and end_ts and normalize_ts(start_ts) >= normalize_ts(end_ts):
-                                    st.error(f"Start event ({start_ts.strftime('%H:%M:%S')}) must be before end event ({end_ts.strftime('%H:%M:%S')})")
+                                if (
+                                    start_ts
+                                    and end_ts
+                                    and normalize_ts(start_ts) >= normalize_ts(end_ts)
+                                ):
+                                    st.error(
+                                        f"Start event ({start_ts.strftime('%H:%M:%S')}) must be before end event ({end_ts.strftime('%H:%M:%S')})"
+                                    )
                                     issue_count += 1
                                     continue
 
                                 # Calculate durations
-                                raw_dur = (normalize_ts(end_ts) - normalize_ts(start_ts)).total_seconds()
+                                raw_dur = (
+                                    normalize_ts(end_ts) - normalize_ts(start_ts)
+                                ).total_seconds()
                                 excluded = calc_excluded_time(start_ts, end_ts)
                                 event_dur = (raw_dur - excluded) / 60
 
                                 # Calculate RR-based duration (HRV Logger only)
-                                rr_dur = calc_rr_duration(start_ts, end_ts) if is_hrv_logger else None
+                                rr_dur = (
+                                    calc_rr_duration(start_ts, end_ts)
+                                    if is_hrv_logger
+                                    else None
+                                )
 
-                                excl_note = f" (excl: {excluded/60:.1f}m)" if excluded > 0 else ""
+                                excl_note = (
+                                    f" (excl: {excluded / 60:.1f}m)"
+                                    if excluded > 0
+                                    else ""
+                                )
 
                                 # Build display string with both durations
                                 if rr_dur is not None:
                                     diff = event_dur - rr_dur
-                                    diff_note = f" (Δ{diff:+.1f}m)" if abs(diff) > 0.1 else ""
+                                    diff_note = (
+                                        f" (Δ{diff:+.1f}m)" if abs(diff) > 0.1 else ""
+                                    )
                                     dur_display = f"{event_dur:.1f}m | RR: {rr_dur:.1f}m{diff_note}"
                                 else:
                                     dur_display = f"{event_dur:.1f}m"
 
                                 # Time range display
-                                start_time = start_ts.strftime("%H:%M:%S") if start_ts else "?"
-                                end_time = end_ts.strftime("%H:%M:%S") if end_ts else "?"
+                                start_time = (
+                                    start_ts.strftime("%H:%M:%S") if start_ts else "?"
+                                )
+                                end_time = (
+                                    end_ts.strftime("%H:%M:%S") if end_ts else "?"
+                                )
                                 time_range = f"{start_time} - {end_time}"
 
                                 # Check if within tolerance
-                                if not result.needs_disambiguation:  # Only show inline for simple cases
-                                    if expected_dur > 0 and abs(event_dur - expected_dur) > tolerance:
-                                        st.write(f"**{label}**: {dur_display}{excl_note} [{time_range}] (expected {expected_dur:.0f}±{tolerance:.0f}m)")
+                                if (
+                                    not result.needs_disambiguation
+                                ):  # Only show inline for simple cases
+                                    if (
+                                        expected_dur > 0
+                                        and abs(event_dur - expected_dur) > tolerance
+                                    ):
+                                        st.write(
+                                            f"**{label}**: {dur_display}{excl_note} [{time_range}] (expected {expected_dur:.0f}±{tolerance:.0f}m)"
+                                        )
                                         issue_count += 1
                                     else:
-                                        st.write(f"**{label}**: {dur_display}{excl_note} [{time_range}]")
+                                        st.write(
+                                            f"**{label}**: {dur_display}{excl_note} [{time_range}]"
+                                        )
                                         valid_count += 1
                                 else:
                                     # For disambiguation cases, show result after the selectors
-                                    if expected_dur > 0 and abs(event_dur - expected_dur) > tolerance:
-                                        st.caption(f"{dur_display}{excl_note} [{time_range}] (expected {expected_dur:.0f}±{tolerance:.0f}m)")
+                                    if (
+                                        expected_dur > 0
+                                        and abs(event_dur - expected_dur) > tolerance
+                                    ):
+                                        st.caption(
+                                            f"{dur_display}{excl_note} [{time_range}] (expected {expected_dur:.0f}±{tolerance:.0f}m)"
+                                        )
                                         issue_count += 1
                                     else:
-                                        st.caption(f"{dur_display}{excl_note} [{time_range}]")
+                                        st.caption(
+                                            f"{dur_display}{excl_note} [{time_range}]"
+                                        )
                                         valid_count += 1
 
                             # Auto-save if selections changed
@@ -7891,38 +10425,65 @@ def main():
                                 if issue_count == 0 and valid_count > 0:
                                     st.success(f"All {valid_count} section(s) valid")
                                 elif valid_count == 0 and issue_count > 0:
-                                    st.error(f"All {issue_count} section(s) have issues")
+                                    st.error(
+                                        f"All {issue_count} section(s) have issues"
+                                    )
                                 else:
-                                    st.info(f"{valid_count} valid, {issue_count} with issues")
+                                    st.info(
+                                        f"{valid_count} valid, {issue_count} with issues"
+                                    )
 
                             with col_save:
-                                if st.button("Save", key=f"save_section_validations_{selected_participant}",
-                                           help="Save section validations to project folder. "
-                                                "Stores: group, events, timestamps, duration, beat count, "
-                                                "and disambiguation choices."):
+                                if st.button(
+                                    "Save",
+                                    key=f"save_section_validations_{selected_participant}",
+                                    help="Save section validations to project folder. "
+                                    "Stores: group, events, timestamps, duration, beat count, "
+                                    "and disambiguation choices.",
+                                ):
                                     save_full_section_validations(selected_participant)
                                     auto_save_config()
-                                    show_toast("Section validations saved", icon="success")
+                                    show_toast(
+                                        "Section validations saved", icon="success"
+                                    )
 
                         # RR+Gap Duration Validation (HRV Logger only)
                         # Compare event-based duration vs sum of RR intervals + gaps
                         plot_data_key = f"plot_data_{selected_participant}"
-                        plot_data_for_validation = st.session_state.get(plot_data_key, {})
+                        plot_data_for_validation = st.session_state.get(
+                            plot_data_key, {}
+                        )
 
                         # Check if this is HRV Logger data (has real timestamps)
                         summary = get_summary_dict().get(selected_participant)
-                        is_vns_data = (getattr(summary, 'source_app', 'HRV Logger') == "VNS Analyse") if summary else False
+                        is_vns_data = (
+                            (
+                                getattr(summary, "source_app", "HRV Logger")
+                                == "VNS Analyse"
+                            )
+                            if summary
+                            else False
+                        )
 
                         if not is_vns_data and plot_data_for_validation:
                             st.markdown("---")
                             st.markdown("**Data Integrity Check** (HRV Logger)")
-                            st.caption("Compares event-based duration with RR+gap duration from recorded data")
+                            st.caption(
+                                "Compares event-based duration with RR+gap duration from recorded data"
+                            )
 
-                            total_rr_ms = plot_data_for_validation.get('total_rr_time_ms', 0)
+                            total_rr_ms = plot_data_for_validation.get(
+                                "total_rr_time_ms", 0
+                            )
                             # Get gap info from session state (computed during plot rendering)
-                            gap_result_validation = st.session_state.get(f"gaps_{selected_participant}", {})
-                            total_gap_ms = gap_result_validation.get('total_gap_duration_s', 0) * 1000
-                            n_gaps = len(gap_result_validation.get('gaps', []))
+                            gap_result_validation = st.session_state.get(
+                                f"gaps_{selected_participant}", {}
+                            )
+                            total_gap_ms = (
+                                gap_result_validation.get("total_gap_duration_s", 0)
+                                * 1000
+                            )
+                            n_gaps = len(gap_result_validation.get("gaps", []))
 
                             # Convert to minutes for display
                             rr_duration_min = total_rr_ms / 1000 / 60
@@ -7930,13 +10491,23 @@ def main():
                             total_rr_gap_min = rr_duration_min + gap_duration_min
 
                             # Build event timestamp lookup for Data Integrity Check
-                            integrity_stored_data = st.session_state.participant_events.get(selected_participant, {})
-                            integrity_all_evts = integrity_stored_data.get('events', []) + integrity_stored_data.get('manual', [])
+                            integrity_stored_data = (
+                                st.session_state.participant_events.get(
+                                    selected_participant, {}
+                                )
+                            )
+                            integrity_all_evts = integrity_stored_data.get(
+                                "events", []
+                            ) + integrity_stored_data.get("manual", [])
                             event_timestamps = {}
                             for evt in integrity_all_evts:
-                                if hasattr(evt, 'canonical') and hasattr(evt, 'first_timestamp'):
+                                if hasattr(evt, "canonical") and hasattr(
+                                    evt, "first_timestamp"
+                                ):
                                     if evt.canonical and evt.first_timestamp:
-                                        event_timestamps[evt.canonical] = evt.first_timestamp
+                                        event_timestamps[evt.canonical] = (
+                                            evt.first_timestamp
+                                        )
                                 elif isinstance(evt, dict):
                                     canonical = evt.get("canonical")
                                     timestamp = evt.get("first_timestamp")
@@ -7946,43 +10517,88 @@ def main():
                             # Get event-based duration (first to last event)
                             if event_timestamps:
                                 # Normalize all timestamps for safe comparison/subtraction
-                                all_ts = [_normalize_ts(ts) for ts in event_timestamps.values() if ts]
-                                all_ts = [ts for ts in all_ts if ts]  # Filter out None values
+                                all_ts = [
+                                    _normalize_ts(ts)
+                                    for ts in event_timestamps.values()
+                                    if ts
+                                ]
+                                all_ts = [
+                                    ts for ts in all_ts if ts
+                                ]  # Filter out None values
                                 if len(all_ts) >= 2:
                                     first_event = min(all_ts)
                                     last_event = max(all_ts)
-                                    event_duration_sec = (last_event - first_event).total_seconds()
+                                    event_duration_sec = (
+                                        last_event - first_event
+                                    ).total_seconds()
                                     event_duration_min = event_duration_sec / 60
 
                                     # Compare with RR+gap duration
-                                    diff_min = abs(event_duration_min - total_rr_gap_min)
-                                    diff_pct = (diff_min / event_duration_min * 100) if event_duration_min > 0 else 0
+                                    diff_min = abs(
+                                        event_duration_min - total_rr_gap_min
+                                    )
+                                    diff_pct = (
+                                        (diff_min / event_duration_min * 100)
+                                        if event_duration_min > 0
+                                        else 0
+                                    )
 
                                     col_dur1, col_dur2, col_dur3 = st.columns(3)
                                     with col_dur1:
-                                        st.metric("Event Duration", f"{event_duration_min:.1f} min", help="Time between first and last event")
+                                        st.metric(
+                                            "Event Duration",
+                                            f"{event_duration_min:.1f} min",
+                                            help="Time between first and last event",
+                                        )
                                     with col_dur2:
-                                        st.metric("RR + Gap Duration", f"{total_rr_gap_min:.1f} min", help=f"Sum of all RR intervals ({rr_duration_min:.1f} min) + gaps ({gap_duration_min:.1f} min)")
+                                        st.metric(
+                                            "RR + Gap Duration",
+                                            f"{total_rr_gap_min:.1f} min",
+                                            help=f"Sum of all RR intervals ({rr_duration_min:.1f} min) + gaps ({gap_duration_min:.1f} min)",
+                                        )
                                     with col_dur3:
-                                        delta_str = f"{diff_min:.1f} min ({diff_pct:.1f}%)"
+                                        delta_str = (
+                                            f"{diff_min:.1f} min ({diff_pct:.1f}%)"
+                                        )
                                         if diff_pct < 5:
-                                            st.metric("Difference", delta_str, delta_color="off", help="Good data integrity")
+                                            st.metric(
+                                                "Difference",
+                                                delta_str,
+                                                delta_color="off",
+                                                help="Good data integrity",
+                                            )
                                         elif diff_pct < 15:
-                                            st.metric("Difference", delta_str, delta_color="normal", help="Some data may be missing")
+                                            st.metric(
+                                                "Difference",
+                                                delta_str,
+                                                delta_color="normal",
+                                                help="Some data may be missing",
+                                            )
                                         else:
-                                            st.metric("Difference", delta_str, delta_color="inverse", help="Significant data mismatch - check for missing data")
+                                            st.metric(
+                                                "Difference",
+                                                delta_str,
+                                                delta_color="inverse",
+                                                help="Significant data mismatch - check for missing data",
+                                            )
 
                                     if n_gaps > 0:
-                                        st.caption(f"Detected {n_gaps} gap(s) totaling {gap_duration_min:.1f} min")
+                                        st.caption(
+                                            f"Detected {n_gaps} gap(s) totaling {gap_duration_min:.1f} min"
+                                        )
                                 else:
-                                    st.info("Need at least 2 events for duration comparison")
+                                    st.info(
+                                        "Need at least 2 events for duration comparison"
+                                    )
                             else:
                                 st.info("No events to compare with RR duration")
 
                     st.markdown("---")
 
                     # Build available canonical events
-                    available_canonical_events = list(st.session_state.all_events.keys())
+                    available_canonical_events = list(
+                        st.session_state.all_events.keys()
+                    )
 
                     # Section 1: Event Editing - Individual Cards
                     st.markdown("### Event Management")
@@ -7995,30 +10611,45 @@ def main():
                     def _save_undo_state(participant_id: str, action_desc: str):
                         """Save current state to undo stack before making changes."""
                         import copy
-                        stored_data = st.session_state.participant_events.get(participant_id)
+
+                        stored_data = st.session_state.participant_events.get(
+                            participant_id
+                        )
                         if stored_data:
                             # Deep copy the events
                             state = {
-                                'events': copy.deepcopy(stored_data.get('events', [])),
-                                'manual': copy.deepcopy(stored_data.get('manual', [])),
-                                'action': action_desc
+                                "events": copy.deepcopy(stored_data.get("events", [])),
+                                "manual": copy.deepcopy(stored_data.get("manual", [])),
+                                "action": action_desc,
                             }
-                            undo_stack = st.session_state.get(f"event_undo_stack_{participant_id}", [])
+                            undo_stack = st.session_state.get(
+                                f"event_undo_stack_{participant_id}", []
+                            )
                             undo_stack.append(state)
                             # Keep only last 10 undo states
                             if len(undo_stack) > 10:
                                 undo_stack = undo_stack[-10:]
-                            st.session_state[f"event_undo_stack_{participant_id}"] = undo_stack
+                            st.session_state[f"event_undo_stack_{participant_id}"] = (
+                                undo_stack
+                            )
 
                     def _undo_last_action(participant_id: str):
                         """Undo the last event management action."""
-                        undo_stack = st.session_state.get(f"event_undo_stack_{participant_id}", [])
+                        undo_stack = st.session_state.get(
+                            f"event_undo_stack_{participant_id}", []
+                        )
                         if undo_stack:
                             prev_state = undo_stack.pop()
-                            st.session_state[f"event_undo_stack_{participant_id}"] = undo_stack
+                            st.session_state[f"event_undo_stack_{participant_id}"] = (
+                                undo_stack
+                            )
                             # Restore the previous state
-                            st.session_state.participant_events[participant_id]['events'] = prev_state['events']
-                            st.session_state.participant_events[participant_id]['manual'] = prev_state['manual']
+                            st.session_state.participant_events[participant_id][
+                                "events"
+                            ] = prev_state["events"]
+                            st.session_state.participant_events[participant_id][
+                                "manual"
+                            ] = prev_state["manual"]
                             show_toast(f"Undid: {prev_state['action']}", icon="success")
                         else:
                             show_toast("Nothing to undo", icon="info")
@@ -8026,7 +10657,9 @@ def main():
                     # Undo button row
                     col_caption, col_undo = st.columns([4, 1])
                     with col_caption:
-                        st.caption("Edit event details, match to canonical events, or delete events")
+                        st.caption(
+                            "Edit event details, match to canonical events, or delete events"
+                        )
                     with col_undo:
                         undo_stack = st.session_state.get(undo_key, [])
                         st.button(
@@ -8035,22 +10668,32 @@ def main():
                             on_click=_undo_last_action,
                             args=(selected_participant,),
                             disabled=len(undo_stack) == 0,
-                            help=f"Undo last action ({len(undo_stack)} available)" if undo_stack else "No actions to undo"
+                            help=f"Undo last action ({len(undo_stack)} available)"
+                            if undo_stack
+                            else "No actions to undo",
                         )
 
                     # Define callbacks outside loop for better performance and to avoid stale closures
-                    def _update_raw_label(participant_id: str, event_idx: int, evt_key: str):
+                    def _update_raw_label(
+                        participant_id: str, event_idx: int, evt_key: str
+                    ):
                         """Callback to update raw label."""
                         key = f"raw_{evt_key}"
                         if key in st.session_state:
                             new_val = st.session_state[key]
-                            stored_data = st.session_state.participant_events.get(participant_id)
+                            stored_data = st.session_state.participant_events.get(
+                                participant_id
+                            )
                             if stored_data:
-                                all_evts = stored_data['events'] + stored_data['manual']
+                                all_evts = stored_data["events"] + stored_data["manual"]
                                 if event_idx < len(all_evts):
                                     all_evts[event_idx].raw_label = new_val
-                                    st.session_state.participant_events[participant_id]['events'] = all_evts
-                                    st.session_state.participant_events[participant_id]['manual'] = []
+                                    st.session_state.participant_events[participant_id][
+                                        "events"
+                                    ] = all_evts
+                                    st.session_state.participant_events[participant_id][
+                                        "manual"
+                                    ] = []
 
                     if all_events:
                         events_to_delete = []
@@ -8058,17 +10701,36 @@ def main():
                         for idx, event in enumerate(all_events):
                             # Create unique key based on event content (not index) to avoid Streamlit widget caching issues
                             import hashlib
-                            ts_str = event.first_timestamp.isoformat() if event.first_timestamp else "none"
-                            event_hash = hashlib.md5(f"{event.raw_label}_{ts_str}".encode()).hexdigest()[:8]
+
+                            ts_str = (
+                                event.first_timestamp.isoformat()
+                                if event.first_timestamp
+                                else "none"
+                            )
+                            event_hash = hashlib.md5(
+                                f"{event.raw_label}_{ts_str}".encode()
+                            ).hexdigest()[:8]
                             event_key = f"{selected_participant}_{event_hash}"
 
                             with st.container():
                                 # Create columns for this event
-                                col_status, col_raw, col_canonical, col_syn, col_time, col_delete = st.columns([0.5, 2.5, 2.5, 1, 1.5, 0.5])
+                                (
+                                    col_status,
+                                    col_raw,
+                                    col_canonical,
+                                    col_syn,
+                                    col_time,
+                                    col_delete,
+                                ) = st.columns([0.5, 2.5, 2.5, 1, 1.5, 0.5])
 
                                 with col_status:
                                     # Show mapping status - only green check if canonical is valid
-                                    if event.canonical and event.canonical != "unmatched" and event.canonical in st.session_state.all_events:
+                                    if (
+                                        event.canonical
+                                        and event.canonical != "unmatched"
+                                        and event.canonical
+                                        in st.session_state.all_events
+                                    ):
                                         st.markdown("*")
                                     else:
                                         st.markdown("[!]")
@@ -8080,33 +10742,60 @@ def main():
                                         key=f"raw_{event_key}",
                                         label_visibility="collapsed",
                                         on_change=_update_raw_label,
-                                        args=(selected_participant, idx, event_key)
+                                        args=(selected_participant, idx, event_key),
                                     )
 
                                 with col_canonical:
                                     # Canonical mapping dropdown with callback
-                                    canonical_options = ["unmatched"] + available_canonical_events
-                                    current_value = event.canonical if event.canonical else "unmatched"
+                                    canonical_options = [
+                                        "unmatched"
+                                    ] + available_canonical_events
+                                    current_value = (
+                                        event.canonical
+                                        if event.canonical
+                                        else "unmatched"
+                                    )
                                     if current_value not in canonical_options:
                                         current_value = "unmatched"
 
-                                    def update_canonical(participant_id, event_idx, evt_key):
+                                    def update_canonical(
+                                        participant_id, event_idx, evt_key
+                                    ):
                                         """Update canonical mapping and save to persistence."""
                                         key = f"canonical_{evt_key}"
                                         if key in st.session_state:
                                             new_val = st.session_state[key]
-                                            stored_data = st.session_state.participant_events[participant_id]
-                                            all_evts = stored_data['events'] + stored_data.get('manual', [])
+                                            stored_data = (
+                                                st.session_state.participant_events[
+                                                    participant_id
+                                                ]
+                                            )
+                                            all_evts = stored_data[
+                                                "events"
+                                            ] + stored_data.get("manual", [])
                                             if event_idx < len(all_evts):
-                                                all_evts[event_idx].canonical = new_val if new_val != "unmatched" else None
-                                                st.session_state.participant_events[participant_id]['events'] = all_evts
-                                                st.session_state.participant_events[participant_id]['manual'] = []
+                                                all_evts[event_idx].canonical = (
+                                                    new_val
+                                                    if new_val != "unmatched"
+                                                    else None
+                                                )
+                                                st.session_state.participant_events[
+                                                    participant_id
+                                                ]["events"] = all_evts
+                                                st.session_state.participant_events[
+                                                    participant_id
+                                                ]["manual"] = []
                                                 # Save to persistence so changes persist across reruns
-                                                from rrational.gui.persistence import save_participant_events
+                                                from rrational.gui.persistence import (
+                                                    save_participant_events,
+                                                )
+
                                                 save_participant_events(
                                                     participant_id,
-                                                    st.session_state.participant_events[participant_id],
-                                                    st.session_state.data_dir
+                                                    st.session_state.participant_events[
+                                                        participant_id
+                                                    ],
+                                                    st.session_state.data_dir,
                                                 )
 
                                     st.selectbox(
@@ -8116,66 +10805,141 @@ def main():
                                         key=f"canonical_{event_key}",
                                         label_visibility="collapsed",
                                         on_change=update_canonical,
-                                        args=(selected_participant, idx, event_key)
+                                        args=(selected_participant, idx, event_key),
                                     )
 
                                 with col_syn:
                                     # Add to synonyms button (only if canonical is selected)
-                                    if event.canonical and event.canonical != "unmatched":
-                                        def add_synonym(participant_id, event_idx, evt_key):
+                                    if (
+                                        event.canonical
+                                        and event.canonical != "unmatched"
+                                    ):
+
+                                        def add_synonym(
+                                            participant_id, event_idx, evt_key
+                                        ):
                                             """Add raw label as synonym to canonical event."""
                                             # Get the CURRENT canonical value from the selectbox
                                             canonical_key = f"canonical_{evt_key}"
-                                            canonical_name = st.session_state.get(canonical_key)
+                                            canonical_name = st.session_state.get(
+                                                canonical_key
+                                            )
 
                                             # Get the current event to get the raw label
-                                            stored_data = st.session_state.participant_events[participant_id]
-                                            current_events = stored_data['events'] + stored_data['manual']
+                                            stored_data = (
+                                                st.session_state.participant_events[
+                                                    participant_id
+                                                ]
+                                            )
+                                            current_events = (
+                                                stored_data["events"]
+                                                + stored_data["manual"]
+                                            )
                                             if event_idx >= len(current_events):
-                                                show_toast("Event not found", icon="error")
+                                                show_toast(
+                                                    "Event not found", icon="error"
+                                                )
                                                 return
 
-                                            raw_label = current_events[event_idx].raw_label
+                                            raw_label = current_events[
+                                                event_idx
+                                            ].raw_label
 
-                                            if not canonical_name or canonical_name == "unmatched":
-                                                show_toast("Please select a canonical event first", icon="warning")
+                                            if (
+                                                not canonical_name
+                                                or canonical_name == "unmatched"
+                                            ):
+                                                show_toast(
+                                                    "Please select a canonical event first",
+                                                    icon="warning",
+                                                )
                                                 return
 
-                                            if canonical_name not in st.session_state.all_events:
+                                            if (
+                                                canonical_name
+                                                not in st.session_state.all_events
+                                            ):
                                                 # Debug info
-                                                available = list(st.session_state.all_events.keys())
-                                                show_toast(f"Event '{canonical_name}' not in list. Available: {', '.join(available[:5])}", icon="error")
+                                                available = list(
+                                                    st.session_state.all_events.keys()
+                                                )
+                                                show_toast(
+                                                    f"Event '{canonical_name}' not in list. Available: {', '.join(available[:5])}",
+                                                    icon="error",
+                                                )
                                                 return
 
                                             raw_lower = raw_label.strip().lower()
                                             # Add to all_events synonyms for this canonical event
-                                            if raw_lower not in st.session_state.all_events[canonical_name]:
-                                                st.session_state.all_events[canonical_name].append(raw_lower)
+                                            if (
+                                                raw_lower
+                                                not in st.session_state.all_events[
+                                                    canonical_name
+                                                ]
+                                            ):
+                                                st.session_state.all_events[
+                                                    canonical_name
+                                                ].append(raw_lower)
                                                 # Save to YAML using the save_events function
-                                                save_events(st.session_state.all_events, st.session_state.get("current_project"))
+                                                save_events(
+                                                    st.session_state.all_events,
+                                                    st.session_state.get(
+                                                        "current_project"
+                                                    ),
+                                                )
                                                 # Update normalizer after adding synonym
                                                 update_normalizer()
                                                 # Update the current event's canonical value in session state
-                                                stored_data = st.session_state.participant_events[participant_id]
-                                                current_events = stored_data['events'] + stored_data['manual']
+                                                stored_data = (
+                                                    st.session_state.participant_events[
+                                                        participant_id
+                                                    ]
+                                                )
+                                                current_events = (
+                                                    stored_data["events"]
+                                                    + stored_data["manual"]
+                                                )
                                                 if event_idx < len(current_events):
-                                                    current_events[event_idx].canonical = canonical_name
-                                                    st.session_state.participant_events[participant_id]['events'] = current_events
-                                                    st.session_state.participant_events[participant_id]['manual'] = []
-                                                show_toast(f"Added '{raw_lower}' as synonym for {canonical_name}", icon="success")
+                                                    current_events[
+                                                        event_idx
+                                                    ].canonical = canonical_name
+                                                    st.session_state.participant_events[
+                                                        participant_id
+                                                    ]["events"] = current_events
+                                                    st.session_state.participant_events[
+                                                        participant_id
+                                                    ]["manual"] = []
+                                                show_toast(
+                                                    f"Added '{raw_lower}' as synonym for {canonical_name}",
+                                                    icon="success",
+                                                )
                                             else:
-                                                show_toast(f"'{raw_lower}' is already a synonym for {canonical_name}", icon="info")
+                                                show_toast(
+                                                    f"'{raw_lower}' is already a synonym for {canonical_name}",
+                                                    icon="info",
+                                                )
 
-                                        st.button("+Tag", key=f"syn_{event_key}",
-                                                 on_click=add_synonym, args=(selected_participant, idx, event_key),
-                                                 help="Add raw label as synonym")
+                                        st.button(
+                                            "+Tag",
+                                            key=f"syn_{event_key}",
+                                            on_click=add_synonym,
+                                            args=(selected_participant, idx, event_key),
+                                            help="Add raw label as synonym",
+                                        )
 
                                 with col_time:
                                     # Editable time input with second precision using text
                                     import datetime as dt
-                                    current_time_str = event.first_timestamp.strftime("%H:%M:%S") if event.first_timestamp else "00:00:00"
 
-                                    def update_event_time(participant_id, event_idx, original_ts, evt_key):
+                                    current_time_str = (
+                                        event.first_timestamp.strftime("%H:%M:%S")
+                                        if event.first_timestamp
+                                        else "00:00:00"
+                                    )
+
+                                    def update_event_time(
+                                        participant_id, event_idx, original_ts, evt_key
+                                    ):
                                         """Update event timestamp from time text input."""
                                         key = f"time_{evt_key}"
                                         if key in st.session_state:
@@ -8186,16 +10950,38 @@ def main():
                                                 if len(parts) >= 2:
                                                     h = int(parts[0])
                                                     m = int(parts[1])
-                                                    s = int(parts[2]) if len(parts) > 2 else 0
+                                                    s = (
+                                                        int(parts[2])
+                                                        if len(parts) > 2
+                                                        else 0
+                                                    )
                                                     if original_ts:
-                                                        new_ts = original_ts.replace(hour=h, minute=m, second=s, microsecond=0)
-                                                        stored = st.session_state.participant_events[participant_id]
-                                                        all_evts = stored['events'] + stored['manual']
+                                                        new_ts = original_ts.replace(
+                                                            hour=h,
+                                                            minute=m,
+                                                            second=s,
+                                                            microsecond=0,
+                                                        )
+                                                        stored = st.session_state.participant_events[
+                                                            participant_id
+                                                        ]
+                                                        all_evts = (
+                                                            stored["events"]
+                                                            + stored["manual"]
+                                                        )
                                                         if event_idx < len(all_evts):
-                                                            all_evts[event_idx].first_timestamp = new_ts
-                                                            all_evts[event_idx].last_timestamp = new_ts
-                                                            st.session_state.participant_events[participant_id]['events'] = all_evts
-                                                            st.session_state.participant_events[participant_id]['manual'] = []
+                                                            all_evts[
+                                                                event_idx
+                                                            ].first_timestamp = new_ts
+                                                            all_evts[
+                                                                event_idx
+                                                            ].last_timestamp = new_ts
+                                                            st.session_state.participant_events[
+                                                                participant_id
+                                                            ]["events"] = all_evts
+                                                            st.session_state.participant_events[
+                                                                participant_id
+                                                            ]["manual"] = []
                                             except (ValueError, IndexError):
                                                 pass  # Invalid format, ignore
 
@@ -8205,13 +10991,22 @@ def main():
                                         key=f"time_{event_key}",
                                         label_visibility="collapsed",
                                         on_change=update_event_time,
-                                        args=(selected_participant, idx, event.first_timestamp, event_key),
-                                        help="HH:MM:SS"
+                                        args=(
+                                            selected_participant,
+                                            idx,
+                                            event.first_timestamp,
+                                            event_key,
+                                        ),
+                                        help="HH:MM:SS",
                                     )
 
                                 with col_delete:
                                     # Delete button - use return value
-                                    if st.button("X", key=f"delete_{event_key}", help=f"Delete '{event.raw_label}'"):
+                                    if st.button(
+                                        "X",
+                                        key=f"delete_{event_key}",
+                                        help=f"Delete '{event.raw_label}'",
+                                    ):
                                         events_to_delete.append(idx)
 
                                 st.divider()
@@ -8219,15 +11014,27 @@ def main():
                         # Apply deletions after the loop (reverse order to preserve indices)
                         if events_to_delete:
                             for del_idx in sorted(events_to_delete, reverse=True):
-                                _save_undo_state(selected_participant, f"Delete '{all_events[del_idx].raw_label}'")
+                                _save_undo_state(
+                                    selected_participant,
+                                    f"Delete '{all_events[del_idx].raw_label}'",
+                                )
                                 del all_events[del_idx]
-                            st.session_state.participant_events[selected_participant]['events'] = all_events
-                            st.session_state.participant_events[selected_participant]['manual'] = []
-                            from rrational.gui.persistence import save_participant_events
+                            st.session_state.participant_events[selected_participant][
+                                "events"
+                            ] = all_events
+                            st.session_state.participant_events[selected_participant][
+                                "manual"
+                            ] = []
+                            from rrational.gui.persistence import (
+                                save_participant_events,
+                            )
+
                             save_participant_events(
                                 selected_participant,
-                                st.session_state.participant_events[selected_participant],
-                                st.session_state.data_dir
+                                st.session_state.participant_events[
+                                    selected_participant
+                                ],
+                                st.session_state.data_dir,
                             )
                             st.rerun()
 
@@ -8237,30 +11044,50 @@ def main():
                     st.markdown("---")
 
                     # Refresh all_events from session state
-                    stored_data = st.session_state.participant_events[selected_participant]
-                    all_events = [ensure_event_status(e) for e in stored_data['events'] + stored_data['manual']]
+                    stored_data = st.session_state.participant_events[
+                        selected_participant
+                    ]
+                    all_events = [
+                        ensure_event_status(e)
+                        for e in stored_data["events"] + stored_data["manual"]
+                    ]
 
                     # Section 2: Event Order with Move Buttons
                     st.markdown("### Event Order")
-                    st.caption("Use ↑↓ buttons to reorder events - changes reflect immediately in all sections")
+                    st.caption(
+                        "Use ↑↓ buttons to reorder events - changes reflect immediately in all sections"
+                    )
 
                     # Helper to normalize timestamps for comparison (handle timezone-aware vs naive)
                     def get_sort_key(event):
                         ts = event.first_timestamp
                         if ts is None:
-                            return get_pandas().Timestamp.max.tz_localize('UTC')
+                            return get_pandas().Timestamp.max.tz_localize("UTC")
                         # Ensure all timestamps are timezone-aware for comparison
-                        if hasattr(ts, 'tzinfo') and ts.tzinfo is None:
-                            ts = get_pandas().Timestamp(ts).tz_localize('UTC')
+                        if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+                            ts = get_pandas().Timestamp(ts).tz_localize("UTC")
                         return ts
 
                     # Auto-sort button - use return value instead of on_click for proper rerun
-                    if st.button("Auto-Sort by Timestamp", key=f"auto_sort_{selected_participant}"):
-                        all_events_copy = (st.session_state.participant_events[selected_participant]['events'] +
-                                          st.session_state.participant_events[selected_participant]['manual'])
+                    if st.button(
+                        "Auto-Sort by Timestamp",
+                        key=f"auto_sort_{selected_participant}",
+                    ):
+                        all_events_copy = (
+                            st.session_state.participant_events[selected_participant][
+                                "events"
+                            ]
+                            + st.session_state.participant_events[selected_participant][
+                                "manual"
+                            ]
+                        )
                         all_events_copy.sort(key=get_sort_key)
-                        st.session_state.participant_events[selected_participant]['events'] = all_events_copy
-                        st.session_state.participant_events[selected_participant]['manual'] = []
+                        st.session_state.participant_events[selected_participant][
+                            "events"
+                        ] = all_events_copy
+                        st.session_state.participant_events[selected_participant][
+                            "manual"
+                        ] = []
                         st.rerun()
 
                     if all_events:
@@ -8269,7 +11096,9 @@ def main():
 
                         # Display compact event list
                         for idx, event in enumerate(all_events):
-                            col_order, col_status, col_info, col_move = st.columns([0.5, 0.8, 5, 1.2])
+                            col_order, col_status, col_info, col_move = st.columns(
+                                [0.5, 0.8, 5, 1.2]
+                            )
 
                             with col_order:
                                 st.text(f"{idx + 1}")
@@ -8277,50 +11106,93 @@ def main():
                             with col_status:
                                 # Check if out of order
                                 out_of_order = False
-                                if idx > 0 and event.first_timestamp and all_events[idx-1].first_timestamp:
-                                    if safe_compare_timestamps(all_events[idx-1].first_timestamp, event.first_timestamp) > 0:
+                                if (
+                                    idx > 0
+                                    and event.first_timestamp
+                                    and all_events[idx - 1].first_timestamp
+                                ):
+                                    if (
+                                        safe_compare_timestamps(
+                                            all_events[idx - 1].first_timestamp,
+                                            event.first_timestamp,
+                                        )
+                                        > 0
+                                    ):
                                         out_of_order = True
 
                                 # Colored status indicators
                                 if out_of_order:
                                     status_html = '<span style="color: #FF4B4B; font-weight: bold;">OUT OF ORDER</span>'
                                 else:
-                                    status_html = '<span style="color: #21C354;">OK</span>'
+                                    status_html = (
+                                        '<span style="color: #21C354;">OK</span>'
+                                    )
 
                                 if not event.canonical:
                                     mapping_html = ' <span style="color: #FFA500; font-weight: bold;">UNMAPPED</span>'
                                 else:
-                                    mapping_html = ''
+                                    mapping_html = ""
 
-                                st.markdown(f"{status_html}{mapping_html}", unsafe_allow_html=True)
+                                st.markdown(
+                                    f"{status_html}{mapping_html}",
+                                    unsafe_allow_html=True,
+                                )
 
                             with col_info:
-                                timestamp_str = event.first_timestamp.strftime("%H:%M:%S") if event.first_timestamp else "—"
-                                canonical_str = event.canonical if event.canonical else "unmatched"
-                                st.markdown(f"`{event.raw_label}` → **{canonical_str}** ({timestamp_str})")
+                                timestamp_str = (
+                                    event.first_timestamp.strftime("%H:%M:%S")
+                                    if event.first_timestamp
+                                    else "—"
+                                )
+                                canonical_str = (
+                                    event.canonical if event.canonical else "unmatched"
+                                )
+                                st.markdown(
+                                    f"`{event.raw_label}` → **{canonical_str}** ({timestamp_str})"
+                                )
 
                             with col_move:
                                 m1, m2 = st.columns(2)
                                 with m1:
                                     if idx > 0:
-                                        if st.button("↑", key=f"up_{selected_participant}_{idx}"):
-                                            move_action = ('up', idx)
+                                        if st.button(
+                                            "↑", key=f"up_{selected_participant}_{idx}"
+                                        ):
+                                            move_action = ("up", idx)
                                 with m2:
                                     if idx < len(all_events) - 1:
-                                        if st.button("↓", key=f"dn_{selected_participant}_{idx}"):
-                                            move_action = ('down', idx)
+                                        if st.button(
+                                            "↓", key=f"dn_{selected_participant}_{idx}"
+                                        ):
+                                            move_action = ("down", idx)
 
                         # Process move action after rendering all buttons
                         if move_action:
                             direction, idx = move_action
-                            all_evts = st.session_state.participant_events[selected_participant]['events'] + \
-                                      st.session_state.participant_events[selected_participant]['manual']
-                            if direction == 'up' and idx > 0:
-                                all_evts[idx], all_evts[idx-1] = all_evts[idx-1], all_evts[idx]
-                            elif direction == 'down' and idx < len(all_evts) - 1:
-                                all_evts[idx], all_evts[idx+1] = all_evts[idx+1], all_evts[idx]
-                            st.session_state.participant_events[selected_participant]['events'] = all_evts
-                            st.session_state.participant_events[selected_participant]['manual'] = []
+                            all_evts = (
+                                st.session_state.participant_events[
+                                    selected_participant
+                                ]["events"]
+                                + st.session_state.participant_events[
+                                    selected_participant
+                                ]["manual"]
+                            )
+                            if direction == "up" and idx > 0:
+                                all_evts[idx], all_evts[idx - 1] = (
+                                    all_evts[idx - 1],
+                                    all_evts[idx],
+                                )
+                            elif direction == "down" and idx < len(all_evts) - 1:
+                                all_evts[idx], all_evts[idx + 1] = (
+                                    all_evts[idx + 1],
+                                    all_evts[idx],
+                                )
+                            st.session_state.participant_events[selected_participant][
+                                "events"
+                            ] = all_evts
+                            st.session_state.participant_events[selected_participant][
+                                "manual"
+                            ] = []
                             st.rerun()
                     else:
                         st.info("No events to reorder.")
@@ -8328,13 +11200,19 @@ def main():
                     # Download button
                     events_data = []
                     for idx, event in enumerate(all_events):
-                        events_data.append({
-                            "Position": idx + 1,
-                            "Raw Label": event.raw_label,
-                            "Canonical": event.canonical or "unmatched",
-                            "Timestamp": event.first_timestamp.strftime("%Y-%m-%d %H:%M:%S") if event.first_timestamp else "",
-                            "Count": event.count,
-                        })
+                        events_data.append(
+                            {
+                                "Position": idx + 1,
+                                "Raw Label": event.raw_label,
+                                "Canonical": event.canonical or "unmatched",
+                                "Timestamp": event.first_timestamp.strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                )
+                                if event.first_timestamp
+                                else "",
+                                "Count": event.count,
+                            }
+                        )
 
                     # Create download button AFTER the loop (once)
                     if events_data:
@@ -8345,14 +11223,16 @@ def main():
                             data=csv_events,
                             file_name=f"events_{selected_participant}.csv",
                             mime="text/csv",
-                            width='stretch',
+                            width="stretch",
                             key=f"download_events_{selected_participant}",
                         )
 
                         # Show unmatched warning
                         unmatched_count = sum(1 for e in all_events if not e.canonical)
                         if unmatched_count > 0:
-                            st.warning(f"{unmatched_count} unmatched event(s) - assign canonical mappings above")
+                            st.warning(
+                                f"{unmatched_count} unmatched event(s) - assign canonical mappings above"
+                            )
                     else:
                         st.info("No events found for this participant")
 
@@ -8361,32 +11241,50 @@ def main():
                     st.markdown("**Event Mapping Status:**")
 
                     # Get expected events for this participant's group
-                    participant_group = st.session_state.participant_groups.get(selected_participant, "Default")
-                    expected_events = st.session_state.groups.get(participant_group, {}).get("expected_events", {})
+                    participant_group = st.session_state.participant_groups.get(
+                        selected_participant, "Default"
+                    )
+                    expected_events = st.session_state.groups.get(
+                        participant_group, {}
+                    ).get("expected_events", {})
 
                     # Get current events with raw labels
-                    stored_data = st.session_state.participant_events[selected_participant]
-                    current_events = stored_data['events'] + stored_data['manual']
+                    stored_data = st.session_state.participant_events[
+                        selected_participant
+                    ]
+                    current_events = stored_data["events"] + stored_data["manual"]
 
                     if expected_events:
                         mapping_data = []
                         for event_name, synonyms in expected_events.items():
                             # Check if this canonical event exists in current session state events
-                            matched = any(e.canonical == event_name for e in current_events)
+                            matched = any(
+                                e.canonical == event_name for e in current_events
+                            )
                             # Find raw labels that matched this canonical event
-                            matching_raw = [e.raw_label for e in current_events if e.canonical == event_name]
-                            raw_labels_str = ", ".join(matching_raw) if matching_raw else "—"
+                            matching_raw = [
+                                e.raw_label
+                                for e in current_events
+                                if e.canonical == event_name
+                            ]
+                            raw_labels_str = (
+                                ", ".join(matching_raw) if matching_raw else "—"
+                            )
 
-                            mapping_data.append({
-                                "Expected Event": event_name,
-                                "Status": "Found" if matched else "Missing",
-                                "Raw Labels": raw_labels_str,
-                            })
+                            mapping_data.append(
+                                {
+                                    "Expected Event": event_name,
+                                    "Status": "Found" if matched else "Missing",
+                                    "Raw Labels": raw_labels_str,
+                                }
+                            )
 
                         df_mapping = get_pandas().DataFrame(mapping_data)
-                        st.dataframe(df_mapping, width='stretch', hide_index=True)
+                        st.dataframe(df_mapping, width="stretch", hide_index=True)
                     else:
-                        st.info(f"No expected events defined for group '{participant_group}'. Add them in the Event Mapping tab.")
+                        st.info(
+                            f"No expected events defined for group '{participant_group}'. Add them in the Event Mapping tab."
+                        )
 
                     # Save/Reset participant events
                     st.markdown("---")
@@ -8400,43 +11298,70 @@ def main():
                     col_save, col_reset, col_status = st.columns([1, 1, 2])
 
                     with col_save:
+
                         def save_events_to_yaml():
                             """Save participant events to YAML persistence."""
-                            stored_data = st.session_state.participant_events.get(selected_participant, {})
-                            save_participant_events(selected_participant, stored_data, st.session_state.data_dir)
-                            show_toast(f"Saved events for {selected_participant}", icon="success")
+                            stored_data = st.session_state.participant_events.get(
+                                selected_participant, {}
+                            )
+                            save_participant_events(
+                                selected_participant,
+                                stored_data,
+                                st.session_state.data_dir,
+                            )
+                            show_toast(
+                                f"Saved events for {selected_participant}",
+                                icon="success",
+                            )
 
-                        st.button("Save Events",
-                                 key=f"save_{selected_participant}",
-                                 on_click=save_events_to_yaml,
-                                 help="Save all event changes for this participant",
-                                 type="primary")
+                        st.button(
+                            "Save Events",
+                            key=f"save_{selected_participant}",
+                            on_click=save_events_to_yaml,
+                            help="Save all event changes for this participant",
+                            type="primary",
+                        )
 
                     with col_reset:
+
                         def reset_to_original():
                             """Reset participant events to original (from raw data file)."""
                             # Delete saved events YAML file (from both locations)
-                            delete_participant_events(selected_participant, st.session_state.data_dir)
+                            delete_participant_events(
+                                selected_participant, st.session_state.data_dir
+                            )
                             # Clear from session state so it reloads from original raw data
-                            if selected_participant in st.session_state.participant_events:
-                                del st.session_state.participant_events[selected_participant]
+                            if (
+                                selected_participant
+                                in st.session_state.participant_events
+                            ):
+                                del st.session_state.participant_events[
+                                    selected_participant
+                                ]
                             # Also clear any manual events
-                            if selected_participant in st.session_state.get('manual_events', {}):
+                            if selected_participant in st.session_state.get(
+                                "manual_events", {}
+                            ):
                                 del st.session_state.manual_events[selected_participant]
                             # Clear undo stack for this participant
                             undo_key = f"event_undo_stack_{selected_participant}"
                             if undo_key in st.session_state:
                                 st.session_state[undo_key] = []
-                            show_toast(f"Reset {selected_participant} to original events from raw data", icon="success")
+                            show_toast(
+                                f"Reset {selected_participant} to original events from raw data",
+                                icon="success",
+                            )
 
                         # Get list of saved participants for status display
                         saved_participants = list_saved_participant_events()
 
                         # Reset button is ALWAYS enabled - user can always reset to original raw data
-                        st.button("Reset to Original",
-                                 key=f"reset_{selected_participant}",
-                                 on_click=reset_to_original,
-                                 help="Discard all changes and reload original events from raw data file")
+                        st.button(
+                            "Reset to Original",
+                            key=f"reset_{selected_participant}",
+                            on_click=reset_to_original,
+                            help="Discard all changes and reload original events from raw data file",
+                        )
 
                     with col_status:
                         # Check if participant has saved events
@@ -8453,14 +11378,22 @@ def main():
                         # Export type selection
                         export_type = st.radio(
                             "Export type",
-                            ["Full Recording", "Selected Sections", "Custom Time Range"],
+                            [
+                                "Full Recording",
+                                "Selected Sections",
+                                "Custom Time Range",
+                            ],
                             key=f"export_type_{selected_participant}",
-                            horizontal=True
+                            horizontal=True,
                         )
 
                         # Get sections for selection
                         sections = load_sections()
-                        section_options = {name: s.get("label", name) for name, s in sections.items() if s.get("start_event")}
+                        section_options = {
+                            name: s.get("label", name)
+                            for name, s in sections.items()
+                            if s.get("start_event")
+                        }
 
                         selected_sections = []
                         custom_start = None
@@ -8473,7 +11406,7 @@ def main():
                                 options=list(section_options.keys()),
                                 format_func=lambda x: section_options.get(x, x),
                                 key=f"export_sections_{selected_participant}",
-                                help="Select one or more sections to export"
+                                help="Select one or more sections to export",
                             )
                         elif export_type == "Custom Time Range":
                             # Get recording time range for defaults
@@ -8485,43 +11418,71 @@ def main():
                             with col_start:
                                 custom_start = st.text_input(
                                     "Start time (HH:MM:SS)",
-                                    value=default_start.strftime("%H:%M:%S") if default_start else "09:00:00",
-                                    key=f"export_start_{selected_participant}"
+                                    value=default_start.strftime("%H:%M:%S")
+                                    if default_start
+                                    else "09:00:00",
+                                    key=f"export_start_{selected_participant}",
                                 )
                             with col_end:
                                 custom_end = st.text_input(
                                     "End time (HH:MM:SS)",
-                                    value=default_end.strftime("%H:%M:%S") if default_end else "12:00:00",
-                                    key=f"export_end_{selected_participant}"
+                                    value=default_end.strftime("%H:%M:%S")
+                                    if default_end
+                                    else "12:00:00",
+                                    key=f"export_end_{selected_participant}",
                                 )
                             custom_label = st.text_input(
                                 "Segment label",
                                 value="custom_selection",
                                 key=f"export_label_{selected_participant}",
-                                help="Name for this custom segment"
+                                help="Name for this custom segment",
                             )
 
                         # Export options
                         st.markdown("**Include in export:**")
                         col_opt1, col_opt2 = st.columns(2)
                         with col_opt1:
-                            include_artifacts = st.checkbox("Artifact detection", value=True,
-                                                           key=f"exp_artifacts_{selected_participant}")
-                            include_manual = st.checkbox("Manual markings", value=True,
-                                                        key=f"exp_manual_{selected_participant}")
+                            include_artifacts = st.checkbox(
+                                "Artifact detection",
+                                value=True,
+                                key=f"exp_artifacts_{selected_participant}",
+                            )
+                            include_manual = st.checkbox(
+                                "Manual markings",
+                                value=True,
+                                key=f"exp_manual_{selected_participant}",
+                            )
                         with col_opt2:
-                            include_corrected = st.checkbox("Corrected NN intervals", value=False,
-                                                           key=f"exp_corrected_{selected_participant}")
-                            include_audit = st.checkbox("Full audit trail", value=True,
-                                                       key=f"exp_audit_{selected_participant}")
+                            include_corrected = st.checkbox(
+                                "Corrected NN intervals",
+                                value=False,
+                                key=f"exp_corrected_{selected_participant}",
+                            )
+                            include_audit = st.checkbox(
+                                "Full audit trail",
+                                value=True,
+                                key=f"exp_audit_{selected_participant}",
+                            )
 
                         # Export button
-                        if st.button("Export (.rrational)", key=f"export_btn_{selected_participant}",
-                                    type="primary", help="Export to processed folder"):
+                        if st.button(
+                            "Export (.rrational)",
+                            key=f"export_btn_{selected_participant}",
+                            type="primary",
+                            help="Export to processed folder",
+                        ):
                             from rrational.gui.rrational_export import (
-                                RRationalExport, RRIntervalExport, SegmentDefinition,
-                                ArtifactDetection, ManualArtifact, QualityMetrics, ProcessingStep, save_rrational,
-                                build_export_filename, get_quality_grade, get_quigley_recommendation
+                                RRationalExport,
+                                RRIntervalExport,
+                                SegmentDefinition,
+                                ArtifactDetection,
+                                ManualArtifact,
+                                QualityMetrics,
+                                ProcessingStep,
+                                save_rrational,
+                                build_export_filename,
+                                get_quality_grade,
+                                get_quigley_recommendation,
                             )
                             from datetime import datetime
                             # Path is already imported at module level
@@ -8533,31 +11494,57 @@ def main():
                             else:
                                 # Get artifact state
                                 artifacts_key = f"artifacts_{selected_participant}"
-                                manual_artifacts_key = f"manual_artifacts_{selected_participant}"
-                                exclusions_key = f"artifact_exclusions_{selected_participant}"
+                                manual_artifacts_key = (
+                                    f"manual_artifacts_{selected_participant}"
+                                )
+                                exclusions_key = (
+                                    f"artifact_exclusions_{selected_participant}"
+                                )
 
                                 artifacts_data = st.session_state.get(artifacts_key, {})
-                                manual_artifacts_list = st.session_state.get(manual_artifacts_key, [])
-                                excluded_indices = list(st.session_state.get(exclusions_key, set()))
+                                manual_artifacts_list = st.session_state.get(
+                                    manual_artifacts_key, []
+                                )
+                                excluded_indices = list(
+                                    st.session_state.get(exclusions_key, set())
+                                )
 
                                 # Get plot data
                                 plot_data_key = f"plot_data_{selected_participant}"
                                 plot_data = st.session_state.get(plot_data_key, {})
-                                rr_values = plot_data.get('rr_values', [])
-                                timestamps = plot_data.get('timestamps', [])
+                                rr_values = plot_data.get("rr_values", [])
+                                timestamps = plot_data.get("timestamps", [])
 
                                 if not rr_values:
-                                    st.error("No RR data loaded - view participant first")
+                                    st.error(
+                                        "No RR data loaded - view participant first"
+                                    )
                                 else:
                                     now = datetime.now().isoformat()
                                     processed_dir = Path(data_dir).parent / "processed"
 
                                     # Get source info
-                                    summary = get_summary_dict().get(selected_participant)
-                                    source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
-                                    source_paths = getattr(summary, 'rr_paths', []) if summary else []
-                                    recording_dt = getattr(summary, 'recording_datetime', None) if summary else None
-                                    if recording_dt and hasattr(recording_dt, 'isoformat'):
+                                    summary = get_summary_dict().get(
+                                        selected_participant
+                                    )
+                                    source_app = (
+                                        getattr(summary, "source_app", "HRV Logger")
+                                        if summary
+                                        else "HRV Logger"
+                                    )
+                                    source_paths = (
+                                        getattr(summary, "rr_paths", [])
+                                        if summary
+                                        else []
+                                    )
+                                    recording_dt = (
+                                        getattr(summary, "recording_datetime", None)
+                                        if summary
+                                        else None
+                                    )
+                                    if recording_dt and hasattr(
+                                        recording_dt, "isoformat"
+                                    ):
                                         recording_dt = recording_dt.isoformat()
 
                                     # Determine what to export
@@ -8566,85 +11553,168 @@ def main():
                                         exports_to_make.append(("full", None, None))
                                     elif export_type == "Selected Sections":
                                         for sec_name in selected_sections:
-                                            exports_to_make.append(("section", sec_name, None))
+                                            exports_to_make.append(
+                                                ("section", sec_name, None)
+                                            )
                                     else:  # Custom Time Range
-                                        exports_to_make.append(("custom", custom_label, (custom_start, custom_end)))
+                                        exports_to_make.append(
+                                            (
+                                                "custom",
+                                                custom_label,
+                                                (custom_start, custom_end),
+                                            )
+                                        )
 
                                     export_count = 0
-                                    for exp_type, exp_name, exp_range in exports_to_make:
+                                    for (
+                                        exp_type,
+                                        exp_name,
+                                        exp_range,
+                                    ) in exports_to_make:
                                         # Build RR interval exports
                                         rr_exports = []
-                                        for i, (ts, rr) in enumerate(zip(timestamps, rr_values)):
-                                            ts_str = ts.isoformat() if hasattr(ts, 'isoformat') else str(ts)
-                                            rr_exports.append(RRIntervalExport(
-                                                timestamp=ts_str,
-                                                rr_ms=int(rr),
-                                                original_idx=i
-                                            ))
+                                        for i, (ts, rr) in enumerate(
+                                            zip(timestamps, rr_values)
+                                        ):
+                                            ts_str = (
+                                                ts.isoformat()
+                                                if hasattr(ts, "isoformat")
+                                                else str(ts)
+                                            )
+                                            rr_exports.append(
+                                                RRIntervalExport(
+                                                    timestamp=ts_str,
+                                                    rr_ms=int(rr),
+                                                    original_idx=i,
+                                                )
+                                            )
 
                                         # Build artifact detection
                                         artifact_detection = None
                                         if include_artifacts and artifacts_data:
                                             artifact_detection = ArtifactDetection(
-                                                method=artifacts_data.get('method', 'threshold'),
-                                                total=artifacts_data.get('total_artifacts', 0),
-                                                by_type=artifacts_data.get('by_type', {}),
-                                                indices=artifacts_data.get('artifact_indices', [])
+                                                method=artifacts_data.get(
+                                                    "method", "threshold"
+                                                ),
+                                                total=artifacts_data.get(
+                                                    "total_artifacts", 0
+                                                ),
+                                                by_type=artifacts_data.get(
+                                                    "by_type", {}
+                                                ),
+                                                indices=artifacts_data.get(
+                                                    "artifact_indices", []
+                                                ),
                                             )
 
                                         # Build manual artifacts
                                         manual_exports = []
                                         if include_manual:
                                             for ma in manual_artifacts_list:
-                                                ts_str = ma.get('timestamp', '')
-                                                if hasattr(ts_str, 'isoformat'):
+                                                ts_str = ma.get("timestamp", "")
+                                                if hasattr(ts_str, "isoformat"):
                                                     ts_str = ts_str.isoformat()
-                                                manual_exports.append(ManualArtifact(
-                                                    original_idx=ma.get('original_idx', 0),
-                                                    timestamp=ts_str,
-                                                    rr_value=ma.get('rr_value', 0),
-                                                    marked_at=now
-                                                ))
+                                                manual_exports.append(
+                                                    ManualArtifact(
+                                                        original_idx=ma.get(
+                                                            "original_idx", 0
+                                                        ),
+                                                        timestamp=ts_str,
+                                                        rr_value=ma.get("rr_value", 0),
+                                                        marked_at=now,
+                                                    )
+                                                )
 
                                         # Calculate final artifacts
-                                        detected_indices = set(artifacts_data.get('artifact_indices', [])) if include_artifacts else set()
-                                        manual_indices = set(ma.get('original_idx', 0) for ma in manual_artifacts_list) if include_manual else set()
+                                        detected_indices = (
+                                            set(
+                                                artifacts_data.get(
+                                                    "artifact_indices", []
+                                                )
+                                            )
+                                            if include_artifacts
+                                            else set()
+                                        )
+                                        manual_indices = (
+                                            set(
+                                                ma.get("original_idx", 0)
+                                                for ma in manual_artifacts_list
+                                            )
+                                            if include_manual
+                                            else set()
+                                        )
                                         excluded_set = set(excluded_indices)
-                                        final_artifacts = list((detected_indices | manual_indices) - excluded_set)
+                                        final_artifacts = list(
+                                            (detected_indices | manual_indices)
+                                            - excluded_set
+                                        )
 
                                         # Quality metrics
-                                        artifact_rate = len(final_artifacts) / len(rr_values) if rr_values else 0
+                                        artifact_rate = (
+                                            len(final_artifacts) / len(rr_values)
+                                            if rr_values
+                                            else 0
+                                        )
                                         quality = QualityMetrics(
-                                            artifact_rate_raw=artifacts_data.get('artifact_ratio', 0) if include_artifacts else 0,
+                                            artifact_rate_raw=artifacts_data.get(
+                                                "artifact_ratio", 0
+                                            )
+                                            if include_artifacts
+                                            else 0,
                                             artifact_rate_final=artifact_rate,
                                             beats_after_cleaning=len(rr_values),
-                                            quality_grade=get_quality_grade(artifact_rate),
-                                            quigley_recommendation=get_quigley_recommendation(artifact_rate, len(rr_values))
+                                            quality_grade=get_quality_grade(
+                                                artifact_rate
+                                            ),
+                                            quigley_recommendation=get_quigley_recommendation(
+                                                artifact_rate, len(rr_values)
+                                            ),
                                         )
 
                                         # Segment definition
                                         segment_def = SegmentDefinition(
-                                            type=exp_type if exp_type != "custom" else "manual_range",
-                                            section_name=exp_name if exp_type == "section" else None,
-                                            time_range={"start": exp_range[0], "end": exp_range[1], "label": exp_name} if exp_type == "custom" else None
+                                            type=exp_type
+                                            if exp_type != "custom"
+                                            else "manual_range",
+                                            section_name=exp_name
+                                            if exp_type == "section"
+                                            else None,
+                                            time_range={
+                                                "start": exp_range[0],
+                                                "end": exp_range[1],
+                                                "label": exp_name,
+                                            }
+                                            if exp_type == "custom"
+                                            else None,
                                         )
 
                                         # Audit trail
                                         steps = []
                                         if include_audit:
                                             steps = [
-                                                ProcessingStep(step=1, action="export_ready_for_analysis",
-                                                              timestamp=now, details=f"Exported {len(rr_values)} beats ({exp_type})")
+                                                ProcessingStep(
+                                                    step=1,
+                                                    action="export_ready_for_analysis",
+                                                    timestamp=now,
+                                                    details=f"Exported {len(rr_values)} beats ({exp_type})",
+                                                )
                                             ]
 
                                         # Software versions
                                         import neurokit2 as nk
                                         import sys
-                                        software_versions = {
-                                            "rrational": "0.7.0",
-                                            "neurokit2": getattr(nk, '__version__', 'unknown'),
-                                            "python": sys.version.split()[0]
-                                        } if include_audit else {}
+
+                                        software_versions = (
+                                            {
+                                                "rrational": "0.7.0",
+                                                "neurokit2": getattr(
+                                                    nk, "__version__", "unknown"
+                                                ),
+                                                "python": sys.version.split()[0],
+                                            }
+                                            if include_audit
+                                            else {}
+                                        )
 
                                         # Create export
                                         export_data = RRationalExport(
@@ -8652,39 +11722,52 @@ def main():
                                             export_timestamp=now,
                                             exported_by="RRational v0.7.0",
                                             source_app=source_app,
-                                            source_file_paths=[str(p) for p in source_paths],
+                                            source_file_paths=[
+                                                str(p) for p in source_paths
+                                            ],
                                             recording_datetime=recording_dt,
                                             segment=segment_def,
                                             n_beats=len(rr_exports),
                                             rr_intervals=rr_exports,
                                             artifact_detection=artifact_detection,
                                             manual_artifacts=manual_exports,
-                                            excluded_detected_indices=excluded_indices if include_manual else [],
+                                            excluded_detected_indices=excluded_indices
+                                            if include_manual
+                                            else [],
                                             final_artifact_indices=final_artifacts,
                                             include_corrected=include_corrected,
                                             quality=quality,
                                             processing_steps=steps,
-                                            software_versions=software_versions
+                                            software_versions=software_versions,
                                         )
 
                                         # Save
-                                        filename = build_export_filename(selected_participant, exp_name)
+                                        filename = build_export_filename(
+                                            selected_participant, exp_name
+                                        )
                                         filepath = processed_dir / filename
                                         save_rrational(export_data, filepath)
                                         export_count += 1
 
-                                    st.success(f"Exported {export_count} file(s) to {processed_dir}")
+                                    st.success(
+                                        f"Exported {export_count} file(s) to {processed_dir}"
+                                    )
 
             # Bottom navigation buttons (duplicate for convenience)
             st.markdown("---")
             col_nav1, col_nav2, col_nav3 = st.columns([3, 1, 1])
             with col_nav1:
-                st.caption(f"Participant {st.session_state.current_participant_idx + 1} of {len(participant_list)}")
+                st.caption(
+                    f"Participant {st.session_state.current_participant_idx + 1} of {len(participant_list)}"
+                )
             with col_nav2:
+
                 def go_previous_bottom():
                     if st.session_state.current_participant_idx > 0:
                         st.session_state.current_participant_idx -= 1
-                        new_participant = participant_list[st.session_state.current_participant_idx]
+                        new_participant = participant_list[
+                            st.session_state.current_participant_idx
+                        ]
                         st.session_state.participant_selector = new_participant
                         st.session_state._scroll_to_top = True
 
@@ -8692,23 +11775,30 @@ def main():
                     "Previous",
                     disabled=st.session_state.current_participant_idx == 0,
                     key="prev_btn_bottom",
-                    width='stretch',
-                    on_click=go_previous_bottom
+                    width="stretch",
+                    on_click=go_previous_bottom,
                 )
             with col_nav3:
+
                 def go_next_bottom():
-                    if st.session_state.current_participant_idx < len(participant_list) - 1:
+                    if (
+                        st.session_state.current_participant_idx
+                        < len(participant_list) - 1
+                    ):
                         st.session_state.current_participant_idx += 1
-                        new_participant = participant_list[st.session_state.current_participant_idx]
+                        new_participant = participant_list[
+                            st.session_state.current_participant_idx
+                        ]
                         st.session_state.participant_selector = new_participant
                         st.session_state._scroll_to_top = True
 
                 st.button(
                     "Next",
-                    disabled=st.session_state.current_participant_idx >= len(participant_list) - 1,
+                    disabled=st.session_state.current_participant_idx
+                    >= len(participant_list) - 1,
                     key="next_btn_bottom",
-                    width='stretch',
-                    on_click=go_next_bottom
+                    width="stretch",
+                    on_click=go_next_bottom,
                 )
 
     # ================== TAB: SETUP ==================
