@@ -6061,7 +6061,11 @@ def render_rr_plot_fragment(participant_id: str):
                                 y=corrected_rr,
                                 mode="lines",
                                 name="Corrected (NN)",
-                                line=dict(width=2, color="green", dash="dot"),
+                                line=dict(
+                                    width=2,
+                                    color=plot_colors.get("nn_line", "#28A745"),
+                                    dash="dot",
+                                ),
                                 opacity=0.7,
                                 hovertemplate="Time: %{x}<br>NN: %{y:.0f} ms<extra></extra>",
                             )
