@@ -10,6 +10,27 @@ import pandas as pd
 from rrational.analysis.hrv_metrics import get_metric_info
 from rrational.gui.plots.analysis_plots import get_theme_colors, get_plotly_analysis
 
+_DEFAULT_PALETTE = [
+    "#2E86AB",
+    "#A23B72",
+    "#F18F01",
+    "#C73E1D",
+    "#6C757D",
+    "#28A745",
+    "#17A2B8",
+    "#FFC107",
+]
+
+
+def _get_group_palette() -> list[str]:
+    """Get group color palette from user config or defaults."""
+    try:
+        from rrational.gui.theme import get_plot_colors
+
+        return get_plot_colors().get("group_palette", _DEFAULT_PALETTE)
+    except Exception:
+        return _DEFAULT_PALETTE
+
 
 def _create_group_bar_chart(
     stats_df: pd.DataFrame,
@@ -44,7 +65,7 @@ def _create_group_bar_chart(
     section_list = df["section"].unique().tolist()
 
     # Colors for sections
-    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745"]
+    colors = _get_group_palette()
 
     fig = go.Figure()
 
@@ -82,7 +103,9 @@ def _create_group_bar_chart(
             font=dict(size=16),
         ),
         xaxis_title="Group",
-        yaxis_title=f"{metric.upper()} (ms)" if metric.upper() not in ["LF_HF", "PNN50"] else metric.upper(),
+        yaxis_title=f"{metric.upper()} (ms)"
+        if metric.upper() not in ["LF_HF", "PNN50"]
+        else metric.upper(),
         barmode="group",
         legend=dict(
             orientation="h",
@@ -97,8 +120,12 @@ def _create_group_bar_chart(
         margin=dict(l=60, r=20, t=80, b=60),
     )
 
-    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
-    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+    fig.update_xaxes(
+        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+    )
+    fig.update_yaxes(
+        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+    )
 
     return fig
 
@@ -136,7 +163,7 @@ def _create_box_violin_plot(
         return None
 
     theme = get_theme_colors()
-    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745", "#17A2B8", "#FFC107"]
+    colors = _get_group_palette()
 
     fig = go.Figure()
 
@@ -204,8 +231,12 @@ def _create_box_violin_plot(
         margin=dict(l=60, r=20, t=80, b=60),
     )
 
-    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
-    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+    fig.update_xaxes(
+        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+    )
+    fig.update_yaxes(
+        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+    )
 
     return fig
 
@@ -237,7 +268,7 @@ def _create_sd1_sd2_scatter(
         return None
 
     theme = get_theme_colors()
-    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745", "#17A2B8", "#FFC107"]
+    colors = _get_group_palette()
 
     fig = go.Figure()
 
@@ -301,8 +332,16 @@ def _create_sd1_sd2_scatter(
         margin=dict(l=60, r=20, t=80, b=60),
     )
 
-    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
-    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"], scaleanchor="x")
+    fig.update_xaxes(
+        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+    )
+    fig.update_yaxes(
+        gridcolor=theme["grid"],
+        showline=True,
+        linewidth=1,
+        linecolor=theme["grid"],
+        scaleanchor="x",
+    )
 
     return fig
 
@@ -343,7 +382,7 @@ def _create_raincloud_plot(
         return None
 
     theme = get_theme_colors()
-    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745", "#17A2B8", "#FFC107"]
+    colors = _get_group_palette()
 
     fig = go.Figure()
 
@@ -434,9 +473,11 @@ def _create_raincloud_plot(
         margin=dict(l=60, r=20, t=80, b=60),
     )
 
-    fig.update_xaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
-    fig.update_yaxes(gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"])
+    fig.update_xaxes(
+        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+    )
+    fig.update_yaxes(
+        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+    )
 
     return fig
-
-
