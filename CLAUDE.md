@@ -25,7 +25,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## Current Status
 
-**Version**: `v0.9.0` | **Tests**: 91/91 passing
+**Version**: `v0.9.0` | **Tests**: 101/101 passing
 
 **GUI**: 4-tab Streamlit app (Data, Participants, Setup, Analysis)
 **Analysis modes**: Single Participant, Repeating Section, Group, Sequence Comparison
@@ -33,6 +33,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 **Segmentation**: Unified time-based (artifact detection + analysis use same segments)
 **Storage**: Project-based (`MyProject/config/*.yml`) or global fallback (`~/.rrational/`)
 **Docs**: https://rrational.readthedocs.io (MkDocs Material, auto-builds on push)
+**Hooks**: PostToolUse ruff auto-lint on .py files (`.claude/settings.json`)
 
 ## Scientific Best Practices (CRITICAL)
 
@@ -65,6 +66,7 @@ This is a **scientific research tool**. Follow HRV guidelines:
 - `analysis/hrv_metrics.py` - Metric catalogs, presets, windowing
 - `analysis/hrv_compute.py` - HRV calculation, result transforms
 - `cleaning/quality.py` - Quality detection, artifact fixpeaks, gap detection
+- `gui/color_scheme.py` - ColorScheme dataclass, 5 preset themes, dark mode variant
 - `io/generic_rr.py` - Parsers for Polar, Empatica, Elite HRV, Kubios, plain text
 
 ## TODOs
@@ -78,7 +80,7 @@ This is a **scientific research tool**. Follow HRV guidelines:
 - [x] Standalone app (PyInstaller + pywebview, GitHub Actions CI/CD)
 - [x] Support for more apps (#26) — Polar, Empatica, Elite HRV, Kubios, plain text
 - [ ] Detrending (#15)
-- [ ] Better colouring options (#25)
+- [x] Better colouring options (#25) — ColorScheme presets + per-element color pickers
 
 ## Documentation Structure
 
