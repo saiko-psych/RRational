@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
 [![Version](https://img.shields.io/badge/version-0.9.1-green.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-91%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-101%20passing-brightgreen.svg)](tests/)
 [![Documentation](https://readthedocs.org/projects/rrational/badge/?version=latest)](https://rrational.readthedocs.io)
 
 **A rational approach to Heart Rate Variability analysis**
@@ -46,6 +46,7 @@ RRational is an open-source HRV analysis toolkit built for researchers who need 
 - **HRV metrics** — Time domain (RMSSD, SDNN, pNN50), frequency domain (LF, HF), nonlinear (SD1, SD2)
 - **Group & Sequence comparison** — Batch analysis with bar charts, violin plots, and raincloud plots
 - **Report generation** — Export as HTML or Markdown for publication-ready documentation
+- **Color theming** — 5 preset themes (Scientific, Colorful, High Contrast, Monochrome, Pastel) with per-element color pickers and dark mode support
 - **Standalone app** — Available for Windows, macOS, and Linux (no Python needed)
 - **Scientific rigor** — Follows 2024 Quigley guidelines for artifact handling and reporting
 

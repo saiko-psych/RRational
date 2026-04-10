@@ -39,6 +39,12 @@ It provides an interactive Streamlit GUI for importing, inspecting, cleaning, an
 
     Batch analysis across study groups and event sequences with bar charts, violin plots, and raincloud plots.
 
+-   :material-palette:{ .lg .middle } **Color Theming**
+
+    ---
+
+    5 preset themes (Scientific, Colorful, High Contrast, Monochrome, Pastel) with per-element color pickers and automatic dark mode adjustment.
+
 </div>
 
 ## Key Features
@@ -47,6 +53,7 @@ It provides an interactive Streamlit GUI for importing, inspecting, cleaning, an
 - **Project management** — Self-contained project folders with data, config, and results
 - **Report generation** — Export as HTML or Markdown for publication-ready documentation
 - **Scientific rigor** — Follows 2024 Quigley guidelines for artifact handling and reporting
+- **Color theming** — 5 preset color schemes with custom color pickers for all plot elements
 - **Export ready** — CSV export for statistical analysis, `.rrational` files with full audit trail
 
 ## Supported Data Sources

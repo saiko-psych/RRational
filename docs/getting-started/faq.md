@@ -4,10 +4,16 @@
 
 ### What data formats does RRational support?
 
-RRational supports two input formats:
+RRational supports 8 input formats:
 
-- **HRV Logger** (iOS/Android) — CSV files with `_RR_` and `_Events_` in the filename
-- **VNS Analyse** (clinical) — TXT files with tab-separated RR intervals
+- **HRV Logger** (iOS/Android) — CSV with timestamps and events
+- **VNS Analyse** (clinical) — TXT with embedded annotations
+- **Polar Sensor Logger / Polar Beat** — CSV with phone timestamps
+- **Polar Flow** — TSV export (elapsed time only)
+- **Empatica E4 / EmbracePlus** — IBI.csv with Unix timestamps
+- **Elite HRV** — Plain text, one RR value per line
+- **Kubios HRV** — Report or signal/series export
+- **Plain text RR** — Any single-column RR interval file
 
 See [Data Formats](../user-guide/data-formats.md) for detailed specifications.
 
@@ -108,6 +114,28 @@ Following the GRAPH checklist (Quintana et al., 2016):
 5. HRV metrics with window duration
 6. Number of excluded segments and reasons
 7. Beat count per analyzed segment
+
+---
+
+## Appearance
+
+### How do I customize plot colors?
+
+Open the sidebar → expand **Settings** → scroll to **Color Theme**. Choose a preset (Scientific, Colorful, High Contrast, Monochrome, Pastel) or select **Custom** to pick individual colors for RR line, NN line, artifacts, exclusions, events, and sections. Click **Save Settings** to persist your choice.
+
+### Does dark mode affect plot colors?
+
+Yes. When you switch to dark mode, all plot colors are automatically lightened for better visibility on dark backgrounds. You don't need to configure separate dark mode colors.
+
+### What are the preset themes?
+
+| Preset | Style | Best for |
+|--------|-------|----------|
+| **Scientific** | Classic blue/green tones | Publications, presentations |
+| **Colorful** | Vibrant purple/pink/teal | Exploratory analysis |
+| **High Contrast** | Pure primary colors | Accessibility, projectors |
+| **Monochrome** | Grayscale | B&W printing |
+| **Pastel** | Soft, muted tones | Light backgrounds, reports |
 
 ---
 

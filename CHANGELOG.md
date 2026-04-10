@@ -2,6 +2,44 @@
 
 All notable changes to RRational are documented here.
 
+## [0.9.1] - 2026-04-10
+
+### Added
+- Color theming system with 5 preset themes: Scientific, Colorful, High Contrast, Monochrome, Pastel (#25)
+- Per-element color pickers for RR line, NN line, artifacts, exclusions, events, sections
+- Dark mode auto-adjusts all plot colors for visibility
+- Ruff auto-lint PostToolUse hook for consistent code formatting
+- Comprehensive data format documentation for all 8 supported sources
+
+### Changed
+- All analysis plots use configurable colors instead of hardcoded values
+- Group plots use configurable palette from settings
+- Permissions consolidated (110+ entries to 54 wildcard patterns)
+- 101 tests (10 new for ColorScheme)
+
+## [0.9.0] - 2026-04-08
+
+### Added
+- Support for 5 new data formats: Polar Sensor Logger, Polar Flow, Empatica E4, Elite HRV/plain text, Kubios HRV (#26)
+- Auto-format detection from file content
+- Power Spectrum (PSD) expander in Participants tab
+- Sequence Comparison analysis mode with group filter
+- HTML and Markdown report generation
+- Standalone desktop app for Windows, macOS, Linux (PyInstaller + pywebview)
+- GitHub Actions CI/CD for automated builds on tag push
+- MkDocs Material theme with custom branding, Mermaid diagrams, grid cards
+
+### Changed
+- Removed ~2000 lines of duplicated code (7 plot functions, cached functions, shared utilities)
+- Science section rewritten as practical Methodology reference
+- README redesigned with badges, feature table, quick start
+
+### Fixed
+- Security: subprocess injection in welcome.py (sys.argv instead of f-string)
+- Generic RR format loading in Participants tab
+- Kubios parser: relaxed section header matching
+- Comment-line detection in format auto-detection
+
 ## [0.8.1] - 2026-04
 
 ### Added
