@@ -1,12 +1,27 @@
 # Recommended Analysis Workflow
 
-A step-by-step guide for rigorous HRV analysis, based on current scientific guidelines (Quigley et al., 2024) and expert recommendations for psychophysiological research.
+A step-by-step guide for rigorous HRV analysis, based on current scientific guidelines and expert recommendations for psychophysiological research.
+
+## When to Use This Workflow
+
+This segmented analysis approach is recommended for studies with **recordings longer than 5 minutes** where experimental conditions change over time. Typical use cases:
+
+| Use Case | Example Protocol | Why segmentation helps |
+|----------|-----------------|----------------------|
+| **Music & emotion research** | Rest → Music A → Pause → Music B → Rest | Track autonomic changes across conditions; identify non-stationary phases (Bernardi et al., 2006; Koelsch & Jancke, 2015) |
+| **Stress & relaxation studies** | Baseline → Stressor → Recovery | Compare HRV between phases with per-segment quality control |
+| **Clinical monitoring** | Pre → Intervention → Post | Ensure artifact-free segments before/after treatment (Sammito et al., 2024) |
+| **Intervention studies** | Multiple conditions with rest periods | Aggregated metrics across validated segments improve reliability (Buchheit, 2014) |
+| **Student research projects** | Any within-subject repeated-measures design | Transparent, reproducible pipeline with quality reporting (Quintana et al., 2016) |
+
+!!! note "Not needed for single 5-minute resting recordings"
+    If your protocol is a single, short (≤5 min) resting measurement, segmentation is unnecessary — analyze the full recording as one segment.
 
 ## Why This Workflow?
 
-HRV analysis requires careful attention to data quality. The core problem: **long recordings are not stationary** — heart rate drifts over minutes and hours due to fatigue, temperature, posture changes, and circadian effects. Analyzing a 90-minute recording as one block produces unreliable frequency-domain metrics and inflated SDNN.
+HRV analysis requires careful attention to data quality. The core problem: **long recordings are not stationary** — heart rate drifts over minutes and hours due to fatigue, temperature, posture changes, and circadian effects (Li et al., 2019). Analyzing a 90-minute recording as one block produces unreliable frequency-domain metrics and inflated SDNN (Task Force, 1996; Shaffer & Ginsberg, 2017).
 
-The solution is **segmentation**: divide recordings into short, quasi-stationary windows, assess quality per segment, exclude bad segments, and aggregate the validated results.
+The solution is **segmentation**: divide recordings into short, quasi-stationary windows, assess quality per segment, exclude bad segments, and aggregate the validated results (Berntson et al., 1997; Quigley et al., 2024).
 
 ## The 7-Step Workflow
 
@@ -71,10 +86,11 @@ rest_pre        measurement_1         pause        measurement_2         rest_po
 
 **Why:**
 
-- **Stationarity**: HRV metrics assume a stationary signal. A 5-minute window is short enough to be quasi-stationary, but long enough for reliable frequency-domain analysis (Task Force, 1996).
-- **Comparability**: SDNN scales with recording duration. By using consistent 5-minute windows, SDNN values are comparable across conditions, participants, and studies.
-- **Detrending becomes unnecessary**: With 5-minute windows, slow drifts (trends over minutes/hours) are negligible within each segment. This eliminates the need for mathematical detrending, which can itself introduce artifacts.
-- **Granular quality control**: A single noisy minute in a 90-minute recording only affects one segment, not the entire analysis.
+- **Stationarity**: Spectral HRV analysis (FFT) assumes the signal is stationary within the analysis window (Berntson et al., 1997). A 5-minute window is short enough to approximate stationarity, but long enough for reliable frequency-domain analysis — the Task Force (1996) established this as the standard short-term recording duration.
+- **Comparability**: SDNN reflects total variability and scales directly with recording duration — comparing SDNN from different durations is invalid (Task Force, 1996; Sacha, 2013). Fixed 5-minute windows ensure comparability across conditions, participants, and studies.
+- **Detrending becomes unnecessary**: With 5-minute windows, slow drifts are negligible. The segmentation itself acts as an implicit high-pass filter (Tarvainen et al., 2002 describe the detrending problem, which windowing avoids more transparently). See [Why Not Detrend?](#why-not-detrend) below.
+- **Granular quality control**: A single noisy minute in a 90-minute recording only affects one segment, not the entire analysis. Per-segment quality indices are the current standard (Vest et al., 2018).
+- **Metric reliability**: RMSSD and HF are reliable in 5-minute segments (ICC 0.83–0.93; Shaffer & Ginsberg, 2017). Aggregating across multiple validated segments further improves reliability (Buchheit, 2014).
 
 **Window parameters:**
 
@@ -144,8 +160,9 @@ flowchart TD
 
 **Why:**
 
-- **Over-correction is worse than exclusion**: Correcting (interpolating) more than 10% of beats fundamentally changes the signal. The resulting HRV metrics reflect the interpolation algorithm, not the participant's autonomic activity.
-- **Transparency**: Reporting how many segments were excluded (and why) is required by current guidelines (GRAPH; Quintana et al., 2016).
+- **Over-correction is worse than exclusion**: Correcting (interpolating) more than 10% of beats fundamentally changes the signal. Frequency-domain metrics are especially sensitive — LF power tolerates only ~2% beat removal before significant distortion (Sheridan et al., 2020). Time-domain metrics are more robust but still degrade above 10% (Peltola, 2012).
+- **Transparency**: Reporting how many segments were excluded (and why) is required by current guidelines (GRAPH; Quintana et al., 2016). Quigley et al. (2024) recommend combining automated detection with visual inspection.
+- **Automated + manual**: Automated artifact detection alone is insufficient (Laborde et al., 2017). RRational supports both: algorithm-based detection per segment, plus manual marking of individual beats in Signal Inspection mode.
 
 **Both approaches are valid:**
 
@@ -193,8 +210,8 @@ flowchart TD
 
 **Why:**
 
-- **Aggregation reduces noise**: Single 5-minute segments have high variability. Averaging across multiple segments (e.g., 18 segments from a 90-minute measurement) yields a more robust estimate.
-- **Report quality**: Reviewers need to assess data quality. Always report: how many segments, how many excluded, mean artifact rate.
+- **Aggregation reduces noise**: Single 5-minute segments have within-session ICCs of 0.60–0.93 depending on the metric (parasympathetic metrics like RMSSD show higher reliability: ICC 0.83–0.93). Averaging across multiple segments yields more robust estimates (Shaffer & Ginsberg, 2017; Buchheit, 2014).
+- **Report quality**: Reviewers need to assess data quality. The GRAPH checklist (Quintana et al., 2016) requires reporting artifact correction methods, exclusion criteria, and data quality per condition. Quigley et al. (2024) formalize this further.
 
 **What to report (per condition):**
 
@@ -248,7 +265,20 @@ Detrending is only relevant when analyzing **long continuous recordings** (>10 m
 
 ## References
 
-- Quigley, K.S., et al. (2024). Guidelines for heart rate variability measurement and reporting. *Psychophysiology*.
-- Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement. *Circulation*, 93(5), 1043–1065.
-- Quintana, D.S., et al. (2016). Guidelines for Reporting Articles on Psychiatry and Heart rate variability (GRAPH). *Translational Psychiatry*, 6(5), e803.
+- Bernardi, L., Porta, C., & Sleight, P. (2006). Cardiovascular, cerebrovascular, and respiratory changes induced by different types of music. *Heart*, 92(4), 445–452.
+- Berntson, G.G., et al. (1997). Heart rate variability: Origins, methods, and interpretive caveats. *Psychophysiology*, 34(6), 623–648.
+- Buchheit, M. (2014). Monitoring training status with HR measures: Do all roads lead to Rome? *Frontiers in Physiology*, 5, 73.
+- Koelsch, S. & Jancke, L. (2015). Music and the heart. *European Heart Journal*, 36(44), 3043–3049.
+- Laborde, S., Mosley, E., & Thayer, J.F. (2017). Heart rate variability and cardiac vagal tone in psychophysiological research. *Frontiers in Psychology*, 8, 213.
+- Li, K., Rudiger, H., & Ziemssen, T. (2019). Spectral analysis of heart rate variability: Time window matters. *Frontiers in Neurology*, 10, 545.
 - Lipponen, J.A., & Tarvainen, M.P. (2019). A robust algorithm for heart rate variability time series artefact correction. *Journal of Medical Engineering & Technology*, 43(3), 173–181.
+- Peltola, M.A. (2012). Role of editing of R-R intervals in the analysis of heart rate variability. *Frontiers in Physiology*, 3, 148.
+- Quigley, K.S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(7), e14604.
+- Quintana, D.S., Alvares, G.A., & Heathers, J.A. (2016). Guidelines for Reporting Articles on Psychiatry and Heart rate variability (GRAPH). *Translational Psychiatry*, 6, e803.
+- Sacha, J. (2013). Why should one normalize heart rate variability with respect to average heart rate. *Frontiers in Physiology*, 4, 306.
+- Sammito, S., et al. (2024). Guideline for the application of heart rate and heart rate variability in occupational medicine. *Journal of Occupational Medicine and Toxicology*, 19, 22.
+- Shaffer, F. & Ginsberg, J.P. (2017). An overview of heart rate variability metrics and norms. *Frontiers in Public Health*, 5, 258.
+- Sheridan, D.C., et al. (2020). Heart rate variability analysis: How much artifact can we remove? *Psychiatry Investigation*, 17(9), 960–966.
+- Tarvainen, M.P., Ranta-Aho, P.O., & Karjalainen, P.A. (2002). An advanced detrending method with application to HRV analysis. *IEEE Transactions on Biomedical Engineering*, 49(2), 172–175.
+- Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement. *Circulation*, 93(5), 1043–1065.
+- Vest, A.N., et al. (2018). An open source benchmarked toolbox for cardiovascular waveform and interval analysis. *Physiological Measurement*, 39(10), 105004.
