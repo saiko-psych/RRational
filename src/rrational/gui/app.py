@@ -2258,23 +2258,23 @@ def render_settings_panel():
         )
     with col2:
         new_artifact = st.color_picker(
-            "Artifacts",
+            "Artifact",
             value=scheme.artifact,
             key="sc_artifact",
             disabled=not is_custom,
         )
         new_exclusion = st.color_picker(
-            "Exclusions",
+            "Exclude",
             value=scheme.exclusion,
             key="sc_exclusion",
             disabled=not is_custom,
         )
     with col3:
         new_event = st.color_picker(
-            "Events", value=scheme.event_marker, key="sc_event", disabled=not is_custom
+            "Event", value=scheme.event_marker, key="sc_event", disabled=not is_custom
         )
         new_section = st.color_picker(
-            "Sections",
+            "Section",
             value=scheme.section_border,
             key="sc_section",
             disabled=not is_custom,
