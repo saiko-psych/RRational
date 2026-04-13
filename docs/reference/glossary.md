@@ -104,7 +104,7 @@
 
 ## References
 
-- Lipponen, J. A., & Tarvainen, M. P. (2019). A robust algorithm for heart rate variability time series artefact correction using novel beat classification. *Journal of Medical Engineering & Technology*, 43(3), 173–181.
-- Quigley, K. S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(9), e14604.
-- Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement, physiological interpretation, and clinical use. *Circulation*, 93(5), 1043–1065.
-- Quintana, D. S., et al. (2016). Guidelines for reporting articles on psychiatry and heart rate variability (GRAPH). *Translational Psychiatry*, 6(5), e803.
+- Lipponen, J. A., & Tarvainen, M. P. (2019). A robust algorithm for heart rate variability time series artefact correction using novel beat classification. *Journal of Medical Engineering & Technology*, 43(3), 173–181. [doi:10.1080/03091902.2019.1640306](https://doi.org/10.1080/03091902.2019.1640306)
+- Quigley, K. S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(9), e14604. [doi:10.1111/psyp.14604](https://doi.org/10.1111/psyp.14604)
+- Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement, physiological interpretation, and clinical use. *Circulation*, 93(5), 1043–1065. [doi:10.1161/01.CIR.93.5.1043](https://doi.org/10.1161/01.CIR.93.5.1043)
+- Quintana, D. S., et al. (2016). Guidelines for reporting articles on psychiatry and heart rate variability (GRAPH). *Translational Psychiatry*, 6(5), e803. [doi:10.1038/tp.2016.73](https://doi.org/10.1038/tp.2016.73)

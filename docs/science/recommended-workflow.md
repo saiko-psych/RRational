@@ -265,20 +265,20 @@ Detrending is only relevant when analyzing **long continuous recordings** (>10 m
 
 ## References
 
-- Bernardi, L., Porta, C., & Sleight, P. (2006). Cardiovascular, cerebrovascular, and respiratory changes induced by different types of music. *Heart*, 92(4), 445–452.
-- Berntson, G.G., et al. (1997). Heart rate variability: Origins, methods, and interpretive caveats. *Psychophysiology*, 34(6), 623–648.
-- Buchheit, M. (2014). Monitoring training status with HR measures: Do all roads lead to Rome? *Frontiers in Physiology*, 5, 73.
-- Koelsch, S. & Jancke, L. (2015). Music and the heart. *European Heart Journal*, 36(44), 3043–3049.
-- Laborde, S., Mosley, E., & Thayer, J.F. (2017). Heart rate variability and cardiac vagal tone in psychophysiological research. *Frontiers in Psychology*, 8, 213.
-- Li, K., Rudiger, H., & Ziemssen, T. (2019). Spectral analysis of heart rate variability: Time window matters. *Frontiers in Neurology*, 10, 545.
-- Lipponen, J.A., & Tarvainen, M.P. (2019). A robust algorithm for heart rate variability time series artefact correction. *Journal of Medical Engineering & Technology*, 43(3), 173–181.
-- Peltola, M.A. (2012). Role of editing of R-R intervals in the analysis of heart rate variability. *Frontiers in Physiology*, 3, 148.
-- Quigley, K.S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(9), e14604.
-- Quintana, D.S., Alvares, G.A., & Heathers, J.A. (2016). Guidelines for Reporting Articles on Psychiatry and Heart rate variability (GRAPH). *Translational Psychiatry*, 6, e803.
-- Sacha, J. (2013). Why should one normalize heart rate variability with respect to average heart rate. *Frontiers in Physiology*, 4, 306.
-- Sammito, S., et al. (2024). Guideline for the application of heart rate and heart rate variability in occupational medicine. *Journal of Occupational Medicine and Toxicology*, 19, 15.
-- Shaffer, F. & Ginsberg, J.P. (2017). An overview of heart rate variability metrics and norms. *Frontiers in Public Health*, 5, 258.
-- Sheridan, D.C., et al. (2020). Heart rate variability analysis: How much artifact can we remove? *Psychiatry Investigation*, 17(9), 960–966.
-- Tarvainen, M.P., Ranta-Aho, P.O., & Karjalainen, P.A. (2002). An advanced detrending method with application to HRV analysis. *IEEE Transactions on Biomedical Engineering*, 49(2), 172–175.
-- Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement. *Circulation*, 93(5), 1043–1065.
-- Vest, A.N., et al. (2018). An open source benchmarked toolbox for cardiovascular waveform and interval analysis. *Physiological Measurement*, 39(10), 105004.
+- Bernardi, L., Porta, C., & Sleight, P. (2006). Cardiovascular, cerebrovascular, and respiratory changes induced by different types of music. *Heart*, 92(4), 445–452. [doi:10.1136/hrt.2005.068957](https://doi.org/10.1136/hrt.2005.068957)
+- Berntson, G.G., et al. (1997). Heart rate variability: Origins, methods, and interpretive caveats. *Psychophysiology*, 34(6), 623–648. [doi:10.1111/j.1469-8986.1997.tb02140.x](https://doi.org/10.1111/j.1469-8986.1997.tb02140.x)
+- Buchheit, M. (2014). Monitoring training status with HR measures: Do all roads lead to Rome? *Frontiers in Physiology*, 5, 73. [doi:10.3389/fphys.2014.00073](https://doi.org/10.3389/fphys.2014.00073)
+- Koelsch, S. & Jäncke, L. (2015). Music and the heart. *European Heart Journal*, 36(44), 3043–3049. [doi:10.1093/eurheartj/ehv430](https://doi.org/10.1093/eurheartj/ehv430)
+- Laborde, S., Mosley, E., & Thayer, J.F. (2017). Heart rate variability and cardiac vagal tone in psychophysiological research. *Frontiers in Psychology*, 8, 213. [doi:10.3389/fpsyg.2017.00213](https://doi.org/10.3389/fpsyg.2017.00213)
+- Li, K., Rüdiger, H., & Ziemssen, T. (2019). Spectral analysis of heart rate variability: Time window matters. *Frontiers in Neurology*, 10, 545. [doi:10.3389/fneur.2019.00545](https://doi.org/10.3389/fneur.2019.00545)
+- Lipponen, J.A., & Tarvainen, M.P. (2019). A robust algorithm for heart rate variability time series artefact correction. *Journal of Medical Engineering & Technology*, 43(3), 173–181. [doi:10.1080/03091902.2019.1640306](https://doi.org/10.1080/03091902.2019.1640306)
+- Peltola, M.A. (2012). Role of editing of R-R intervals in the analysis of heart rate variability. *Frontiers in Physiology*, 3, 148. [doi:10.3389/fphys.2012.00148](https://doi.org/10.3389/fphys.2012.00148)
+- Quigley, K.S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(9), e14604. [doi:10.1111/psyp.14604](https://doi.org/10.1111/psyp.14604)
+- Quintana, D.S., Alvares, G.A., & Heathers, J.A. (2016). Guidelines for Reporting Articles on Psychiatry and Heart rate variability (GRAPH). *Translational Psychiatry*, 6, e803. [doi:10.1038/tp.2016.73](https://doi.org/10.1038/tp.2016.73)
+- Sacha, J. (2013). Why should one normalize heart rate variability with respect to average heart rate. *Frontiers in Physiology*, 4, 306. [doi:10.3389/fphys.2013.00306](https://doi.org/10.3389/fphys.2013.00306)
+- Sammito, S., et al. (2024). Guideline for the application of heart rate and heart rate variability in occupational medicine. *Journal of Occupational Medicine and Toxicology*, 19, 15. [doi:10.1186/s12995-024-00414-9](https://doi.org/10.1186/s12995-024-00414-9)
+- Shaffer, F. & Ginsberg, J.P. (2017). An overview of heart rate variability metrics and norms. *Frontiers in Public Health*, 5, 258. [doi:10.3389/fpubh.2017.00258](https://doi.org/10.3389/fpubh.2017.00258)
+- Sheridan, D.C., et al. (2020). Heart rate variability analysis: How much artifact can we remove? *Psychiatry Investigation*, 17(9), 960–966. [doi:10.30773/pi.2020.0168](https://doi.org/10.30773/pi.2020.0168)
+- Tarvainen, M.P., Ranta-Aho, P.O., & Karjalainen, P.A. (2002). An advanced detrending method with application to HRV analysis. *IEEE Transactions on Biomedical Engineering*, 49(2), 172–175. [doi:10.1109/10.979357](https://doi.org/10.1109/10.979357)
+- Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement. *Circulation*, 93(5), 1043–1065. [doi:10.1161/01.CIR.93.5.1043](https://doi.org/10.1161/01.CIR.93.5.1043)
+- Vest, A.N., et al. (2018). An open source benchmarked toolbox for cardiovascular waveform and interval analysis. *Physiological Measurement*, 39(10), 105004. [doi:10.1088/1361-6579/aae021](https://doi.org/10.1088/1361-6579/aae021)
