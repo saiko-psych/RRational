@@ -8,7 +8,7 @@ This segmented analysis approach is recommended for studies with **recordings lo
 
 | Use Case | Example Protocol | Why segmentation helps |
 |----------|-----------------|----------------------|
-| **Music & emotion research** | Rest → Music A → Pause → Music B → Rest | Track autonomic changes across conditions; identify non-stationary phases (Bernardi et al., 2006; Koelsch & Jancke, 2015) |
+| **Music & emotion research** | Rest → Music A → Pause → Music B → Rest | Track autonomic changes across conditions; music induces measurable cardiovascular responses (Bernardi et al., 2006; Koelsch & Jancke, 2015) |
 | **Stress & relaxation studies** | Baseline → Stressor → Recovery | Compare HRV between phases with per-segment quality control |
 | **Clinical monitoring** | Pre → Intervention → Post | Ensure artifact-free segments before/after treatment (Sammito et al., 2024) |
 | **Intervention studies** | Multiple conditions with rest periods | Aggregated metrics across validated segments improve reliability (Buchheit, 2014) |
@@ -87,7 +87,7 @@ rest_pre        measurement_1         pause        measurement_2         rest_po
 **Why:**
 
 - **Stationarity**: Spectral HRV analysis (FFT) assumes the signal is stationary within the analysis window (Berntson et al., 1997). A 5-minute window is short enough to approximate stationarity, but long enough for reliable frequency-domain analysis — the Task Force (1996) established this as the standard short-term recording duration.
-- **Comparability**: SDNN reflects total variability and scales directly with recording duration — comparing SDNN from different durations is invalid (Task Force, 1996; Sacha, 2013). Fixed 5-minute windows ensure comparability across conditions, participants, and studies.
+- **Comparability**: SDNN reflects total variability and scales directly with recording duration — comparing SDNN from different durations is invalid (Task Force, 1996). Additionally, SDNN depends mathematically on mean heart rate (Sacha, 2013). Fixed 5-minute windows control for duration; consistent conditions control for HR differences.
 - **Detrending becomes unnecessary**: With 5-minute windows, slow drifts are negligible. The segmentation itself acts as an implicit high-pass filter (Tarvainen et al., 2002 describe the detrending problem, which windowing avoids more transparently). See [Why Not Detrend?](#why-not-detrend) below.
 - **Granular quality control**: A single noisy minute in a 90-minute recording only affects one segment, not the entire analysis. Per-segment quality indices are the current standard (Vest et al., 2018).
 - **Metric reliability**: RMSSD and HF are reliable in 5-minute segments (ICC 0.83–0.93; Shaffer & Ginsberg, 2017). Aggregating across multiple validated segments further improves reliability (Buchheit, 2014).
@@ -273,10 +273,10 @@ Detrending is only relevant when analyzing **long continuous recordings** (>10 m
 - Li, K., Rudiger, H., & Ziemssen, T. (2019). Spectral analysis of heart rate variability: Time window matters. *Frontiers in Neurology*, 10, 545.
 - Lipponen, J.A., & Tarvainen, M.P. (2019). A robust algorithm for heart rate variability time series artefact correction. *Journal of Medical Engineering & Technology*, 43(3), 173–181.
 - Peltola, M.A. (2012). Role of editing of R-R intervals in the analysis of heart rate variability. *Frontiers in Physiology*, 3, 148.
-- Quigley, K.S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(7), e14604.
+- Quigley, K.S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(9), e14604.
 - Quintana, D.S., Alvares, G.A., & Heathers, J.A. (2016). Guidelines for Reporting Articles on Psychiatry and Heart rate variability (GRAPH). *Translational Psychiatry*, 6, e803.
 - Sacha, J. (2013). Why should one normalize heart rate variability with respect to average heart rate. *Frontiers in Physiology*, 4, 306.
-- Sammito, S., et al. (2024). Guideline for the application of heart rate and heart rate variability in occupational medicine. *Journal of Occupational Medicine and Toxicology*, 19, 22.
+- Sammito, S., et al. (2024). Guideline for the application of heart rate and heart rate variability in occupational medicine. *Journal of Occupational Medicine and Toxicology*, 19, 15.
 - Shaffer, F. & Ginsberg, J.P. (2017). An overview of heart rate variability metrics and norms. *Frontiers in Public Health*, 5, 258.
 - Sheridan, D.C., et al. (2020). Heart rate variability analysis: How much artifact can we remove? *Psychiatry Investigation*, 17(9), 960–966.
 - Tarvainen, M.P., Ranta-Aho, P.O., & Karjalainen, P.A. (2002). An advanced detrending method with application to HRV analysis. *IEEE Transactions on Biomedical Engineering*, 49(2), 172–175.

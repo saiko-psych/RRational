@@ -107,7 +107,7 @@ Following the GRAPH guidelines (Quintana et al., 2016), your publication should 
 
 ## Key References
 
-- Quigley, K.S., et al. (2024). Guidelines for heart rate variability measurement and reporting. *Psychophysiology*.
+- Quigley, K.S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(9), e14604.
 - Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement. *Circulation*, 93(5), 1043–1065.
 - Quintana, D.S., et al. (2016). Guidelines for Reporting Articles on Psychiatry and Heart rate variability (GRAPH). *Translational Psychiatry*, 6(5), e803.
 - Lipponen, J.A., & Tarvainen, M.P. (2019). A robust algorithm for heart rate variability time series artefact correction. *Journal of Medical Engineering & Technology*, 43(3), 173–181.
