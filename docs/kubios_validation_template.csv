@@ -1,0 +1,13 @@
+participant,section,segment,beats,artifact_pct,tool,mean_rr_ms,mean_hr_bpm,sdnn_ms,rmssd_ms,pnn50_pct,vlf_power_ms2,lf_power_ms2,hf_power_ms2,lf_hf_ratio,total_power_ms2,sd1_ms,sd2_ms,sd1_sd2_ratio,quality_grade
+VP01,rest_pre,1,,,"Kubios",,,,,,,,,,,,,
+VP01,rest_pre,1,,,"RRational",,,,,,,,,,,,,
+VP01,first_measurement,1,,,"Kubios",,,,,,,,,,,,,
+VP01,first_measurement,1,,,"RRational",,,,,,,,,,,,,
+VP01,first_measurement,2,,,"Kubios",,,,,,,,,,,,,
+VP01,first_measurement,2,,,"RRational",,,,,,,,,,,,,
+VP01,pause,1,,,"Kubios",,,,,,,,,,,,,
+VP01,pause,1,,,"RRational",,,,,,,,,,,,,
+VP01,second_measurement,1,,,"Kubios",,,,,,,,,,,,,
+VP01,second_measurement,1,,,"RRational",,,,,,,,,,,,,
+VP01,rest_post,1,,,"Kubios",,,,,,,,,,,,,
+VP01,rest_post,1,,,"RRational",,,,,,,,,,,,,

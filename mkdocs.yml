@@ -115,6 +115,7 @@ nav:
     - Data Formats: user-guide/data-formats.md
     - Configuration & Projects: user-guide/configuration.md
   - Methodology:
+    - Recommended Workflow: science/recommended-workflow.md
     - HRV Guidelines: science/guidelines.md
     - Processing Pipeline: science/processing-pipeline.md
   - Development:

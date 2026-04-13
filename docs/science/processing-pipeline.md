@@ -33,10 +33,7 @@ flowchart LR
 
 ## Stage 1: Data Import
 
-RRational accepts two input formats:
-
-- **HRV Logger** (iOS/Android): CSV files with real timestamps per beat
-- **VNS Analyse** (clinical): TXT files with cumulative RR intervals
+RRational accepts 8 input formats including HRV Logger, VNS Analyse, Polar, Empatica, Elite HRV, Kubios, and plain text RR files. See [Data Formats](../user-guide/data-formats.md) for details.
 
 On import, RRational:
 
@@ -114,11 +111,13 @@ Sections are defined by event boundaries (e.g., `measurement_start` → `pause_s
 
 ## Stage 7: HRV Analysis
 
-RRational computes metrics using **overlapping windows** for reliability:
+RRational computes metrics using **time-based windows** for reliability:
 
-1. Divide section into windows (default: 300 beats, 75% overlap)
+1. Divide section into fixed-length windows (default: 5 minutes, time-based)
 2. Compute HRV metrics per window via NeuroKit2
-3. Aggregate: report mean across windows (with SD for within-participant variability)
+3. Choose: per-segment results or aggregated mean across windows (with SD)
+
+See [Recommended Workflow](recommended-workflow.md) for the full rationale behind this approach.
 
 **Available metrics:**
 
