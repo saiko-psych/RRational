@@ -62,6 +62,8 @@ uv run streamlit run src/rrational/gui/app.py
 > Requires Python 3.11-3.13 and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 > Or [download the standalone app](https://github.com/saiko-psych/rrational/releases/latest) — no installation required.
 
+> **macOS users:** The app is not signed with an Apple Developer certificate. On first launch, right-click the app → **Open** (not double-click). Alternatively, run `xattr -cr RRational.app` in Terminal.
+
 ## Documentation
 
 Full documentation at **[rrational.readthedocs.io](https://rrational.readthedocs.io)**.

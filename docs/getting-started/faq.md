@@ -141,6 +141,17 @@ Yes. When you switch to dark mode, all plot colors are automatically lightened f
 
 ## Technical
 
+### The macOS app won't open / "unverified developer"
+
+The standalone app is not signed with an Apple Developer certificate. macOS Gatekeeper blocks unsigned apps by default.
+
+**Fix:** Right-click `RRational.app` → **Open** (not double-click). Click **Open** in the dialog. This only needs to be done once.
+
+**Alternative:** Open Terminal and run:
+```bash
+xattr -cr /path/to/RRational.app
+```
+
 ### Why is the app slow to start?
 
 First launch imports heavy dependencies (NeuroKit2, Plotly, NumPy). Subsequent reruns are fast due to caching. Use `--test-mode` for quick testing with demo data.
