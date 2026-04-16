@@ -3783,6 +3783,47 @@ def _load_nn_from_rrational_v2(
         return None, {"error": str(e)}
 
 
+def _extract_nn_from_loaded_v2(
+    export_data,
+    section_name: str,
+) -> tuple[list[float] | None, dict]:
+    """Extract NN intervals from an already-loaded v2 export object.
+
+    Same as _load_nn_from_rrational_v2 but avoids re-reading the YAML file.
+    Used by Group Analysis to load the file once per participant.
+    """
+    try:
+        if section_name not in export_data.sections:
+            return None, {"error": f"Section '{section_name}' not found in file"}
+
+        section = export_data.sections[section_name]
+        nn_data = section.nn_intervals.data
+
+        if not nn_data:
+            return None, {"error": "No NN intervals in section"}
+
+        nn_ms_list = [entry[1] for entry in nn_data]
+
+        quality = section.quality
+        info = {
+            "quality_grade": quality.grade,
+            "artifact_rate": (
+                section.artifact_detection.artifact_rate_detected
+                if section.artifact_detection
+                else 0.0
+            ),
+            "n_beats": len(nn_ms_list),
+            "duration_s": quality.usable_duration_s,
+            "meets_time_domain": quality.meets_time_domain_min,
+            "meets_freq_domain": quality.meets_freq_domain_min,
+        }
+
+        return nn_ms_list, info
+
+    except Exception as e:
+        return None, {"error": str(e)}
+
+
 # _calculate_hrv_metrics is now imported from rrational.analysis.hrv_compute
 
 # =============================================================================
@@ -4040,22 +4081,28 @@ def _run_group_analysis(
                 update_progress(1 + len(sections) * 2, f"[{pid}] Skipped (no file)")
                 continue
 
-            update_progress(1, f"[{pid}] Loading sections...")
+            update_progress(1, f"[{pid}] Loading file...")
 
-            # Check which sections are available (try NN first, then raw fallback)
+            # Load .rrational file ONCE for all sections (avoids repeated YAML parsing)
+            try:
+                export_data = load_rrational_v2(rrational_path)
+            except Exception as e:
+                missing[pid] = {"_all": f"Failed to load file: {e}"}
+                update_progress(len(sections) * 2, f"[{pid}] Load failed: {e}")
+                continue
+
+            # Extract NN data from already-loaded export (fast — no file I/O per section)
             available = []
             for section in sections:
                 update_progress(0, f"[{pid}] Loading {section}...")
 
-                # Try NN data first
-                nn_data, info = _load_nn_from_rrational_v2(rrational_path, section)
+                nn_data, info = _extract_nn_from_loaded_v2(export_data, section)
                 if nn_data and len(nn_data) >= MIN_BEATS_TIME_DOMAIN:
                     info["data_source"] = "NN"
                     available.append((section, nn_data, info))
                     update_progress(1, f"[{pid}] Loaded {section} (NN)")
                 elif allow_raw_fallback:
                     update_progress(0, f"[{pid}] Loading {section} (raw fallback)...")
-                    # Fallback to raw RR data
                     raw_data, raw_info = _load_raw_section_data(
                         pid, section, rrational_path, project_path, data_dir
                     )
@@ -4063,7 +4110,6 @@ def _run_group_analysis(
                         available.append((section, raw_data, raw_info))
                         update_progress(1, f"[{pid}] Loaded {section} (Raw)")
                     else:
-                        # Both NN and raw failed
                         nn_error = info.get("error", "No NN data")
                         raw_error = (
                             raw_info.get("error", "No raw data")
