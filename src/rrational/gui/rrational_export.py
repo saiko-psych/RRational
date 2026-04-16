@@ -29,6 +29,7 @@ RRATIONAL_VERSION = RRATIONAL_VERSION_V2  # Current default
 @dataclass
 class RRIntervalExport:
     """Single RR interval with metadata."""
+
     timestamp: str  # ISO format
     rr_ms: int
     elapsed_ms: int | None = None
@@ -38,6 +39,7 @@ class RRIntervalExport:
 @dataclass
 class ExclusionZone:
     """Time range excluded from analysis."""
+
     start: str  # ISO format
     end: str  # ISO format
     reason: str = ""
@@ -47,6 +49,7 @@ class ExclusionZone:
 @dataclass
 class ManualArtifact:
     """User-marked artifact."""
+
     original_idx: int
     timestamp: str  # ISO format
     rr_value: float
@@ -57,6 +60,7 @@ class ManualArtifact:
 @dataclass
 class ArtifactDetection:
     """Artifact detection results."""
+
     method: str  # "threshold", "lipponen2019", "lipponen2019_segmented"
     threshold_pct: float | None = None
     segment_beats: int | None = None
@@ -69,6 +73,7 @@ class ArtifactDetection:
 @dataclass
 class CorrectedInterval:
     """Corrected NN interval."""
+
     timestamp: str  # ISO format
     nn_ms: int
     was_corrected: bool = False
@@ -78,6 +83,7 @@ class CorrectedInterval:
 @dataclass
 class ProcessingStep:
     """Single step in the audit trail."""
+
     step: int
     action: str
     timestamp: str  # ISO format
@@ -87,6 +93,7 @@ class ProcessingStep:
 @dataclass
 class SegmentDefinition:
     """Defines the segment being exported."""
+
     type: str  # "section", "manual_range", "full_recording"
     section_name: str | None = None
     section_definition: dict | None = None  # {start_event, end_events, label}
@@ -96,6 +103,7 @@ class SegmentDefinition:
 @dataclass
 class QualityMetrics:
     """Quality assessment of the exported data."""
+
     artifact_rate_raw: float = 0.0
     artifact_rate_final: float = 0.0
     beats_after_cleaning: int = 0
@@ -155,6 +163,7 @@ class RRationalExport:
 @dataclass
 class EventChoiceV2:
     """Which event was chosen for a section boundary (v2.0)."""
+
     label: str
     timestamp: str  # ISO format
     beat_idx: int
@@ -164,6 +173,7 @@ class EventChoiceV2:
 @dataclass
 class SectionValidationV2:
     """Section validation state (v2.0)."""
+
     validated_at: str  # ISO format
     start_event: EventChoiceV2
     end_event: EventChoiceV2
@@ -174,6 +184,7 @@ class SectionValidationV2:
 @dataclass
 class ExclusionZoneV2:
     """Time range excluded from analysis (v2.0)."""
+
     id: str
     start_timestamp: str  # ISO format
     end_timestamp: str  # ISO format
@@ -186,6 +197,7 @@ class ExclusionZoneV2:
 @dataclass
 class RecordingGapV2:
     """Gap in recording from multi-file sources like VNS (v2.0)."""
+
     gap_id: str
     after_file: str
     before_file: str
@@ -197,6 +209,7 @@ class RecordingGapV2:
 @dataclass
 class ArtifactDetectionV2:
     """Artifact detection results for a section (v2.0)."""
+
     method: str  # "lipponen2019", "threshold", etc.
     threshold_pct: float | None = None
     run_at: str | None = None  # ISO format
@@ -208,6 +221,7 @@ class ArtifactDetectionV2:
 @dataclass
 class ManualArtifactsV2:
     """Manual artifact markings for a section (v2.0)."""
+
     added_indices: list[int] = field(default_factory=list)
     removed_indices: list[int] = field(default_factory=list)
     last_modified: str | None = None  # ISO format
@@ -216,6 +230,7 @@ class ManualArtifactsV2:
 @dataclass
 class FinalArtifactsV2:
     """Combined artifact summary for a section (v2.0)."""
+
     indices: list[int] = field(default_factory=list)
     count: int = 0
     rate: float = 0.0
@@ -224,6 +239,7 @@ class FinalArtifactsV2:
 @dataclass
 class QualityV2:
     """Quality assessment for a section (v2.0)."""
+
     grade: str = "unknown"  # "excellent", "good", "moderate", "poor"
     recommendation: str = ""
     usable_beats: int = 0
@@ -235,6 +251,7 @@ class QualityV2:
 @dataclass
 class NNCorrectionV2:
     """NN correction metadata for a section (v2.0)."""
+
     method: str = "none"  # "kubios", "none"
     corrected_at: str | None = None  # ISO format
     intervals_corrected: int = 0
@@ -246,6 +263,7 @@ class AnalysisSegmentV2:
 
     Sections are split into segments by exclusion zones and gaps.
     """
+
     segment_id: str
     type: str  # "data", "exclusion", "gap"
     start_timestamp: str  # ISO format
@@ -260,6 +278,7 @@ class AnalysisSegmentV2:
 @dataclass
 class NNIntervalsDataV2:
     """NN intervals data for a section (v2.0)."""
+
     # Compact format: [[timestamp_ms_from_section_start, nn_ms, was_corrected], ...]
     data: list[list] = field(default_factory=list)
     # Correction details: [{"nn_idx": int, "original_rr_ms": int, "corrected_nn_ms": int}, ...]
@@ -269,6 +288,7 @@ class NNIntervalsDataV2:
 @dataclass
 class SectionDefinitionV2:
     """Section definition (v2.0)."""
+
     start_event: str
     end_event: str
     label: str
@@ -277,6 +297,7 @@ class SectionDefinitionV2:
 @dataclass
 class SectionExportV2:
     """Complete export data for one section (v2.0)."""
+
     definition: SectionDefinitionV2
     validation: SectionValidationV2
     exclusion_zones: list[ExclusionZoneV2] = field(default_factory=list)
@@ -293,18 +314,22 @@ class SectionExportV2:
 @dataclass
 class MetadataV2:
     """Export metadata (v2.0)."""
+
     participant_id: str
     created_at: str  # ISO format
     last_modified: str  # ISO format
     source_app: str = "HRV Logger"
     source_files: list[dict] = field(default_factory=list)  # [{path, type, hash}, ...]
-    recording_info: dict = field(default_factory=dict)  # {start, end, total_beats, total_duration_s}
+    recording_info: dict = field(
+        default_factory=dict
+    )  # {start, end, total_beats, total_duration_s}
     software_versions: dict = field(default_factory=dict)
 
 
 @dataclass
 class AuditEntryV2:
     """Single audit trail entry (v2.0)."""
+
     step: int
     action: str
     timestamp: str  # ISO format
@@ -323,6 +348,7 @@ class RRationalExportV2:
     - Analysis segments for handling exclusion zones and gaps
     - Incremental update support
     """
+
     metadata: MetadataV2
     sections: dict[str, SectionExportV2] = field(default_factory=dict)
     exclusion_zones_summary: list[dict] = field(default_factory=list)
@@ -332,7 +358,7 @@ class RRationalExportV2:
 
 def _dataclass_to_dict(obj: Any) -> Any:
     """Recursively convert dataclasses to dicts for YAML serialization."""
-    if hasattr(obj, '__dataclass_fields__'):
+    if hasattr(obj, "__dataclass_fields__"):
         return {k: _dataclass_to_dict(v) for k, v in asdict(obj).items()}
     elif isinstance(obj, list):
         return [_dataclass_to_dict(item) for item in obj]
@@ -357,7 +383,6 @@ def save_rrational(export_data: RRationalExport, filepath: Path | str) -> None:
     data = {
         "rrational_version": RRATIONAL_VERSION,
         "file_type": "ready_for_analysis",
-
         "metadata": {
             "participant_id": export_data.participant_id,
             "export_timestamp": export_data.export_timestamp,
@@ -366,25 +391,24 @@ def save_rrational(export_data: RRationalExport, filepath: Path | str) -> None:
             "source_file_paths": export_data.source_file_paths,
             "recording_datetime": export_data.recording_datetime,
         },
-
-        "segment": _dataclass_to_dict(export_data.segment) if export_data.segment else None,
-
+        "segment": _dataclass_to_dict(export_data.segment)
+        if export_data.segment
+        else None,
         "raw_data": {
             "n_beats": export_data.n_beats,
             "rr_intervals": _dataclass_to_dict(export_data.rr_intervals),
         },
-
         "processing": {
             "cleaning_config": export_data.cleaning_config,
             "exclusion_zones": _dataclass_to_dict(export_data.exclusion_zones),
-            "artifact_detection": _dataclass_to_dict(export_data.artifact_detection) if export_data.artifact_detection else None,
+            "artifact_detection": _dataclass_to_dict(export_data.artifact_detection)
+            if export_data.artifact_detection
+            else None,
             "manual_artifacts": _dataclass_to_dict(export_data.manual_artifacts),
             "excluded_detected_indices": export_data.excluded_detected_indices,
             "final_artifact_indices": export_data.final_artifact_indices,
         },
-
         "quality": _dataclass_to_dict(export_data.quality),
-
         "audit": {
             "processing_steps": _dataclass_to_dict(export_data.processing_steps),
             "software_versions": export_data.software_versions,
@@ -400,8 +424,10 @@ def save_rrational(export_data: RRationalExport, filepath: Path | str) -> None:
         }
 
     # Write YAML file
-    with open(filepath, 'w', encoding='utf-8') as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    with open(filepath, "w", encoding="utf-8") as f:
+        yaml.dump(
+            data, f, default_flow_style=False, allow_unicode=True, sort_keys=False
+        )
 
 
 def load_rrational(filepath: Path | str) -> RRationalExport:
@@ -415,7 +441,7 @@ def load_rrational(filepath: Path | str) -> RRationalExport:
     """
     filepath = Path(filepath)
 
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     # Validate version
@@ -445,22 +471,26 @@ def load_rrational(filepath: Path | str) -> RRationalExport:
     # Build RR intervals
     rr_intervals = []
     for rr in raw_data.get("rr_intervals", []):
-        rr_intervals.append(RRIntervalExport(
-            timestamp=rr.get("timestamp", ""),
-            rr_ms=rr.get("rr_ms", 0),
-            elapsed_ms=rr.get("elapsed_ms"),
-            original_idx=rr.get("original_idx"),
-        ))
+        rr_intervals.append(
+            RRIntervalExport(
+                timestamp=rr.get("timestamp", ""),
+                rr_ms=rr.get("rr_ms", 0),
+                elapsed_ms=rr.get("elapsed_ms"),
+                original_idx=rr.get("original_idx"),
+            )
+        )
 
     # Build exclusion zones
     exclusion_zones = []
     for zone in processing.get("exclusion_zones", []):
-        exclusion_zones.append(ExclusionZone(
-            start=zone.get("start", ""),
-            end=zone.get("end", ""),
-            reason=zone.get("reason", ""),
-            exclude_from_duration=zone.get("exclude_from_duration", True),
-        ))
+        exclusion_zones.append(
+            ExclusionZone(
+                start=zone.get("start", ""),
+                end=zone.get("end", ""),
+                reason=zone.get("reason", ""),
+                exclude_from_duration=zone.get("exclude_from_duration", True),
+            )
+        )
 
     # Build artifact detection
     artifact_detection = None
@@ -479,13 +509,15 @@ def load_rrational(filepath: Path | str) -> RRationalExport:
     # Build manual artifacts
     manual_artifacts = []
     for ma in processing.get("manual_artifacts", []):
-        manual_artifacts.append(ManualArtifact(
-            original_idx=ma.get("original_idx", 0),
-            timestamp=ma.get("timestamp", ""),
-            rr_value=ma.get("rr_value", 0),
-            source=ma.get("source", "manual_click"),
-            marked_at=ma.get("marked_at"),
-        ))
+        manual_artifacts.append(
+            ManualArtifact(
+                original_idx=ma.get("original_idx", 0),
+                timestamp=ma.get("timestamp", ""),
+                rr_value=ma.get("rr_value", 0),
+                source=ma.get("source", "manual_click"),
+                marked_at=ma.get("marked_at"),
+            )
+        )
 
     # Build quality metrics
     quality = QualityMetrics(
@@ -502,12 +534,14 @@ def load_rrational(filepath: Path | str) -> RRationalExport:
     # Build processing steps
     processing_steps = []
     for step in audit.get("processing_steps", []):
-        processing_steps.append(ProcessingStep(
-            step=step.get("step", 0),
-            action=step.get("action", ""),
-            timestamp=step.get("timestamp", ""),
-            details=step.get("details", ""),
-        ))
+        processing_steps.append(
+            ProcessingStep(
+                step=step.get("step", 0),
+                action=step.get("action", ""),
+                timestamp=step.get("timestamp", ""),
+                details=step.get("details", ""),
+            )
+        )
 
     # Build corrected intervals if present
     corrected_intervals = []
@@ -519,12 +553,14 @@ def load_rrational(filepath: Path | str) -> RRationalExport:
         correction_method = corrected_data.get("correction_method")
         n_corrected = corrected_data.get("n_corrected", 0)
         for ci in corrected_data.get("nn_intervals", []):
-            corrected_intervals.append(CorrectedInterval(
-                timestamp=ci.get("timestamp", ""),
-                nn_ms=ci.get("nn_ms", 0),
-                was_corrected=ci.get("was_corrected", False),
-                original_rr_ms=ci.get("original_rr_ms"),
-            ))
+            corrected_intervals.append(
+                CorrectedInterval(
+                    timestamp=ci.get("timestamp", ""),
+                    nn_ms=ci.get("nn_ms", 0),
+                    was_corrected=ci.get("was_corrected", False),
+                    original_rr_ms=ci.get("original_rr_ms"),
+                )
+            )
 
     return RRationalExport(
         participant_id=metadata.get("participant_id", ""),
@@ -570,7 +606,9 @@ def validate_rrational(data: RRationalExport) -> tuple[bool, list[str]]:
         errors.append("No RR intervals in export")
 
     if data.n_beats != len(data.rr_intervals):
-        errors.append(f"n_beats ({data.n_beats}) doesn't match interval count ({len(data.rr_intervals)})")
+        errors.append(
+            f"n_beats ({data.n_beats}) doesn't match interval count ({len(data.rr_intervals)})"
+        )
 
     # Check RR interval validity
     for i, rr in enumerate(data.rr_intervals):
@@ -635,10 +673,15 @@ def find_rrational_files(
     # Check project processed folder (highest priority)
     if project_path:
         project_path = Path(project_path)
-        processed_dir = project_path / "processed"
+        pattern = f"{participant_id}*.rrational"
+        # Standard layout: project/data/processed/
+        processed_dir = project_path / "data" / "processed"
         if processed_dir.exists():
-            pattern = f"{participant_id}*.rrational"
             files.extend(processed_dir.glob(pattern))
+        # Legacy layout: project/processed/
+        processed_dir_legacy = project_path / "processed"
+        if processed_dir_legacy.exists():
+            files.extend(processed_dir_legacy.glob(pattern))
 
     # Check processed folder relative to data_dir
     if data_dir:
@@ -734,7 +777,9 @@ def _section_export_to_dict(section: SectionExportV2) -> dict:
             "detected_count": section.artifact_detection.detected_count,
             "by_type": section.artifact_detection.by_type,
             "artifact_rate_detected": section.artifact_detection.artifact_rate_detected,
-        } if section.artifact_detection else None,
+        }
+        if section.artifact_detection
+        else None,
         "manual_artifacts": {
             "added_indices": section.manual_artifacts.added_indices,
             "removed_indices": section.manual_artifacts.removed_indices,
@@ -859,7 +904,11 @@ def _dict_to_section_export(data: dict) -> SectionExportV2:
 
     # Backward compatibility: recalculate final_artifacts from artifact_detection if missing
     # This handles old .rrational files that didn't save the final_artifacts correctly
-    if final_artifacts.count == 0 and artifact_detection and artifact_detection.detected_count > 0:
+    if (
+        final_artifacts.count == 0
+        and artifact_detection
+        and artifact_detection.detected_count > 0
+    ):
         # Calculate final = detected + manual_added - manual_removed
         detected_count = artifact_detection.detected_count
         added_count = len(manual_artifacts.added_indices)
@@ -970,7 +1019,6 @@ def save_rrational_v2(
     data = {
         "rrational_version": RRATIONAL_VERSION_V2,
         "file_type": "analysis_ready",
-
         "metadata": {
             "participant_id": export_data.metadata.participant_id,
             "created_at": export_data.metadata.created_at,
@@ -980,11 +1028,8 @@ def save_rrational_v2(
             "recording_info": export_data.metadata.recording_info,
             "software_versions": export_data.metadata.software_versions,
         },
-
         "sections": sections_dict,
-
         "exclusion_zones_summary": export_data.exclusion_zones_summary,
-
         "recording_gaps": [
             {
                 "gap_id": g.gap_id,
@@ -996,7 +1041,6 @@ def save_rrational_v2(
             }
             for g in export_data.recording_gaps
         ],
-
         "audit_trail": [
             {
                 "step": entry.step,
@@ -1011,8 +1055,10 @@ def save_rrational_v2(
     }
 
     # Write YAML file
-    with open(filepath, 'w', encoding='utf-8') as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    with open(filepath, "w", encoding="utf-8") as f:
+        yaml.dump(
+            data, f, default_flow_style=False, allow_unicode=True, sort_keys=False
+        )
 
 
 def load_rrational_v2(filepath: Path | str) -> RRationalExportV2:
@@ -1029,7 +1075,7 @@ def load_rrational_v2(filepath: Path | str) -> RRationalExportV2:
     """
     filepath = Path(filepath)
 
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     version = data.get("rrational_version", "1.0")
@@ -1097,7 +1143,7 @@ def get_rrational_version(filepath: Path | str) -> str:
     """
     filepath = Path(filepath)
 
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         # Only read first few lines to get version
         for line in f:
             if line.startswith("rrational_version:"):
@@ -1109,7 +1155,9 @@ def get_rrational_version(filepath: Path | str) -> str:
     return "1.0"  # Default to v1.0 if not found
 
 
-def load_rrational_any_version(filepath: Path | str) -> RRationalExportV2 | RRationalExport:
+def load_rrational_any_version(
+    filepath: Path | str,
+) -> RRationalExportV2 | RRationalExport:
     """Load a .rrational file of any version.
 
     Args:
@@ -1165,10 +1213,18 @@ def build_rrational_v2(
     now = dt.now().isoformat()
 
     # Load all intermediate data
-    events_data = load_participant_events(participant_id, data_dir, project_path=project_path)
-    artifacts_data = load_artifact_corrections(participant_id, data_dir=data_dir, project_path=project_path)
-    validations_data = load_section_validations(participant_id, data_dir=data_dir, project_path=project_path)
-    nn_data = load_nn_intervals(participant_id, data_dir=data_dir, project_path=project_path)
+    events_data = load_participant_events(
+        participant_id, data_dir, project_path=project_path
+    )
+    artifacts_data = load_artifact_corrections(
+        participant_id, data_dir=data_dir, project_path=project_path
+    )
+    validations_data = load_section_validations(
+        participant_id, data_dir=data_dir, project_path=project_path
+    )
+    nn_data = load_nn_intervals(
+        participant_id, data_dir=data_dir, project_path=project_path
+    )
 
     if not validations_data:
         warnings.append(f"No section validations found for {participant_id}")
@@ -1200,7 +1256,9 @@ def build_rrational_v2(
         section_validation = validations.get(section_name, {})
 
         if not section_validation:
-            warnings.append(f"Section '{section_name}' has no validation data - skipping")
+            warnings.append(
+                f"Section '{section_name}' has no validation data - skipping"
+            )
             continue
 
         if not section_validation.get("is_valid", False):
@@ -1219,7 +1277,9 @@ def build_rrational_v2(
         end_evt = section_validation.get("end_event", {})
 
         validation = SectionValidationV2(
-            validated_at=validations_data.get("saved_at", now) if validations_data else now,
+            validated_at=validations_data.get("saved_at", now)
+            if validations_data
+            else now,
             start_event=EventChoiceV2(
                 label=start_evt.get("canonical", ""),
                 timestamp=start_evt.get("timestamp", ""),
@@ -1249,7 +1309,7 @@ def build_rrational_v2(
             if zone_start and zone_end and section_start_ts and section_end_ts:
                 if zone_end > section_start_ts and zone_start < section_end_ts:
                     excl = ExclusionZoneV2(
-                        id=f"excl_{i+1}",
+                        id=f"excl_{i + 1}",
                         start_timestamp=zone_start,
                         end_timestamp=zone_end,
                         start_beat_idx=zone.get("start_beat_idx", 0),
@@ -1267,7 +1327,9 @@ def build_rrational_v2(
                         "affects_sections": [section_name],
                     }
                     # Check if already in summary
-                    existing = next((s for s in exclusion_zones_summary if s["id"] == excl.id), None)
+                    existing = next(
+                        (s for s in exclusion_zones_summary if s["id"] == excl.id), None
+                    )
                     if existing:
                         if section_name not in existing["affects_sections"]:
                             existing["affects_sections"].append(section_name)
@@ -1323,7 +1385,9 @@ def build_rrational_v2(
             elif "manual_artifacts" in section_artifacts:
                 # Flat format from persistence.py - manual_artifacts is a list of dicts
                 manual_list = section_artifacts.get("manual_artifacts", [])
-                manual_added = [m.get("original_idx", 0) for m in manual_list if isinstance(m, dict)]
+                manual_added = [
+                    m.get("original_idx", 0) for m in manual_list if isinstance(m, dict)
+                ]
                 manual_removed = section_artifacts.get("excluded_artifact_indices", [])
                 manual_artifacts = ManualArtifactsV2(
                     added_indices=manual_added,
@@ -1370,9 +1434,18 @@ def build_rrational_v2(
         else:
             # Try to slice from broader scope
             # Check for parent scopes: measurement variants, then _full
-            parent_scopes = ["measurement", "first_measurement", "second_measurement", "_full"]
-            section_start_beat = section_validation.get("start_event", {}).get("beat_idx", 0)
-            section_end_beat = section_validation.get("end_event", {}).get("beat_idx", 0)
+            parent_scopes = [
+                "measurement",
+                "first_measurement",
+                "second_measurement",
+                "_full",
+            ]
+            section_start_beat = section_validation.get("start_event", {}).get(
+                "beat_idx", 0
+            )
+            section_end_beat = section_validation.get("end_event", {}).get(
+                "beat_idx", 0
+            )
 
             for parent_name in parent_scopes:
                 parent_nn = nn_sections.get(parent_name, {})
@@ -1392,7 +1465,9 @@ def build_rrational_v2(
                 # Simple heuristic: if parent has enough intervals and section is reasonable
                 if len(parent_intervals) >= section_end_beat:
                     # Slice the parent's data
-                    sliced_intervals = parent_intervals[section_start_beat:section_end_beat]
+                    sliced_intervals = parent_intervals[
+                        section_start_beat:section_end_beat
+                    ]
 
                     if sliced_intervals:
                         # Adjust timestamps to be relative to section start
@@ -1403,8 +1478,11 @@ def build_rrational_v2(
 
                         # Count corrections in the slice
                         corrections_in_slice = [
-                            c for c in parent_nn.get("corrections", [])
-                            if section_start_beat <= c.get("nn_idx", -1) < section_end_beat
+                            c
+                            for c in parent_nn.get("corrections", [])
+                            if section_start_beat
+                            <= c.get("nn_idx", -1)
+                            < section_end_beat
                         ]
                         # Adjust correction indices to be section-relative
                         adjusted_corrections = [
@@ -1422,7 +1500,9 @@ def build_rrational_v2(
                             corrections=adjusted_corrections,
                         )
                         nn_source = f"{parent_name} (sliced)"
-                        warnings.append(f"Section '{section_name}' using NN intervals sliced from '{parent_name}'")
+                        warnings.append(
+                            f"Section '{section_name}' using NN intervals sliced from '{parent_name}'"
+                        )
                         break
 
             if not nn_source:
@@ -1437,20 +1517,28 @@ def build_rrational_v2(
                             if len(item) >= 2:
                                 ts_ms = item[0]
                                 rr_ms = item[1]
-                                nn_data_from_raw.append([ts_ms, rr_ms, False])  # was_corrected=False
+                                nn_data_from_raw.append(
+                                    [ts_ms, rr_ms, False]
+                                )  # was_corrected=False
                         if nn_data_from_raw:
                             nn_intervals = NNIntervalsDataV2(
                                 data=nn_data_from_raw,
                                 corrections=[],  # No corrections for raw data
                             )
                             nn_source = "raw_rr_fallback"
-                            warnings.append(f"Section '{section_name}' using raw RR intervals (no artifact correction)")
+                            warnings.append(
+                                f"Section '{section_name}' using raw RR intervals (no artifact correction)"
+                            )
 
                 if not nn_source:
-                    warnings.append(f"Section '{section_name}' has no NN intervals - analysis may use raw data")
+                    warnings.append(
+                        f"Section '{section_name}' has no NN intervals - analysis may use raw data"
+                    )
 
         # Calculate quality
-        usable_beats = len(nn_intervals.data) if nn_intervals.data else validation.total_beat_count
+        usable_beats = (
+            len(nn_intervals.data) if nn_intervals.data else validation.total_beat_count
+        )
         usable_duration = validation.total_duration_s
         # Subtract exclusion zone durations
         for excl in section_exclusions:
@@ -1472,7 +1560,9 @@ def build_rrational_v2(
 
         quality = QualityV2(
             grade=get_quality_grade(final_artifacts.rate),
-            recommendation=get_quigley_recommendation(final_artifacts.rate, usable_beats),
+            recommendation=get_quigley_recommendation(
+                final_artifacts.rate, usable_beats
+            ),
             usable_beats=usable_beats,
             usable_duration_s=usable_duration,
             meets_time_domain_min=usable_beats >= 100,
@@ -1494,9 +1584,15 @@ def build_rrational_v2(
                 for seg in analysis_segments:
                     if seg.type == "data" and nn_intervals.data:
                         # Estimate NN count based on duration proportion
-                        total_data_duration = sum(s.duration_s for s in analysis_segments if s.type == "data")
+                        total_data_duration = sum(
+                            s.duration_s for s in analysis_segments if s.type == "data"
+                        )
                         if total_data_duration > 0:
-                            seg.nn_count = int(len(nn_intervals.data) * seg.duration_s / total_data_duration)
+                            seg.nn_count = int(
+                                len(nn_intervals.data)
+                                * seg.duration_s
+                                / total_data_duration
+                            )
                             seg.nn_start_idx = nn_idx
                             seg.nn_end_idx = nn_idx + seg.nn_count - 1
                             nn_idx += seg.nn_count
@@ -1521,13 +1617,15 @@ def build_rrational_v2(
         sections[section_name] = section_export
 
         # Add audit entry
-        audit_trail.append(AuditEntryV2(
-            step=audit_step,
-            action="section_exported",
-            timestamp=now,
-            details=f"Exported {section_name}: {usable_beats} NN intervals, {len(analysis_segments)} segments",
-            section=section_name,
-        ))
+        audit_trail.append(
+            AuditEntryV2(
+                step=audit_step,
+                action="section_exported",
+                timestamp=now,
+                details=f"Exported {section_name}: {usable_beats} NN intervals, {len(analysis_segments)} segments",
+                section=section_name,
+            )
+        )
         audit_step += 1
 
     # Create export
@@ -1569,26 +1667,46 @@ def calculate_analysis_segments(
     breaks = []
 
     for zone in exclusion_zones:
-        zone_start = dt.fromisoformat(zone.start_timestamp) if isinstance(zone.start_timestamp, str) else zone.start_timestamp
-        zone_end = dt.fromisoformat(zone.end_timestamp) if isinstance(zone.end_timestamp, str) else zone.end_timestamp
-        breaks.append({
-            "type": "exclusion",
-            "start": zone_start,
-            "end": zone_end,
-            "id": zone.id,
-            "reason": zone.reason,
-        })
+        zone_start = (
+            dt.fromisoformat(zone.start_timestamp)
+            if isinstance(zone.start_timestamp, str)
+            else zone.start_timestamp
+        )
+        zone_end = (
+            dt.fromisoformat(zone.end_timestamp)
+            if isinstance(zone.end_timestamp, str)
+            else zone.end_timestamp
+        )
+        breaks.append(
+            {
+                "type": "exclusion",
+                "start": zone_start,
+                "end": zone_end,
+                "id": zone.id,
+                "reason": zone.reason,
+            }
+        )
 
     for gap in gaps:
-        gap_start = dt.fromisoformat(gap.gap_start) if isinstance(gap.gap_start, str) else gap.gap_start
-        gap_end = dt.fromisoformat(gap.gap_end) if isinstance(gap.gap_end, str) else gap.gap_end
-        breaks.append({
-            "type": "gap",
-            "start": gap_start,
-            "end": gap_end,
-            "id": gap.gap_id,
-            "reason": f"Recording gap ({gap.gap_duration_s:.1f}s)",
-        })
+        gap_start = (
+            dt.fromisoformat(gap.gap_start)
+            if isinstance(gap.gap_start, str)
+            else gap.gap_start
+        )
+        gap_end = (
+            dt.fromisoformat(gap.gap_end)
+            if isinstance(gap.gap_end, str)
+            else gap.gap_end
+        )
+        breaks.append(
+            {
+                "type": "gap",
+                "start": gap_start,
+                "end": gap_end,
+                "id": gap.gap_id,
+                "reason": f"Recording gap ({gap.gap_duration_s:.1f}s)",
+            }
+        )
 
     # Sort breaks by start time
     breaks.sort(key=lambda b: b["start"])
@@ -1606,47 +1724,55 @@ def calculate_analysis_segments(
         # Data segment before this break
         if brk["start"] > current_start:
             duration = (brk["start"] - current_start).total_seconds()
-            segments.append(AnalysisSegmentV2(
-                segment_id=f"{section_name}_seg{data_segment_num}",
-                type="data",
-                start_timestamp=current_start.isoformat(),
-                end_timestamp=brk["start"].isoformat(),
-                duration_s=duration,
-            ))
+            segments.append(
+                AnalysisSegmentV2(
+                    segment_id=f"{section_name}_seg{data_segment_num}",
+                    type="data",
+                    start_timestamp=current_start.isoformat(),
+                    end_timestamp=brk["start"].isoformat(),
+                    duration_s=duration,
+                )
+            )
             data_segment_num += 1
 
         # The break itself
-        segments.append(AnalysisSegmentV2(
-            segment_id=f"{section_name}_{brk['type']}{len([s for s in segments if s.type == brk['type']]) + 1}",
-            type=brk["type"],
-            start_timestamp=brk["start"].isoformat(),
-            end_timestamp=brk["end"].isoformat(),
-            duration_s=(brk["end"] - brk["start"]).total_seconds(),
-            reason=brk["reason"],
-        ))
+        segments.append(
+            AnalysisSegmentV2(
+                segment_id=f"{section_name}_{brk['type']}{len([s for s in segments if s.type == brk['type']]) + 1}",
+                type=brk["type"],
+                start_timestamp=brk["start"].isoformat(),
+                end_timestamp=brk["end"].isoformat(),
+                duration_s=(brk["end"] - brk["start"]).total_seconds(),
+                reason=brk["reason"],
+            )
+        )
 
         current_start = brk["end"]
 
     # Final data segment after last break
     if current_start < section_end_ts:
         duration = (section_end_ts - current_start).total_seconds()
-        segments.append(AnalysisSegmentV2(
-            segment_id=f"{section_name}_seg{data_segment_num}",
-            type="data",
-            start_timestamp=current_start.isoformat(),
-            end_timestamp=section_end_ts.isoformat(),
-            duration_s=duration,
-        ))
+        segments.append(
+            AnalysisSegmentV2(
+                segment_id=f"{section_name}_seg{data_segment_num}",
+                type="data",
+                start_timestamp=current_start.isoformat(),
+                end_timestamp=section_end_ts.isoformat(),
+                duration_s=duration,
+            )
+        )
 
     # If no breaks, entire section is one data segment
     if not segments:
         duration = (section_end_ts - section_start_ts).total_seconds()
-        segments.append(AnalysisSegmentV2(
-            segment_id=f"{section_name}_seg1",
-            type="data",
-            start_timestamp=section_start_ts.isoformat(),
-            end_timestamp=section_end_ts.isoformat(),
-            duration_s=duration,
-        ))
+        segments.append(
+            AnalysisSegmentV2(
+                segment_id=f"{section_name}_seg1",
+                type="data",
+                start_timestamp=section_start_ts.isoformat(),
+                end_timestamp=section_end_ts.isoformat(),
+                duration_s=duration,
+            )
+        )
 
     return segments
