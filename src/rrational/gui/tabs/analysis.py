@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -56,7 +55,6 @@ from rrational.analysis.hrv_compute import (  # noqa: E402
     calculate_group_stats as _calculate_group_stats,
 )
 from rrational.gui.plots.analysis_plots import (  # noqa: E402
-    PLOT_COLORS,
     get_theme_colors,
     get_plotly_analysis,
     create_professional_tachogram,
@@ -79,7 +77,6 @@ from rrational.gui.plots.group_plots import (  # noqa: E402
 #   rrational.analysis.hrv_compute
 # They are imported at the top of this file.
 # =============================================================================
-
 
 
 # Window generation and aggregation functions are now in rrational.analysis.hrv_metrics
@@ -110,9 +107,15 @@ for inspecting raw HRV data and identifying artifacts, trends, and patterns.
 - **±2 SD band**: ~95% of intervals should fall within this range
         """,
         "references": [
-            ("Task Force (1996) - HRV Standards", "https://doi.org/10.1161/01.CIR.93.5.1043"),
-            ("Shaffer & Ginsberg (2017) - HRV Overview", "https://doi.org/10.3389/fpubh.2017.00258"),
-        ]
+            (
+                "Task Force (1996) - HRV Standards",
+                "https://doi.org/10.1161/01.CIR.93.5.1043",
+            ),
+            (
+                "Shaffer & Ginsberg (2017) - HRV Overview",
+                "https://doi.org/10.3389/fpubh.2017.00258",
+            ),
+        ],
     },
     "poincare": {
         "title": "Poincaré Plot (Return Map)",
@@ -132,9 +135,15 @@ It visualizes short-term and long-term variability in a single view.
   - Normal ratio (0.5-1.0): Balanced variability
         """,
         "references": [
-            ("Brennan et al. (2001) - Poincaré Plot Analysis", "https://doi.org/10.1109/10.959330"),
-            ("Guzik et al. (2007) - Poincaré Plot Asymmetry", "https://doi.org/10.1088/0967-3334/28/3/N01"),
-        ]
+            (
+                "Brennan et al. (2001) - Poincaré Plot Analysis",
+                "https://doi.org/10.1109/10.959330",
+            ),
+            (
+                "Guzik et al. (2007) - Poincaré Plot Asymmetry",
+                "https://doi.org/10.1088/0967-3334/28/3/N01",
+            ),
+        ],
     },
     "frequency": {
         "title": "Power Spectral Density (Frequency Domain)",
@@ -159,9 +168,15 @@ Different frequency bands reflect different physiological mechanisms.
 - >2.0: Sympathetic dominant
         """,
         "references": [
-            ("Task Force (1996) - Frequency Bands", "https://doi.org/10.1161/01.CIR.93.5.1043"),
-            ("Laborde et al. (2017) - HRV and Cardiac Vagal Tone", "https://doi.org/10.3389/fpsyg.2017.00213"),
-        ]
+            (
+                "Task Force (1996) - Frequency Bands",
+                "https://doi.org/10.1161/01.CIR.93.5.1043",
+            ),
+            (
+                "Laborde et al. (2017) - HRV and Cardiac Vagal Tone",
+                "https://doi.org/10.3389/fpsyg.2017.00213",
+            ),
+        ],
     },
     "hr_distribution": {
         "title": "Heart Rate Distribution",
@@ -180,14 +195,21 @@ during the recording period.
 - Well-trained athletes: 40-60 BPM
         """,
         "references": [
-            ("Nunan et al. (2010) - Normal HR Values", "https://doi.org/10.1097/HJR.0b013e32833e4598"),
-        ]
+            (
+                "Nunan et al. (2010) - Normal HR Values",
+                "https://doi.org/10.1097/HJR.0b013e32833e4598",
+            ),
+        ],
     },
 }
 
-def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
-                                      artifact_info: dict = None,
-                                      recording_duration_sec: float = None) -> None:
+
+def display_hrv_metrics_professional(
+    hrv_results: pd.DataFrame,
+    n_beats: int,
+    artifact_info: dict = None,
+    recording_duration_sec: float = None,
+) -> None:
     """Display HRV metrics using pure Streamlit native components.
 
     Clean, professional design that works in both light and dark modes.
@@ -195,13 +217,37 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
     """
 
     # Extract key metrics
-    rmssd = hrv_results.get('HRV_RMSSD', [0]).iloc[0] if 'HRV_RMSSD' in hrv_results.columns else 0
-    sdnn = hrv_results.get('HRV_SDNN', [0]).iloc[0] if 'HRV_SDNN' in hrv_results.columns else 0
-    pnn50 = hrv_results.get('HRV_pNN50', [0]).iloc[0] if 'HRV_pNN50' in hrv_results.columns else 0
-    lf_hf = hrv_results.get('HRV_LFHF', [0]).iloc[0] if 'HRV_LFHF' in hrv_results.columns else 0
-    hf = hrv_results.get('HRV_HF', [0]).iloc[0] if 'HRV_HF' in hrv_results.columns else 0
-    lf = hrv_results.get('HRV_LF', [0]).iloc[0] if 'HRV_LF' in hrv_results.columns else 0
-    mean_hr = hrv_results.get('HRV_MeanNN', [0]).iloc[0] if 'HRV_MeanNN' in hrv_results.columns else 0
+    rmssd = (
+        hrv_results.get("HRV_RMSSD", [0]).iloc[0]
+        if "HRV_RMSSD" in hrv_results.columns
+        else 0
+    )
+    sdnn = (
+        hrv_results.get("HRV_SDNN", [0]).iloc[0]
+        if "HRV_SDNN" in hrv_results.columns
+        else 0
+    )
+    pnn50 = (
+        hrv_results.get("HRV_pNN50", [0]).iloc[0]
+        if "HRV_pNN50" in hrv_results.columns
+        else 0
+    )
+    lf_hf = (
+        hrv_results.get("HRV_LFHF", [0]).iloc[0]
+        if "HRV_LFHF" in hrv_results.columns
+        else 0
+    )
+    hf = (
+        hrv_results.get("HRV_HF", [0]).iloc[0] if "HRV_HF" in hrv_results.columns else 0
+    )
+    lf = (
+        hrv_results.get("HRV_LF", [0]).iloc[0] if "HRV_LF" in hrv_results.columns else 0
+    )
+    mean_hr = (
+        hrv_results.get("HRV_MeanNN", [0]).iloc[0]
+        if "HRV_MeanNN" in hrv_results.columns
+        else 0
+    )
     if mean_hr > 0:
         mean_hr_bpm = 60000 / mean_hr  # Convert ms to BPM
     else:
@@ -218,11 +264,20 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
     # Data quality assessment
     quality_issues = []
     if n_beats < MIN_BEATS_TIME_DOMAIN:
-        quality_issues.append(f"Low beat count: {n_beats} (min: {MIN_BEATS_TIME_DOMAIN})")
+        quality_issues.append(
+            f"Low beat count: {n_beats} (min: {MIN_BEATS_TIME_DOMAIN})"
+        )
     if n_beats < MIN_BEATS_FREQUENCY_DOMAIN:
-        quality_issues.append(f"Insufficient for frequency domain: {n_beats}/{MIN_BEATS_FREQUENCY_DOMAIN} beats")
-    if recording_duration_sec and recording_duration_sec < MIN_DURATION_FREQUENCY_DOMAIN_SEC:
-        quality_issues.append(f"Short recording: {duration_min:.1f} min (recommended: ≥5 min)")
+        quality_issues.append(
+            f"Insufficient for frequency domain: {n_beats}/{MIN_BEATS_FREQUENCY_DOMAIN} beats"
+        )
+    if (
+        recording_duration_sec
+        and recording_duration_sec < MIN_DURATION_FREQUENCY_DOMAIN_SEC
+    ):
+        quality_issues.append(
+            f"Short recording: {duration_min:.1f} min (recommended: ≥5 min)"
+        )
 
     # === RECORDING SUMMARY ===
     st.markdown("##### Recording Summary")
@@ -238,8 +293,10 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
     with sum_col4:
         if artifact_info:
             # Support both 'artifact_rate' (v2) and 'artifact_ratio' (v1) keys
-            artifact_rate = artifact_info.get('artifact_rate', artifact_info.get('artifact_ratio', 0))
-            artifact_count = artifact_info.get('total_artifacts', 0)
+            artifact_rate = artifact_info.get(
+                "artifact_rate", artifact_info.get("artifact_ratio", 0)
+            )
+            artifact_count = artifact_info.get("total_artifacts", 0)
             artifact_pct = artifact_rate * 100
             st.metric("Artifacts", f"{artifact_count} ({artifact_pct:.2f}%)")
         else:
@@ -281,7 +338,7 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
             f"{rmssd:.1f} ms",
             delta=delta_text,
             delta_color=delta_color,
-            help=f"Parasympathetic indicator. Reference: {rmssd_ref['low']}–{rmssd_ref['high']} ms"
+            help=f"Parasympathetic indicator. Reference: {rmssd_ref['low']}–{rmssd_ref['high']} ms",
         )
 
     with col2:
@@ -297,7 +354,7 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
             f"{sdnn:.1f} ms",
             delta=delta_text,
             delta_color=delta_color,
-            help=f"Overall HRV. Reference: ≥{sdnn_ref['low']} ms"
+            help=f"Overall HRV. Reference: ≥{sdnn_ref['low']} ms",
         )
 
     with col3:
@@ -316,7 +373,7 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
             f"{pnn50:.1f}%",
             delta=delta_text,
             delta_color=delta_color,
-            help=f"% of RR differences >50ms. Reference: {pnn_ref['low']}–{pnn_ref['high']}%"
+            help=f"% of RR differences >50ms. Reference: {pnn_ref['low']}–{pnn_ref['high']}%",
         )
 
     with col4:
@@ -335,7 +392,7 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
             f"{mean_hr_bpm:.0f} BPM",
             delta=delta_text,
             delta_color=delta_color,
-            help="Average heart rate. Normal resting: 60–100 BPM"
+            help="Average heart rate. Normal resting: 60–100 BPM",
         )
 
     st.divider()
@@ -351,7 +408,7 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
             _format_power(lf),
             delta=f"{lf_pct:.0f}%",
             delta_color="off",
-            help="Low Frequency (0.04–0.15 Hz). Mixed sympathetic/parasympathetic."
+            help="Low Frequency (0.04–0.15 Hz). Mixed sympathetic/parasympathetic.",
         )
 
     with col2:
@@ -360,7 +417,7 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
             _format_power(hf),
             delta=f"{hf_pct:.0f}%",
             delta_color="off",
-            help="High Frequency (0.15–0.4 Hz). Parasympathetic/vagal activity."
+            help="High Frequency (0.15–0.4 Hz). Parasympathetic/vagal activity.",
         )
 
     with col3:
@@ -376,7 +433,7 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
             f"{lf_hf:.2f}",
             delta=lfhf_delta,
             delta_color="off",
-            help="Sympathovagal balance. <0.5: PNS dominant, 0.5–3.0: Balanced, >3.0: SNS dominant"
+            help="Sympathovagal balance. <0.5: PNS dominant, 0.5–3.0: Balanced, >3.0: SNS dominant",
         )
 
     # Autonomic balance indicator using progress bar
@@ -391,9 +448,12 @@ def display_hrv_metrics_professional(hrv_results: pd.DataFrame, n_beats: int,
         st.caption("SNS")
 
 
-def create_hrv_metrics_card(hrv_results: pd.DataFrame, n_beats: int,
-                            artifact_info: dict = None,
-                            recording_duration_sec: float = None) -> str:
+def create_hrv_metrics_card(
+    hrv_results: pd.DataFrame,
+    n_beats: int,
+    artifact_info: dict = None,
+    recording_duration_sec: float = None,
+) -> str:
     """Legacy function - returns empty string. Use display_hrv_metrics_professional() instead."""
     return ""
 
@@ -451,12 +511,12 @@ class AnalysisDocumentation:
             self.cleaning_config = {}
         elif isinstance(config, dict):
             self.cleaning_config = config.copy()
-        elif hasattr(config, '__dict__'):
+        elif hasattr(config, "__dict__"):
             # Handle dataclass or object with attributes
             self.cleaning_config = {
-                "rr_min_ms": getattr(config, 'rr_min_ms', 200),
-                "rr_max_ms": getattr(config, 'rr_max_ms', 2000),
-                "sudden_change_pct": getattr(config, 'sudden_change_pct', 100),
+                "rr_min_ms": getattr(config, "rr_min_ms", 200),
+                "rr_max_ms": getattr(config, "rr_max_ms", 2000),
+                "sudden_change_pct": getattr(config, "sudden_change_pct", 100),
             }
         else:
             self.cleaning_config = {}
@@ -467,17 +527,26 @@ class AnalysisDocumentation:
         if results:
             self.artifact_results = results.copy()
 
-    def add_section(self, name: str, label: str, start_event: str, end_events: list,
-                    beats_extracted: int, beats_after_cleaning: int):
+    def add_section(
+        self,
+        name: str,
+        label: str,
+        start_event: str,
+        end_events: list,
+        beats_extracted: int,
+        beats_after_cleaning: int,
+    ):
         """Add a section to the documentation."""
-        self.sections_analyzed.append({
-            "name": name,
-            "label": label,
-            "start_event": start_event,
-            "end_events": end_events,
-            "beats_extracted": beats_extracted,
-            "beats_after_cleaning": beats_after_cleaning,
-        })
+        self.sections_analyzed.append(
+            {
+                "name": name,
+                "label": label,
+                "start_event": start_event,
+                "end_events": end_events,
+                "beats_extracted": beats_extracted,
+                "beats_after_cleaning": beats_after_cleaning,
+            }
+        )
         self.total_beats_analyzed += beats_after_cleaning
 
     def add_exclusion_zones(self, zones: list):
@@ -487,7 +556,7 @@ class AnalysisDocumentation:
     def add_hrv_results(self, section_name: str, results: pd.DataFrame):
         """Add HRV results for a section."""
         if not results.empty:
-            self.hrv_results[section_name] = results.to_dict('records')[0]
+            self.hrv_results[section_name] = results.to_dict("records")[0]
 
     def generate_markdown(self) -> str:
         """Generate a complete markdown documentation report."""
@@ -508,7 +577,9 @@ class AnalysisDocumentation:
         lines.append("")
         lines.append(f"- **Source Application:** {self.data_source}")
         lines.append(f"- **Total Raw Beats:** {self.total_beats_raw:,}")
-        lines.append(f"- **Recording Duration:** {self.recording_duration_sec/60:.1f} minutes")
+        lines.append(
+            f"- **Recording Duration:** {self.recording_duration_sec / 60:.1f} minutes"
+        )
         lines.append("")
 
         # Data Preparation
@@ -519,9 +590,15 @@ class AnalysisDocumentation:
         if self.cleaning_config:
             lines.append("| Parameter | Value |")
             lines.append("|-----------|-------|")
-            lines.append(f"| Minimum RR | {self.cleaning_config.get('rr_min_ms', 200)} ms |")
-            lines.append(f"| Maximum RR | {self.cleaning_config.get('rr_max_ms', 2000)} ms |")
-            lines.append(f"| Sudden Change Threshold | {self.cleaning_config.get('sudden_change_pct', 100)}% |")
+            lines.append(
+                f"| Minimum RR | {self.cleaning_config.get('rr_min_ms', 200)} ms |"
+            )
+            lines.append(
+                f"| Maximum RR | {self.cleaning_config.get('rr_max_ms', 2000)} ms |"
+            )
+            lines.append(
+                f"| Sudden Change Threshold | {self.cleaning_config.get('sudden_change_pct', 100)}% |"
+            )
         else:
             lines.append("*Default cleaning thresholds applied (200-2000 ms)*")
         lines.append("")
@@ -533,9 +610,9 @@ class AnalysisDocumentation:
             lines.append("| Start | End | Reason |")
             lines.append("|-------|-----|--------|")
             for zone in self.exclusion_zones:
-                start = zone.get('start', 'N/A')
-                end = zone.get('end', 'N/A')
-                reason = zone.get('reason', 'Not specified')
+                start = zone.get("start", "N/A")
+                end = zone.get("end", "N/A")
+                reason = zone.get("reason", "Not specified")
                 lines.append(f"| {start} | {end} | {reason} |")
             lines.append("")
 
@@ -546,11 +623,15 @@ class AnalysisDocumentation:
             lines.append("- **Method:** NeuroKit2 Kubios Algorithm")
             lines.append("- **Status:** Applied")
             if self.artifact_results:
-                lines.append(f"- **Artifacts Detected:** {self.artifact_results.get('total_artifacts', 'N/A')}")
-                lines.append(f"- **Artifact Rate:** {self.artifact_results.get('artifact_ratio', 0)*100:.1f}%")
-                if 'artifact_types' in self.artifact_results:
+                lines.append(
+                    f"- **Artifacts Detected:** {self.artifact_results.get('total_artifacts', 'N/A')}"
+                )
+                lines.append(
+                    f"- **Artifact Rate:** {self.artifact_results.get('artifact_ratio', 0) * 100:.1f}%"
+                )
+                if "artifact_types" in self.artifact_results:
                     lines.append("- **Artifact Types:**")
-                    for atype, count in self.artifact_results['artifact_types'].items():
+                    for atype, count in self.artifact_results["artifact_types"].items():
                         lines.append(f"  - {atype}: {count}")
         else:
             lines.append("- **Status:** Not applied (raw RR intervals used)")
@@ -565,10 +646,16 @@ class AnalysisDocumentation:
                 lines.append("")
                 lines.append(f"- **Section Name:** {section['name']}")
                 lines.append(f"- **Start Event:** `{section['start_event']}`")
-                lines.append(f"- **End Event(s):** `{', '.join(section['end_events'])}`")
+                lines.append(
+                    f"- **End Event(s):** `{', '.join(section['end_events'])}`"
+                )
                 lines.append(f"- **Beats Extracted:** {section['beats_extracted']:,}")
-                lines.append(f"- **Beats After Cleaning:** {section['beats_after_cleaning']:,}")
-                lines.append(f"- **Data Retention:** {100*section['beats_after_cleaning']/max(section['beats_extracted'],1):.1f}%")
+                lines.append(
+                    f"- **Beats After Cleaning:** {section['beats_after_cleaning']:,}"
+                )
+                lines.append(
+                    f"- **Data Retention:** {100 * section['beats_after_cleaning'] / max(section['beats_extracted'], 1):.1f}%"
+                )
                 lines.append("")
         else:
             lines.append("*No sections analyzed*")
@@ -579,21 +666,27 @@ class AnalysisDocumentation:
         lines.append("")
         if self.hrv_results:
             for section_name, results in self.hrv_results.items():
-                label = section_name if section_name != "_combined" else "Combined Sections"
+                label = (
+                    section_name if section_name != "_combined" else "Combined Sections"
+                )
                 lines.append(f"### {label}")
                 lines.append("")
                 lines.append("#### Time Domain")
                 lines.append("")
                 lines.append("| Metric | Value | Unit |")
                 lines.append("|--------|-------|------|")
-                if 'HRV_RMSSD' in results:
+                if "HRV_RMSSD" in results:
                     lines.append(f"| RMSSD | {results['HRV_RMSSD']:.2f} | ms |")
-                if 'HRV_SDNN' in results:
+                if "HRV_SDNN" in results:
                     lines.append(f"| SDNN | {results['HRV_SDNN']:.2f} | ms |")
-                if 'HRV_pNN50' in results:
+                if "HRV_pNN50" in results:
                     lines.append(f"| pNN50 | {results['HRV_pNN50']:.2f} | % |")
-                if 'HRV_MeanNN' in results:
-                    mean_hr = 60000 / results['HRV_MeanNN'] if results['HRV_MeanNN'] > 0 else 0
+                if "HRV_MeanNN" in results:
+                    mean_hr = (
+                        60000 / results["HRV_MeanNN"]
+                        if results["HRV_MeanNN"] > 0
+                        else 0
+                    )
                     lines.append(f"| Mean NN | {results['HRV_MeanNN']:.2f} | ms |")
                     lines.append(f"| Mean HR | {mean_hr:.1f} | BPM |")
                 lines.append("")
@@ -602,11 +695,11 @@ class AnalysisDocumentation:
                 lines.append("")
                 lines.append("| Metric | Value | Unit |")
                 lines.append("|--------|-------|------|")
-                if 'HRV_LF' in results:
+                if "HRV_LF" in results:
                     lines.append(f"| LF Power | {results['HRV_LF']:.2f} | ms² |")
-                if 'HRV_HF' in results:
+                if "HRV_HF" in results:
                     lines.append(f"| HF Power | {results['HRV_HF']:.2f} | ms² |")
-                if 'HRV_LFHF' in results:
+                if "HRV_LFHF" in results:
                     lines.append(f"| LF/HF Ratio | {results['HRV_LFHF']:.2f} | - |")
                 lines.append("")
         else:
@@ -618,25 +711,49 @@ class AnalysisDocumentation:
         lines.append("")
         lines.append("### For Publication")
         lines.append("")
-        artifact_text = "with Kubios artifact correction (NeuroKit2)" if self.artifact_correction else "without artifact correction"
-        sections_text = ", ".join([s['label'] for s in self.sections_analyzed]) if self.sections_analyzed else "all data"
+        artifact_text = (
+            "with Kubios artifact correction (NeuroKit2)"
+            if self.artifact_correction
+            else "without artifact correction"
+        )
+        sections_text = (
+            ", ".join([s["label"] for s in self.sections_analyzed])
+            if self.sections_analyzed
+            else "all data"
+        )
 
         lines.append("> HRV analysis was performed using Music HRV Toolkit (v0.6.8). ")
-        lines.append(f"> RR intervals were extracted from {self.data_source} recordings ")
-        lines.append(f"> and cleaned using threshold filtering (RR: {self.cleaning_config.get('rr_min_ms', 200)}-{self.cleaning_config.get('rr_max_ms', 2000)} ms). ")
+        lines.append(
+            f"> RR intervals were extracted from {self.data_source} recordings "
+        )
+        lines.append(
+            f"> and cleaned using threshold filtering (RR: {self.cleaning_config.get('rr_min_ms', 200)}-{self.cleaning_config.get('rr_max_ms', 2000)} ms). "
+        )
         if self.exclusion_zones:
-            lines.append(f"> {len(self.exclusion_zones)} exclusion zone(s) were applied to remove artifacts. ")
-        lines.append(f"> Time-domain and frequency-domain HRV metrics were computed {artifact_text} ")
+            lines.append(
+                f"> {len(self.exclusion_zones)} exclusion zone(s) were applied to remove artifacts. "
+            )
+        lines.append(
+            f"> Time-domain and frequency-domain HRV metrics were computed {artifact_text} "
+        )
         lines.append("> using NeuroKit2 (Makowski et al., 2021). ")
-        lines.append(f"> Analysis was performed on the following section(s): {sections_text}.")
+        lines.append(
+            f"> Analysis was performed on the following section(s): {sections_text}."
+        )
         lines.append("")
 
         # References
         lines.append("## 6. References")
         lines.append("")
-        lines.append("- Makowski, D., et al. (2021). NeuroKit2: A Python toolbox for neurophysiological signal processing. *Behavior Research Methods*. https://doi.org/10.3758/s13428-020-01516-y")
-        lines.append("- Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement. *Circulation*, 93(5), 1043-1065.")
-        lines.append("- Quigley, K. S., et al. (2024). Publication guidelines for heart rate variability studies. *Psychophysiology*, 61(9), e14604.")
+        lines.append(
+            "- Makowski, D., et al. (2021). NeuroKit2: A Python toolbox for neurophysiological signal processing. *Behavior Research Methods*. https://doi.org/10.3758/s13428-020-01516-y"
+        )
+        lines.append(
+            "- Task Force of ESC and NASPE (1996). Heart rate variability: Standards of measurement. *Circulation*, 93(5), 1043-1065."
+        )
+        lines.append(
+            "- Quigley, K. S., et al. (2024). Publication guidelines for heart rate variability studies. *Psychophysiology*, 61(9), e14604."
+        )
         lines.append("")
 
         lines.append("---")
@@ -669,9 +786,13 @@ class AnalysisDocumentation:
                 if not in_table:
                     in_table = True
                     table_rows = []
-                    table_rows.append(f"<tr>{''.join(f'<th>{html_module.escape(c)}</th>' for c in cells)}</tr>")
+                    table_rows.append(
+                        f"<tr>{''.join(f'<th>{html_module.escape(c)}</th>' for c in cells)}</tr>"
+                    )
                 else:
-                    table_rows.append(f"<tr>{''.join(f'<td>{html_module.escape(c)}</td>' for c in cells)}</tr>")
+                    table_rows.append(
+                        f"<tr>{''.join(f'<td>{html_module.escape(c)}</td>' for c in cells)}</tr>"
+                    )
             else:
                 if in_table:
                     html_body_lines.append(f"<table>{''.join(table_rows)}</table>")
@@ -691,20 +812,30 @@ class AnalysisDocumentation:
                     content = line[2:]
                     # Bold markers
                     while "**" in content:
-                        content = content.replace("**", "<b>", 1).replace("**", "</b>", 1)
+                        content = content.replace("**", "<b>", 1).replace(
+                            "**", "</b>", 1
+                        )
                     html_body_lines.append(f"<li>{content}</li>")
                 elif line.startswith("  - "):
-                    html_body_lines.append(f"<li style='margin-left:20px'>{html_module.escape(line[4:])}</li>")
+                    html_body_lines.append(
+                        f"<li style='margin-left:20px'>{html_module.escape(line[4:])}</li>"
+                    )
                 elif line.startswith("---"):
                     html_body_lines.append("<hr>")
                 elif line.startswith("*") and line.endswith("*"):
-                    html_body_lines.append(f"<em>{html_module.escape(line.strip('*'))}</em>")
+                    html_body_lines.append(
+                        f"<em>{html_module.escape(line.strip('*'))}</em>"
+                    )
                 elif line.strip():
                     content = line
                     while "**" in content:
-                        content = content.replace("**", "<b>", 1).replace("**", "</b>", 1)
+                        content = content.replace("**", "<b>", 1).replace(
+                            "**", "</b>", 1
+                        )
                     while "`" in content:
-                        content = content.replace("`", "<code>", 1).replace("`", "</code>", 1)
+                        content = content.replace("`", "<code>", 1).replace(
+                            "`", "</code>", 1
+                        )
                     html_body_lines.append(f"<p>{content}</p>")
 
         if in_table:
@@ -721,14 +852,18 @@ class AnalysisDocumentation:
                         chart_html = fig.to_html(
                             full_html=False,
                             include_plotlyjs=False,
-                            config={"displayModeBar": False}
+                            config={"displayModeBar": False},
                         )
-                        plot_html += f'<h3>Chart: {html_module.escape(section_name)}</h3>\n{chart_html}\n'
+                        plot_html += f"<h3>Chart: {html_module.escape(section_name)}</h3>\n{chart_html}\n"
                     except Exception:
                         pass
 
         # Build final HTML
-        plotly_js = '<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>' if plots else ""
+        plotly_js = (
+            '<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>'
+            if plots
+            else ""
+        )
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -764,7 +899,9 @@ Generated by RRational v{__version__} | {self.timestamp}
 </html>"""
 
 
-def display_documentation_panel(doc: AnalysisDocumentation, plots: dict | None = None) -> None:
+def display_documentation_panel(
+    doc: AnalysisDocumentation, plots: dict | None = None
+) -> None:
     """Display the analysis documentation panel with preview and export.
 
     Args:
@@ -793,7 +930,7 @@ def display_documentation_panel(doc: AnalysisDocumentation, plots: dict | None =
             st.code(md_content, language="markdown")
 
         # Download buttons
-        ts = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        ts = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
@@ -816,10 +953,10 @@ def display_documentation_panel(doc: AnalysisDocumentation, plots: dict | None =
 
 def _get_exclusion_zones(participant_id: str) -> list[dict]:
     """Get exclusion zones for a participant from session state."""
-    if 'participant_events' not in st.session_state:
+    if "participant_events" not in st.session_state:
         return []
     participant_data = st.session_state.participant_events.get(participant_id, {})
-    return participant_data.get('exclusion_zones', [])
+    return participant_data.get("exclusion_zones", [])
 
 
 def _render_repeating_section_analysis():
@@ -848,53 +985,59 @@ def _render_repeating_section_analysis():
         with col_p1:
             expected_duration = st.number_input(
                 "Expected total duration (min)",
-                min_value=30.0, max_value=180.0,
+                min_value=30.0,
+                max_value=180.0,
                 value=float(protocol_data.get("expected_duration_min", 90.0)),
                 step=5.0,
                 key="protocol_expected_duration",
-                help="Total expected duration of the measurement session"
+                help="Total expected duration of the measurement session",
             )
             section_length = st.number_input(
                 "Section length (min)",
-                min_value=1.0, max_value=15.0,
+                min_value=1.0,
+                max_value=15.0,
                 value=float(protocol_data.get("section_length_min", 5.0)),
                 step=1.0,
                 key="protocol_section_length",
-                help="Duration of each condition section"
+                help="Duration of each condition section",
             )
             pre_pause_sections = st.number_input(
                 "Pre-pause sections",
-                min_value=1, max_value=20,
+                min_value=1,
+                max_value=20,
                 value=int(protocol_data.get("pre_pause_sections", 9)),
                 step=1,
                 key="protocol_pre_pause",
-                help="Number of condition sections before the pause"
+                help="Number of condition sections before the pause",
             )
 
         with col_p2:
             post_pause_sections = st.number_input(
                 "Post-pause sections",
-                min_value=1, max_value=20,
+                min_value=1,
+                max_value=20,
                 value=int(protocol_data.get("post_pause_sections", 9)),
                 step=1,
                 key="protocol_post_pause",
-                help="Number of condition sections after the pause"
+                help="Number of condition sections after the pause",
             )
             min_section_duration = st.number_input(
                 "Minimum valid section duration (min)",
-                min_value=1.0, max_value=10.0,
+                min_value=1.0,
+                max_value=10.0,
                 value=float(protocol_data.get("min_section_duration_min", 4.0)),
                 step=0.5,
                 key="protocol_min_duration",
-                help="Sections shorter than this are flagged as incomplete"
+                help="Sections shorter than this are flagged as incomplete",
             )
             min_section_beats = st.number_input(
                 "Minimum beats per section",
-                min_value=50, max_value=500,
+                min_value=50,
+                max_value=500,
                 value=int(protocol_data.get("min_section_beats", 100)),
                 step=10,
                 key="protocol_min_beats",
-                help="Sections with fewer beats are flagged as incomplete"
+                help="Sections with fewer beats are flagged as incomplete",
             )
 
         # Duration mismatch handling
@@ -903,10 +1046,12 @@ def _render_repeating_section_analysis():
             "Strict (exclude incomplete sections)": DurationMismatchStrategy.STRICT,
             "Proportional (scale sections to fit)": DurationMismatchStrategy.PROPORTIONAL,
         }
-        current_strategy = protocol_data.get("mismatch_strategy", DurationMismatchStrategy.FLAG_ONLY)
+        current_strategy = protocol_data.get(
+            "mismatch_strategy", DurationMismatchStrategy.FLAG_ONLY
+        )
         current_label = next(
             (k for k, v in mismatch_options.items() if v == current_strategy),
-            "Flag only (include all, mark incomplete)"
+            "Flag only (include all, mark incomplete)",
         )
         mismatch_strategy = st.radio(
             "Duration mismatch handling",
@@ -914,7 +1059,7 @@ def _render_repeating_section_analysis():
             index=list(mismatch_options.keys()).index(current_label),
             key="protocol_mismatch_strategy",
             horizontal=True,
-            help="How to handle recordings that don't match expected duration"
+            help="How to handle recordings that don't match expected duration",
         )
 
         if st.button("Save Protocol Settings", key="save_protocol_btn"):
@@ -950,18 +1095,26 @@ def _render_repeating_section_analysis():
         selected_participant = st.selectbox(
             "Select Participant",
             options=participant_list,
-            key="repeating_analysis_participant"
+            key="repeating_analysis_participant",
         )
 
     with col_sel2:
         # Get participant's event sequence
-        participant_seq = st.session_state.get("participant_sequences", {}).get(selected_participant, "") or \
-                          st.session_state.get("participant_randomizations", {}).get(selected_participant, "")
+        participant_seq = st.session_state.get("participant_sequences", {}).get(
+            selected_participant, ""
+        ) or st.session_state.get("participant_randomizations", {}).get(
+            selected_participant, ""
+        )
         event_sequences = st.session_state.get("event_sequences", {})
 
         if participant_seq and participant_seq in event_sequences:
             seq_data = event_sequences[participant_seq]
-            condition_order = seq_data.get("condition_order", seq_data.get("music_order", ["condition_a", "condition_b", "condition_c"]))
+            condition_order = seq_data.get(
+                "condition_order",
+                seq_data.get(
+                    "music_order", ["condition_a", "condition_b", "condition_c"]
+                ),
+            )
             seq_label = seq_data.get("label", participant_seq)
             st.info(f"**Sequence:** {seq_label}")
             st.caption(f"Condition order: {' → '.join(condition_order)}")
@@ -974,11 +1127,13 @@ def _render_repeating_section_analysis():
         "Apply artifact correction (NeuroKit2 Kubios)",
         value=False,
         key="repeating_analysis_correction",
-        help="Recommended for data with quality issues"
+        help="Recommended for data with quality issues",
     )
 
     # Analyze button
-    if st.button("Analyze Repeating Sections", key="analyze_repeating_btn", type="primary"):
+    if st.button(
+        "Analyze Repeating Sections", key="analyze_repeating_btn", type="primary"
+    ):
         with st.status("Extracting repeating sections...", expanded=True) as status:
             try:
                 st.write("Loading recording data...")
@@ -989,68 +1144,100 @@ def _render_repeating_section_analysis():
                     st.error(f"No data found for participant {selected_participant}")
                     return
 
-                source_app = getattr(summary, 'source_app', 'HRV Logger')
-                is_vns = (source_app == "VNS Analyse")
+                source_app = getattr(summary, "source_app", "HRV Logger")
+                is_vns = source_app == "VNS Analyse"
 
                 # Load recording
                 if is_vns:
-                    vns_paths = getattr(summary, 'vns_paths', None)
+                    vns_paths = getattr(summary, "vns_paths", None)
                     if vns_paths:
                         recording_data = cached_load_vns_recording(
                             tuple(str(p) for p in vns_paths),
                             selected_participant,
-                            use_corrected=st.session_state.get("vns_use_corrected", False),
+                            use_corrected=st.session_state.get(
+                                "vns_use_corrected", False
+                            ),
                         )
-                    elif getattr(summary, 'vns_path', None):
+                    elif getattr(summary, "vns_path", None):
                         # Fallback: single path (old cached summary)
                         recording_data = cached_load_vns_recording(
                             (str(summary.vns_path),),
                             selected_participant,
-                            use_corrected=st.session_state.get("vns_use_corrected", False),
+                            use_corrected=st.session_state.get(
+                                "vns_use_corrected", False
+                            ),
                         )
                     else:
                         # Re-discover VNS recordings
                         from rrational.io.vns_analyse import discover_vns_recordings
                         from pathlib import Path
+
                         vns_bundles = discover_vns_recordings(
                             Path(st.session_state.data_dir),
-                            pattern=st.session_state.id_pattern
+                            pattern=st.session_state.id_pattern,
                         )
-                        vns_bundle = next((b for b in vns_bundles if b.participant_id == selected_participant), None)
+                        vns_bundle = next(
+                            (
+                                b
+                                for b in vns_bundles
+                                if b.participant_id == selected_participant
+                            ),
+                            None,
+                        )
                         if not vns_bundle:
-                            st.error(f"No VNS recording found for {selected_participant}")
+                            st.error(
+                                f"No VNS recording found for {selected_participant}"
+                            )
                             return
                         recording_data = cached_load_vns_recording(
                             tuple(str(p) for p in vns_bundle.file_paths),
                             selected_participant,
-                            use_corrected=st.session_state.get("vns_use_corrected", False),
+                            use_corrected=st.session_state.get(
+                                "vns_use_corrected", False
+                            ),
                         )
                 else:
-                    bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-                    bundle = next((b for b in bundles if b.participant_id == selected_participant), None)
+                    bundles = cached_discover_recordings(
+                        st.session_state.data_dir, st.session_state.id_pattern
+                    )
+                    bundle = next(
+                        (
+                            b
+                            for b in bundles
+                            if b.participant_id == selected_participant
+                        ),
+                        None,
+                    )
                     if not bundle:
-                        st.error(f"No recording bundle found for {selected_participant}")
+                        st.error(
+                            f"No recording bundle found for {selected_participant}"
+                        )
                         return
                     recording_data = cached_load_recording(
                         tuple(str(p) for p in bundle.rr_paths),
                         tuple(str(p) for p in bundle.events_paths),
-                        selected_participant
+                        selected_participant,
                     )
 
                 # Build RR intervals and events dict
                 from rrational.io.hrv_logger import RRInterval
+
                 rr_intervals = [
                     RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                    for ts, rr, elapsed in recording_data['rr_intervals']
+                    for ts, rr, elapsed in recording_data["rr_intervals"]
                 ]
 
                 # Build events dictionary (canonical -> timestamp)
                 events_dict = {}
-                stored_events = st.session_state.participant_events.get(selected_participant, {})
-                all_events = stored_events.get('events', []) + stored_events.get('manual', [])
+                stored_events = st.session_state.participant_events.get(
+                    selected_participant, {}
+                )
+                all_events = stored_events.get("events", []) + stored_events.get(
+                    "manual", []
+                )
 
                 for evt in all_events:
-                    canonical = evt.canonical if hasattr(evt, 'canonical') else None
+                    canonical = evt.canonical if hasattr(evt, "canonical") else None
                     if canonical and evt.first_timestamp:
                         events_dict[canonical] = evt.first_timestamp
 
@@ -1060,8 +1247,11 @@ def _render_repeating_section_analysis():
                 # Extract repeating sections
                 st.write("Extracting repeating sections...")
                 mismatch_strategy_value = mismatch_options.get(
-                    st.session_state.get("protocol_mismatch_strategy", "Flag only (include all, mark incomplete)"),
-                    DurationMismatchStrategy.FLAG_ONLY
+                    st.session_state.get(
+                        "protocol_mismatch_strategy",
+                        "Flag only (include all, mark incomplete)",
+                    ),
+                    DurationMismatchStrategy.FLAG_ONLY,
                 )
 
                 analysis = extract_repeating_sections(
@@ -1077,8 +1267,10 @@ def _render_repeating_section_analysis():
                     for warning in analysis.warnings:
                         st.warning(f"{warning}")
 
-                st.write(f"Extracted {len(analysis.sections)} sections "
-                        f"({analysis.valid_sections} valid, {analysis.incomplete_sections} incomplete)")
+                st.write(
+                    f"Extracted {len(analysis.sections)} sections "
+                    f"({analysis.valid_sections} valid, {analysis.incomplete_sections} incomplete)"
+                )
 
                 status.update(label="Section extraction complete", state="complete")
 
@@ -1090,20 +1282,21 @@ def _render_repeating_section_analysis():
                 col_dur1, col_dur2, col_dur3 = st.columns(3)
                 with col_dur1:
                     st.metric(
-                        "Expected Duration",
-                        f"{protocol.expected_duration_min:.0f} min"
+                        "Expected Duration", f"{protocol.expected_duration_min:.0f} min"
                     )
                 with col_dur2:
                     st.metric(
                         "Actual Duration",
-                        f"{analysis.actual_total_duration_s/60:.1f} min",
-                        delta=f"{-analysis.duration_mismatch_s/60:.1f} min" if analysis.duration_mismatch_s > 60 else None,
-                        delta_color="inverse"
+                        f"{analysis.actual_total_duration_s / 60:.1f} min",
+                        delta=f"{-analysis.duration_mismatch_s / 60:.1f} min"
+                        if analysis.duration_mismatch_s > 60
+                        else None,
+                        delta_color="inverse",
                     )
                 with col_dur3:
                     st.metric(
                         "Valid Sections",
-                        f"{analysis.valid_sections}/{len(analysis.sections)}"
+                        f"{analysis.valid_sections}/{len(analysis.sections)}",
                     )
 
                 # Section details table
@@ -1112,19 +1305,23 @@ def _render_repeating_section_analysis():
                 section_data = []
                 for section in analysis.sections:
                     status_icon = "[OK]" if section.is_valid else "(!)"
-                    section_data.append({
-                        "Status": status_icon,
-                        "Section": section.label,
-                        "Condition": section.condition_type,
-                        "Phase": section.phase.replace("_", " ").title(),
-                        "Duration (min)": f"{section.actual_duration_s/60:.1f}",
-                        "Beats": section.beat_count,
-                        "Duration %": f"{section.duration_ratio*100:.0f}%",
-                        "Warnings": "; ".join(section.validation_warnings) if section.validation_warnings else "-",
-                    })
+                    section_data.append(
+                        {
+                            "Status": status_icon,
+                            "Section": section.label,
+                            "Condition": section.condition_type,
+                            "Phase": section.phase.replace("_", " ").title(),
+                            "Duration (min)": f"{section.actual_duration_s / 60:.1f}",
+                            "Beats": section.beat_count,
+                            "Duration %": f"{section.duration_ratio * 100:.0f}%",
+                            "Warnings": "; ".join(section.validation_warnings)
+                            if section.validation_warnings
+                            else "-",
+                        }
+                    )
 
                 df_sections = pd.DataFrame(section_data)
-                st.dataframe(df_sections, width='stretch', hide_index=True)
+                st.dataframe(df_sections, width="stretch", hide_index=True)
 
                 # HRV Analysis for valid sections
                 st.markdown("### HRV Metrics by Section")
@@ -1145,6 +1342,7 @@ def _render_repeating_section_analysis():
                     if apply_correction:
                         try:
                             import numpy as np
+
                             # Convert RR intervals to peak indices for signal_fixpeaks
                             rr_array = np.array(rr_values, dtype=float)
                             peak_indices = np.cumsum(rr_array).astype(int)
@@ -1169,26 +1367,30 @@ def _render_repeating_section_analysis():
 
                         # Compute HRV metrics using peaks
                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                        hrv_freq = nk.hrv_frequency(
+                            peaks, sampling_rate=1000, show=False
+                        )
 
-                        hrv_results.append({
-                            "Section": section.label,
-                            "Condition": section.condition_type,
-                            "Phase": section.phase.replace("_", " ").title(),
-                            "Beats": section.beat_count,
-                            "RMSSD": f"{hrv_time['HRV_RMSSD'].values[0]:.1f}",
-                            "SDNN": f"{hrv_time['HRV_SDNN'].values[0]:.1f}",
-                            "pNN50": f"{hrv_time['HRV_pNN50'].values[0]:.1f}",
-                            "HF (ms²)": f"{hrv_freq['HRV_HF'].values[0]:.1f}",
-                            "LF (ms²)": f"{hrv_freq['HRV_LF'].values[0]:.1f}",
-                            "LF/HF": f"{hrv_freq['HRV_LFHF'].values[0]:.2f}",
-                        })
+                        hrv_results.append(
+                            {
+                                "Section": section.label,
+                                "Condition": section.condition_type,
+                                "Phase": section.phase.replace("_", " ").title(),
+                                "Beats": section.beat_count,
+                                "RMSSD": f"{hrv_time['HRV_RMSSD'].values[0]:.1f}",
+                                "SDNN": f"{hrv_time['HRV_SDNN'].values[0]:.1f}",
+                                "pNN50": f"{hrv_time['HRV_pNN50'].values[0]:.1f}",
+                                "HF (ms²)": f"{hrv_freq['HRV_HF'].values[0]:.1f}",
+                                "LF (ms²)": f"{hrv_freq['HRV_LF'].values[0]:.1f}",
+                                "LF/HF": f"{hrv_freq['HRV_LFHF'].values[0]:.2f}",
+                            }
+                        )
                     except Exception as e:
                         st.warning(f"Could not compute HRV for {section.label}: {e}")
 
                 if hrv_results:
                     df_hrv = pd.DataFrame(hrv_results)
-                    st.dataframe(df_hrv, width='stretch', hide_index=True)
+                    st.dataframe(df_hrv, width="stretch", hide_index=True)
 
                     # Download button
                     csv_hrv = df_hrv.to_csv(index=False)
@@ -1196,25 +1398,37 @@ def _render_repeating_section_analysis():
                         "Download HRV Results (CSV)",
                         data=csv_hrv,
                         file_name=f"repeating_sections_hrv_{selected_participant}.csv",
-                        mime="text/csv"
+                        mime="text/csv",
                     )
 
                     # Summary by condition type
                     st.markdown("### Summary by Condition")
-                    sections_by_type = get_sections_by_condition(analysis, valid_only=True)
+                    sections_by_type = get_sections_by_condition(
+                        analysis, valid_only=True
+                    )
 
                     for cond_type, sections in sections_by_type.items():
-                        with st.expander(f"{cond_type} ({len(sections)} sections)", expanded=False):
-                            type_results = [r for r in hrv_results if r["Condition"] == cond_type]
+                        with st.expander(
+                            f"{cond_type} ({len(sections)} sections)", expanded=False
+                        ):
+                            type_results = [
+                                r for r in hrv_results if r["Condition"] == cond_type
+                            ]
                             if type_results:
                                 df_type = pd.DataFrame(type_results)
-                                st.dataframe(df_type, width='stretch', hide_index=True)
+                                st.dataframe(df_type, width="stretch", hide_index=True)
 
                                 # Compute averages
                                 try:
-                                    avg_rmssd = sum(float(r["RMSSD"]) for r in type_results) / len(type_results)
-                                    avg_sdnn = sum(float(r["SDNN"]) for r in type_results) / len(type_results)
-                                    st.markdown(f"**Averages:** RMSSD={avg_rmssd:.1f} ms, SDNN={avg_sdnn:.1f} ms")
+                                    avg_rmssd = sum(
+                                        float(r["RMSSD"]) for r in type_results
+                                    ) / len(type_results)
+                                    avg_sdnn = sum(
+                                        float(r["SDNN"]) for r in type_results
+                                    ) / len(type_results)
+                                    st.markdown(
+                                        f"**Averages:** RMSSD={avg_rmssd:.1f} ms, SDNN={avg_sdnn:.1f} ms"
+                                    )
                                 except (ValueError, ZeroDivisionError):
                                     pass
 
@@ -1225,6 +1439,7 @@ def _render_repeating_section_analysis():
                 status.update(label="Error during analysis", state="error")
                 st.error(f"Error: {e}")
                 import traceback
+
                 st.code(traceback.format_exc())
 
 
@@ -1242,14 +1457,18 @@ def render_analysis_tab():
         st.markdown(ANALYSIS_HELP)
 
     if not NEUROKIT_AVAILABLE:
-        st.error("NeuroKit2 is not installed. Please install it to use HRV analysis features.")
+        st.error(
+            "NeuroKit2 is not installed. Please install it to use HRV analysis features."
+        )
         st.code("uv add neurokit2")
         return
 
     if not st.session_state.summaries:
         st.info("Load data from the 'Data & Groups' tab to perform analysis")
     else:
-        st.markdown("Select a participant, choose multiple sections, and analyze HRV metrics for each section individually and combined.")
+        st.markdown(
+            "Select a participant, choose multiple sections, and analyze HRV metrics for each section individually and combined."
+        )
 
         # Initialize analysis results in session state
         if "analysis_results" not in st.session_state:
@@ -1258,7 +1477,12 @@ def render_analysis_tab():
         # Selection mode
         analysis_mode = st.radio(
             "Analysis Mode",
-            options=["Single Participant", "Repeating Section Analysis", "Group Analysis", "Sequence Comparison"],
+            options=[
+                "Single Participant",
+                "Repeating Section Analysis",
+                "Group Analysis",
+                "Sequence Comparison",
+            ],
             horizontal=True,
         )
 
@@ -1283,9 +1507,7 @@ def _render_single_participant_analysis():
     # Participant selection
     participant_list = get_participant_list()
     selected_participant = st.selectbox(
-        "Select Participant",
-        options=participant_list,
-        key="analysis_participant"
+        "Select Participant", options=participant_list, key="analysis_participant"
     )
 
     # Check for .rrational ready files
@@ -1300,7 +1522,9 @@ def _render_single_participant_analysis():
         ready_files = find_rrational_files(selected_participant, data_dir)
 
     if ready_files:
-        with st.expander(f"Ready Files ({len(ready_files)} found)", expanded=True):  # Expanded by default
+        with st.expander(
+            f"Ready Files ({len(ready_files)} found)", expanded=True
+        ):  # Expanded by default
             st.info(
                 "Ready files contain pre-inspected data with artifact detection "
                 "and corrected NN intervals. Using a ready file provides the highest "
@@ -1310,11 +1534,13 @@ def _render_single_participant_analysis():
             data_source = st.radio(
                 "Data source",
                 options=["ready", "raw"],  # Ready file is default when available
-                format_func=lambda x: "Use ready file (.rrational)" if x == "ready" else "Use raw data (extract from recording)",
+                format_func=lambda x: "Use ready file (.rrational)"
+                if x == "ready"
+                else "Use raw data (extract from recording)",
                 key="analysis_data_source",
                 horizontal=True,
             )
-            use_ready_file = (data_source == "ready")
+            use_ready_file = data_source == "ready"
 
             if use_ready_file:
                 # Format file options for display
@@ -1346,30 +1572,45 @@ def _render_single_participant_analysis():
                         ready_data_v2 = load_rrational_v2(selected_ready_file)
 
                         # Count sections with NN data
-                        sections_with_nn = sum(1 for s in ready_data_v2.sections.values()
-                                               if len(s.nn_intervals.data) > 0)
+                        sections_with_nn = sum(
+                            1
+                            for s in ready_data_v2.sections.values()
+                            if len(s.nn_intervals.data) > 0
+                        )
                         total_sections = len(ready_data_v2.sections)
 
                         if sections_with_nn == total_sections:
-                            st.success(f"**v2.0 Export** - {total_sections} section(s) with NN data")
+                            st.success(
+                                f"**v2.0 Export** - {total_sections} section(s) with NN data"
+                            )
                         elif sections_with_nn > 0:
-                            st.success(f"**v2.0 Export** - {sections_with_nn}/{total_sections} sections with NN data")
+                            st.success(
+                                f"**v2.0 Export** - {sections_with_nn}/{total_sections} sections with NN data"
+                            )
                         else:
-                            st.warning(f"**v2.0 Export** - {total_sections} sections validated, but no NN data saved")
+                            st.warning(
+                                f"**v2.0 Export** - {total_sections} sections validated, but no NN data saved"
+                            )
 
                         # Try to supplement artifact data from _artifacts.yml if missing
                         # This handles old .rrational files that didn't save artifact counts
                         import os
+
                         participant_id = ready_data_v2.metadata.participant_id
                         artifacts_dir = os.path.dirname(str(selected_ready_file))
-                        artifacts_file = os.path.join(artifacts_dir, f"{participant_id}_artifacts.yml")
+                        artifacts_file = os.path.join(
+                            artifacts_dir, f"{participant_id}_artifacts.yml"
+                        )
                         supplemental_artifacts = {}
                         if os.path.exists(artifacts_file):
                             try:
                                 import yaml
-                                with open(artifacts_file, 'r', encoding='utf-8') as f:
+
+                                with open(artifacts_file, "r", encoding="utf-8") as f:
                                     artifacts_data = yaml.safe_load(f) or {}
-                                supplemental_artifacts = artifacts_data.get("sections", {})
+                                supplemental_artifacts = artifacts_data.get(
+                                    "sections", {}
+                                )
                             except Exception:
                                 pass
 
@@ -1382,26 +1623,45 @@ def _render_single_participant_analysis():
                             artifact_rate = sec_data.final_artifacts.rate
 
                             # Supplement from _artifacts.yml if count is 0 but file has data
-                            if artifact_count == 0 and sec_name in supplemental_artifacts:
+                            if (
+                                artifact_count == 0
+                                and sec_name in supplemental_artifacts
+                            ):
                                 sec_artifacts = supplemental_artifacts[sec_name]
-                                algo_count = len(sec_artifacts.get("algorithm_artifact_indices", []))
-                                manual_count = len(sec_artifacts.get("manual_artifacts", []))
-                                excluded_count = len(sec_artifacts.get("excluded_artifact_indices", []))
-                                artifact_count = algo_count + manual_count - excluded_count
+                                algo_count = len(
+                                    sec_artifacts.get("algorithm_artifact_indices", [])
+                                )
+                                manual_count = len(
+                                    sec_artifacts.get("manual_artifacts", [])
+                                )
+                                excluded_count = len(
+                                    sec_artifacts.get("excluded_artifact_indices", [])
+                                )
+                                artifact_count = (
+                                    algo_count + manual_count - excluded_count
+                                )
                                 if nn_count > 0:
                                     artifact_rate = artifact_count / nn_count
 
                             # Determine data source status
                             data_status = "NN" if nn_count > 0 else "(needs raw)"
 
-                            section_info.append({
-                                "Section": sec_name,
-                                "Data": data_status,
-                                "Beats": nn_count if nn_count > 0 else "-",
-                                "Artifacts": artifact_count if nn_count > 0 else "-",
-                                "Artifact %": f"{artifact_rate * 100:.2f}%" if nn_count > 0 else "-",
-                                "Quality": quality.capitalize() if nn_count > 0 else "-",
-                            })
+                            section_info.append(
+                                {
+                                    "Section": sec_name,
+                                    "Data": data_status,
+                                    "Beats": nn_count if nn_count > 0 else "-",
+                                    "Artifacts": artifact_count
+                                    if nn_count > 0
+                                    else "-",
+                                    "Artifact %": f"{artifact_rate * 100:.2f}%"
+                                    if nn_count > 0
+                                    else "-",
+                                    "Quality": quality.capitalize()
+                                    if nn_count > 0
+                                    else "-",
+                                }
+                            )
 
                         if section_info:
                             st.dataframe(
@@ -1420,27 +1680,36 @@ def _render_single_participant_analysis():
                         )
 
                         # Check which sections have no NN intervals
-                        sections_without_nn = [s for s in available_sections
-                                               if len(ready_data_v2.sections[s].nn_intervals.data) == 0]
+                        sections_without_nn = [
+                            s
+                            for s in available_sections
+                            if len(ready_data_v2.sections[s].nn_intervals.data) == 0
+                        ]
 
                         # Option to use raw data fallback for sections without NN
                         allow_raw_fallback_v2 = False
                         if sections_without_nn:
-                            st.info(f"ℹ️ Sections without NN intervals: {', '.join(sections_without_nn)}")
+                            st.info(
+                                f"ℹ️ Sections without NN intervals: {', '.join(sections_without_nn)}"
+                            )
                             allow_raw_fallback_v2 = st.checkbox(
                                 "Use raw RR data for sections without NN intervals",
                                 value=True,
                                 key="allow_raw_fallback_v2",
-                                help="When enabled, sections without corrected NN intervals will be analyzed using raw RR data from the recording"
+                                help="When enabled, sections without corrected NN intervals will be analyzed using raw RR data from the recording",
                             )
 
                         # Store the loaded data for later use
                         st.session_state._analysis_ready_v2_data = ready_data_v2
-                        st.session_state._analysis_allow_raw_fallback = allow_raw_fallback_v2
+                        st.session_state._analysis_allow_raw_fallback = (
+                            allow_raw_fallback_v2
+                        )
 
                         if ready_data_v2.audit_trail:
                             with st.expander("Audit Trail"):
-                                for entry in ready_data_v2.audit_trail[-5:]:  # Last 5 entries
+                                for entry in ready_data_v2.audit_trail[
+                                    -5:
+                                ]:  # Last 5 entries
                                     st.write(f"**{entry.action}**: {entry.details}")
 
                         # Overlapping window options for v2.0 ready files
@@ -1455,13 +1724,15 @@ def _render_single_participant_analysis():
                                 }[x],
                                 horizontal=True,
                                 key="analysis_mode_v2",
-                                help="Aggregated: average across all windows. Per-segment: individual HRV results per segment."
+                                help="Aggregated: average across all windows. Per-segment: individual HRV results per segment.",
                             )
 
                             use_overlapping_windows = True  # always use windowing
 
                             if analysis_mode == "per_segment":
-                                st.caption("Each segment from artifact detection is analyzed individually.")
+                                st.caption(
+                                    "Each segment from artifact detection is analyzed individually."
+                                )
                                 # Use segments from artifact detection
                                 window_mode = "time"
                                 window_duration_min = None
@@ -1469,17 +1740,30 @@ def _render_single_participant_analysis():
                                 window_beats = None
                                 step_beats = None
                             else:
-                                st.caption("**Recommended:** 5-minute time-based windows with 50% overlap")
+                                st.caption(
+                                    "**Recommended:** 5-minute time-based windows with 50% overlap"
+                                )
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     window_duration_min = st.slider(
-                                        "Window duration (minutes)", 1, 10, 5, key="overlap_window_duration_v2"
+                                        "Window duration (minutes)",
+                                        1,
+                                        10,
+                                        5,
+                                        key="overlap_window_duration_v2",
                                     )
                                 with col2:
                                     overlap_percent = st.slider(
-                                        "Overlap (%)", 0, 75, 50, step=25, key="overlap_percent_v2"
+                                        "Overlap (%)",
+                                        0,
+                                        75,
+                                        50,
+                                        step=25,
+                                        key="overlap_percent_v2",
                                     )
-                                step_size_min = window_duration_min * (1 - overlap_percent / 100)
+                                step_size_min = window_duration_min * (
+                                    1 - overlap_percent / 100
+                                )
                                 st.caption(f"Step size: {step_size_min:.1f} minutes")
                                 window_mode = "time"
                                 window_beats = None
@@ -1494,7 +1778,9 @@ def _render_single_participant_analysis():
                             artifact_rate = ready_data.quality.artifact_rate_final * 100
                             st.metric("Artifact Rate", f"{artifact_rate:.1f}%")
                         with col3:
-                            st.metric("Quality", ready_data.quality.quality_grade.capitalize())
+                            st.metric(
+                                "Quality", ready_data.quality.quality_grade.capitalize()
+                            )
 
                         if ready_data.processing_steps:
                             with st.expander("Audit Trail"):
@@ -1505,17 +1791,30 @@ def _render_single_participant_analysis():
                         with st.expander("Window Analysis Settings", expanded=True):
                             use_overlapping_windows = True
 
-                            st.caption("**Recommended:** 5-minute time-based windows with 50% overlap")
+                            st.caption(
+                                "**Recommended:** 5-minute time-based windows with 50% overlap"
+                            )
                             col1, col2 = st.columns(2)
                             with col1:
                                 window_duration_min = st.slider(
-                                    "Window duration (minutes)", 1, 10, 5, key="overlap_window_duration_v1"
+                                    "Window duration (minutes)",
+                                    1,
+                                    10,
+                                    5,
+                                    key="overlap_window_duration_v1",
                                 )
                             with col2:
                                 overlap_percent = st.slider(
-                                    "Overlap (%)", 0, 75, 50, step=25, key="overlap_percent_v1"
+                                    "Overlap (%)",
+                                    0,
+                                    75,
+                                    50,
+                                    step=25,
+                                    key="overlap_percent_v1",
                                 )
-                            step_size_min = window_duration_min * (1 - overlap_percent / 100)
+                            step_size_min = window_duration_min * (
+                                1 - overlap_percent / 100
+                            )
                             st.caption(f"Step size: {step_size_min:.1f} minutes")
                             window_mode = "time"
                             window_beats = None
@@ -1544,14 +1843,19 @@ def _render_single_participant_analysis():
 
         available_sections = list(st.session_state.sections.keys())
         if not available_sections:
-            st.warning("No sections defined. Please define sections in the Sections tab first.")
+            st.warning(
+                "No sections defined. Please define sections in the Sections tab first."
+            )
             return
 
         # Default to all validated sections for the selected participant
         default_sections = available_sections  # fallback: all sections
         _analysis_pid = st.session_state.get("analysis_participant_single")
         if _analysis_pid:
-            from rrational.gui.shared import get_validated_sections_for_participant as _get_vals
+            from rrational.gui.shared import (
+                get_validated_sections_for_participant as _get_vals,
+            )
+
             _val_results = _get_vals(
                 participant_id=_analysis_pid,
                 sections_config=st.session_state.sections,
@@ -1565,7 +1869,7 @@ def _render_single_participant_analysis():
             "Select Sections to Analyze",
             options=available_sections,
             default=default_sections,
-            key="analysis_sections_single"
+            key="analysis_sections_single",
         )
 
         # Artifact correction options
@@ -1581,7 +1885,7 @@ def _render_single_participant_analysis():
                 "Apply artifact correction before HRV analysis",
                 value=False,
                 key="apply_artifact_correction",
-                help="Recommended for data with known quality issues"
+                help="Recommended for data with known quality issues",
             )
 
     # Overlapping window analysis options (only for raw data - ready files have their own controls)
@@ -1602,11 +1906,15 @@ def _render_single_participant_analysis():
             )
 
             if analysis_mode_raw == "per_segment":
-                st.caption("Each segment from artifact detection is analyzed individually.")
+                st.caption(
+                    "Each segment from artifact detection is analyzed individually."
+                )
                 window_duration_min = None
                 overlap_percent = None
             else:
-                st.caption("**Recommended:** 5-minute time-based windows with 50% overlap")
+                st.caption(
+                    "**Recommended:** 5-minute time-based windows with 50% overlap"
+                )
                 col1, col2 = st.columns(2)
                 with col1:
                     window_duration_min = st.slider(
@@ -1616,7 +1924,7 @@ def _render_single_participant_analysis():
                         value=5,
                         step=1,
                         key="overlap_window_duration",
-                        help="Duration of each analysis window"
+                        help="Duration of each analysis window",
                     )
                 with col2:
                     overlap_percent = st.slider(
@@ -1626,10 +1934,12 @@ def _render_single_participant_analysis():
                         value=50,
                         step=25,
                         key="overlap_percent",
-                        help="Percentage overlap between consecutive windows"
+                        help="Percentage overlap between consecutive windows",
                     )
                 step_size_min = window_duration_min * (1 - overlap_percent / 100)
-                st.caption(f"Step size: {step_size_min:.1f} minutes between window starts")
+                st.caption(
+                    f"Step size: {step_size_min:.1f} minutes between window starts"
+                )
 
             window_mode = "time"
             window_beats = None
@@ -1669,16 +1979,22 @@ def _render_single_participant_analysis():
 
                         # Load supplemental artifact data from _artifacts.yml if available
                         import os
+
                         participant_id = ready_data_v2.metadata.participant_id
                         artifacts_dir = os.path.dirname(str(selected_ready_file))
-                        artifacts_file = os.path.join(artifacts_dir, f"{participant_id}_artifacts.yml")
+                        artifacts_file = os.path.join(
+                            artifacts_dir, f"{participant_id}_artifacts.yml"
+                        )
                         supplemental_artifacts = {}
                         if os.path.exists(artifacts_file):
                             try:
                                 import yaml
-                                with open(artifacts_file, 'r', encoding='utf-8') as f:
+
+                                with open(artifacts_file, "r", encoding="utf-8") as f:
                                     artifacts_data = yaml.safe_load(f) or {}
-                                supplemental_artifacts = artifacts_data.get("sections", {})
+                                supplemental_artifacts = artifacts_data.get(
+                                    "sections", {}
+                                )
                             except Exception:
                                 pass
 
@@ -1687,7 +2003,9 @@ def _render_single_participant_analysis():
                         nk = get_neurokit()
 
                         # Get raw data fallback setting (read directly from checkbox key)
-                        allow_raw_fallback_v2 = st.session_state.get("allow_raw_fallback_v2", False)
+                        allow_raw_fallback_v2 = st.session_state.get(
+                            "allow_raw_fallback_v2", False
+                        )
 
                         for idx, sec_name in enumerate(selected_v2_sections):
                             st.write(f"Analyzing section: {sec_name}")
@@ -1695,7 +2013,9 @@ def _render_single_participant_analysis():
 
                             # Extract NN intervals from v2.0 format
                             # Data format: [[timestamp_ms, nn_ms, was_corrected], ...]
-                            nn_intervals_ms = [item[1] for item in sec_data.nn_intervals.data]
+                            nn_intervals_ms = [
+                                item[1] for item in sec_data.nn_intervals.data
+                            ]
                             data_source_label = "NN"  # Track whether using NN or raw
 
                             if not nn_intervals_ms:
@@ -1703,85 +2023,172 @@ def _render_single_participant_analysis():
                                 # Uses same approach as "Use raw data" mode: load recording, extract section
                                 if allow_raw_fallback_v2:
                                     try:
-                                        from rrational.io.hrv_logger import HRVLoggerRecording, RRInterval, EventMarker
-                                        from rrational.gui.persistence import load_participant_events
-                                        from rrational.cleaning.rr import clean_rr_intervals
+                                        from rrational.io.hrv_logger import (
+                                            HRVLoggerRecording,
+                                            RRInterval,
+                                            EventMarker,
+                                        )
+                                        from rrational.gui.persistence import (
+                                            load_participant_events,
+                                        )
+                                        from rrational.cleaning.rr import (
+                                            clean_rr_intervals,
+                                        )
 
                                         # Get participant ID from metadata
                                         pid = ready_data_v2.metadata.participant_id
 
                                         # Get summary to determine source type
                                         summary = get_summary_dict().get(pid)
-                                        source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
-                                        is_vns = (source_app == "VNS Analyse")
+                                        source_app = (
+                                            getattr(summary, "source_app", "HRV Logger")
+                                            if summary
+                                            else "HRV Logger"
+                                        )
+                                        is_vns = source_app == "VNS Analyse"
 
                                         recording_data = None
                                         if is_vns:
                                             # Load VNS Analyse recording
-                                            vns_paths = getattr(summary, 'vns_paths', None)
+                                            vns_paths = getattr(
+                                                summary, "vns_paths", None
+                                            )
                                             if vns_paths:
                                                 recording_data = cached_load_vns_recording(
                                                     tuple(str(p) for p in vns_paths),
                                                     pid,
-                                                    use_corrected=st.session_state.get("vns_use_corrected", False),
+                                                    use_corrected=st.session_state.get(
+                                                        "vns_use_corrected", False
+                                                    ),
                                                 )
-                                            elif getattr(summary, 'vns_path', None):
+                                            elif getattr(summary, "vns_path", None):
                                                 recording_data = cached_load_vns_recording(
                                                     (str(summary.vns_path),),
                                                     pid,
-                                                    use_corrected=st.session_state.get("vns_use_corrected", False),
+                                                    use_corrected=st.session_state.get(
+                                                        "vns_use_corrected", False
+                                                    ),
                                                 )
                                             else:
                                                 # Re-discover VNS recordings
-                                                from rrational.io.vns_analyse import discover_vns_recordings
+                                                from rrational.io.vns_analyse import (
+                                                    discover_vns_recordings,
+                                                )
+
                                                 vns_bundles = discover_vns_recordings(
                                                     Path(st.session_state.data_dir),
-                                                    pattern=st.session_state.id_pattern
+                                                    pattern=st.session_state.id_pattern,
                                                 )
-                                                vns_bundle = next((b for b in vns_bundles if b.participant_id == pid), None)
+                                                vns_bundle = next(
+                                                    (
+                                                        b
+                                                        for b in vns_bundles
+                                                        if b.participant_id == pid
+                                                    ),
+                                                    None,
+                                                )
                                                 if vns_bundle:
                                                     recording_data = cached_load_vns_recording(
-                                                        tuple(str(p) for p in vns_bundle.file_paths),
+                                                        tuple(
+                                                            str(p)
+                                                            for p in vns_bundle.file_paths
+                                                        ),
                                                         pid,
-                                                        use_corrected=st.session_state.get("vns_use_corrected", False),
+                                                        use_corrected=st.session_state.get(
+                                                            "vns_use_corrected", False
+                                                        ),
                                                     )
                                         else:
                                             # Load HRV Logger recording
-                                            bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-                                            bundle = next((b for b in bundles if b.participant_id == pid), None)
+                                            bundles = cached_discover_recordings(
+                                                st.session_state.data_dir,
+                                                st.session_state.id_pattern,
+                                            )
+                                            bundle = next(
+                                                (
+                                                    b
+                                                    for b in bundles
+                                                    if b.participant_id == pid
+                                                ),
+                                                None,
+                                            )
                                             if bundle:
                                                 recording_data = cached_load_recording(
-                                                    tuple(str(p) for p in bundle.rr_paths),
-                                                    tuple(str(p) for p in bundle.events_paths),
-                                                    pid
+                                                    tuple(
+                                                        str(p) for p in bundle.rr_paths
+                                                    ),
+                                                    tuple(
+                                                        str(p)
+                                                        for p in bundle.events_paths
+                                                    ),
+                                                    pid,
                                                 )
 
                                         if recording_data:
                                             # Reconstruct recording object (same as "Use raw data" mode)
-                                            rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                                                            for ts, rr, elapsed in recording_data['rr_intervals']]
+                                            rr_intervals = [
+                                                RRInterval(
+                                                    timestamp=ts,
+                                                    rr_ms=rr,
+                                                    elapsed_ms=elapsed,
+                                                )
+                                                for ts, rr, elapsed in recording_data[
+                                                    "rr_intervals"
+                                                ]
+                                            ]
 
                                             # Load saved events for this participant
-                                            saved_events = load_participant_events(pid, st.session_state.data_dir)
+                                            saved_events = load_participant_events(
+                                                pid, st.session_state.data_dir
+                                            )
                                             all_stored = []
                                             if saved_events:
-                                                all_stored = saved_events.get('events', []) + saved_events.get('manual', [])
+                                                all_stored = saved_events.get(
+                                                    "events", []
+                                                ) + saved_events.get("manual", [])
 
                                             # Convert to EventMarker objects
                                             events = []
                                             for evt in all_stored:
-                                                ts = evt.get('first_timestamp') if isinstance(evt, dict) else getattr(evt, 'first_timestamp', None)
-                                                label = (evt.get('canonical') or evt.get('raw_label', 'unknown')) if isinstance(evt, dict) else (getattr(evt, 'canonical', None) or getattr(evt, 'raw_label', 'unknown'))
+                                                ts = (
+                                                    evt.get("first_timestamp")
+                                                    if isinstance(evt, dict)
+                                                    else getattr(
+                                                        evt, "first_timestamp", None
+                                                    )
+                                                )
+                                                label = (
+                                                    (
+                                                        evt.get("canonical")
+                                                        or evt.get(
+                                                            "raw_label", "unknown"
+                                                        )
+                                                    )
+                                                    if isinstance(evt, dict)
+                                                    else (
+                                                        getattr(evt, "canonical", None)
+                                                        or getattr(
+                                                            evt, "raw_label", "unknown"
+                                                        )
+                                                    )
+                                                )
                                                 if ts:
                                                     if isinstance(ts, str):
                                                         from datetime import datetime
+
                                                         ts = datetime.fromisoformat(ts)
-                                                    events.append(EventMarker(label=label, timestamp=ts, offset_s=None))
+                                                    events.append(
+                                                        EventMarker(
+                                                            label=label,
+                                                            timestamp=ts,
+                                                            offset_s=None,
+                                                        )
+                                                    )
 
                                             recording = HRVLoggerRecording(
                                                 participant_id=pid,
                                                 rr_intervals=rr_intervals,
-                                                events=events
+                                                events=events,
                                             )
 
                                             # Build section definition from .rrational data
@@ -1789,13 +2196,17 @@ def _render_single_participant_analysis():
                                             section_def = {
                                                 "name": sec_name,
                                                 "start_event": sec_data.definition.start_event,
-                                                "end_events": [sec_data.definition.end_event],
+                                                "end_events": [
+                                                    sec_data.definition.end_event
+                                                ],
                                                 "label": sec_data.definition.label,
                                             }
 
                                             # Extract section using same logic as "Use raw data" mode
                                             section_rr = extract_section_rr_intervals(
-                                                recording, section_def, st.session_state.normalizer,
+                                                recording,
+                                                section_def,
+                                                st.session_state.normalizer,
                                                 saved_events=all_stored,
                                                 participant_id=pid,
                                             )
@@ -1803,23 +2214,38 @@ def _render_single_participant_analysis():
                                             if section_rr:
                                                 # Clean RR intervals
                                                 cleaned_rr, stats = clean_rr_intervals(
-                                                    section_rr, st.session_state.cleaning_config
+                                                    section_rr,
+                                                    st.session_state.cleaning_config,
                                                 )
                                                 if cleaned_rr:
-                                                    nn_intervals_ms = [rr.rr_ms for rr in cleaned_rr]
+                                                    nn_intervals_ms = [
+                                                        rr.rr_ms for rr in cleaned_rr
+                                                    ]
                                                     data_source_label = "Raw"
-                                                    st.info(f"Section {sec_name}: Using raw RR data ({len(nn_intervals_ms)} intervals)")
+                                                    st.info(
+                                                        f"Section {sec_name}: Using raw RR data ({len(nn_intervals_ms)} intervals)"
+                                                    )
                                                 else:
-                                                    st.warning(f"Section {sec_name}: No valid RR intervals after cleaning")
+                                                    st.warning(
+                                                        f"Section {sec_name}: No valid RR intervals after cleaning"
+                                                    )
                                             else:
-                                                st.warning(f"Section {sec_name}: Could not extract section from raw data (check event markers)")
+                                                st.warning(
+                                                    f"Section {sec_name}: Could not extract section from raw data (check event markers)"
+                                                )
                                         else:
-                                            st.warning(f"Section {sec_name}: Could not load raw recording data")
+                                            st.warning(
+                                                f"Section {sec_name}: Could not load raw recording data"
+                                            )
                                     except Exception as e:
-                                        st.warning(f"Section {sec_name}: Failed to load raw data fallback: {e}")
+                                        st.warning(
+                                            f"Section {sec_name}: Failed to load raw data fallback: {e}"
+                                        )
 
                                 if not nn_intervals_ms:
-                                    st.warning(f"Section {sec_name} has no NN intervals and raw data fallback failed, skipping...")
+                                    st.warning(
+                                        f"Section {sec_name} has no NN intervals and raw data fallback failed, skipping..."
+                                    )
                                     continue
 
                             # Quality check
@@ -1829,77 +2255,161 @@ def _render_single_participant_analysis():
                             # Update quality thresholds for raw data
                             if data_source_label == "Raw":
                                 meets_time = len(nn_intervals_ms) >= 100
-                                meets_freq = len(nn_intervals_ms) >= 300 and sum(nn_intervals_ms) / 1000 >= 120
+                                meets_freq = (
+                                    len(nn_intervals_ms) >= 300
+                                    and sum(nn_intervals_ms) / 1000 >= 120
+                                )
 
                             if quality_grade == "poor":
-                                st.warning(f"Section {sec_name} has poor quality - results may be unreliable")
+                                st.warning(
+                                    f"Section {sec_name} has poor quality - results may be unreliable"
+                                )
 
                             # Get artifact info - supplement from _artifacts.yml if count is 0
                             artifact_count = sec_data.final_artifacts.count
                             artifact_rate = sec_data.final_artifacts.rate
-                            if artifact_count == 0 and sec_name in supplemental_artifacts:
+                            if (
+                                artifact_count == 0
+                                and sec_name in supplemental_artifacts
+                            ):
                                 sec_artifacts = supplemental_artifacts[sec_name]
-                                algo_count = len(sec_artifacts.get("algorithm_artifact_indices", []))
-                                manual_count = len(sec_artifacts.get("manual_artifacts", []))
-                                excluded_count = len(sec_artifacts.get("excluded_artifact_indices", []))
-                                artifact_count = algo_count + manual_count - excluded_count
+                                algo_count = len(
+                                    sec_artifacts.get("algorithm_artifact_indices", [])
+                                )
+                                manual_count = len(
+                                    sec_artifacts.get("manual_artifacts", [])
+                                )
+                                excluded_count = len(
+                                    sec_artifacts.get("excluded_artifact_indices", [])
+                                )
+                                artifact_count = (
+                                    algo_count + manual_count - excluded_count
+                                )
                                 if len(nn_intervals_ms) > 0:
-                                    artifact_rate = artifact_count / len(nn_intervals_ms)
+                                    artifact_rate = artifact_count / len(
+                                        nn_intervals_ms
+                                    )
 
                             section_artifact_info = {
                                 "total_artifacts": artifact_count,
                                 "artifact_rate": artifact_rate,
-                                "method": sec_data.artifact_detection.method if sec_data.artifact_detection else "manual",
+                                "method": sec_data.artifact_detection.method
+                                if sec_data.artifact_detection
+                                else "manual",
                             }
 
                             # Calculate HRV metrics - with optional overlapping windows
-                            st.write(f"  Computing HRV for {len(nn_intervals_ms)} NN intervals...")
+                            st.write(
+                                f"  Computing HRV for {len(nn_intervals_ms)} NN intervals..."
+                            )
 
                             if use_overlapping_windows:
                                 import numpy as np
-                                from rrational.gui.segmentation import generate_segments as gen_segs
+                                from rrational.gui.segmentation import (
+                                    generate_segments as gen_segs,
+                                )
 
-                                analysis_mode_v2 = st.session_state.get("analysis_mode_v2", "aggregated")
+                                analysis_mode_v2 = st.session_state.get(
+                                    "analysis_mode_v2", "aggregated"
+                                )
 
                                 if analysis_mode_v2 == "per_segment":
                                     # Use segments from artifact detection
-                                    artifact_data = st.session_state.get(f"artifacts_{selected_participant}", {})
+                                    artifact_data = st.session_state.get(
+                                        f"artifacts_{selected_participant}", {}
+                                    )
                                     det_segments = artifact_data.get("segments", [])
-                                    seg_inclusion = st.session_state.get(f"segment_inclusion_{selected_participant}", {})
+                                    seg_inclusion = st.session_state.get(
+                                        f"segment_inclusion_{selected_participant}", {}
+                                    )
 
                                     if det_segments:
                                         # Filter to included segments
-                                        nn_arr = np.asarray(nn_intervals_ms, dtype=np.float64)
+                                        nn_arr = np.asarray(
+                                            nn_intervals_ms, dtype=np.float64
+                                        )
                                         windows = []
                                         for seg in det_segments:
                                             if seg_inclusion.get(seg.idx, seg.included):
-                                                sliced = nn_arr[seg.beat_start:seg.beat_end].tolist()
+                                                sliced = nn_arr[
+                                                    seg.beat_start : seg.beat_end
+                                                ].tolist()
                                                 if len(sliced) >= 30:
-                                                    windows.append((seg.idx, seg.start_ms, sliced))
-                                        window_info_str = f"per-segment ({len(windows)} included)"
+                                                    windows.append(
+                                                        (seg.idx, seg.start_ms, sliced)
+                                                    )
+                                        window_info_str = (
+                                            f"per-segment ({len(windows)} included)"
+                                        )
                                     else:
                                         # No segments from artifact detection, fall back to time-based
                                         w_s = 300.0
-                                        segs = gen_segs(np.asarray(nn_intervals_ms), window_s=w_s, overlap_pct=0.0)
-                                        windows = [(s.idx, s.start_ms, list(np.asarray(nn_intervals_ms)[s.beat_start:s.beat_end])) for s in segs if s.n_beats >= 30]
+                                        segs = gen_segs(
+                                            np.asarray(nn_intervals_ms),
+                                            window_s=w_s,
+                                            overlap_pct=0.0,
+                                        )
+                                        windows = [
+                                            (
+                                                s.idx,
+                                                s.start_ms,
+                                                list(
+                                                    np.asarray(nn_intervals_ms)[
+                                                        s.beat_start : s.beat_end
+                                                    ]
+                                                ),
+                                            )
+                                            for s in segs
+                                            if s.n_beats >= 30
+                                        ]
                                         window_info_str = "5min segments, no overlap"
 
-                                elif window_mode == "beats" and window_beats is not None:
+                                elif (
+                                    window_mode == "beats" and window_beats is not None
+                                ):
                                     windows = generate_overlapping_windows_beats(
                                         nn_intervals_ms, window_beats, step_beats
                                     )
-                                    window_info_str = f"{window_beats} beats, {step_beats}-beat step"
+                                    window_info_str = (
+                                        f"{window_beats} beats, {step_beats}-beat step"
+                                    )
                                 else:
                                     # Time-based windows (default)
-                                    w_dur_min = window_duration_min if window_duration_min else 5
-                                    o_pct = overlap_percent if overlap_percent is not None else 50
-                                    nn_arr = np.asarray(nn_intervals_ms, dtype=np.float64)
-                                    segs = gen_segs(nn_arr, window_s=w_dur_min * 60.0, overlap_pct=float(o_pct))
-                                    windows = [(s.idx, s.start_ms, nn_arr[s.beat_start:s.beat_end].tolist()) for s in segs if s.n_beats >= 30]
-                                    window_info_str = f"{w_dur_min}min, {o_pct}% overlap"
+                                    w_dur_min = (
+                                        window_duration_min
+                                        if window_duration_min
+                                        else 5
+                                    )
+                                    o_pct = (
+                                        overlap_percent
+                                        if overlap_percent is not None
+                                        else 50
+                                    )
+                                    nn_arr = np.asarray(
+                                        nn_intervals_ms, dtype=np.float64
+                                    )
+                                    segs = gen_segs(
+                                        nn_arr,
+                                        window_s=w_dur_min * 60.0,
+                                        overlap_pct=float(o_pct),
+                                    )
+                                    windows = [
+                                        (
+                                            s.idx,
+                                            s.start_ms,
+                                            nn_arr[s.beat_start : s.beat_end].tolist(),
+                                        )
+                                        for s in segs
+                                        if s.n_beats >= 30
+                                    ]
+                                    window_info_str = (
+                                        f"{w_dur_min}min, {o_pct}% overlap"
+                                    )
 
                                 if len(windows) >= 1:
-                                    st.write(f"    Analyzing {len(windows)} overlapping windows ({window_info_str})...")
+                                    st.write(
+                                        f"    Analyzing {len(windows)} overlapping windows ({window_info_str})..."
+                                    )
 
                                     window_hrv_results = []
                                     window_details = []
@@ -1909,11 +2419,23 @@ def _render_single_participant_analysis():
                                             continue
 
                                         try:
-                                            win_peaks = nk.intervals_to_peaks(win_rr, sampling_rate=1000)
-                                            win_hrv_time = nk.hrv_time(win_peaks, sampling_rate=1000, show=False)
+                                            win_peaks = nk.intervals_to_peaks(
+                                                win_rr, sampling_rate=1000
+                                            )
+                                            win_hrv_time = nk.hrv_time(
+                                                win_peaks,
+                                                sampling_rate=1000,
+                                                show=False,
+                                            )
                                             if meets_freq:
-                                                win_hrv_freq = nk.hrv_frequency(win_peaks, sampling_rate=1000, show=False)
-                                                win_hrv = pd.concat([win_hrv_time, win_hrv_freq], axis=1)
+                                                win_hrv_freq = nk.hrv_frequency(
+                                                    win_peaks,
+                                                    sampling_rate=1000,
+                                                    show=False,
+                                                )
+                                                win_hrv = pd.concat(
+                                                    [win_hrv_time, win_hrv_freq], axis=1
+                                                )
                                             else:
                                                 win_hrv = win_hrv_time
 
@@ -1930,19 +2452,26 @@ def _render_single_participant_analysis():
                                                 detail["start_ms"] = win_start
                                             window_details.append(detail)
                                         except Exception as e:
-                                            st.write(f"      Window {win_idx + 1} failed: {e}")
+                                            st.write(
+                                                f"      Window {win_idx + 1} failed: {e}"
+                                            )
                                             continue
 
                                     if window_hrv_results:
-                                        hrv_results, hrv_std = aggregate_hrv_results(window_hrv_results)
-                                        st.write(f"    Aggregated results from {len(window_hrv_results)} valid windows")
+                                        hrv_results, hrv_std = aggregate_hrv_results(
+                                            window_hrv_results
+                                        )
+                                        st.write(
+                                            f"    Aggregated results from {len(window_hrv_results)} valid windows"
+                                        )
 
                                         section_results[sec_name] = {
                                             "hrv_results": hrv_results,
                                             "hrv_std": hrv_std,
                                             "rr_intervals": nn_intervals_ms,
                                             "n_beats": len(nn_intervals_ms),
-                                            "label": sec_data.definition.label or sec_name,
+                                            "label": sec_data.definition.label
+                                            or sec_name,
                                             "artifact_info": section_artifact_info,
                                             "ready_file": str(selected_ready_file),
                                             "quality_grade": quality_grade,
@@ -1950,8 +2479,12 @@ def _render_single_participant_analysis():
                                             "quality": {
                                                 "meets_time_domain": meets_time,
                                                 "meets_freq_domain": meets_freq,
-                                                "usable_beats": sec_data.quality.usable_beats if data_source_label == "NN" else len(nn_intervals_ms),
-                                                "usable_duration_s": sec_data.quality.usable_duration_s if data_source_label == "NN" else sum(nn_intervals_ms) / 1000,
+                                                "usable_beats": sec_data.quality.usable_beats
+                                                if data_source_label == "NN"
+                                                else len(nn_intervals_ms),
+                                                "usable_duration_s": sec_data.quality.usable_duration_s
+                                                if data_source_label == "NN"
+                                                else sum(nn_intervals_ms) / 1000,
                                             },
                                             "overlapping_analysis": True,
                                             "n_windows": len(window_hrv_results),
@@ -1964,23 +2497,37 @@ def _render_single_participant_analysis():
                                             "version": "2.0",
                                         }
                                         # Update progress and continue to next section
-                                        progress.progress(10 + int(80 * (idx + 1) / total_sections))
+                                        progress.progress(
+                                            10 + int(80 * (idx + 1) / total_sections)
+                                        )
                                         continue
                                     else:
-                                        st.warning(f"    No valid windows for section '{sec_name}', falling back to single analysis")
+                                        st.warning(
+                                            f"    No valid windows for section '{sec_name}', falling back to single analysis"
+                                        )
                                 else:
-                                    st.warning("    Section too short for overlapping windows, using single analysis")
+                                    st.warning(
+                                        "    Section too short for overlapping windows, using single analysis"
+                                    )
 
                             # Standard single analysis (fallback or when overlapping disabled)
-                            peaks = nk.intervals_to_peaks(nn_intervals_ms, sampling_rate=1000)
-                            hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
+                            peaks = nk.intervals_to_peaks(
+                                nn_intervals_ms, sampling_rate=1000
+                            )
+                            hrv_time = nk.hrv_time(
+                                peaks, sampling_rate=1000, show=False
+                            )
 
                             # Only compute frequency metrics if enough data
                             if meets_freq:
-                                hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                                hrv_freq = nk.hrv_frequency(
+                                    peaks, sampling_rate=1000, show=False
+                                )
                                 hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
                             else:
-                                st.info(f"  Section {sec_name}: frequency domain skipped (insufficient data)")
+                                st.info(
+                                    f"  Section {sec_name}: frequency domain skipped (insufficient data)"
+                                )
                                 hrv_results = hrv_time
 
                             # Store results
@@ -1996,8 +2543,12 @@ def _render_single_participant_analysis():
                                 "quality": {
                                     "meets_time_domain": meets_time,
                                     "meets_freq_domain": meets_freq,
-                                    "usable_beats": sec_data.quality.usable_beats if data_source_label == "NN" else len(nn_intervals_ms),
-                                    "usable_duration_s": sec_data.quality.usable_duration_s if data_source_label == "NN" else sum(nn_intervals_ms) / 1000,
+                                    "usable_beats": sec_data.quality.usable_beats
+                                    if data_source_label == "NN"
+                                    else len(nn_intervals_ms),
+                                    "usable_duration_s": sec_data.quality.usable_duration_s
+                                    if data_source_label == "NN"
+                                    else sum(nn_intervals_ms) / 1000,
                                 },
                                 "analysis_segments": [
                                     {
@@ -2020,14 +2571,23 @@ def _render_single_participant_analysis():
                             return
 
                         progress.progress(100)
-                        st.session_state.analysis_results[selected_participant] = section_results
-                        status.update(label=f"Analysis complete! ({len(section_results)} sections)", state="complete")
-                        show_toast(f"v2.0 analysis complete: {len(section_results)} section(s)", icon="success")
+                        st.session_state.analysis_results[selected_participant] = (
+                            section_results
+                        )
+                        status.update(
+                            label=f"Analysis complete! ({len(section_results)} sections)",
+                            state="complete",
+                        )
+                        show_toast(
+                            f"v2.0 analysis complete: {len(section_results)} section(s)",
+                            icon="success",
+                        )
 
                     except Exception as e:
                         status.update(label="Error during v2.0 analysis", state="error")
                         st.error(f"Error analyzing v2.0 file: {e}")
                         import traceback
+
                         st.code(traceback.format_exc())
 
             else:
@@ -2051,10 +2611,14 @@ def _render_single_participant_analysis():
 
                         if not clean_rr_ms:
                             st.error("No clean RR intervals after removing artifacts")
-                            status.update(label="Analysis failed - no clean data", state="error")
+                            status.update(
+                                label="Analysis failed - no clean data", state="error"
+                            )
                             return
 
-                        st.write(f"Using {len(clean_rr_ms)} clean beats ({len(artifact_indices)} artifacts removed)")
+                        st.write(
+                            f"Using {len(clean_rr_ms)} clean beats ({len(artifact_indices)} artifacts removed)"
+                        )
                         progress.progress(40)
 
                         # Get segment name
@@ -2063,7 +2627,9 @@ def _render_single_participant_analysis():
                             if ready_data.segment.section_name:
                                 segment_name = ready_data.segment.section_name
                             elif ready_data.segment.time_range:
-                                segment_name = ready_data.segment.time_range.get("label", "custom_range")
+                                segment_name = ready_data.segment.time_range.get(
+                                    "label", "custom_range"
+                                )
 
                         # Calculate HRV metrics - with optional overlapping windows
                         st.write("Computing HRV metrics...")
@@ -2071,18 +2637,38 @@ def _render_single_participant_analysis():
 
                         if use_overlapping_windows:
                             import numpy as np
-                            from rrational.gui.segmentation import generate_segments as gen_segs
+                            from rrational.gui.segmentation import (
+                                generate_segments as gen_segs,
+                            )
 
                             # Time-based windows (default)
-                            w_dur_min = window_duration_min if window_duration_min else 5
-                            o_pct = overlap_percent if overlap_percent is not None else 50
+                            w_dur_min = (
+                                window_duration_min if window_duration_min else 5
+                            )
+                            o_pct = (
+                                overlap_percent if overlap_percent is not None else 50
+                            )
                             nn_arr = np.asarray(clean_rr_ms, dtype=np.float64)
-                            segs = gen_segs(nn_arr, window_s=w_dur_min * 60.0, overlap_pct=float(o_pct))
-                            windows = [(s.idx, s.start_ms, nn_arr[s.beat_start:s.beat_end].tolist()) for s in segs if s.n_beats >= 30]
+                            segs = gen_segs(
+                                nn_arr,
+                                window_s=w_dur_min * 60.0,
+                                overlap_pct=float(o_pct),
+                            )
+                            windows = [
+                                (
+                                    s.idx,
+                                    s.start_ms,
+                                    nn_arr[s.beat_start : s.beat_end].tolist(),
+                                )
+                                for s in segs
+                                if s.n_beats >= 30
+                            ]
                             window_info_str = f"{w_dur_min}min, {o_pct}% overlap"
 
                             if len(windows) >= 1:
-                                st.write(f"  Analyzing {len(windows)} overlapping windows ({window_info_str})...")
+                                st.write(
+                                    f"  Analyzing {len(windows)} overlapping windows ({window_info_str})..."
+                                )
 
                                 window_hrv_results = []
                                 window_details = []
@@ -2092,10 +2678,18 @@ def _render_single_participant_analysis():
                                         continue
 
                                     try:
-                                        win_peaks = nk.intervals_to_peaks(win_rr, sampling_rate=1000)
-                                        win_hrv_time = nk.hrv_time(win_peaks, sampling_rate=1000, show=False)
-                                        win_hrv_freq = nk.hrv_frequency(win_peaks, sampling_rate=1000, show=False)
-                                        win_hrv = pd.concat([win_hrv_time, win_hrv_freq], axis=1)
+                                        win_peaks = nk.intervals_to_peaks(
+                                            win_rr, sampling_rate=1000
+                                        )
+                                        win_hrv_time = nk.hrv_time(
+                                            win_peaks, sampling_rate=1000, show=False
+                                        )
+                                        win_hrv_freq = nk.hrv_frequency(
+                                            win_peaks, sampling_rate=1000, show=False
+                                        )
+                                        win_hrv = pd.concat(
+                                            [win_hrv_time, win_hrv_freq], axis=1
+                                        )
 
                                         window_hrv_results.append(win_hrv)
                                         detail = {
@@ -2107,12 +2701,18 @@ def _render_single_participant_analysis():
                                         detail["start_ms"] = win_start
                                         window_details.append(detail)
                                     except Exception as e:
-                                        st.write(f"    Window {win_idx + 1} failed: {e}")
+                                        st.write(
+                                            f"    Window {win_idx + 1} failed: {e}"
+                                        )
                                         continue
 
                                 if window_hrv_results:
-                                    hrv_results, hrv_std = aggregate_hrv_results(window_hrv_results)
-                                    st.write(f"  Aggregated results from {len(window_hrv_results)} valid windows")
+                                    hrv_results, hrv_std = aggregate_hrv_results(
+                                        window_hrv_results
+                                    )
+                                    st.write(
+                                        f"  Aggregated results from {len(window_hrv_results)} valid windows"
+                                    )
                                     progress.progress(80)
 
                                     section_results = {
@@ -2123,9 +2723,13 @@ def _render_single_participant_analysis():
                                             "n_beats": len(clean_rr_ms),
                                             "label": segment_name,
                                             "artifact_info": {
-                                                "total_artifacts": len(artifact_indices),
+                                                "total_artifacts": len(
+                                                    artifact_indices
+                                                ),
                                                 "artifact_rate": ready_data.quality.artifact_rate_final,
-                                                "method": ready_data.artifact_detection.method if ready_data.artifact_detection else "manual",
+                                                "method": ready_data.artifact_detection.method
+                                                if ready_data.artifact_detection
+                                                else "manual",
                                             },
                                             "ready_file": str(selected_ready_file),
                                             "quality_grade": ready_data.quality.quality_grade,
@@ -2143,19 +2747,33 @@ def _render_single_participant_analysis():
                                     }
 
                                     progress.progress(100)
-                                    st.session_state.analysis_results[selected_participant] = section_results
-                                    status.update(label="Analysis complete from ready file!", state="complete")
-                                    show_toast("Ready file analysis complete (overlapping windows)", icon="success")
+                                    st.session_state.analysis_results[
+                                        selected_participant
+                                    ] = section_results
+                                    status.update(
+                                        label="Analysis complete from ready file!",
+                                        state="complete",
+                                    )
+                                    show_toast(
+                                        "Ready file analysis complete (overlapping windows)",
+                                        icon="success",
+                                    )
                                     return  # Exit early, skip standard analysis
                                 else:
-                                    st.warning("  No valid windows, falling back to single analysis")
+                                    st.warning(
+                                        "  No valid windows, falling back to single analysis"
+                                    )
                             else:
-                                st.warning("  Data too short for overlapping windows, using single analysis")
+                                st.warning(
+                                    "  Data too short for overlapping windows, using single analysis"
+                                )
 
                         # Standard single analysis (fallback or when overlapping disabled)
                         peaks = nk.intervals_to_peaks(clean_rr_ms, sampling_rate=1000)
                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                        hrv_freq = nk.hrv_frequency(
+                            peaks, sampling_rate=1000, show=False
+                        )
                         hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
                         progress.progress(80)
 
@@ -2169,7 +2787,9 @@ def _render_single_participant_analysis():
                                 "artifact_info": {
                                     "total_artifacts": len(artifact_indices),
                                     "artifact_rate": ready_data.quality.artifact_rate_final,
-                                    "method": ready_data.artifact_detection.method if ready_data.artifact_detection else "manual",
+                                    "method": ready_data.artifact_detection.method
+                                    if ready_data.artifact_detection
+                                    else "manual",
                                 },
                                 "ready_file": str(selected_ready_file),
                                 "quality_grade": ready_data.quality.quality_grade,
@@ -2179,74 +2799,109 @@ def _render_single_participant_analysis():
                         }
 
                         progress.progress(100)
-                        st.session_state.analysis_results[selected_participant] = section_results
-                        status.update(label="Analysis complete from ready file!", state="complete")
+                        st.session_state.analysis_results[selected_participant] = (
+                            section_results
+                        )
+                        status.update(
+                            label="Analysis complete from ready file!", state="complete"
+                        )
                         show_toast("Ready file analysis complete", icon="success")
 
                     except Exception as e:
                         status.update(label="Error during analysis", state="error")
                         st.error(f"Error analyzing ready file: {e}")
                         import traceback
+
                         st.code(traceback.format_exc())
 
         # ===== SECTION-BASED ANALYSIS PATH =====
         else:
             # Use status context for multi-step analysis
-            with st.status("Analyzing HRV for selected sections...", expanded=True) as status:
+            with st.status(
+                "Analyzing HRV for selected sections...", expanded=True
+            ) as status:
                 try:
                     st.write("Loading recording data...")
                     progress = st.progress(0)
 
                     # Check source type from summary
                     summary = get_summary_dict().get(selected_participant)
-                    source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
-                    is_vns = (source_app == "VNS Analyse")
+                    source_app = (
+                        getattr(summary, "source_app", "HRV Logger")
+                        if summary
+                        else "HRV Logger"
+                    )
+                    is_vns = source_app == "VNS Analyse"
 
                     if is_vns:
-                        vns_paths = getattr(summary, 'vns_paths', None)
+                        vns_paths = getattr(summary, "vns_paths", None)
                         if vns_paths:
                             recording_data = cached_load_vns_recording(
                                 tuple(str(p) for p in vns_paths),
                                 selected_participant,
-                                use_corrected=st.session_state.get("vns_use_corrected", False),
+                                use_corrected=st.session_state.get(
+                                    "vns_use_corrected", False
+                                ),
                             )
-                        elif getattr(summary, 'vns_path', None):
+                        elif getattr(summary, "vns_path", None):
                             # Fallback: single path (old cached summary)
                             recording_data = cached_load_vns_recording(
                                 (str(summary.vns_path),),
                                 selected_participant,
-                                use_corrected=st.session_state.get("vns_use_corrected", False),
+                                use_corrected=st.session_state.get(
+                                    "vns_use_corrected", False
+                                ),
                             )
                         else:
                             # Re-discover VNS recordings
                             from rrational.io.vns_analyse import discover_vns_recordings
                             from pathlib import Path
+
                             vns_bundles = discover_vns_recordings(
                                 Path(st.session_state.data_dir),
-                                pattern=st.session_state.id_pattern
+                                pattern=st.session_state.id_pattern,
                             )
-                            vns_bundle = next((b for b in vns_bundles if b.participant_id == selected_participant), None)
+                            vns_bundle = next(
+                                (
+                                    b
+                                    for b in vns_bundles
+                                    if b.participant_id == selected_participant
+                                ),
+                                None,
+                            )
                             if not vns_bundle:
-                                st.error(f"No VNS recording found for {selected_participant}")
+                                st.error(
+                                    f"No VNS recording found for {selected_participant}"
+                                )
                                 return
                             recording_data = cached_load_vns_recording(
                                 tuple(str(p) for p in vns_bundle.file_paths),
                                 selected_participant,
-                                use_corrected=st.session_state.get("vns_use_corrected", False),
+                                use_corrected=st.session_state.get(
+                                    "vns_use_corrected", False
+                                ),
                             )
                     else:
                         # Load HRV Logger recording
-                        bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
-                        bundle = next(b for b in bundles if b.participant_id == selected_participant)
+                        bundles = cached_discover_recordings(
+                            st.session_state.data_dir, st.session_state.id_pattern
+                        )
+                        bundle = next(
+                            b
+                            for b in bundles
+                            if b.participant_id == selected_participant
+                        )
                         recording_data = cached_load_recording(
                             tuple(str(p) for p in bundle.rr_paths),
                             tuple(str(p) for p in bundle.events_paths),
-                            selected_participant
+                            selected_participant,
                         )
 
                     # Reconstruct recording object from cached data
-                    rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                                    for ts, rr, elapsed in recording_data['rr_intervals']]
+                    rr_intervals = [
+                        RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
+                        for ts, rr, elapsed in recording_data["rr_intervals"]
+                    ]
 
                     # Load stored/saved events from YAML - REQUIRED for analysis
                     # User must review and save events in Participants tab first
@@ -2255,7 +2910,9 @@ def _render_single_participant_analysis():
                         from rrational.prep.summaries import EventStatus
                         from datetime import datetime as dt
 
-                        saved = load_participant_events(selected_participant, st.session_state.data_dir)
+                        saved = load_participant_events(
+                            selected_participant, st.session_state.data_dir
+                        )
                         if saved:
                             # Convert dicts to EventStatus objects (same as app.py)
                             def dict_to_event(d):
@@ -2272,15 +2929,28 @@ def _render_single_participant_analysis():
                                     last_timestamp=last_ts,
                                 )
 
-                            st.session_state.participant_events[selected_participant] = {
-                                'events': [dict_to_event(e) for e in saved.get('events', [])],
-                                'manual': [dict_to_event(e) for e in saved.get('manual', [])],
-                                'music_events': [dict_to_event(e) for e in saved.get('music_events', [])],
-                                'exclusion_zones': saved.get('exclusion_zones', []),
+                            st.session_state.participant_events[
+                                selected_participant
+                            ] = {
+                                "events": [
+                                    dict_to_event(e) for e in saved.get("events", [])
+                                ],
+                                "manual": [
+                                    dict_to_event(e) for e in saved.get("manual", [])
+                                ],
+                                "music_events": [
+                                    dict_to_event(e)
+                                    for e in saved.get("music_events", [])
+                                ],
+                                "exclusion_zones": saved.get("exclusion_zones", []),
                             }
 
-                    stored_events = st.session_state.participant_events.get(selected_participant, {})
-                    all_stored = stored_events.get('events', []) + stored_events.get('manual', [])
+                    stored_events = st.session_state.participant_events.get(
+                        selected_participant, {}
+                    )
+                    all_stored = stored_events.get("events", []) + stored_events.get(
+                        "manual", []
+                    )
 
                     if not all_stored:
                         # No saved events - STOP and warn user
@@ -2293,27 +2963,38 @@ def _render_single_participant_analysis():
                             "4. Click **Save Events** to save your changes\n\n"
                             "Analysis requires processed/saved events to ensure data quality."
                         )
-                        status.update(label="Analysis stopped - no saved events", state="error")
+                        status.update(
+                            label="Analysis stopped - no saved events", state="error"
+                        )
                         return
 
                     # Use saved/processed events (with canonical labels)
-                    st.write(f"Using {len(all_stored)} saved events for {selected_participant}")
+                    st.write(
+                        f"Using {len(all_stored)} saved events for {selected_participant}"
+                    )
                     events = []
                     for evt in all_stored:
                         # Handle both dict (from YAML) and object formats
                         if isinstance(evt, dict):
-                            ts = evt.get('first_timestamp')
-                            label = evt.get('canonical') or evt.get('raw_label', 'unknown')
+                            ts = evt.get("first_timestamp")
+                            label = evt.get("canonical") or evt.get(
+                                "raw_label", "unknown"
+                            )
                         else:
-                            ts = getattr(evt, 'first_timestamp', None)
-                            label = getattr(evt, 'canonical', None) or getattr(evt, 'raw_label', 'unknown')
+                            ts = getattr(evt, "first_timestamp", None)
+                            label = getattr(evt, "canonical", None) or getattr(
+                                evt, "raw_label", "unknown"
+                            )
 
                         if ts:
                             # Convert string timestamps from YAML to datetime
                             if isinstance(ts, str):
                                 from datetime import datetime
+
                                 ts = datetime.fromisoformat(ts)
-                            events.append(EventMarker(label=label, timestamp=ts, offset_s=None))
+                            events.append(
+                                EventMarker(label=label, timestamp=ts, offset_s=None)
+                            )
 
                     # Debug: show event labels
                     with st.expander("Debug: Event labels", expanded=False):
@@ -2323,7 +3004,7 @@ def _render_single_participant_analysis():
                     recording = HRVLoggerRecording(
                         participant_id=selected_participant,
                         rr_intervals=rr_intervals,
-                        events=events
+                        events=events,
                     )
                     progress.progress(20)
 
@@ -2340,13 +3021,19 @@ def _render_single_participant_analysis():
 
                         section_def = st.session_state.sections[section_name]
                         start_evt = section_def.get("start_event")
-                        end_evts = section_def.get("end_events", []) or [section_def.get("end_event")]
-                        st.write(f"    Looking for: start='{start_evt}', end={end_evts}")
+                        end_evts = section_def.get("end_events", []) or [
+                            section_def.get("end_event")
+                        ]
+                        st.write(
+                            f"    Looking for: start='{start_evt}', end={end_evts}"
+                        )
 
                         # Add section name to def for centralized validation
                         section_def_with_name = {**section_def, "name": section_name}
                         section_rr = extract_section_rr_intervals(
-                            recording, section_def_with_name, st.session_state.normalizer,
+                            recording,
+                            section_def_with_name,
+                            st.session_state.normalizer,
                             saved_events=all_stored,
                             participant_id=selected_participant,  # Use centralized validation
                         )
@@ -2355,9 +3042,13 @@ def _render_single_participant_analysis():
                             # Apply exclusion zone filtering
                             exclusion_zones = _get_exclusion_zones(selected_participant)
                             if exclusion_zones:
-                                section_rr, excl_stats = filter_exclusion_zones(section_rr, exclusion_zones)
+                                section_rr, excl_stats = filter_exclusion_zones(
+                                    section_rr, exclusion_zones
+                                )
                                 if excl_stats["n_excluded"] > 0:
-                                    st.write(f"    Excluded {excl_stats['n_excluded']} intervals ({excl_stats['excluded_duration_ms']/1000:.1f}s) from {excl_stats['zones_applied']} zone(s)")
+                                    st.write(
+                                        f"    Excluded {excl_stats['n_excluded']} intervals ({excl_stats['excluded_duration_ms'] / 1000:.1f}s) from {excl_stats['zones_applied']} zone(s)"
+                                    )
 
                             # Clean RR intervals for this section
                             cleaned_section_rr, stats = clean_rr_intervals(
@@ -2375,7 +3066,9 @@ def _render_single_participant_analysis():
                                     if artifact_result["correction_applied"]:
                                         rr_ms = artifact_result["corrected_rr"]
                                         artifact_info = artifact_result
-                                        st.write(f"    * Corrected {artifact_result['total_artifacts']} artifacts")
+                                        st.write(
+                                            f"    * Corrected {artifact_result['total_artifacts']} artifacts"
+                                        )
 
                                 combined_rr.extend(rr_ms)
 
@@ -2385,53 +3078,130 @@ def _render_single_participant_analysis():
                                 # Check if overlapping window analysis is enabled
                                 if use_overlapping_windows:
                                     import numpy as np
-                                    from rrational.gui.segmentation import generate_segments as gen_segs
+                                    from rrational.gui.segmentation import (
+                                        generate_segments as gen_segs,
+                                    )
 
-                                    analysis_mode_raw_val = st.session_state.get("analysis_mode_raw", "aggregated")
+                                    analysis_mode_raw_val = st.session_state.get(
+                                        "analysis_mode_raw", "aggregated"
+                                    )
                                     nn_arr = np.asarray(rr_ms, dtype=np.float64)
 
                                     if analysis_mode_raw_val == "per_segment":
                                         # Use segments from artifact detection if available
-                                        selected_participant = st.session_state.get("selected_participant", "")
-                                        artifact_data = st.session_state.get(f"artifacts_{selected_participant}", {})
+                                        selected_participant = st.session_state.get(
+                                            "selected_participant", ""
+                                        )
+                                        artifact_data = st.session_state.get(
+                                            f"artifacts_{selected_participant}", {}
+                                        )
                                         det_segments = artifact_data.get("segments", [])
-                                        seg_inclusion = st.session_state.get(f"segment_inclusion_{selected_participant}", {})
+                                        seg_inclusion = st.session_state.get(
+                                            f"segment_inclusion_{selected_participant}",
+                                            {},
+                                        )
 
                                         if det_segments:
                                             windows = []
                                             for seg in det_segments:
-                                                if seg_inclusion.get(seg.idx, seg.included):
-                                                    sliced = nn_arr[seg.beat_start:seg.beat_end].tolist()
+                                                if seg_inclusion.get(
+                                                    seg.idx, seg.included
+                                                ):
+                                                    sliced = nn_arr[
+                                                        seg.beat_start : seg.beat_end
+                                                    ].tolist()
                                                     if len(sliced) >= 30:
-                                                        windows.append((seg.idx, seg.start_ms, sliced))
-                                            window_info_str = f"per-segment ({len(windows)} included)"
+                                                        windows.append(
+                                                            (
+                                                                seg.idx,
+                                                                seg.start_ms,
+                                                                sliced,
+                                                            )
+                                                        )
+                                            window_info_str = (
+                                                f"per-segment ({len(windows)} included)"
+                                            )
                                         else:
                                             # No segments from artifact detection — generate fresh
-                                            segs = gen_segs(nn_arr, window_s=300.0, overlap_pct=0.0)
-                                            windows = [(s.idx, s.start_ms, nn_arr[s.beat_start:s.beat_end].tolist()) for s in segs if s.n_beats >= 30]
-                                            window_info_str = "5min segments, no overlap"
+                                            segs = gen_segs(
+                                                nn_arr, window_s=300.0, overlap_pct=0.0
+                                            )
+                                            windows = [
+                                                (
+                                                    s.idx,
+                                                    s.start_ms,
+                                                    nn_arr[
+                                                        s.beat_start : s.beat_end
+                                                    ].tolist(),
+                                                )
+                                                for s in segs
+                                                if s.n_beats >= 30
+                                            ]
+                                            window_info_str = (
+                                                "5min segments, no overlap"
+                                            )
                                     else:
-                                        w_dur_min = window_duration_min if window_duration_min else 5
-                                        o_pct = overlap_percent if overlap_percent is not None else 50
-                                        segs = gen_segs(nn_arr, window_s=w_dur_min * 60.0, overlap_pct=float(o_pct))
-                                        windows = [(s.idx, s.start_ms, nn_arr[s.beat_start:s.beat_end].tolist()) for s in segs if s.n_beats >= 30]
-                                        window_info_str = f"{w_dur_min}min, {o_pct}% overlap"
+                                        w_dur_min = (
+                                            window_duration_min
+                                            if window_duration_min
+                                            else 5
+                                        )
+                                        o_pct = (
+                                            overlap_percent
+                                            if overlap_percent is not None
+                                            else 50
+                                        )
+                                        segs = gen_segs(
+                                            nn_arr,
+                                            window_s=w_dur_min * 60.0,
+                                            overlap_pct=float(o_pct),
+                                        )
+                                        windows = [
+                                            (
+                                                s.idx,
+                                                s.start_ms,
+                                                nn_arr[
+                                                    s.beat_start : s.beat_end
+                                                ].tolist(),
+                                            )
+                                            for s in segs
+                                            if s.n_beats >= 30
+                                        ]
+                                        window_info_str = (
+                                            f"{w_dur_min}min, {o_pct}% overlap"
+                                        )
 
                                     if len(windows) >= 1:
-                                        st.write(f"    Analyzing {len(windows)} overlapping windows ({window_info_str})...")
+                                        st.write(
+                                            f"    Analyzing {len(windows)} overlapping windows ({window_info_str})..."
+                                        )
 
                                         window_hrv_results = []
                                         window_details = []
 
                                         for win_idx, win_start, win_rr in windows:
-                                            if len(win_rr) < 30:  # Skip windows with too few beats
+                                            if (
+                                                len(win_rr) < 30
+                                            ):  # Skip windows with too few beats
                                                 continue
 
                                             try:
-                                                win_peaks = nk.intervals_to_peaks(win_rr, sampling_rate=1000)
-                                                win_hrv_time = nk.hrv_time(win_peaks, sampling_rate=1000, show=False)
-                                                win_hrv_freq = nk.hrv_frequency(win_peaks, sampling_rate=1000, show=False)
-                                                win_hrv = pd.concat([win_hrv_time, win_hrv_freq], axis=1)
+                                                win_peaks = nk.intervals_to_peaks(
+                                                    win_rr, sampling_rate=1000
+                                                )
+                                                win_hrv_time = nk.hrv_time(
+                                                    win_peaks,
+                                                    sampling_rate=1000,
+                                                    show=False,
+                                                )
+                                                win_hrv_freq = nk.hrv_frequency(
+                                                    win_peaks,
+                                                    sampling_rate=1000,
+                                                    show=False,
+                                                )
+                                                win_hrv = pd.concat(
+                                                    [win_hrv_time, win_hrv_freq], axis=1
+                                                )
 
                                                 window_hrv_results.append(win_hrv)
                                                 detail = {
@@ -2446,20 +3216,30 @@ def _render_single_participant_analysis():
                                                     detail["start_ms"] = win_start
                                                 window_details.append(detail)
                                             except Exception as e:
-                                                st.write(f"      Window {win_idx + 1} failed: {e}")
+                                                st.write(
+                                                    f"      Window {win_idx + 1} failed: {e}"
+                                                )
                                                 continue
 
                                         if window_hrv_results:
                                             # Aggregate results across windows
-                                            hrv_results, hrv_std = aggregate_hrv_results(window_hrv_results)
-                                            st.write(f"    Aggregated results from {len(window_hrv_results)} valid windows")
+                                            hrv_results, hrv_std = (
+                                                aggregate_hrv_results(
+                                                    window_hrv_results
+                                                )
+                                            )
+                                            st.write(
+                                                f"    Aggregated results from {len(window_hrv_results)} valid windows"
+                                            )
 
                                             section_results[section_name] = {
                                                 "hrv_results": hrv_results,
                                                 "hrv_std": hrv_std,
                                                 "rr_intervals": rr_ms,
                                                 "n_beats": len(rr_ms),
-                                                "label": section_def.get("label", section_name),
+                                                "label": section_def.get(
+                                                    "label", section_name
+                                                ),
                                                 "artifact_info": artifact_info,
                                                 "overlapping_analysis": True,
                                                 "n_windows": len(window_hrv_results),
@@ -2471,28 +3251,50 @@ def _render_single_participant_analysis():
                                                 "window_details": window_details,
                                             }
                                         else:
-                                            st.warning(f"    No valid windows for section '{section_name}'")
+                                            st.warning(
+                                                f"    No valid windows for section '{section_name}'"
+                                            )
                                     else:
-                                        st.warning("    Section too short for overlapping windows, using single analysis")
+                                        st.warning(
+                                            "    Section too short for overlapping windows, using single analysis"
+                                        )
                                         # Fall back to single analysis
-                                        peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
-                                        hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                        hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
+                                        peaks = nk.intervals_to_peaks(
+                                            rr_ms, sampling_rate=1000
+                                        )
+                                        hrv_time = nk.hrv_time(
+                                            peaks, sampling_rate=1000, show=False
+                                        )
+                                        hrv_freq = nk.hrv_frequency(
+                                            peaks, sampling_rate=1000, show=False
+                                        )
+                                        hrv_results = pd.concat(
+                                            [hrv_time, hrv_freq], axis=1
+                                        )
 
                                         section_results[section_name] = {
                                             "hrv_results": hrv_results,
                                             "rr_intervals": rr_ms,
                                             "n_beats": len(rr_ms),
-                                            "label": section_def.get("label", section_name),
+                                            "label": section_def.get(
+                                                "label", section_name
+                                            ),
                                             "artifact_info": artifact_info,
                                         }
                                 else:
                                     # Standard single-window analysis
-                                    peaks = nk.intervals_to_peaks(rr_ms, sampling_rate=1000)
-                                    hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                                    hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                                    hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
+                                    peaks = nk.intervals_to_peaks(
+                                        rr_ms, sampling_rate=1000
+                                    )
+                                    hrv_time = nk.hrv_time(
+                                        peaks, sampling_rate=1000, show=False
+                                    )
+                                    hrv_freq = nk.hrv_frequency(
+                                        peaks, sampling_rate=1000, show=False
+                                    )
+                                    hrv_results = pd.concat(
+                                        [hrv_time, hrv_freq], axis=1
+                                    )
 
                                     section_results[section_name] = {
                                         "hrv_results": hrv_results,
@@ -2502,7 +3304,9 @@ def _render_single_participant_analysis():
                                         "artifact_info": artifact_info,
                                     }
                         else:
-                            st.write(f"  Could not find events for section '{section_name}'")
+                            st.write(
+                                f"  Could not find events for section '{section_name}'"
+                            )
 
                     # Analyze combined sections if multiple selected
                     if len(selected_sections) > 1 and combined_rr:
@@ -2511,7 +3315,9 @@ def _render_single_participant_analysis():
                         nk = get_neurokit()
                         peaks = nk.intervals_to_peaks(combined_rr, sampling_rate=1000)
                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
+                        hrv_freq = nk.hrv_frequency(
+                            peaks, sampling_rate=1000, show=False
+                        )
                         combined_hrv = pd.concat([hrv_time, hrv_freq], axis=1)
                         section_results["_combined"] = {
                             "hrv_results": combined_hrv,
@@ -2522,15 +3328,24 @@ def _render_single_participant_analysis():
 
                     # Store in session state
                     progress.progress(100)
-                    st.session_state.analysis_results[selected_participant] = section_results
+                    st.session_state.analysis_results[selected_participant] = (
+                        section_results
+                    )
 
-                    status.update(label=f"Analysis complete for {len(section_results)} section(s)!", state="complete")
-                    show_toast(f"Analysis complete for {len(section_results)} section(s)", icon="success")
+                    status.update(
+                        label=f"Analysis complete for {len(section_results)} section(s)!",
+                        state="complete",
+                    )
+                    show_toast(
+                        f"Analysis complete for {len(section_results)} section(s)",
+                        icon="success",
+                    )
 
                 except Exception as e:
                     status.update(label="Error during analysis", state="error")
                     st.error(f"Error during analysis: {e}")
                     import traceback
+
                     st.code(traceback.format_exc())
 
     # Display results if available
@@ -2571,9 +3386,13 @@ def _display_single_participant_results(selected_participant: str):
 
         # Try to get data source info
         summary = get_summary_dict().get(selected_participant)
-        source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
+        source_app = (
+            getattr(summary, "source_app", "HRV Logger") if summary else "HRV Logger"
+        )
         total_raw_beats = sum(r.get("n_beats", 0) for r in section_results.values())
-        total_duration = sum(sum(r.get("rr_intervals", [])) / 1000.0 for r in section_results.values())
+        total_duration = sum(
+            sum(r.get("rr_intervals", [])) / 1000.0 for r in section_results.values()
+        )
 
         doc.set_data_source(source_app, total_raw_beats, total_duration)
         doc.set_cleaning_config(st.session_state.get("cleaning_config", {}))
@@ -2584,8 +3403,12 @@ def _display_single_participant_results(selected_participant: str):
         )
         if artifact_correction_applied:
             first_artifact = next(
-                (r.get("artifact_info") for r in section_results.values() if r.get("artifact_info")),
-                None
+                (
+                    r.get("artifact_info")
+                    for r in section_results.values()
+                    if r.get("artifact_info")
+                ),
+                None,
             )
             doc.set_artifact_correction(True, first_artifact)
         else:
@@ -2612,13 +3435,17 @@ def _display_single_participant_results(selected_participant: str):
                 name=section_name,
                 label=section_label,
                 start_event=section_def.get("start_event", "N/A"),
-                end_events=section_def.get("end_events", []) or [section_def.get("end_event", "N/A")],
+                end_events=section_def.get("end_events", [])
+                or [section_def.get("end_event", "N/A")],
                 beats_extracted=n_beats,
                 beats_after_cleaning=n_beats,
             )
             doc.add_hrv_results(section_name, hrv_results)
 
-        with st.expander(f"{section_label} ({n_beats} beats, {recording_duration_sec/60:.1f} min)", expanded=True):
+        with st.expander(
+            f"{section_label} ({n_beats} beats, {recording_duration_sec / 60:.1f} min)",
+            expanded=True,
+        ):
             # Show overlapping window analysis info if used
             if result_data.get("overlapping_analysis"):
                 n_windows = result_data.get("n_windows", 0)
@@ -2639,24 +3466,45 @@ def _display_single_participant_results(selected_participant: str):
 
                 # Get segment info from analysis_segments if available
                 analysis_segments = result_data.get("analysis_segments", [])
-                gap_segments = len([s for s in analysis_segments if s.get("type") == "usable"])
-                exclusion_segments = len([s for s in analysis_segments if s.get("type") == "exclusion"])
+                gap_segments = len(
+                    [s for s in analysis_segments if s.get("type") == "usable"]
+                )
+                exclusion_segments = len(
+                    [s for s in analysis_segments if s.get("type") == "exclusion"]
+                )
 
-                st.info(f"**Overlapping Window Analysis:** {n_windows} windows analyzed ({window_info})")
+                st.info(
+                    f"**Overlapping Window Analysis:** {n_windows} windows analyzed ({window_info})"
+                )
                 if analysis_segments:
-                    st.caption(f"Based on {gap_segments} usable segment(s)" +
-                              (f", {exclusion_segments} exclusion zone(s)" if exclusion_segments else ""))
+                    st.caption(
+                        f"Based on {gap_segments} usable segment(s)"
+                        + (
+                            f", {exclusion_segments} exclusion zone(s)"
+                            if exclusion_segments
+                            else ""
+                        )
+                    )
 
                 # Show std values if available
                 if hrv_std is not None and not hrv_std.empty:
                     with st.expander("Window Variability (Std Dev)", expanded=False):
                         st.caption("Standard deviation across overlapping windows:")
                         # Show key metrics with std
-                        key_metrics = ["HRV_MeanNN", "HRV_SDNN", "HRV_RMSSD", "HRV_pNN50", "HRV_LF", "HRV_HF"]
+                        key_metrics = [
+                            "HRV_MeanNN",
+                            "HRV_SDNN",
+                            "HRV_RMSSD",
+                            "HRV_pNN50",
+                            "HRV_LF",
+                            "HRV_HF",
+                        ]
                         std_display = {}
                         for m in key_metrics:
                             if m in hrv_std.columns:
-                                std_display[m.replace("HRV_", "")] = f"±{hrv_std[m].values[0]:.2f}"
+                                std_display[m.replace("HRV_", "")] = (
+                                    f"±{hrv_std[m].values[0]:.2f}"
+                                )
                         if std_display:
                             cols = st.columns(len(std_display))
                             for i, (name, val) in enumerate(std_display.items()):
@@ -2671,10 +3519,14 @@ def _display_single_participant_results(selected_participant: str):
                 st.caption(f"Source: {ready_file_path}")
                 if quality_grade:
                     grade_colors = {
-                        "excellent": "green", "good": "blue",
-                        "moderate": "orange", "poor": "red"
+                        "excellent": "green",
+                        "good": "blue",
+                        "moderate": "orange",
+                        "poor": "red",
                     }
-                    st.markdown(f"Quality grade: **:{grade_colors.get(quality_grade, 'gray')}[{quality_grade.upper()}]**")
+                    st.markdown(
+                        f"Quality grade: **:{grade_colors.get(quality_grade, 'gray')}[{quality_grade.upper()}]**"
+                    )
 
                 if audit_trail:
                     with st.expander("Audit Trail", expanded=False):
@@ -2684,22 +3536,28 @@ def _display_single_participant_results(selected_participant: str):
             # Display HRV metrics using professional layout
             if not hrv_results.empty:
                 display_hrv_metrics_professional(
-                    hrv_results, n_beats, artifact_info,
-                    recording_duration_sec=recording_duration_sec
+                    hrv_results,
+                    n_beats,
+                    artifact_info,
+                    recording_duration_sec=recording_duration_sec,
                 )
 
             # Visualization tabs for professional plots
             if get_plotly_analysis()[0] is not None and len(rr_intervals) > 10:
-                plot_tabs = st.tabs(["Tachogram", "Poincaré", "Frequency", "HR Distribution", "Data"])
+                plot_tabs = st.tabs(
+                    ["Tachogram", "Poincaré", "Frequency", "HR Distribution", "Data"]
+                )
 
                 with plot_tabs[0]:
                     # Educational info
                     display_visualization_info("tachogram")
                     # Professional Tachogram
                     artifact_indices = None
-                    if artifact_info and 'artifact_indices' in artifact_info:
-                        artifact_indices = artifact_info['artifact_indices']
-                    fig_tach, tach_stats = create_professional_tachogram(rr_intervals, section_label, artifact_indices)
+                    if artifact_info and "artifact_indices" in artifact_info:
+                        artifact_indices = artifact_info["artifact_indices"]
+                    fig_tach, tach_stats = create_professional_tachogram(
+                        rr_intervals, section_label, artifact_indices
+                    )
                     st.plotly_chart(fig_tach, use_container_width=True)
                     _display_stats_row(tach_stats, f"tach_{section_name}")
 
@@ -2708,29 +3566,39 @@ def _display_single_participant_results(selected_participant: str):
                     display_visualization_info("poincare")
                     # Poincaré Plot
                     if len(rr_intervals) > 20:
-                        fig_poincare, poincare_stats = create_poincare_plot(rr_intervals, section_label)
+                        fig_poincare, poincare_stats = create_poincare_plot(
+                            rr_intervals, section_label
+                        )
                         st.plotly_chart(fig_poincare, use_container_width=True)
                         _display_stats_row(poincare_stats, f"poincare_{section_name}")
                     else:
-                        st.warning("Not enough data points for Poincaré plot (need >20 beats)")
+                        st.warning(
+                            "Not enough data points for Poincaré plot (need >20 beats)"
+                        )
 
                 with plot_tabs[2]:
                     # Educational info
                     display_visualization_info("frequency")
                     # Frequency Domain Plot
                     if len(rr_intervals) > 100:
-                        fig_freq, freq_stats = create_frequency_domain_plot(rr_intervals, section_label)
+                        fig_freq, freq_stats = create_frequency_domain_plot(
+                            rr_intervals, section_label
+                        )
                         if fig_freq:
                             st.plotly_chart(fig_freq, use_container_width=True)
                             _display_stats_row(freq_stats, f"freq_{section_name}")
                     else:
-                        st.warning("Not enough data for reliable frequency analysis (need >100 beats, ideally >300)")
+                        st.warning(
+                            "Not enough data for reliable frequency analysis (need >100 beats, ideally >300)"
+                        )
 
                 with plot_tabs[3]:
                     # Educational info
                     display_visualization_info("hr_distribution")
                     # Heart Rate Distribution
-                    fig_hr, hr_stats = create_hr_distribution_plot(rr_intervals, section_label)
+                    fig_hr, hr_stats = create_hr_distribution_plot(
+                        rr_intervals, section_label
+                    )
                     st.plotly_chart(fig_hr, use_container_width=True)
                     _display_stats_row(hr_stats, f"hr_{section_name}")
 
@@ -2753,7 +3621,12 @@ def _display_single_participant_results(selected_participant: str):
                             )
                         with col_dl2:
                             # Download RR intervals
-                            rr_df = pd.DataFrame({"beat_index": range(len(rr_intervals)), "rr_ms": rr_intervals})
+                            rr_df = pd.DataFrame(
+                                {
+                                    "beat_index": range(len(rr_intervals)),
+                                    "rr_ms": rr_intervals,
+                                }
+                            )
                             csv_rr = rr_df.to_csv(index=False)
                             st.download_button(
                                 label="Download RR Intervals (CSV)",
@@ -2768,7 +3641,11 @@ def _display_single_participant_results(selected_participant: str):
                 if not hrv_results.empty:
                     st.markdown("**Key Metrics:**")
                     cols = st.columns(3)
-                    metrics = [("HRV_RMSSD", "RMSSD"), ("HRV_SDNN", "SDNN"), ("HRV_pNN50", "pNN50")]
+                    metrics = [
+                        ("HRV_RMSSD", "RMSSD"),
+                        ("HRV_SDNN", "SDNN"),
+                        ("HRV_pNN50", "pNN50"),
+                    ]
                     for i, (col_name, label) in enumerate(metrics):
                         if col_name in hrv_results.columns:
                             with cols[i]:
@@ -2780,7 +3657,9 @@ def _display_single_participant_results(selected_participant: str):
                 st.markdown("**Tachogram:**")
                 plt = get_matplotlib()
                 fig, ax = plt.subplots(figsize=(12, 4))
-                ax.plot(rr_intervals, marker='o', markersize=2, linestyle='-', linewidth=0.5)
+                ax.plot(
+                    rr_intervals, marker="o", markersize=2, linestyle="-", linewidth=0.5
+                )
                 ax.set_xlabel("Beat Index")
                 ax.set_ylabel("RR Interval (ms)")
                 ax.set_title(f"Tachogram - {section_label}")
@@ -2810,7 +3689,8 @@ def _collect_group_participants(selected_groups: list[str]) -> dict[str, list[st
     result = {}
     for group in selected_groups:
         participants = [
-            pid for pid, gname in st.session_state.participant_groups.items()
+            pid
+            for pid, gname in st.session_state.participant_groups.items()
             if gname == group
         ]
         result[group] = participants
@@ -2888,7 +3768,8 @@ def _load_nn_from_rrational_v2(
             "quality_grade": quality.grade,
             "artifact_rate": (
                 section.artifact_detection.artifact_rate
-                if section.artifact_detection else 0.0
+                if section.artifact_detection
+                else 0.0
             ),
             "n_beats": len(nn_ms_list),
             "duration_s": quality.usable_duration_s,
@@ -2951,20 +3832,22 @@ def _load_raw_section_data(
 
         # Load recording data on-demand (same as single participant analysis)
         summary = get_summary_dict().get(pid)
-        source_app = getattr(summary, 'source_app', 'HRV Logger') if summary else 'HRV Logger'
-        is_vns = (source_app == "VNS Analyse")
+        source_app = (
+            getattr(summary, "source_app", "HRV Logger") if summary else "HRV Logger"
+        )
+        is_vns = source_app == "VNS Analyse"
 
         recording_data = None
         if is_vns:
             # Load VNS Analyse recording
-            vns_paths = getattr(summary, 'vns_paths', None)
+            vns_paths = getattr(summary, "vns_paths", None)
             if vns_paths:
                 recording_data = cached_load_vns_recording(
                     tuple(str(p) for p in vns_paths),
                     pid,
                     use_corrected=st.session_state.get("vns_use_corrected", False),
                 )
-            elif getattr(summary, 'vns_path', None):
+            elif getattr(summary, "vns_path", None):
                 recording_data = cached_load_vns_recording(
                     (str(summary.vns_path),),
                     pid,
@@ -2973,11 +3856,13 @@ def _load_raw_section_data(
             else:
                 # Re-discover VNS recordings
                 from rrational.io.vns_analyse import discover_vns_recordings
+
                 vns_bundles = discover_vns_recordings(
-                    Path(st.session_state.data_dir),
-                    pattern=st.session_state.id_pattern
+                    Path(st.session_state.data_dir), pattern=st.session_state.id_pattern
                 )
-                vns_bundle = next((b for b in vns_bundles if b.participant_id == pid), None)
+                vns_bundle = next(
+                    (b for b in vns_bundles if b.participant_id == pid), None
+                )
                 if vns_bundle:
                     recording_data = cached_load_vns_recording(
                         tuple(str(p) for p in vns_bundle.file_paths),
@@ -2986,42 +3871,55 @@ def _load_raw_section_data(
                     )
         else:
             # Load HRV Logger recording
-            bundles = cached_discover_recordings(st.session_state.data_dir, st.session_state.id_pattern)
+            bundles = cached_discover_recordings(
+                st.session_state.data_dir, st.session_state.id_pattern
+            )
             bundle = next((b for b in bundles if b.participant_id == pid), None)
             if bundle:
                 recording_data = cached_load_recording(
                     tuple(str(p) for p in bundle.rr_paths),
                     tuple(str(p) for p in bundle.events_paths),
-                    pid
+                    pid,
                 )
 
         if not recording_data:
             return None, {"error": "Could not load raw recording data"}
 
         # Reconstruct recording object
-        rr_intervals = [RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
-                        for ts, rr, elapsed in recording_data['rr_intervals']]
+        rr_intervals = [
+            RRInterval(timestamp=ts, rr_ms=rr, elapsed_ms=elapsed)
+            for ts, rr, elapsed in recording_data["rr_intervals"]
+        ]
 
         # Load saved events for this participant
         saved_events = load_participant_events(pid, st.session_state.data_dir)
         all_stored = []
         if saved_events:
-            all_stored = saved_events.get('events', []) + saved_events.get('manual', [])
+            all_stored = saved_events.get("events", []) + saved_events.get("manual", [])
 
         # Convert to EventMarker objects
         events = []
         for evt in all_stored:
-            ts = evt.get('first_timestamp') if isinstance(evt, dict) else getattr(evt, 'first_timestamp', None)
-            label = (evt.get('canonical') or evt.get('raw_label', 'unknown')) if isinstance(evt, dict) else (getattr(evt, 'canonical', None) or getattr(evt, 'raw_label', 'unknown'))
+            ts = (
+                evt.get("first_timestamp")
+                if isinstance(evt, dict)
+                else getattr(evt, "first_timestamp", None)
+            )
+            label = (
+                (evt.get("canonical") or evt.get("raw_label", "unknown"))
+                if isinstance(evt, dict)
+                else (
+                    getattr(evt, "canonical", None)
+                    or getattr(evt, "raw_label", "unknown")
+                )
+            )
             if ts:
                 if isinstance(ts, str):
                     ts = datetime.fromisoformat(ts)
                 events.append(EventMarker(label=label, timestamp=ts, offset_s=None))
 
         recording = HRVLoggerRecording(
-            participant_id=pid,
-            rr_intervals=rr_intervals,
-            events=events
+            participant_id=pid, rr_intervals=rr_intervals, events=events
         )
 
         # Build section definition from .rrational data
@@ -3035,13 +3933,17 @@ def _load_raw_section_data(
 
         # Extract section using same logic as "Use raw data" mode
         section_rr = extract_section_rr_intervals(
-            recording, section_def, st.session_state.normalizer,
+            recording,
+            section_def,
+            st.session_state.normalizer,
             saved_events=all_stored,
             participant_id=pid,
         )
 
         if not section_rr:
-            return None, {"error": "Could not extract section from raw data (check event markers)"}
+            return None, {
+                "error": "Could not extract section from raw data (check event markers)"
+            }
 
         # Clean RR intervals
         cleaning_config = st.session_state.get("cleaning_config", {})
@@ -3096,7 +3998,7 @@ def _run_group_analysis(
     project_path = st.session_state.get("project_path")
     data_dir = st.session_state.get("data_dir")
     selected_metrics = config.get("selected_metrics")
-    allow_raw_fallback = config.get("allow_raw_fallback", True)
+    allow_raw_fallback = config.get("allow_raw_fallback", False)
 
     group_participants = _collect_group_participants(config["selected_groups"])
 
@@ -3126,7 +4028,9 @@ def _run_group_analysis(
             update_progress(0, f"[{pid}] Finding .rrational file...")
 
             # Find .rrational v2 file
-            rrational_path = _find_rrational_v2_file(pid, project_path=project_path, data_dir=data_dir)
+            rrational_path = _find_rrational_v2_file(
+                pid, project_path=project_path, data_dir=data_dir
+            )
 
             if not rrational_path:
                 missing[pid] = {"_all": "No .rrational v2 file found"}
@@ -3159,16 +4063,26 @@ def _run_group_analysis(
                     else:
                         # Both NN and raw failed
                         nn_error = info.get("error", "No NN data")
-                        raw_error = raw_info.get("error", "No raw data") if raw_info else "Raw fallback failed"
-                        missing.setdefault(pid, {})[section] = f"NN: {nn_error}; Raw: {raw_error}"
+                        raw_error = (
+                            raw_info.get("error", "No raw data")
+                            if raw_info
+                            else "Raw fallback failed"
+                        )
+                        missing.setdefault(pid, {})[section] = (
+                            f"NN: {nn_error}; Raw: {raw_error}"
+                        )
                         update_progress(1, f"[{pid}] {section} failed")
                 else:
-                    missing.setdefault(pid, {})[section] = info.get("error", "Insufficient data")
+                    missing.setdefault(pid, {})[section] = info.get(
+                        "error", "Insufficient data"
+                    )
                     update_progress(1, f"[{pid}] {section} failed")
 
             # Completeness filter
             if config["completeness_filter"] and len(available) < len(sections):
-                excluded[pid] = f"Missing {len(sections) - len(available)} of {len(sections)} sections"
+                excluded[pid] = (
+                    f"Missing {len(sections) - len(available)} of {len(sections)} sections"
+                )
                 # Skip HRV calculation work
                 update_progress(len(sections), f"[{pid}] Excluded (incomplete)")
                 continue
@@ -3185,19 +4099,21 @@ def _run_group_analysis(
                     selected_metrics=selected_metrics,
                 )
 
-                results.append(ParticipantSectionResult(
-                    participant_id=pid,
-                    group=group,
-                    section_name=section,
-                    n_beats=info.get("n_beats", len(rr_data)),
-                    duration_s=info.get("duration_s", sum(rr_data) / 1000),
-                    quality_grade=info.get("quality_grade", "unknown"),
-                    artifact_rate=info.get("artifact_rate", 0.0),
-                    hrv_metrics=metrics,
-                    hrv_std=std,
-                    n_windows=n_win,
-                    data_source=info.get("data_source", "NN"),
-                ))
+                results.append(
+                    ParticipantSectionResult(
+                        participant_id=pid,
+                        group=group,
+                        section_name=section,
+                        n_beats=info.get("n_beats", len(rr_data)),
+                        duration_s=info.get("duration_s", sum(rr_data) / 1000),
+                        quality_grade=info.get("quality_grade", "unknown"),
+                        artifact_rate=info.get("artifact_rate", 0.0),
+                        hrv_metrics=metrics,
+                        hrv_std=std,
+                        n_windows=n_win,
+                        data_source=info.get("data_source", "NN"),
+                    )
+                )
 
                 update_progress(1, f"[{pid}] Completed {section}")
 
@@ -3234,12 +4150,16 @@ Using overlapping windows improves the reliability of HRV estimates by providing
     # Check prerequisites
     available_sections = list(st.session_state.sections.keys())
     if not available_sections:
-        st.warning("No sections defined. Please define sections in the Sections tab first.")
+        st.warning(
+            "No sections defined. Please define sections in the Sections tab first."
+        )
         return
 
     group_list = list(st.session_state.groups.keys())
     if not group_list:
-        st.warning("No groups defined. Please define groups in the Participants tab first.")
+        st.warning(
+            "No groups defined. Please define groups in the Participants tab first."
+        )
         return
 
     # -------------------------------------------------------------------------
@@ -3250,7 +4170,9 @@ Using overlapping windows improves the reliability of HRV estimates by providing
     # Count participants per group
     group_counts = {}
     for group in group_list:
-        count = sum(1 for g in st.session_state.participant_groups.values() if g == group)
+        count = sum(
+            1 for g in st.session_state.participant_groups.values() if g == group
+        )
         group_counts[group] = count
 
     # Multi-select with counts
@@ -3336,7 +4258,8 @@ Using overlapping windows improves the reliability of HRV estimates by providing
                     metric_info = HRV_METRICS_CATALOG[cat_key][metric_name]
                     if st.checkbox(
                         metric_info["label"],
-                        value=metric_name in ["RMSSD", "SDNN", "MeanHR"],  # Default selection
+                        value=metric_name
+                        in ["RMSSD", "SDNN", "MeanHR"],  # Default selection
                         key=f"group_metric_{metric_name}",
                         help=metric_info["description"],
                     ):
@@ -3346,7 +4269,9 @@ Using overlapping windows improves the reliability of HRV estimates by providing
 
     # Show selected metrics summary
     if selected_metrics:
-        st.caption(f"**Selected:** {', '.join(selected_metrics[:8])}{'...' if len(selected_metrics) > 8 else ''} ({len(selected_metrics)} metrics)")
+        st.caption(
+            f"**Selected:** {', '.join(selected_metrics[:8])}{'...' if len(selected_metrics) > 8 else ''} ({len(selected_metrics)} metrics)"
+        )
     else:
         st.warning("Please select at least one metric.")
         return
@@ -3370,9 +4295,10 @@ Using overlapping windows improves the reliability of HRV estimates by providing
     with col3:
         allow_raw_fallback = st.checkbox(
             "Allow raw data fallback",
-            value=True,
+            value=False,
             key="group_analysis_raw_fallback",
-            help="When NN intervals are unavailable, use raw (uncorrected) RR data. Results will be marked as 'Raw' in the output.",
+            help="When NN intervals are unavailable, use raw (uncorrected) RR data. "
+            "Recommended: OFF — prepare each participant with 'Export for Analysis' first.",
         )
 
     if use_overlapping:
@@ -3405,7 +4331,12 @@ Using overlapping windows improves the reliability of HRV estimates by providing
     # -------------------------------------------------------------------------
     st.divider()
 
-    if st.button("**Analyze Groups**", key="run_group_analysis_btn", type="primary", use_container_width=True):
+    if st.button(
+        "**Analyze Groups**",
+        key="run_group_analysis_btn",
+        type="primary",
+        use_container_width=True,
+    ):
         import time
 
         # Build configuration
@@ -3421,10 +4352,10 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         }
 
         # Count total participants
-        total_participants = sum(
-            group_counts[g] for g in selected_groups
+        total_participants = sum(group_counts[g] for g in selected_groups)
+        total_sections_count = sum(
+            len(sections_per_group.get(g, [])) for g in selected_groups
         )
-        total_sections_count = sum(len(sections_per_group.get(g, [])) for g in selected_groups)
 
         # Create progress UI elements
         progress_bar = st.progress(0, text="Starting analysis...")
@@ -3464,7 +4395,9 @@ Using overlapping windows improves the reliability of HRV estimates by providing
                     last_update_time[0] = now
                     # Use progress bar text parameter for cleaner display
                     pct_display = int(progress_pct * 100)
-                    progress_bar.progress(progress_pct, text=f"{pct_display}% - {message}")
+                    progress_bar.progress(
+                        progress_pct, text=f"{pct_display}% - {message}"
+                    )
                     status_container.caption(time_info)
             except Exception:
                 # Silently ignore UI update errors to prevent crashes
@@ -3489,7 +4422,10 @@ Using overlapping windows improves the reliability of HRV estimates by providing
             "config": config,
         }
 
-        show_toast(f"Analysis complete: {len(results)} participant-section results", icon="success")
+        show_toast(
+            f"Analysis complete: {len(results)} participant-section results",
+            icon="success",
+        )
 
     # -------------------------------------------------------------------------
     # Display Results
@@ -3515,7 +4451,9 @@ Using overlapping windows improves the reliability of HRV estimates by providing
                 if missing:
                     st.markdown("**Missing data:**")
                     for pid, sections in missing.items():
-                        section_list = ", ".join(f"{s}: {r}" for s, r in sections.items())
+                        section_list = ", ".join(
+                            f"{s}: {r}" for s, r in sections.items()
+                        )
                         st.write(f"- `{pid}`: {section_list}")
         return
 
@@ -3575,7 +4513,9 @@ Using overlapping windows improves the reliability of HRV estimates by providing
     nn_count = sum(1 for r in results if r.data_source == "NN")
     raw_count = sum(1 for r in results if r.data_source == "Raw")
     if raw_count > 0:
-        st.info(f"Data sources: **{nn_count} NN** (artifact-corrected) | **{raw_count} Raw** (uncorrected)")
+        st.info(
+            f"Data sources: **{nn_count} NN** (artifact-corrected) | **{raw_count} Raw** (uncorrected)"
+        )
 
     # Participant count table
     st.markdown("**Participants Analyzed per Group & Section:**")
@@ -3591,12 +4531,23 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         if go is not None:
             # Create grouped bar chart showing participant counts
             theme = get_theme_colors()
-            colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C757D", "#28A745", "#17A2B8", "#FFC107"]
+            colors = [
+                "#2E86AB",
+                "#A23B72",
+                "#F18F01",
+                "#C73E1D",
+                "#6C757D",
+                "#28A745",
+                "#17A2B8",
+                "#FFC107",
+            ]
 
             fig = go.Figure()
 
             for i, section in enumerate(all_result_sections):
-                counts = [count_data.get((group, section), set()) for group in all_groups]
+                counts = [
+                    count_data.get((group, section), set()) for group in all_groups
+                ]
                 counts = [len(c) for c in counts]
 
                 fig.add_trace(
@@ -3639,17 +4590,26 @@ Using overlapping windows improves the reliability of HRV estimates by providing
 
     # Missing sections (collapsible) - with actionable feedback
     if missing or excluded:
-        with st.expander(f"**Missing / Excluded ({len(missing) + len(excluded)} participants)**", expanded=False):
+        with st.expander(
+            f"**Missing / Excluded ({len(missing) + len(excluded)} participants)**",
+            expanded=False,
+        ):
             if excluded:
                 st.markdown("### Excluded (completeness filter)")
-                st.caption("These participants were excluded because they don't have all selected sections.")
+                st.caption(
+                    "These participants were excluded because they don't have all selected sections."
+                )
                 for pid, reason in excluded.items():
                     st.write(f"- `{pid}`: {reason}")
-                st.info("**Fix:** Uncheck 'Only complete participants' to include partial data, or validate the missing sections in the Sections tab.")
+                st.info(
+                    "**Fix:** Uncheck 'Only complete participants' to include partial data, or validate the missing sections in the Sections tab."
+                )
 
             if missing:
                 st.markdown("### Missing Data")
-                st.caption("These sections could not be analyzed. Common reasons and fixes:")
+                st.caption(
+                    "These sections could not be analyzed. Common reasons and fixes:"
+                )
 
                 # Categorize missing issues
                 no_rrational = {}
@@ -3662,17 +4622,34 @@ Using overlapping windows improves the reliability of HRV estimates by providing
                     for section, reason in sections.items():
                         reason_lower = reason.lower() if isinstance(reason, str) else ""
                         key = (pid, section)
-                        if "no .rrational" in reason_lower or "rrational v2 file" in reason_lower:
+                        if (
+                            "no .rrational" in reason_lower
+                            or "rrational v2 file" in reason_lower
+                        ):
                             no_rrational[key] = reason
-                        elif "not found in file" in reason_lower or "not in .rrational" in reason_lower:
+                        elif (
+                            "not found in file" in reason_lower
+                            or "not in .rrational" in reason_lower
+                        ):
                             no_validation[key] = reason
-                        elif "no validation" in reason_lower or "no validation timestamps" in reason_lower or "missing start/end" in reason_lower:
+                        elif (
+                            "no validation" in reason_lower
+                            or "no validation timestamps" in reason_lower
+                            or "missing start/end" in reason_lower
+                        ):
                             no_validation[key] = reason
                         elif "no nn" in reason_lower or "nn intervals" in reason_lower:
                             no_nn_data[key] = reason
-                        elif "too few" in reason_lower or "< 100" in reason_lower or "insufficient" in reason_lower:
+                        elif (
+                            "too few" in reason_lower
+                            or "< 100" in reason_lower
+                            or "insufficient" in reason_lower
+                        ):
                             too_few_beats[key] = reason
-                        elif "no rr data" in reason_lower or "no rr intervals" in reason_lower:
+                        elif (
+                            "no rr data" in reason_lower
+                            or "no rr intervals" in reason_lower
+                        ):
                             no_nn_data[key] = reason
                         else:
                             other_issues[key] = reason
@@ -3681,28 +4658,40 @@ Using overlapping windows improves the reliability of HRV estimates by providing
                     st.markdown("**No .rrational file found:**")
                     for (pid, section), reason in no_rrational.items():
                         st.write(f"  - `{pid}` / {section}")
-                    st.info("**Fix:** Process this participant in the Data tab first, then validate sections.")
+                    st.info(
+                        "**Fix:** Process this participant in the Data tab first, then validate sections."
+                    )
 
                 if no_validation:
                     st.markdown("**Section not validated:**")
                     for (pid, section), reason in no_validation.items():
                         st.write(f"  - `{pid}` / {section}")
-                    st.info("**Fix:** Go to Sections tab, select participant, validate section boundaries.")
+                    st.info(
+                        "**Fix:** Go to Sections tab, select participant, validate section boundaries."
+                    )
 
                 if no_nn_data:
                     st.markdown("**No NN intervals saved:**")
                     for (pid, section), reason in no_nn_data.items():
                         st.write(f"  - `{pid}` / {section}")
                     if config.get("allow_raw_fallback"):
-                        st.info("Raw fallback is enabled but these sections still couldn't be loaded. Check if the section has been validated and saved.")
+                        st.info(
+                            "Raw fallback is enabled but these sections still couldn't be loaded. Check if the section has been validated and saved."
+                        )
                     else:
-                        st.info("**Fix:** Enable 'Allow raw data fallback' checkbox, OR go to Analysis tab, select participant, save NN intervals.")
+                        st.info(
+                            "**Fix:** Go to **Analysis tab → Single Participant**, select each missing participant, "
+                            "run the analysis for the relevant sections, and click **Export for Analysis**. "
+                            "This saves corrected NN intervals to the .rrational file."
+                        )
 
                 if too_few_beats:
                     st.markdown("**Too few beats (< 100):**")
                     for (pid, section), reason in too_few_beats.items():
                         st.write(f"  - `{pid}` / {section}")
-                    st.info("**Note:** Sections with < 100 beats cannot produce reliable HRV metrics. Consider using longer recording segments.")
+                    st.info(
+                        "**Note:** Sections with < 100 beats cannot produce reliable HRV metrics. Consider using longer recording segments."
+                    )
 
                 if other_issues:
                     st.markdown("**Other issues:**")
@@ -3715,7 +4704,9 @@ Using overlapping windows improves the reliability of HRV estimates by providing
     stats_df = _calculate_group_stats(long_df)
 
     # Tabs for different views
-    tab_data, tab_stats, tab_chart = st.tabs(["**Data**", "**Statistics**", "**Chart**"])
+    tab_data, tab_stats, tab_chart = st.tabs(
+        ["**Data**", "**Statistics**", "**Chart**"]
+    )
 
     with tab_data:
         # Format toggle
@@ -3760,10 +4751,12 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         st.divider()
         if st.button("Generate HTML Report", key="gen_group_html_report"):
             from rrational import __version__
-            import html as html_module
-            ts = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            html_tables = stats_df.to_html(index=False, classes="styled-table", border=0)
+            ts = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            html_tables = stats_df.to_html(
+                index=False, classes="styled-table", border=0
+            )
             data_table = long_df.to_html(index=False, classes="styled-table", border=0)
 
             html_report = f"""<!DOCTYPE html>
@@ -3822,7 +4815,13 @@ Generated by RRational v{__version__}
         # Visualization type selector
         viz_type = st.radio(
             "Visualization type",
-            options=["Bar Chart", "Box Plot", "Violin Plot", "Raincloud Plot", "SD1/SD2 Scatter"],
+            options=[
+                "Bar Chart",
+                "Box Plot",
+                "Violin Plot",
+                "Raincloud Plot",
+                "SD1/SD2 Scatter",
+            ],
             horizontal=True,
             key="group_analysis_viz_type",
         )
@@ -3835,10 +4834,21 @@ Generated by RRational v{__version__}
                 available_metrics.append(col_upper)
 
         # Ensure basic metrics are first
-        priority_order = ["RMSSD", "SDNN", "PNN50", "MEANNN", "MEANHR", "LF", "HF", "LF_HF", "SD1", "SD2"]
+        priority_order = [
+            "RMSSD",
+            "SDNN",
+            "PNN50",
+            "MEANNN",
+            "MEANHR",
+            "LF",
+            "HF",
+            "LF_HF",
+            "SD1",
+            "SD2",
+        ]
         available_metrics = sorted(
             available_metrics,
-            key=lambda x: priority_order.index(x) if x in priority_order else 100
+            key=lambda x: priority_order.index(x) if x in priority_order else 100,
         )
 
         if viz_type == "SD1/SD2 Scatter":
@@ -3855,9 +4865,13 @@ Generated by RRational v{__version__}
                 if fig:
                     st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.info("No SD1/SD2 data available. Select 'Poincaré Focus' or 'Full' preset to include these metrics.")
+                    st.info(
+                        "No SD1/SD2 data available. Select 'Poincaré Focus' or 'Full' preset to include these metrics."
+                    )
             else:
-                st.info("SD1 and SD2 metrics not available. Run analysis with 'Poincaré Focus' or 'Full (with nonlinear)' preset.")
+                st.info(
+                    "SD1 and SD2 metrics not available. Run analysis with 'Poincaré Focus' or 'Full (with nonlinear)' preset."
+                )
         else:
             # Metric selector for other charts
             if not available_metrics:
@@ -3887,21 +4901,31 @@ Generated by RRational v{__version__}
                     filtered_df = long_df[long_df["section"].isin(chart_sections)]
 
                     if viz_type == "Bar Chart":
-                        fig = _create_group_bar_chart(stats_df, selected_chart_metric, chart_sections)
+                        fig = _create_group_bar_chart(
+                            stats_df, selected_chart_metric, chart_sections
+                        )
                     elif viz_type == "Box Plot":
                         fig = _create_box_violin_plot(
-                            filtered_df, selected_chart_metric,
-                            plot_type="box", group_by="group", color_by="section"
+                            filtered_df,
+                            selected_chart_metric,
+                            plot_type="box",
+                            group_by="group",
+                            color_by="section",
                         )
                     elif viz_type == "Violin Plot":
                         fig = _create_box_violin_plot(
-                            filtered_df, selected_chart_metric,
-                            plot_type="violin", group_by="group", color_by="section"
+                            filtered_df,
+                            selected_chart_metric,
+                            plot_type="violin",
+                            group_by="group",
+                            color_by="section",
                         )
                     elif viz_type == "Raincloud Plot":
                         fig = _create_raincloud_plot(
-                            filtered_df, selected_chart_metric,
-                            group_by="group", color_by="section"
+                            filtered_df,
+                            selected_chart_metric,
+                            group_by="group",
+                            color_by="section",
                         )
                     else:
                         fig = None
@@ -3909,7 +4933,9 @@ Generated by RRational v{__version__}
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
                     else:
-                        st.info(f"No data available for {selected_chart_metric} in selected sections.")
+                        st.info(
+                            f"No data available for {selected_chart_metric} in selected sections."
+                        )
 
 
 def _get_condition_display_name(condition_id: str, condition_labels: dict) -> str:
@@ -3945,12 +4971,16 @@ This analysis groups participants by sequence and compares conditions within and
     # Check prerequisites
     event_sequences = st.session_state.get("event_sequences", {})
     if not event_sequences:
-        st.warning("No event sequences defined. Go to Setup > Sequences to create them.")
+        st.warning(
+            "No event sequences defined. Go to Setup > Sequences to create them."
+        )
         return
 
     participant_sequences = st.session_state.get("participant_sequences", {})
     if not participant_sequences:
-        st.warning("No participants assigned to sequences. Assign participants in the Participants tab.")
+        st.warning(
+            "No participants assigned to sequences. Assign participants in the Participants tab."
+        )
         return
 
     condition_labels = st.session_state.get("condition_labels", {})
@@ -3967,7 +4997,9 @@ This analysis groups participants by sequence and compares conditions within and
         seq_counts[seq_id] = count
 
     seq_options = [f"{sid} ({seq_counts[sid]} participants)" for sid in event_sequences]
-    seq_map = {f"{sid} ({seq_counts[sid]} participants)": sid for sid in event_sequences}
+    seq_map = {
+        f"{sid} ({seq_counts[sid]} participants)": sid for sid in event_sequences
+    }
 
     selected_seq_labels = st.multiselect(
         "Select sequences to compare",
@@ -3986,7 +5018,9 @@ This analysis groups participants by sequence and compares conditions within and
     selected_groups = None
     if group_list:
         with st.expander("**Filter by Group** (optional)", expanded=False):
-            st.caption("Compare conditions across groups — e.g., how does RMSSD during 'Music' differ between Group A and Group B?")
+            st.caption(
+                "Compare conditions across groups — e.g., how does RMSSD during 'Music' differ between Group A and Group B?"
+            )
             use_group_filter = st.checkbox(
                 "Include group in comparison",
                 value=False,
@@ -3995,7 +5029,13 @@ This analysis groups participants by sequence and compares conditions within and
             if use_group_filter:
                 group_counts = {}
                 for g in group_list:
-                    group_counts[g] = sum(1 for pg in st.session_state.get("participant_groups", {}).values() if pg == g)
+                    group_counts[g] = sum(
+                        1
+                        for pg in st.session_state.get(
+                            "participant_groups", {}
+                        ).values()
+                        if pg == g
+                    )
                 group_options = [f"{g} ({group_counts[g]})" for g in group_list]
                 g_map = {f"{g} ({group_counts[g]})": g for g in group_list}
                 selected_group_labels = st.multiselect(
@@ -4094,7 +5134,9 @@ This analysis groups participants by sequence and compares conditions within and
         st.warning("Please select at least one metric.")
         return
 
-    st.caption(f"**Selected:** {', '.join(selected_metrics[:8])}{'...' if len(selected_metrics) > 8 else ''}")
+    st.caption(
+        f"**Selected:** {', '.join(selected_metrics[:8])}{'...' if len(selected_metrics) > 8 else ''}"
+    )
 
     st.markdown("**Analysis Settings**")
     col1, col2 = st.columns(2)
@@ -4107,20 +5149,30 @@ This analysis groups participants by sequence and compares conditions within and
     with col2:
         allow_raw_fallback = st.checkbox(
             "Allow raw data fallback",
-            value=True,
+            value=False,
             key="seq_comparison_raw_fallback",
+            help="When NN intervals are unavailable, use raw (uncorrected) RR data. "
+            "Recommended: OFF — prepare each participant with 'Export for Analysis' first.",
         )
 
     if use_overlapping:
         col1, col2 = st.columns(2)
         with col1:
             window_beats = st.number_input(
-                "Window size (beats)", min_value=100, max_value=1000, value=300, step=50,
+                "Window size (beats)",
+                min_value=100,
+                max_value=1000,
+                value=300,
+                step=50,
                 key="seq_comparison_window_beats",
             )
         with col2:
             overlap_pct = st.slider(
-                "Overlap (%)", min_value=0, max_value=90, value=75, step=5,
+                "Overlap (%)",
+                min_value=0,
+                max_value=90,
+                value=75,
+                step=5,
                 key="seq_comparison_overlap",
             )
     else:
@@ -4132,7 +5184,12 @@ This analysis groups participants by sequence and compares conditions within and
     # -------------------------------------------------------------------------
     st.divider()
 
-    if st.button("**Compare Sequences**", key="run_seq_comparison_btn", type="primary", use_container_width=True):
+    if st.button(
+        "**Compare Sequences**",
+        key="run_seq_comparison_btn",
+        type="primary",
+        use_container_width=True,
+    ):
         import time as _time
 
         project_path = st.session_state.get("project_path")
@@ -4146,10 +5203,16 @@ This analysis groups participants by sequence and compares conditions within and
         for seq_id in selected_sequences:
             pids = [pid for pid, s in participant_sequences.items() if s == seq_id]
             if selected_groups:
-                pids = [pid for pid in pids if participant_groups.get(pid) in selected_groups]
+                pids = [
+                    pid
+                    for pid in pids
+                    if participant_groups.get(pid) in selected_groups
+                ]
             seq_participants[seq_id] = pids
 
-        total_work = sum(len(pids) * len(selected_conditions) for pids in seq_participants.values())
+        total_work = sum(
+            len(pids) * len(selected_conditions) for pids in seq_participants.values()
+        )
         current_work = [0]
 
         progress_bar = st.progress(0, text="Starting sequence comparison...")
@@ -4162,7 +5225,9 @@ This analysis groups participants by sequence and compares conditions within and
 
             for pid in pids:
                 # Find .rrational file
-                rrational_path = _find_rrational_v2_file(pid, project_path=project_path, data_dir=data_dir)
+                rrational_path = _find_rrational_v2_file(
+                    pid, project_path=project_path, data_dir=data_dir
+                )
                 if not rrational_path:
                     missing[pid] = "No .rrational v2 file"
                     current_work[0] += len(selected_conditions)
@@ -4172,25 +5237,41 @@ This analysis groups participants by sequence and compares conditions within and
                 for condition in selected_conditions:
                     current_work[0] += 1
                     pct = min(current_work[0] / max(total_work, 1), 1.0)
-                    cond_label = _get_condition_display_name(condition, condition_labels)
-                    progress_bar.progress(pct, text=f"{int(pct*100)}% - [{pid}] {cond_label}")
+                    cond_label = _get_condition_display_name(
+                        condition, condition_labels
+                    )
+                    progress_bar.progress(
+                        pct, text=f"{int(pct * 100)}% - [{pid}] {cond_label}"
+                    )
 
                     # Try loading condition-specific section (section name = condition label or condition id)
                     section_name = cond_label if cond_label != condition else condition
-                    nn_data, info = _load_nn_from_rrational_v2(rrational_path, section_name)
+                    nn_data, info = _load_nn_from_rrational_v2(
+                        rrational_path, section_name
+                    )
 
                     # Also try with condition id directly
                     if not nn_data or len(nn_data) < MIN_BEATS_TIME_DOMAIN:
-                        nn_data, info = _load_nn_from_rrational_v2(rrational_path, condition)
+                        nn_data, info = _load_nn_from_rrational_v2(
+                            rrational_path, condition
+                        )
 
                     if not nn_data or len(nn_data) < MIN_BEATS_TIME_DOMAIN:
                         if allow_raw_fallback:
                             raw_data, raw_info = _load_raw_section_data(
-                                pid, section_name, rrational_path, project_path, data_dir
+                                pid,
+                                section_name,
+                                rrational_path,
+                                project_path,
+                                data_dir,
                             )
                             if not raw_data or len(raw_data) < MIN_BEATS_TIME_DOMAIN:
                                 raw_data, raw_info = _load_raw_section_data(
-                                    pid, condition, rrational_path, project_path, data_dir
+                                    pid,
+                                    condition,
+                                    rrational_path,
+                                    project_path,
+                                    data_dir,
                                 )
                             if raw_data and len(raw_data) >= MIN_BEATS_TIME_DOMAIN:
                                 nn_data = raw_data
@@ -4198,7 +5279,9 @@ This analysis groups participants by sequence and compares conditions within and
                                 info["data_source"] = "Raw"
 
                     if not nn_data or len(nn_data) < MIN_BEATS_TIME_DOMAIN:
-                        missing.setdefault(pid, {})[condition] = info.get("error", "Insufficient data")
+                        missing.setdefault(pid, {})[condition] = info.get(
+                            "error", "Insufficient data"
+                        )
                         continue
 
                     # Calculate HRV
@@ -4217,19 +5300,21 @@ This analysis groups participants by sequence and compares conditions within and
                         group_label = f"{seq_label} / {pid_group}"
                     else:
                         group_label = seq_label
-                    results.append(ParticipantSectionResult(
-                        participant_id=pid,
-                        group=group_label,  # Sequence (+ group) as "group" for reuse
-                        section_name=cond_label,  # Condition as "section" for reuse
-                        n_beats=info.get("n_beats", len(nn_data)),
-                        duration_s=info.get("duration_s", sum(nn_data) / 1000),
-                        quality_grade=info.get("quality_grade", "unknown"),
-                        artifact_rate=info.get("artifact_rate", 0.0),
-                        hrv_metrics=metrics,
-                        hrv_std=std,
-                        n_windows=n_win,
-                        data_source=info.get("data_source", "NN"),
-                    ))
+                    results.append(
+                        ParticipantSectionResult(
+                            participant_id=pid,
+                            group=group_label,  # Sequence (+ group) as "group" for reuse
+                            section_name=cond_label,  # Condition as "section" for reuse
+                            n_beats=info.get("n_beats", len(nn_data)),
+                            duration_s=info.get("duration_s", sum(nn_data) / 1000),
+                            quality_grade=info.get("quality_grade", "unknown"),
+                            artifact_rate=info.get("artifact_rate", 0.0),
+                            hrv_metrics=metrics,
+                            hrv_std=std,
+                            n_windows=n_win,
+                            data_source=info.get("data_source", "NN"),
+                        )
+                    )
 
         elapsed = _time.time() - start_time
         progress_bar.progress(1.0, text="100% - Complete!")
@@ -4240,7 +5325,9 @@ This analysis groups participants by sequence and compares conditions within and
             "missing": missing,
         }
 
-        show_toast(f"Sequence comparison complete: {len(results)} results", icon="success")
+        show_toast(
+            f"Sequence comparison complete: {len(results)} results", icon="success"
+        )
 
     # -------------------------------------------------------------------------
     # Display Results
@@ -4253,7 +5340,9 @@ This analysis groups participants by sequence and compares conditions within and
     missing = stored["missing"]
 
     if not results:
-        st.warning("No results. Check prerequisites: .rrational files exported, sections validated, conditions matching section names.")
+        st.warning(
+            "No results. Check prerequisites: .rrational files exported, sections validated, conditions matching section names."
+        )
         if missing:
             with st.expander("**Missing Data Details**", expanded=True):
                 for pid, info in missing.items():
@@ -4292,7 +5381,9 @@ This analysis groups participants by sequence and compares conditions within and
 
     # Missing data
     if missing:
-        with st.expander(f"**Missing Data ({len(missing)} participants)**", expanded=False):
+        with st.expander(
+            f"**Missing Data ({len(missing)} participants)**", expanded=False
+        ):
             for pid, info in missing.items():
                 if isinstance(info, dict):
                     for section, reason in info.items():
@@ -4301,7 +5392,9 @@ This analysis groups participants by sequence and compares conditions within and
                     st.write(f"- `{pid}`: {info}")
 
     # Tabs for results
-    tab_data, tab_stats, tab_chart = st.tabs(["**Data**", "**Statistics**", "**Chart**"])
+    tab_data, tab_stats, tab_chart = st.tabs(
+        ["**Data**", "**Statistics**", "**Chart**"]
+    )
 
     with tab_data:
         st.dataframe(long_df, use_container_width=True, height=400)
@@ -4332,7 +5425,13 @@ This analysis groups participants by sequence and compares conditions within and
 
         viz_type = st.radio(
             "Visualization type",
-            options=["Bar Chart", "Box Plot", "Violin Plot", "Raincloud Plot", "SD1/SD2 Scatter"],
+            options=[
+                "Bar Chart",
+                "Box Plot",
+                "Violin Plot",
+                "Raincloud Plot",
+                "SD1/SD2 Scatter",
+            ],
             horizontal=True,
             key="seq_comparison_viz_type",
         )
@@ -4343,10 +5442,21 @@ This analysis groups participants by sequence and compares conditions within and
             if col_upper in ALL_HRV_METRICS and plot_df[col].notna().any():
                 available_metrics.append(col_upper)
 
-        priority_order = ["RMSSD", "SDNN", "PNN50", "MEANNN", "MEANHR", "LF", "HF", "LF_HF", "SD1", "SD2"]
+        priority_order = [
+            "RMSSD",
+            "SDNN",
+            "PNN50",
+            "MEANNN",
+            "MEANHR",
+            "LF",
+            "HF",
+            "LF_HF",
+            "SD1",
+            "SD2",
+        ]
         available_metrics = sorted(
             available_metrics,
-            key=lambda x: priority_order.index(x) if x in priority_order else 100
+            key=lambda x: priority_order.index(x) if x in priority_order else 100,
         )
 
         if viz_type == "SD1/SD2 Scatter":
@@ -4355,12 +5465,16 @@ This analysis groups participants by sequence and compares conditions within and
                 if fig:
                     st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("SD1/SD2 metrics not available. Use a preset that includes nonlinear metrics.")
+                st.info(
+                    "SD1/SD2 metrics not available. Use a preset that includes nonlinear metrics."
+                )
         elif available_metrics:
             selected_chart_metric = st.selectbox(
                 "Select metric",
                 options=available_metrics,
-                format_func=lambda m: f"{m} ({get_metric_info(m).get('unit', '')})" if get_metric_info(m) else m,
+                format_func=lambda m: f"{m} ({get_metric_info(m).get('unit', '')})"
+                if get_metric_info(m)
+                else m,
                 key="seq_comparison_chart_metric",
             )
 
@@ -4374,11 +5488,20 @@ This analysis groups participants by sequence and compares conditions within and
                     plot_stats = _calculate_group_stats(plot_df)
                     fig = _create_group_bar_chart(plot_stats, selected_chart_metric)
                 elif viz_type == "Box Plot":
-                    fig = _create_box_violin_plot(filtered_df, selected_chart_metric, plot_type="box")
+                    fig = _create_box_violin_plot(
+                        filtered_df, selected_chart_metric, plot_type="box"
+                    )
                 elif viz_type == "Violin Plot":
-                    fig = _create_box_violin_plot(filtered_df, selected_chart_metric, plot_type="violin")
+                    fig = _create_box_violin_plot(
+                        filtered_df, selected_chart_metric, plot_type="violin"
+                    )
                 elif viz_type == "Raincloud Plot":
-                    fig = _create_raincloud_plot(filtered_df, selected_chart_metric, group_by="group", color_by="section")
+                    fig = _create_raincloud_plot(
+                        filtered_df,
+                        selected_chart_metric,
+                        group_by="group",
+                        color_by="section",
+                    )
                 else:
                     fig = None
 
