@@ -3767,7 +3767,7 @@ def _load_nn_from_rrational_v2(
         info = {
             "quality_grade": quality.grade,
             "artifact_rate": (
-                section.artifact_detection.artifact_rate
+                section.artifact_detection.artifact_rate_detected
                 if section.artifact_detection
                 else 0.0
             ),
@@ -4033,7 +4033,9 @@ def _run_group_analysis(
             )
 
             if not rrational_path:
-                missing[pid] = {"_all": "No .rrational v2 file found"}
+                missing[pid] = {
+                    "_all": f"No .rrational v2 file found (project_path={project_path}, data_dir={data_dir})"
+                }
                 # Skip all work for this participant
                 update_progress(1 + len(sections) * 2, f"[{pid}] Skipped (no file)")
                 continue
@@ -4073,10 +4075,9 @@ def _run_group_analysis(
                         )
                         update_progress(1, f"[{pid}] {section} failed")
                 else:
-                    missing.setdefault(pid, {})[section] = info.get(
-                        "error", "Insufficient data"
-                    )
-                    update_progress(1, f"[{pid}] {section} failed")
+                    error_detail = info.get("error", "Insufficient data")
+                    missing.setdefault(pid, {})[section] = error_detail
+                    update_progress(1, f"[{pid}] {section} failed: {error_detail}")
 
             # Completeness filter
             if config["completeness_filter"] and len(available) < len(sections):
