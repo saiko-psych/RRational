@@ -57,6 +57,9 @@ def _create_group_bar_chart(
     metric: str,
     sections: list[str] | None = None,
     error_bar_type: str = "SD",
+    long_df: pd.DataFrame | None = None,
+    show_points: bool = False,
+    log_y: bool = False,
 ):
     """Create a grouped bar chart for HRV metrics.
 
@@ -65,6 +68,9 @@ def _create_group_bar_chart(
         metric: Metric to plot (e.g., "RMSSD", "SDNN")
         sections: Optional list of sections to include
         error_bar_type: "SD" | "SEM" | "CI95" | "None"
+        long_df: Long-format per-participant data. Required for show_points.
+        show_points: If True, overlay individual participant data points on bars.
+        log_y: If True, use logarithmic y-axis (useful for LF/HF power).
 
     Returns:
         Plotly Figure object
@@ -72,6 +78,8 @@ def _create_group_bar_chart(
     go, _ = get_plotly_analysis()
     if go is None:
         return None
+
+    import numpy as np
 
     # Filter to specific metric
     df = stats_df[stats_df["metric"] == metric.upper()].copy()
@@ -92,6 +100,12 @@ def _create_group_bar_chart(
     fig = go.Figure()
 
     show_error_bars = error_bar_type != "None"
+    n_sections = len(section_list)
+
+    # Plotly grouped bars use a negative-to-positive offset range.
+    # For N sections, centers are at: -0.375 + (i+0.5) * 0.75/N (default gap)
+    # Simpler: compute offset index and use x-jitter around category center.
+    bar_width_fraction = 0.75  # default Plotly barmode="group" group width
 
     for i, section in enumerate(section_list):
         section_df = df[df["section"] == section]
@@ -118,8 +132,54 @@ def _create_group_bar_chart(
                 y=means,
                 error_y=dict(type="data", array=errors, visible=show_error_bars),
                 marker_color=colors[i % len(colors)],
+                opacity=0.8 if show_points else 1.0,
             )
         )
+
+    # Overlay individual data points if requested
+    if show_points and long_df is not None and not long_df.empty:
+        metric_lower = metric.lower()
+        if metric_lower in long_df.columns:
+            rng = np.random.default_rng(42)  # Reproducible jitter
+            for i, section in enumerate(section_list):
+                # Section offset within the group cluster
+                # Plotly's default: bars centered at -0.5 + (i+0.5)/N inside each category
+                section_offset = (i - (n_sections - 1) / 2) * (
+                    bar_width_fraction / n_sections
+                )
+
+                for group_idx, group in enumerate(groups):
+                    subset = long_df[
+                        (long_df["group"] == group) & (long_df["section"] == section)
+                    ]
+                    values = subset[metric_lower].dropna().tolist()
+                    if not values:
+                        continue
+
+                    n_points = len(values)
+                    # Jitter within ± half the per-section slot width
+                    jitter_spread = (bar_width_fraction / n_sections) * 0.3
+                    jitter = rng.uniform(-jitter_spread, jitter_spread, size=n_points)
+                    x_positions = [group_idx + section_offset + j for j in jitter]
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=x_positions,
+                            y=values,
+                            mode="markers",
+                            marker=dict(
+                                size=4,
+                                color="rgba(0,0,0,0.6)",
+                                line=dict(width=0),
+                            ),
+                            name=f"{section} points",
+                            showlegend=False,
+                            hovertemplate=(
+                                f"<b>{group}</b> — {section}<br>"
+                                "%{y:.2f}<extra></extra>"
+                            ),
+                        )
+                    )
 
     # Get theme colors
     theme = get_theme_colors()
@@ -151,7 +211,11 @@ def _create_group_bar_chart(
         gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
     )
     fig.update_yaxes(
-        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+        gridcolor=theme["grid"],
+        showline=True,
+        linewidth=1,
+        linecolor=theme["grid"],
+        type="log" if log_y else "linear",
     )
 
     return fig
