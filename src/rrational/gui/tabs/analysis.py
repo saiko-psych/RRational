@@ -4171,6 +4171,180 @@ def _run_group_analysis(
     return results, missing, excluded
 
 
+def _render_hypothesis_tests(long_df):
+    """Render the hypothesis testing UI within the Statistics tab.
+
+    Lets the user:
+    - Pick a metric
+    - Run between-groups comparison per section (or across all sections)
+    - Apply multiple-comparisons correction
+    - See test name, statistic, p-value, effect size, and sample sizes
+    """
+    from rrational.analysis.group_statistics import (
+        adjust_pvalues,
+        compare_groups,
+        should_log_transform,
+    )
+
+    st.markdown("### Hypothesis Tests")
+
+    if long_df.empty:
+        st.info("No data available for hypothesis testing.")
+        return
+
+    # Identify available metrics (exclude metadata)
+    exclude_cols = {
+        "participant_id",
+        "group",
+        "section",
+        "data_source",
+        "n_beats",
+        "duration_s",
+        "quality",
+        "artifact_rate",
+        "n_windows",
+    }
+    metric_cols = [
+        c for c in long_df.columns if c not in exclude_cols and not c.endswith("_sd")
+    ]
+    if not metric_cols:
+        st.info("No metric columns found.")
+        return
+
+    groups = sorted(long_df["group"].dropna().unique().tolist())
+    if len(groups) < 2:
+        st.info(
+            f"Hypothesis testing needs at least 2 groups — only {len(groups)} found."
+        )
+        return
+
+    sections = sorted(long_df["section"].dropna().unique().tolist())
+
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        selected_metrics = st.multiselect(
+            "Metrics to test",
+            options=metric_cols,
+            default=[m for m in ["rmssd", "sdnn", "hf", "lf_hf"] if m in metric_cols][
+                :3
+            ],
+            format_func=lambda s: s.upper(),
+            key="group_test_metrics",
+            help="Select one or more HRV metrics to test for group differences.",
+        )
+    with col2:
+        selected_sections = st.multiselect(
+            "Sections to test",
+            options=sections,
+            default=sections,
+            key="group_test_sections",
+            help="Run a separate test per section.",
+        )
+    with col3:
+        correction = st.selectbox(
+            "Correction",
+            options=["none", "holm", "bonferroni", "fdr_bh"],
+            index=1,
+            key="group_test_correction",
+            help=(
+                "Multiple-comparisons correction when running many tests.\n"
+                "- holm: Holm-Bonferroni (conservative, controls family-wise error)\n"
+                "- bonferroni: simplest, most conservative\n"
+                "- fdr_bh: Benjamini-Hochberg (less conservative, controls FDR)\n"
+                "- none: no correction (valid only for a single planned test)"
+            ),
+        )
+
+    if not selected_metrics or not selected_sections:
+        st.info("Select at least one metric and one section.")
+        return
+
+    # Run tests
+    results = []
+    errors = []
+    for metric in selected_metrics:
+        metric_upper = metric.upper()
+        log_transform = should_log_transform(metric_upper)
+        for section in selected_sections:
+            subset = long_df[long_df["section"] == section]
+            values_per_group = {}
+            for g in groups:
+                g_vals = subset[subset["group"] == g][metric].dropna().tolist()
+                if g_vals:
+                    values_per_group[g] = g_vals
+            if len(values_per_group) < 2:
+                continue
+            try:
+                result = compare_groups(
+                    values_per_group,
+                    metric=metric_upper,
+                    section=section,
+                    log_transform=log_transform,
+                )
+                results.append(result)
+            except ValueError as e:
+                errors.append(f"{metric_upper} / {section}: {e}")
+
+    if not results:
+        st.warning("No valid comparisons could be run.")
+        if errors:
+            with st.expander("Errors"):
+                for err in errors:
+                    st.text(err)
+        return
+
+    # Apply correction across the batch
+    if correction != "none":
+        adjust_pvalues(results, method=correction)
+
+    # Display results table
+    import pandas as pd
+
+    rows = []
+    for r in results:
+        row = {
+            "Metric": r.metric,
+            "Section": r.section,
+            "Test": r.test_name,
+            "Statistic": f"{r.statistic:.3f}",
+            "p": f"{r.p_value:.4g}",
+            "Sig": r.significance,
+            r.effect_size_name: (
+                f"{r.effect_size:.3f}" if r.effect_size is not None else "—"
+            ),
+        }
+        for g, n in r.n_per_group.items():
+            row[f"n_{g}"] = n
+        for g, m in r.means.items():
+            row[f"M_{g}"] = f"{m:.2f}"
+        row["Note"] = r.note or ""
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True)
+
+    # Legend
+    st.caption(
+        "**Significance**: `***` p≤.001, `**` p≤.01, `*` p≤.05, `ns` not significant. "
+        "**Effect size**: Cohen's d — small (0.2), medium (0.5), large (0.8). "
+        "η² — small (.01), medium (.06), large (.14)."
+    )
+
+    # Download
+    st.download_button(
+        label="Download Tests CSV",
+        data=df.to_csv(index=False),
+        file_name="hrv_group_hypothesis_tests.csv",
+        mime="text/csv",
+        key="download_group_tests",
+    )
+
+    if errors:
+        with st.expander(f"{len(errors)} test(s) could not be run"):
+            for err in errors:
+                st.text(err)
+
+
 def _render_group_analysis():
     """Render group-level HRV analysis with multi-group support."""
     # Help expander
@@ -4793,6 +4967,10 @@ Using overlapping windows improves the reliability of HRV estimates by providing
             mime="text/csv",
             key="download_group_stats",
         )
+
+        # Hypothesis Testing
+        st.divider()
+        _render_hypothesis_tests(long_df)
 
         # HTML Report download
         st.divider()
