@@ -25,7 +25,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## Current Status
 
-**Version**: `v0.9.1` | **Tests**: 101/101 passing
+**Version**: `v0.9.2` | **Tests**: 134/134 passing
 
 **GUI**: 4-tab Streamlit app (Data, Participants, Setup, Analysis)
 **Analysis modes**: Single Participant, Repeating Section, Group, Sequence Comparison
@@ -33,7 +33,13 @@ uv run ruff check src/ tests/ --fix            # Lint
 **Segmentation**: Unified time-based (artifact detection + analysis use same segments)
 **Storage**: Project-based (`MyProject/config/*.yml`) or global fallback (`~/.rrational/`)
 **Docs**: https://rrational.readthedocs.io (MkDocs Material, auto-builds on push)
-**Hooks**: PostToolUse ruff auto-lint on .py files (`.claude/settings.json`)
+**Hooks**: PostToolUse ruff + PreToolUse data protection (`.claude/settings.json`)
+
+**v0.9.2 Group Analysis features** (NOT yet in RTD — see `project_rtd_todo.md`):
+- Hypothesis Tests UI (Welch t / Mann-Whitney / ANOVA / Kruskal + Holm correction + Cohen's d / η²)
+- Save/load cache (`project/data/processed/group_analysis_results.yml`)
+- Error bar options (SEM/SD/CI95/None) + individual points overlay + log Y-axis
+- 14x faster (single .rrational load per participant)
 
 ## Scientific Best Practices (CRITICAL)
 
