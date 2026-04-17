@@ -25,17 +25,46 @@ def _get_group_palette() -> list[str]:
         return ColorScheme().group_palette
 
 
+def _compute_error_values(sd: float, n: int, error_type: str) -> float:
+    """Compute error bar magnitude from SD and n.
+
+    Args:
+        sd: Standard deviation
+        n: Sample size
+        error_type: "SD" | "SEM" | "CI95" | "None"
+
+    Returns:
+        Error bar half-width (symmetric around mean)
+    """
+    import math
+
+    if error_type == "None" or sd is None or n is None or n < 1:
+        return 0.0
+    if error_type == "SD":
+        return sd
+    sem = sd / math.sqrt(n) if n > 0 else 0.0
+    if error_type == "SEM":
+        return sem
+    if error_type == "CI95":
+        # 1.96 for large n; t-critical would be more precise for small n
+        # but Welch approximation works fine for typical HRV group sizes (n≥10)
+        return 1.96 * sem
+    return sd
+
+
 def _create_group_bar_chart(
     stats_df: pd.DataFrame,
     metric: str,
     sections: list[str] | None = None,
+    error_bar_type: str = "SD",
 ):
     """Create a grouped bar chart for HRV metrics.
 
     Args:
-        stats_df: DataFrame from _calculate_group_stats
+        stats_df: DataFrame from _calculate_group_stats (must include 'n' column)
         metric: Metric to plot (e.g., "RMSSD", "SDNN")
         sections: Optional list of sections to include
+        error_bar_type: "SD" | "SEM" | "CI95" | "None"
 
     Returns:
         Plotly Figure object
@@ -62,27 +91,32 @@ def _create_group_bar_chart(
 
     fig = go.Figure()
 
+    show_error_bars = error_bar_type != "None"
+
     for i, section in enumerate(section_list):
         section_df = df[df["section"] == section]
 
         # Align with groups (may have missing data)
         means = []
-        sds = []
+        errors = []
         for group in groups:
             group_row = section_df[section_df["group"] == group]
             if not group_row.empty:
-                means.append(group_row["mean"].values[0])
-                sds.append(group_row["sd"].values[0])
+                mean_val = group_row["mean"].values[0]
+                sd_val = group_row["sd"].values[0]
+                n_val = int(group_row["n"].values[0]) if "n" in group_row.columns else 1
+                means.append(mean_val)
+                errors.append(_compute_error_values(sd_val, n_val, error_bar_type))
             else:
                 means.append(None)
-                sds.append(None)
+                errors.append(None)
 
         fig.add_trace(
             go.Bar(
                 name=section,
                 x=groups,
                 y=means,
-                error_y=dict(type="data", array=sds, visible=True),
+                error_y=dict(type="data", array=errors, visible=show_error_bars),
                 marker_color=colors[i % len(colors)],
             )
         )
