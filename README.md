@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.9.1-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.2-green.svg)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-101%20passing-brightgreen.svg)](tests/)
 [![Documentation](https://readthedocs.org/projects/rrational/badge/?version=latest)](https://rrational.readthedocs.io)
 
@@ -23,7 +23,7 @@
 
 ## What is RRational?
 
-RRational is an open-source HRV analysis toolkit built for researchers who need reliable, transparent, and reproducible heart rate variability analysis. It provides an interactive Streamlit GUI for importing, inspecting, cleaning, and analyzing RR-interval data — following current scientific guidelines (Quigley et al., 2024).
+RRational is an open-source HRV analysis toolkit built for researchers who need reliable, transparent, and reproducible heart rate variability analysis. It provides an interactive Streamlit GUI for importing, inspecting, cleaning, and analyzing RR-interval data — following current scientific guidelines ([Quigley et al., 2024](https://doi.org/10.1111/psyp.14604)).
 
 ## Supported Data Sources
 
@@ -42,7 +42,7 @@ RRational is an open-source HRV analysis toolkit built for researchers who need 
 
 - **Interactive tachogram** — WebGL-accelerated plots with click-to-add events, zoom, and pan
 - **Power Spectrum (PSD)** — Real-time frequency-domain view with VLF/LF/HF band analysis
-- **Artifact detection** — Lipponen & Tarvainen (2019) algorithm with per-segment quality grading
+- **Artifact detection** — [Lipponen & Tarvainen (2019)](https://doi.org/10.1080/03091902.2019.1640306) algorithm with per-segment quality grading
 - **HRV metrics** — Time domain (RMSSD, SDNN, pNN50), frequency domain (LF, HF), nonlinear (SD1, SD2)
 - **Group & Sequence comparison** — Batch analysis with bar charts, violin plots, and raincloud plots
 - **Report generation** — Export as HTML or Markdown for publication-ready documentation
@@ -70,9 +70,14 @@ Full documentation at **[rrational.readthedocs.io](https://rrational.readthedocs
 
 ## Citation
 
-If you use RRational in your research, please cite:
+If you use RRational in your research, please cite the software *and* the underlying methodology guidelines:
 
-> RRational: A rational approach to Heart Rate Variability analysis. https://github.com/saiko-psych/rrational
+**Software**
+> saiko-psych (2026). *RRational: A rational approach to Heart Rate Variability analysis* (Version 0.9.2) [Computer software]. https://github.com/saiko-psych/rrational
+
+**Methodology (please also cite)**
+- Quigley, K.S., et al. (2024). Publication guidelines for human heart rate and heart rate variability studies in psychophysiology. *Psychophysiology*, 61(9), e14604. [doi:10.1111/psyp.14604](https://doi.org/10.1111/psyp.14604)
+- Lipponen, J.A., & Tarvainen, M.P. (2019). A robust algorithm for heart rate variability time series artefact correction using novel beat classification. *Journal of Medical Engineering & Technology*, 43(3), 173–181. [doi:10.1080/03091902.2019.1640306](https://doi.org/10.1080/03091902.2019.1640306)
 
 ## Contributing
 

@@ -2,6 +2,33 @@
 
 All notable changes to RRational are documented here.
 
+## [0.9.2] - 2026-04-17
+
+### Fixed
+- **macOS Intel builds**: Separate Intel (x86_64) and Apple Silicon (arm64) binaries in GitHub Actions. Previous releases silently shipped arm64-only when `macos-latest` migrated to Apple Silicon runners, causing `Bad CPU type in executable` on Intel Macs.
+- Group Analysis failed loading `.rrational` files; now searches `project/data/processed/`
+- Group bar chart x-axis rendering when mixing categorical bars with jittered individual points
+- Color picker labels truncated in sidebar
+- Documentation citation errors; all scientific references now include DOI links
+
+### Added
+- Hypothesis testing UI in Group Analysis Statistics tab
+- `group_statistics` module for between-group comparisons
+- Save/load Group Analysis results in project cache
+- Configurable error bar type (SD / SEM / CI95 / None) in group bar chart
+- Individual points overlay + log y-axis toggle in group bar chart
+- HRV-specific Claude Code automations (hooks, slash commands)
+- CI sanity-check: verifies built binary architecture matches runner, fails on mismatch
+- README: clickable DOI links for Quigley 2024 and Lipponen & Tarvainen 2019
+- README: explicit software + methodology citation block with version
+
+### Changed
+- **CI hardening**: Runners pinned (`windows-2022`, `macos-13`, `macos-14`, `ubuntu-24.04`) to prevent silent host-environment drift
+- **CI hardening**: `pyinstaller` and `streamlit-desktop-app` version-ranged in build step
+- 14x faster Group Analysis by loading `.rrational` files once (not per-metric)
+- Default raw fallback set to OFF in Group and Sequence analysis
+- Deduplicated code from review findings; removed remaining hardcoded colors
+
 ## [0.9.1] - 2026-04-10
 
 ### Added

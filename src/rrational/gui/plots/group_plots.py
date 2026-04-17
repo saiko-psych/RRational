@@ -128,7 +128,9 @@ def _create_group_bar_chart(
         fig.add_trace(
             go.Bar(
                 name=section,
-                x=groups,
+                # Use numeric x so scatter jitter uses the same coordinate system;
+                # ticktext below maps these to group names.
+                x=list(range(len(groups))),
                 y=means,
                 error_y=dict(type="data", array=errors, visible=show_error_bars),
                 marker_color=colors[i % len(colors)],
@@ -207,8 +209,18 @@ def _create_group_bar_chart(
         margin=dict(l=60, r=20, t=80, b=60),
     )
 
+    # Force x-axis to be categorical with group names as labels.
+    # Without this, mixing kategorical Bar x with numeric Scatter x (from jitter)
+    # makes Plotly treat the axis as linear and show jitter values as tick labels.
     fig.update_xaxes(
-        gridcolor=theme["grid"], showline=True, linewidth=1, linecolor=theme["grid"]
+        gridcolor=theme["grid"],
+        showline=True,
+        linewidth=1,
+        linecolor=theme["grid"],
+        tickmode="array",
+        tickvals=list(range(len(groups))),
+        ticktext=groups,
+        range=[-0.5, len(groups) - 0.5],
     )
     fig.update_yaxes(
         gridcolor=theme["grid"],

@@ -15,18 +15,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          # Runner versions are pinned (no *-latest) to avoid silent architecture
+          # or toolchain migrations between releases. Bump deliberately.
+          - os: windows-2022
             artifact_name: RRational-Windows
             asset_ext: .zip
-          - os: macos-latest
-            artifact_name: RRational-macOS
+            arch_label: x86_64
+          - os: macos-13           # Last Intel runner (x86_64) - deprecated by GitHub in 2026-xx
+            artifact_name: RRational-macOS-Intel
             asset_ext: .zip
-          - os: ubuntu-latest
+            arch_label: x86_64
+          - os: macos-14           # Apple Silicon (arm64)
+            artifact_name: RRational-macOS-AppleSilicon
+            asset_ext: .zip
+            arch_label: arm64
+          - os: ubuntu-24.04
             artifact_name: RRational-Linux
             asset_ext: .tar.gz
+            arch_label: x86_64
 
     runs-on: ${{ matrix.os }}
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.os }} / ${{ matrix.arch_label }})
 
     steps:
       - uses: actions/checkout@v4
@@ -40,9 +49,11 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
+        # Build tools pinned to prevent surprise breakage from upstream releases.
+        # Bump deliberately after testing.
         run: |
           uv sync
-          uv pip install streamlit-desktop-app pyinstaller
+          uv pip install 'pyinstaller>=6.10,<7.0' 'streamlit-desktop-app>=0.2.0,<1.0'
 
       # Linux: Install system dependencies for pywebview
       - name: Install Linux dependencies
@@ -87,6 +98,23 @@ jobs:
               --noconfirm
         shell: bash
 
+      # Sanity check: verify the built binary matches the expected architecture.
+      # Catches silent runner drift (e.g., macos-latest switching ARM→Intel) and
+      # any future cross-arch build misconfiguration. Fails the job on mismatch.
+      - name: Verify binary architecture (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          BIN="dist/RRational/RRational"
+          echo "=== file $BIN ==="
+          file "$BIN"
+          EXPECTED="${{ matrix.arch_label }}"
+          if ! file "$BIN" | grep -qi "$EXPECTED"; then
+            echo "::error::Architecture mismatch: expected $EXPECTED, file output above."
+            exit 1
+          fi
+          echo "OK: binary is $EXPECTED"
+
       # Package the build output
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -116,7 +144,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
@@ -134,11 +162,21 @@ jobs:
 
             ### Downloads
 
-            | Platform | File |
-            |----------|------|
-            | Windows | `RRational-Windows.zip` |
-            | macOS | `RRational-macOS.zip` |
-            | Linux | `RRational-Linux.tar.gz` |
+            | Platform | File | Architecture |
+            |----------|------|--------------|
+            | Windows 10/11 | `RRational-Windows.zip` | x86_64 |
+            | macOS (Intel) | `RRational-macOS-Intel.zip` | x86_64 |
+            | macOS (Apple Silicon M1/M2/M3/M4) | `RRational-macOS-AppleSilicon.zip` | arm64 |
+            | Linux (Ubuntu 22.04+/Debian 12+) | `RRational-Linux.tar.gz` | x86_64 |
+
+            ### Which macOS build do I need?
+
+            Click the Apple menu > **About This Mac** and check the **Chip** line:
+
+            - `Apple M1` / `M2` / `M3` / `M4` → download **Apple Silicon**
+            - `Intel Core …` → download **Intel**
+
+            Running the wrong build produces the error `Bad CPU type in executable`.
 
             ### Installation
 
@@ -146,13 +184,20 @@ jobs:
             2. Extract the archive
             3. Run `RRational` (or `RRational.exe` on Windows)
 
+            **macOS note:** Because the app is not yet code-signed, macOS may
+            block it on first launch ("cannot be opened because the developer
+            cannot be verified"). Right-click the `RRational` binary and choose
+            **Open**, or run once in Terminal:
+            `xattr -dr com.apple.quarantine /path/to/RRational`
+
             The app opens in a native window — no Python installation required.
 
             ---
             *Built automatically from [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})*
           files: |
             artifacts/RRational-Windows/RRational-Windows.zip
-            artifacts/RRational-macOS/RRational-macOS.zip
+            artifacts/RRational-macOS-Intel/RRational-macOS-Intel.zip
+            artifacts/RRational-macOS-AppleSilicon/RRational-macOS-AppleSilicon.zip
             artifacts/RRational-Linux/RRational-Linux.tar.gz
           draft: true  # Create as draft — review before publishing
           generate_release_notes: true

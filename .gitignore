@@ -46,6 +46,10 @@ tests/data/
 # Build outputs
 dist/
 build/
+*.spec
+
+# Throwaway test screenshots
+test_*.png
 
 # uv workspace metadata
 .python-version
