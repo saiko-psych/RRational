@@ -1852,3 +1852,112 @@ def get_nn_intervals_summary(
         }
 
     return summary
+
+
+# --- Group Analysis Results Cache ---
+
+GROUP_RESULTS_FILENAME = "group_analysis_results.yml"
+
+
+def _get_group_results_path(
+    data_dir: str | Path | None = None,
+    project_path: Path | None = None,
+) -> Path | None:
+    """Resolve the path to the cached group analysis results file.
+
+    Prefers project_path/data/processed/. Falls back to data_dir/../processed/.
+    Returns None if no valid location can be determined.
+    """
+    if project_path:
+        processed = Path(project_path) / "data" / "processed"
+        processed.mkdir(parents=True, exist_ok=True)
+        return processed / GROUP_RESULTS_FILENAME
+    if data_dir:
+        processed = Path(data_dir).parent / "processed"
+        if processed.exists():
+            return processed / GROUP_RESULTS_FILENAME
+    return None
+
+
+def save_group_analysis_results(
+    results: list[Any],
+    config: dict[str, Any],
+    missing: dict[str, Any],
+    excluded: dict[str, Any],
+    data_dir: str | Path | None = None,
+    project_path: Path | None = None,
+) -> Path | None:
+    """Save group analysis results to project cache.
+
+    Stores ParticipantSectionResult list (dataclass serialized), the config
+    used, and missing/excluded participant info. Skipped silently if no
+    valid location exists (returns None).
+    """
+    from dataclasses import asdict
+    from datetime import datetime
+
+    target = _get_group_results_path(data_dir=data_dir, project_path=project_path)
+    if target is None:
+        return None
+
+    serialized = {
+        "saved_at": datetime.now().isoformat(),
+        "software_version": _get_software_version(),
+        "config": _convert_numpy_types(config),
+        "results": [_convert_numpy_types(asdict(r)) for r in results],
+        "missing": _convert_numpy_types(missing),
+        "excluded": _convert_numpy_types(excluded),
+    }
+
+    with open(target, "w", encoding="utf-8") as f:
+        yaml.safe_dump(serialized, f, default_flow_style=False, allow_unicode=True)
+
+    return target
+
+
+def load_group_analysis_results(
+    data_dir: str | Path | None = None,
+    project_path: Path | None = None,
+) -> dict[str, Any] | None:
+    """Load cached group analysis results.
+
+    Returns a dict with keys: saved_at, software_version, config, results,
+    missing, excluded. The 'results' field is a list of dicts (not dataclasses)
+    — caller reconstructs ParticipantSectionResult if needed.
+
+    Returns None if no cache exists.
+    """
+    target = _get_group_results_path(data_dir=data_dir, project_path=project_path)
+    if target is None or not target.exists():
+        return None
+
+    try:
+        with open(target, encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except Exception:
+        return None
+
+
+def delete_group_analysis_results(
+    data_dir: str | Path | None = None,
+    project_path: Path | None = None,
+) -> bool:
+    """Delete cached group analysis results. Returns True if deleted."""
+    target = _get_group_results_path(data_dir=data_dir, project_path=project_path)
+    if target is None or not target.exists():
+        return False
+    try:
+        target.unlink()
+        return True
+    except Exception:
+        return False
+
+
+def _get_software_version() -> str:
+    """Get current RRational version string."""
+    try:
+        from rrational import __version__
+
+        return __version__
+    except Exception:
+        return "unknown"

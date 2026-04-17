@@ -6,6 +6,7 @@ Provides HRV metrics computation and visualization.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -4345,6 +4346,85 @@ def _render_hypothesis_tests(long_df):
                 st.text(err)
 
 
+def _render_cached_results_panel():
+    """Show cached results panel: load previous analysis or delete cache.
+
+    Only displays if a cached result file exists in the project and no
+    results are currently loaded in session state.
+    """
+    from rrational.analysis.hrv_metrics import ParticipantSectionResult
+    from rrational.gui.persistence import (
+        delete_group_analysis_results,
+        load_group_analysis_results,
+    )
+
+    # If results are already in memory, just show a small "cached at" indicator
+    if "group_analysis_results" in st.session_state:
+        saved_at = st.session_state.get("_group_results_saved_at")
+        if saved_at:
+            try:
+                ts = datetime.fromisoformat(saved_at).strftime("%Y-%m-%d %H:%M")
+                st.caption(f"Last saved: {ts}")
+            except Exception:
+                pass
+        return
+
+    # Check for cached results on disk
+    project_path = st.session_state.get("project_path")
+    data_dir = st.session_state.get("data_dir")
+    cached = load_group_analysis_results(data_dir=data_dir, project_path=project_path)
+    if not cached:
+        return
+
+    # Show cached results banner
+    saved_at = cached.get("saved_at", "unknown")
+    try:
+        ts_display = datetime.fromisoformat(saved_at).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        ts_display = saved_at
+    n_results = len(cached.get("results", []))
+    sw_version = cached.get("software_version", "?")
+
+    with st.container(border=True):
+        st.markdown(
+            f"**Cached results available** — {n_results} participant-section "
+            f"results from {ts_display} (RRational v{sw_version})"
+        )
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button(
+                "Load cached results", type="primary", key="load_cached_group"
+            ):
+                # Reconstruct ParticipantSectionResult objects from dicts
+                results = []
+                for r_dict in cached.get("results", []):
+                    try:
+                        results.append(ParticipantSectionResult(**r_dict))
+                    except TypeError:
+                        # Skip entries from older schema
+                        continue
+                st.session_state.group_analysis_results = {
+                    "results": results,
+                    "missing": cached.get("missing", {}),
+                    "excluded": cached.get("excluded", {}),
+                    "config": cached.get("config", {}),
+                }
+                st.session_state._group_results_saved_at = saved_at
+                st.rerun()
+        with col2:
+            if st.button("Delete cache", key="delete_cached_group"):
+                if delete_group_analysis_results(
+                    data_dir=data_dir, project_path=project_path
+                ):
+                    st.toast("Cached results deleted")
+                    st.rerun()
+        with col3:
+            st.caption(
+                "Load the previous analysis to skip re-computation, or delete "
+                "the cache to start fresh."
+            )
+
+
 def _render_group_analysis():
     """Render group-level HRV analysis with multi-group support."""
     # Help expander
@@ -4382,6 +4462,11 @@ Using overlapping windows improves the reliability of HRV estimates by providing
             "No groups defined. Please define groups in the Participants tab first."
         )
         return
+
+    # -------------------------------------------------------------------------
+    # Cached Results: auto-load if available and user hasn't run analysis yet
+    # -------------------------------------------------------------------------
+    _render_cached_results_panel()
 
     # -------------------------------------------------------------------------
     # Step 1: Select Groups
@@ -4642,6 +4727,23 @@ Using overlapping windows improves the reliability of HRV estimates by providing
             "excluded": excluded,
             "config": config,
         }
+
+        # Auto-save to project cache
+        try:
+            from rrational.gui.persistence import save_group_analysis_results
+
+            saved_path = save_group_analysis_results(
+                results=results,
+                config=config,
+                missing=missing,
+                excluded=excluded,
+                data_dir=st.session_state.get("data_dir"),
+                project_path=st.session_state.get("project_path"),
+            )
+            if saved_path:
+                st.session_state._group_results_saved_at = datetime.now().isoformat()
+        except Exception as e:
+            st.warning(f"Could not save results to project cache: {e}")
 
         show_toast(
             f"Analysis complete: {len(results)} participant-section results",
