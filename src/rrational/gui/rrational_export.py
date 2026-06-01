@@ -381,7 +381,7 @@ def save_rrational(export_data: RRationalExport, filepath: Path | str) -> None:
 
     # Build the YAML structure
     data = {
-        "rrational_version": RRATIONAL_VERSION,
+        "rrational_version": RRATIONAL_VERSION_V1,
         "file_type": "ready_for_analysis",
         "metadata": {
             "participant_id": export_data.participant_id,
@@ -1135,6 +1135,13 @@ def load_rrational_v2(filepath: Path | str) -> RRationalExportV2:
 def get_rrational_version(filepath: Path | str) -> str:
     """Get the version of a .rrational file without fully loading it.
 
+    Reads the version tag in the header and verifies it matches the on-disk
+    structure. Files exported by RRational v0.8.x–v0.9.2 incorrectly tagged
+    v1-structure exports as version "2.0" because the legacy save path used
+    a constant that pointed to the V2 version string. We detect that case
+    via the `file_type:` field (v1 = "ready_for_analysis", v2 = "analysis_ready")
+    and return the correct version.
+
     Args:
         filepath: Path to the .rrational file
 
@@ -1143,16 +1150,24 @@ def get_rrational_version(filepath: Path | str) -> str:
     """
     filepath = Path(filepath)
 
+    declared_version = None
+    file_type = None
     with open(filepath, "r", encoding="utf-8") as f:
-        # Only read first few lines to get version
-        for line in f:
-            if line.startswith("rrational_version:"):
-                return line.split(":")[1].strip().strip('"').strip("'")
-            # Stop after first 10 lines to avoid reading whole file
-            if f.tell() > 500:
-                break
+        # Read first ~1 KB of header; both keys live near the top in v1 and v2.
+        head = f.read(1024)
+    for line in head.splitlines():
+        if line.startswith("rrational_version:"):
+            declared_version = line.split(":", 1)[1].strip().strip('"').strip("'")
+        elif line.startswith("file_type:"):
+            file_type = line.split(":", 1)[1].strip().strip('"').strip("'")
+        if declared_version is not None and file_type is not None:
+            break
 
-    return "1.0"  # Default to v1.0 if not found
+    if file_type == "ready_for_analysis":
+        return RRATIONAL_VERSION_V1
+    if file_type == "analysis_ready":
+        return RRATIONAL_VERSION_V2
+    return declared_version or RRATIONAL_VERSION_V1
 
 
 def load_rrational_any_version(

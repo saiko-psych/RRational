@@ -10755,7 +10755,9 @@ def main():
                         events_to_delete = []
 
                         for idx, event in enumerate(all_events):
-                            # Create unique key based on event content (not index) to avoid Streamlit widget caching issues
+                            # Hash on event content for stable keys across reruns; append idx
+                            # as a tiebreaker so duplicate label+timestamp events don't collide
+                            # (raises StreamlitDuplicateElementKey otherwise).
                             import hashlib
 
                             ts_str = (
@@ -10766,7 +10768,7 @@ def main():
                             event_hash = hashlib.md5(
                                 f"{event.raw_label}_{ts_str}".encode()
                             ).hexdigest()[:8]
-                            event_key = f"{selected_participant}_{event_hash}"
+                            event_key = f"{selected_participant}_{event_hash}_{idx}"
 
                             with st.container():
                                 # Create columns for this event
@@ -11443,8 +11445,10 @@ def main():
                             horizontal=True,
                         )
 
-                        # Get sections for selection
-                        sections = load_sections()
+                        # Get sections for selection (must read project-local sections)
+                        sections = load_sections(
+                            st.session_state.get("current_project")
+                        )
                         section_options = {
                             name: s.get("label", name)
                             for name, s in sections.items()
