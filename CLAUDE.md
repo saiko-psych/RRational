@@ -25,7 +25,7 @@ uv run ruff check src/ tests/ --fix            # Lint
 
 ## Current Status
 
-**Version**: `v0.9.2` | **Tests**: 134/134 passing
+**Version**: `v0.9.3` | **Tests**: 140/140 passing
 
 **GUI**: 4-tab Streamlit app (Data, Participants, Setup, Analysis)
 **Analysis modes**: Single Participant, Repeating Section, Group, Sequence Comparison
@@ -34,6 +34,13 @@ uv run ruff check src/ tests/ --fix            # Lint
 **Storage**: Project-based (`MyProject/config/*.yml`) or global fallback (`~/.rrational/`)
 **Docs**: https://rrational.readthedocs.io (MkDocs Material, auto-builds on push)
 **Hooks**: PostToolUse ruff + PreToolUse data protection (`.claude/settings.json`)
+
+**v0.9.3 features**:
+- Kubios-compatible frequency-domain mode (`freq_method="kubios"`): SP detrending λ=500 + Welch 180s, ±5% match on LF/HF/RMSSD
+- GUI "Frequency-domain pipeline" selector in Group + Sequence Analysis
+- `docs/science/validation.md` (full Kubios cross-validation + DOIs for students)
+- `docs/user-guide/kubios-compatibility.md` (step-by-step Kubios reproduction)
+- `KUBIOS_COMPARISON.md` root-level technical report
 
 **v0.9.2 Group Analysis features** (NOT yet in RTD — see `project_rtd_todo.md`):
 - Hypothesis Tests UI (Welch t / Mann-Whitney / ANOVA / Kruskal + Holm correction + Cohen's d / η²)

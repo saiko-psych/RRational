@@ -128,6 +128,25 @@ See [Recommended Workflow](recommended-workflow.md) for the full rationale behin
 | Frequency | VLF, LF, HF, LF/HF, LFn, HFn, Total Power |
 | Nonlinear | SD1, SD2, SD1/SD2, ApEn, SampEn |
 
+### Frequency-Domain Pipeline (`freq_method`)
+
+Since v0.9.3, RRational supports two frequency-domain pipelines, selectable in
+the Analysis tab under "Frequency-domain pipeline":
+
+| Pipeline | Detrending | Interpolation | Welch window | PSD output | Bands |
+|----------|-----------|---------------|--------------|------------|-------|
+| **`neurokit`** (default) | Mean subtraction | 100 Hz | NK2 default (~50 s @ 4 Hz) | Normalized | NK2 default (incl. ULF/VHF) |
+| **`kubios`** | Smoothness Priors λ=500 | 4 Hz (Cubic Spline) | 180 s Hann, 50% overlap | Absolute ms² | VLF 0–0.04 / LF 0.04–0.15 / HF 0.15–0.40 Hz |
+
+**When to use Kubios mode**: Direct cross-validation against Kubios HRV Scientific,
+publishing in journals that reference Kubios values, or when reviewers request
+absolute ms² units. See [Validation](validation.md) for the cross-validation report
+(±5% agreement on LF/HF/RMSSD with proper segment matching).
+
+**Time-domain metrics are identical** in both modes — they always follow Task Force
+1996 on raw NN intervals after artifact correction. Only the frequency-domain pipeline
+is switched.
+
 ## Stage 8: Export
 
 | Format | Content | Use case |

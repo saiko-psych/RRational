@@ -20,7 +20,107 @@ from rrational.analysis.hrv_metrics import (
 def _get_neurokit():
     """Lazy import NeuroKit2."""
     import neurokit2 as nk
+
     return nk
+
+
+FREQ_METHOD_NEUROKIT = "neurokit"
+FREQ_METHOD_KUBIOS = "kubios"
+VALID_FREQ_METHODS = (FREQ_METHOD_NEUROKIT, FREQ_METHOD_KUBIOS)
+
+# Kubios HRV Scientific defaults (Tarvainen et al. 2014)
+KUBIOS_INTERP_FS = 4.0
+KUBIOS_SP_LAMBDA = 500
+KUBIOS_WELCH_WINDOW_S = 180
+KUBIOS_BAND_VLF = (0.0, 0.04)
+KUBIOS_BAND_LF = (0.04, 0.15)
+KUBIOS_BAND_HF = (0.15, 0.40)
+
+
+def _hrv_frequency_kwargs(freq_method: str) -> dict:
+    """Kwargs forwarded to NK2 nk.hrv_frequency for the requested method.
+
+    For FREQ_METHOD_KUBIOS we still use NK2 for the high-level interface (band
+    extraction) but ALSO call _compute_kubios_frequency_powers as a more
+    accurate replacement when freq_method == KUBIOS. The kwargs returned here
+    align NK2's defaults as close as possible to Kubios.
+    """
+    if freq_method == FREQ_METHOD_KUBIOS:
+        return {
+            "normalize": False,
+            "interpolation_rate": int(KUBIOS_INTERP_FS),
+            "psd_method": "welch",
+            "vlf": KUBIOS_BAND_VLF,
+            "lf": KUBIOS_BAND_LF,
+            "hf": KUBIOS_BAND_HF,
+        }
+    return {}
+
+
+def _compute_kubios_frequency_powers(
+    rr_ms: list[float],
+    fs: float = KUBIOS_INTERP_FS,
+    lam: int = KUBIOS_SP_LAMBDA,
+    welch_window_s: float = KUBIOS_WELCH_WINDOW_S,
+    overlap_frac: float = 0.5,
+) -> dict:
+    """Compute frequency-domain HRV with Kubios-aligned pipeline.
+
+    Pipeline matches Kubios HRV Scientific (Tarvainen et al. 2014):
+    1. Cubic spline interpolation of NN intervals to uniform fs Hz
+    2. Smoothness Priors detrending (Tarvainen et al. 2002, regularization=lam)
+    3. Welch PSD: 180 s Hann window, 50% overlap, scaling='density'
+    4. Band integration (trapezoidal): VLF/LF/HF/TP/LF_HF
+
+    Returns dict with VLF, LF, HF, TP (ms^2) and LF_HF ratio. Raises ValueError
+    when input is too short to interpolate.
+    """
+    nk = _get_neurokit()
+    from scipy.interpolate import CubicSpline
+    from scipy import signal as sig
+
+    rr = np.asarray(rr_ms, dtype=np.float64)
+    if len(rr) < 30:
+        raise ValueError(f"Need at least 30 NN intervals for PSD, got {len(rr)}")
+
+    t_rr = np.cumsum(rr) / 1000.0
+    t_rr = t_rr - t_rr[0]
+    t_uniform = np.arange(0.0, t_rr[-1], 1.0 / fs)
+    cs = CubicSpline(t_rr, rr)
+    rr_uniform = cs(t_uniform)
+
+    rr_detrended = nk.signal_detrend(
+        rr_uniform, method="tarvainen2002", regularization=lam
+    )
+
+    nperseg = min(int(welch_window_s * fs), len(rr_detrended))
+    noverlap = int(nperseg * overlap_frac)
+    freqs, psd = sig.welch(
+        rr_detrended,
+        fs=fs,
+        window="hann",
+        nperseg=nperseg,
+        noverlap=noverlap,
+        detrend=False,
+        scaling="density",
+    )
+
+    def band_power(f1: float, f2: float) -> float:
+        mask = (freqs >= f1) & (freqs < f2)
+        if not np.any(mask):
+            return 0.0
+        return float(np.trapezoid(psd[mask], freqs[mask]))
+
+    vlf = band_power(*KUBIOS_BAND_VLF)
+    lf = band_power(*KUBIOS_BAND_LF)
+    hf = band_power(*KUBIOS_BAND_HF)
+    return {
+        "VLF": vlf,
+        "LF": lf,
+        "HF": hf,
+        "TP": vlf + lf + hf,
+        "LF_HF": lf / hf if hf > 0 else float("nan"),
+    }
 
 
 def calculate_hrv_metrics(
@@ -31,6 +131,7 @@ def calculate_hrv_metrics(
     selected_metrics: list[str] | None = None,
     window_s: float | None = None,
     segments: list | None = None,
+    freq_method: str = FREQ_METHOD_NEUROKIT,
 ) -> tuple[dict, dict | None, int]:
     """Calculate HRV metrics from NN intervals.
 
@@ -42,11 +143,21 @@ def calculate_hrv_metrics(
         selected_metrics: Metric names to calculate (None = basic).
         window_s: Window duration in seconds (time-based).
         segments: Pre-computed Segment objects from artifact detection.
+        freq_method: Frequency-domain pipeline. "neurokit" uses NK2 defaults
+            (normalized PSD, 100 Hz interpolation). "kubios" matches Kubios
+            HRV Scientific (absolute ms², 4 Hz interpolation, bands
+            VLF 0-0.04, LF 0.04-0.15, HF 0.15-0.40 Hz).
 
     Returns:
         (metrics_dict, std_dict_or_None, n_windows)
     """
+    if freq_method not in VALID_FREQ_METHODS:
+        raise ValueError(
+            f"freq_method must be one of {VALID_FREQ_METHODS}, got {freq_method!r}"
+        )
+
     nk = _get_neurokit()
+    freq_kwargs = _hrv_frequency_kwargs(freq_method)
 
     if selected_metrics is None:
         selected_metrics = HRV_METRIC_PRESETS["Basic"]["metrics"]
@@ -72,7 +183,9 @@ def calculate_hrv_metrics(
                 for m in selected_set & time_basic:
                     if m == "MeanHR":
                         mean_nn = hrv_time.get("HRV_MeanNN", [None])[0]
-                        result["MeanHR"] = 60000 / mean_nn if mean_nn and mean_nn > 0 else None
+                        result["MeanHR"] = (
+                            60000 / mean_nn if mean_nn and mean_nn > 0 else None
+                        )
                     else:
                         result[m] = hrv_time.get(f"HRV_{m}", [None])[0]
                 for m in selected_set & time_extended:
@@ -83,17 +196,24 @@ def calculate_hrv_metrics(
 
         if need_freq and len(rr_list) >= MIN_BEATS_FREQUENCY_DOMAIN:
             try:
-                hrv_freq = nk.hrv_frequency(peaks, sampling_rate=1000, show=False)
-                for m in selected_set & frequency:
-                    if m == "LF_HF":
-                        result["LF_HF"] = hrv_freq.get("HRV_LFHF", [None])[0]
-                    elif m == "TP":
-                        vlf = hrv_freq.get("HRV_VLF", [0])[0] or 0
-                        lf = hrv_freq.get("HRV_LF", [0])[0] or 0
-                        hf = hrv_freq.get("HRV_HF", [0])[0] or 0
-                        result["TP"] = vlf + lf + hf if any([vlf, lf, hf]) else None
-                    else:
-                        result[m] = hrv_freq.get(f"HRV_{m}", [None])[0]
+                if freq_method == FREQ_METHOD_KUBIOS:
+                    powers = _compute_kubios_frequency_powers(rr_list)
+                    for m in selected_set & frequency:
+                        result[m] = powers.get(m)
+                else:
+                    hrv_freq = nk.hrv_frequency(
+                        peaks, sampling_rate=1000, show=False, **freq_kwargs
+                    )
+                    for m in selected_set & frequency:
+                        if m == "LF_HF":
+                            result["LF_HF"] = hrv_freq.get("HRV_LFHF", [None])[0]
+                        elif m == "TP":
+                            vlf = hrv_freq.get("HRV_VLF", [0])[0] or 0
+                            lf = hrv_freq.get("HRV_LF", [0])[0] or 0
+                            hf = hrv_freq.get("HRV_HF", [0])[0] or 0
+                            result["TP"] = vlf + lf + hf if any([vlf, lf, hf]) else None
+                        else:
+                            result[m] = hrv_freq.get(f"HRV_{m}", [None])[0]
             except Exception:
                 for m in selected_set & frequency:
                     result[m] = None
@@ -122,17 +242,18 @@ def calculate_hrv_metrics(
     if segments is not None:
         nn_array = np.asarray(nn_ms_list, dtype=np.float64)
         for seg in segments:
-            if getattr(seg, 'included', True):
-                sliced = nn_array[seg.beat_start:seg.beat_end]
+            if getattr(seg, "included", True):
+                sliced = nn_array[seg.beat_start : seg.beat_end]
                 if len(sliced) >= 30:
                     window_slices.append(sliced.tolist())
 
     elif window_s is not None:
         from rrational.gui.segmentation import generate_segments
+
         nn_array = np.asarray(nn_ms_list, dtype=np.float64)
         segs = generate_segments(nn_array, window_s=window_s, overlap_pct=overlap_pct)
         for seg in segs:
-            sliced = nn_array[seg.beat_start:seg.beat_end]
+            sliced = nn_array[seg.beat_start : seg.beat_end]
             if len(sliced) >= 30:
                 window_slices.append(sliced.tolist())
 
@@ -141,7 +262,9 @@ def calculate_hrv_metrics(
         if len(nn_ms_list) < min_beats:
             return compute_hrv(nn_ms_list), None, 1
         step_beats = max(1, int(window_beats * (1 - overlap_pct / 100)))
-        windows = generate_overlapping_windows_beats(nn_ms_list, window_beats, step_beats)
+        windows = generate_overlapping_windows_beats(
+            nn_ms_list, window_beats, step_beats
+        )
         window_slices = [w_rr for _, _, w_rr in windows]
 
     if not window_slices:
@@ -206,7 +329,10 @@ def results_to_wide_df(results: list[ParticipantSectionResult]) -> pd.DataFrame:
     participants = {}
     for r in results:
         if r.participant_id not in participants:
-            participants[r.participant_id] = {"participant_id": r.participant_id, "group": r.group}
+            participants[r.participant_id] = {
+                "participant_id": r.participant_id,
+                "group": r.group,
+            }
         prefix = r.section_name.replace(" ", "_").lower()
         for key, value in r.hrv_metrics.items():
             participants[r.participant_id][f"{prefix}_{key.lower()}"] = value
@@ -218,10 +344,22 @@ def results_to_wide_df(results: list[ParticipantSectionResult]) -> pd.DataFrame:
 
 def calculate_group_stats(long_df: pd.DataFrame) -> pd.DataFrame:
     """Calculate descriptive statistics per group and section."""
-    exclude_cols = {"participant_id", "group", "section", "data_source", "n_beats",
-                    "duration_s", "quality", "artifact_rate", "n_windows"}
-    metrics = [col for col in long_df.columns
-               if col not in exclude_cols and not col.endswith("_sd")]
+    exclude_cols = {
+        "participant_id",
+        "group",
+        "section",
+        "data_source",
+        "n_beats",
+        "duration_s",
+        "quality",
+        "artifact_rate",
+        "n_windows",
+    }
+    metrics = [
+        col
+        for col in long_df.columns
+        if col not in exclude_cols and not col.endswith("_sd")
+    ]
 
     rows = []
     for (group, section), group_df in long_df.groupby(["group", "section"]):
@@ -231,12 +369,16 @@ def calculate_group_stats(long_df: pd.DataFrame) -> pd.DataFrame:
             values = group_df[metric].dropna()
             if len(values) == 0:
                 continue
-            rows.append({
-                "group": group, "section": section, "metric": metric.upper(),
-                "n": len(values),
-                "mean": round(values.mean(), 2),
-                "sd": round(values.std(), 2) if len(values) > 1 else 0.0,
-                "min": round(values.min(), 2),
-                "max": round(values.max(), 2),
-            })
+            rows.append(
+                {
+                    "group": group,
+                    "section": section,
+                    "metric": metric.upper(),
+                    "n": len(values),
+                    "mean": round(values.mean(), 2),
+                    "sd": round(values.std(), 2) if len(values) > 1 else 0.0,
+                    "min": round(values.min(), 2),
+                    "max": round(values.max(), 2),
+                }
+            )
     return pd.DataFrame(rows)

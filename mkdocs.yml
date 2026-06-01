@@ -114,10 +114,12 @@ nav:
     - Complete Workflow: user-guide/workflow.md
     - Data Formats: user-guide/data-formats.md
     - Configuration & Projects: user-guide/configuration.md
+    - Kubios Compatibility: user-guide/kubios-compatibility.md
   - Methodology:
     - Recommended Workflow: science/recommended-workflow.md
     - HRV Guidelines: science/guidelines.md
     - Processing Pipeline: science/processing-pipeline.md
+    - Validation: science/validation.md
   - Development:
     - Architecture: development/architecture.md
     - Contributing: development/contributing.md

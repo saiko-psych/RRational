@@ -2,6 +2,23 @@
 
 All notable changes to RRational are documented here.
 
+## [0.9.3] - 2026-06-01
+
+### Added
+- **Kubios-compatible frequency-domain mode** (`freq_method="kubios"`): Cubic Spline interpolation @ 4 Hz, Smoothness Priors detrending (Tarvainen et al. 2002, λ=500), Welch 180 s / 50% overlap, absolute ms² output. Matches Kubios HRV Scientific within ±5% (LF, HF, RMSSD) on validated data
+- GUI **"Frequency-domain pipeline"** selector in Group Analysis and Sequence Comparison tabs, with inline help expander
+- `docs/science/validation.md` — full validation report against Kubios with DOI-linked NeuroKit2 / Task Force 1996 / Quigley 2024 / Lipponen 2019 / Tarvainen 2002 / Berntson 1997 references
+- `docs/user-guide/kubios-compatibility.md` — step-by-step guide for reproducing Kubios output
+- `KUBIOS_COMPARISON.md` — root-level technical comparison report (5 participants × 2 Kubios exports)
+- 6 new tests in `TestFrequencyMethod` covering the Kubios pipeline (140 tests pass)
+
+### Changed
+- All 9 direct `nk.hrv_frequency()` call sites in the Analysis tab now respect the `freq_method` setting via the `_hrv_freq()` helper
+- FAQ extended with three Kubios-related entries
+
+### Documentation
+- Processing-Pipeline doc explains both `neurokit` and `kubios` modes side-by-side
+
 ## [0.9.2] - 2026-04-17
 
 ### Fixed

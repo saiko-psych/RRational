@@ -54,7 +54,85 @@ from rrational.analysis.hrv_compute import (  # noqa: E402
     results_to_long_df as _results_to_long_df,
     results_to_wide_df as _results_to_wide_df,
     calculate_group_stats as _calculate_group_stats,
+    FREQ_METHOD_NEUROKIT,
+    _hrv_frequency_kwargs,
 )
+
+
+def _current_freq_method() -> str:
+    """Get the active frequency-domain method from session state (NK2 default)."""
+    return st.session_state.get("freq_method", FREQ_METHOD_NEUROKIT)
+
+
+def _hrv_freq(peaks):
+    """Compute NK2 HRV frequency metrics honoring the configured freq_method."""
+    nk = get_neurokit()
+    return nk.hrv_frequency(
+        peaks,
+        sampling_rate=1000,
+        show=False,
+        **_hrv_frequency_kwargs(_current_freq_method()),
+    )
+
+
+_FREQ_METHOD_LABELS = {
+    "neurokit": "NeuroKit2 default (normalized PSD, 100 Hz interpolation)",
+    "kubios": "Kubios-compatible (absolute ms², 4 Hz interpolation, 180 s Welch)",
+}
+
+
+def _render_freq_method_selector(key_suffix: str = ""):
+    """Render the frequency-domain method selector with an info expander."""
+    key = f"freq_method_selector_{key_suffix}" if key_suffix else "freq_method_selector"
+    options = ["neurokit", "kubios"]
+    current = st.session_state.get("freq_method", "neurokit")
+    if current not in options:
+        current = "neurokit"
+    selected = st.selectbox(
+        "Frequency-domain pipeline",
+        options=options,
+        index=options.index(current),
+        format_func=lambda x: _FREQ_METHOD_LABELS[x],
+        key=key,
+        help=(
+            "Choose how LF, HF, VLF, LF/HF and TP are computed. NeuroKit2 default uses "
+            "normalized PSD (relative scale). Kubios mode returns absolute ms² values, "
+            "matches Kubios HRV Scientific within ±5–9% on validated data."
+        ),
+    )
+    if selected != st.session_state.get("freq_method"):
+        st.session_state["freq_method"] = selected
+        st.toast(f"Frequency method set to: {_FREQ_METHOD_LABELS[selected]}", icon="🔬")
+
+    with st.expander("ℹ️ When should I use Kubios-compatible mode?", expanded=False):
+        st.markdown(
+            """
+**Use NeuroKit2 default (recommended for new projects)** when you:
+
+- Start a new study and want NeuroKit2's standard normalized PSD output
+- Compare results across other NK2-based tools (BioSPPy, pyHRV)
+- Don't need direct cross-comparison with Kubios
+
+**Use Kubios-compatible mode** when you:
+
+- Want LF / HF / VLF in absolute **ms²** units (international standard for publication)
+- Need to cross-validate or replicate Kubios HRV Scientific output
+- Are writing a paper that references Kubios values from prior studies
+- Want Tarvainen et al. 2002 Smoothness Priors detrending (λ=500) applied before PSD
+
+**Time-domain metrics (MeanNN, SDNN, RMSSD, pNN50) are identical** in both modes — they
+follow Task Force 1996 on raw NN intervals after artifact correction.
+
+**SDNN note**: Kubios computes SDNN on a detrended interpolated signal (proprietary
+variant). RRational always uses the Task Force 1996 standard definition (raw NN).
+That's why SDNN values may differ by 30–50% between tools — this is **by design**.
+
+See [Validation page](https://rrational.readthedocs.io/en/latest/science/validation/)
+for the full Kubios cross-validation report (DOI links to all reference studies).
+            """
+        )
+
+
 from rrational.gui.plots.analysis_plots import (  # noqa: E402
     get_theme_colors,
     get_plotly_analysis,
@@ -1368,9 +1446,7 @@ def _render_repeating_section_analysis():
 
                         # Compute HRV metrics using peaks
                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = nk.hrv_frequency(
-                            peaks, sampling_rate=1000, show=False
-                        )
+                        hrv_freq = _hrv_freq(peaks)
 
                         hrv_results.append(
                             {
@@ -2429,11 +2505,7 @@ def _render_single_participant_analysis():
                                                 show=False,
                                             )
                                             if meets_freq:
-                                                win_hrv_freq = nk.hrv_frequency(
-                                                    win_peaks,
-                                                    sampling_rate=1000,
-                                                    show=False,
-                                                )
+                                                win_hrv_freq = _hrv_freq(win_peaks)
                                                 win_hrv = pd.concat(
                                                     [win_hrv_time, win_hrv_freq], axis=1
                                                 )
@@ -2521,9 +2593,7 @@ def _render_single_participant_analysis():
 
                             # Only compute frequency metrics if enough data
                             if meets_freq:
-                                hrv_freq = nk.hrv_frequency(
-                                    peaks, sampling_rate=1000, show=False
-                                )
+                                hrv_freq = _hrv_freq(peaks)
                                 hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
                             else:
                                 st.info(
@@ -2685,9 +2755,7 @@ def _render_single_participant_analysis():
                                         win_hrv_time = nk.hrv_time(
                                             win_peaks, sampling_rate=1000, show=False
                                         )
-                                        win_hrv_freq = nk.hrv_frequency(
-                                            win_peaks, sampling_rate=1000, show=False
-                                        )
+                                        win_hrv_freq = _hrv_freq(win_peaks)
                                         win_hrv = pd.concat(
                                             [win_hrv_time, win_hrv_freq], axis=1
                                         )
@@ -2772,9 +2840,7 @@ def _render_single_participant_analysis():
                         # Standard single analysis (fallback or when overlapping disabled)
                         peaks = nk.intervals_to_peaks(clean_rr_ms, sampling_rate=1000)
                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = nk.hrv_frequency(
-                            peaks, sampling_rate=1000, show=False
-                        )
+                        hrv_freq = _hrv_freq(peaks)
                         hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
                         progress.progress(80)
 
@@ -3195,11 +3261,7 @@ def _render_single_participant_analysis():
                                                     sampling_rate=1000,
                                                     show=False,
                                                 )
-                                                win_hrv_freq = nk.hrv_frequency(
-                                                    win_peaks,
-                                                    sampling_rate=1000,
-                                                    show=False,
-                                                )
+                                                win_hrv_freq = _hrv_freq(win_peaks)
                                                 win_hrv = pd.concat(
                                                     [win_hrv_time, win_hrv_freq], axis=1
                                                 )
@@ -3266,9 +3328,7 @@ def _render_single_participant_analysis():
                                         hrv_time = nk.hrv_time(
                                             peaks, sampling_rate=1000, show=False
                                         )
-                                        hrv_freq = nk.hrv_frequency(
-                                            peaks, sampling_rate=1000, show=False
-                                        )
+                                        hrv_freq = _hrv_freq(peaks)
                                         hrv_results = pd.concat(
                                             [hrv_time, hrv_freq], axis=1
                                         )
@@ -3290,9 +3350,7 @@ def _render_single_participant_analysis():
                                     hrv_time = nk.hrv_time(
                                         peaks, sampling_rate=1000, show=False
                                     )
-                                    hrv_freq = nk.hrv_frequency(
-                                        peaks, sampling_rate=1000, show=False
-                                    )
+                                    hrv_freq = _hrv_freq(peaks)
                                     hrv_results = pd.concat(
                                         [hrv_time, hrv_freq], axis=1
                                     )
@@ -3316,9 +3374,7 @@ def _render_single_participant_analysis():
                         nk = get_neurokit()
                         peaks = nk.intervals_to_peaks(combined_rr, sampling_rate=1000)
                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = nk.hrv_frequency(
-                            peaks, sampling_rate=1000, show=False
-                        )
+                        hrv_freq = _hrv_freq(peaks)
                         combined_hrv = pd.concat([hrv_time, hrv_freq], axis=1)
                         section_results["_combined"] = {
                             "hrv_results": combined_hrv,
@@ -4145,6 +4201,7 @@ def _run_group_analysis(
                     config["window_beats"],
                     config["overlap_percent"],
                     selected_metrics=selected_metrics,
+                    freq_method=_current_freq_method(),
                 )
 
                 results.append(
@@ -4583,6 +4640,9 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         return
 
     st.markdown("**Analysis Settings**")
+
+    _render_freq_method_selector(key_suffix="group")
+
     col1, col2, col3 = st.columns(3)
     with col1:
         use_overlapping = st.checkbox(
@@ -5514,6 +5574,9 @@ This analysis groups participants by sequence and compares conditions within and
     )
 
     st.markdown("**Analysis Settings**")
+
+    _render_freq_method_selector(key_suffix="seq")
+
     col1, col2 = st.columns(2)
     with col1:
         use_overlapping = st.checkbox(
@@ -5666,6 +5729,7 @@ This analysis groups participants by sequence and compares conditions within and
                         window_beats,
                         overlap_pct,
                         selected_metrics=selected_metrics,
+                        freq_method=_current_freq_method(),
                     )
 
                     seq_label = seq_data.get("label", seq_id)

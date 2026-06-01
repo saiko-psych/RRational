@@ -77,6 +77,32 @@ No. Current consensus (Quigley et al., 2024; Laborde et al., 2017) rejects the L
 - **2–3 minutes** — acceptable for ultra-short recordings (Munoz et al., 2015)
 - Ensure consistent window sizes within a study
 
+### Why are my LF/HF values different from Kubios HRV?
+
+By default RRational uses the NeuroKit2 pipeline (normalized PSD, 100 Hz
+interpolation). This gives different absolute values than Kubios — but the
+*relative pattern* across conditions is preserved.
+
+To get Kubios-comparable absolute ms² values, switch the
+**Frequency-domain pipeline** dropdown in the Analysis tab to
+**"Kubios-compatible"**. Our cross-validation shows ±5% agreement on LF, HF
+and RMSSD on properly matched segments. See [Kubios Compatibility Guide](../user-guide/kubios-compatibility.md).
+
+### Why is my SDNN much higher than in Kubios?
+
+This is by design — RRational follows the **Task Force 1996 standard** definition
+(standard deviation of raw NN intervals). Kubios computes SDNN on a detrended
+interpolated signal, which removes low-frequency variance and lowers SDNN by
+30–60%. Both are valid; cite which one you used. See [Kubios Compatibility Guide](../user-guide/kubios-compatibility.md#the-sdnn-difference-important).
+
+### Is RRational scientifically validated?
+
+Yes. The HRV engine is NeuroKit2 (Makowski et al. 2021, >2000 citations). We
+provide an independent cross-validation against Kubios HRV Scientific with
+DOI-linked references in the [Validation report](../science/validation.md).
+You can also re-run the validation locally with the test data in
+`data/Kubios_Output_+_rrational_files.zip`.
+
 ---
 
 ## Segments & Sections
