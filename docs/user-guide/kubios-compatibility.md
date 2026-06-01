@@ -76,6 +76,44 @@ HRV in both tools with matching settings. Expected agreement (from our
 | LF/HF | < 10% |
 | **SDNN** | **30–60% higher in RRational** (by design — see below) |
 
+## The pNN50 difference (important!)
+
+You may see large pNN50 discrepancies between Kubios and RRational **only when
+beat correction is active in either tool**. Example: Kubios with "Automatic
+correction (0.3)" reports pNN50 = 16.45% while RRational reports 49.86% on the
+same nominal segment.
+
+This is **not a bug**. pNN50 is a **threshold-based binary counter** (only
+diffs > 50 ms count) — every single corrected beat that lands just above or
+below the 50 ms cutoff flips the count. Continuous metrics (RMSSD, LF, HF)
+remain stable because they integrate over all diffs.
+
+**Quantitative evidence** ([Rohr et al. 2024](https://doi.org/10.1038/s41598-023-50701-4)):
+
+| Metric | Error sensitivity (% per ms noise SD) |
+|--------|---------------------------------------|
+| LF | 0.24% |
+| SDNN | 0.61% |
+| HF | 0.71% |
+| RMSSD | 1.57% |
+| **pNN50** | **2.75%** (highest!) |
+
+Rohr et al. recommend pNN50 *"be used with caution"*. Berntson & Lozano 2005
+([DOI](https://doi.org/10.1111/j.1469-8986.2005.00277.x)) showed mathematically
+that RMSSD acts as a robust high-pass filter while pNN50's discrete cutoff
+makes it fragile.
+
+**Recommendations**:
+
+1. **Prefer RMSSD** over pNN50 for parasympathetic activity — same physiological
+   information, ~4× more robust to artifact correction
+2. **For Kubios-comparable pNN50**: Use `BeatCorrection: none` in both tools
+   (RRational then reports identical pNN50 to ±2%)
+3. **For publication**: Always state the exact beat correction pipeline if you
+   report pNN50 (Quigley et al. 2024 reporting guidelines)
+4. **Alternative**: Report pNN20 ([Mietus et al. 2002](https://doi.org/10.1136/heart.88.4.378))
+   — less floor effect, more robust to single corrected beats
+
 ## The SDNN difference (important!)
 
 You **will** see a noticeable SDNN difference between Kubios and RRational.

@@ -65,6 +65,34 @@ Inter-Tool-Vergleiche bei HRV sind in der Forschungsliteratur als notorisch schw
 
 **Fazit**: Mit Δ < 10% für alle frequenzdomain Metriken liegen wir **besser als der Stand der Technik** in publizierten Tool-Vergleichen.
 
+### Caveat: pNN50 ist by design instabil
+
+Bei aktivierter Beat-Correction (Kubios "Automatic correction" oder RRational `nn_correction.method: kubios`) kann pNN50 **3× zwischen Tools abweichen** — auch wenn RMSSD, MeanRR, LF und HF gut matchen. Beispiel aus unseren Tests:
+
+- Kubios "Automatic correction": pNN50 = 16.45% vs RRational 49.86% (~3× Diff)
+- Kubios "none": pNN50 = 18.23% vs RRational 17.97% (±2% Match)
+
+Das ist **kein Bug**, sondern eine fundamentale Eigenschaft: pNN50 ist ein binärer Schwellwert-Zähler (nur dRR > 50 ms zählen). Jeder einzelne korrigierte Beat, der knapp über/unter 50 ms landet, kippt den Zähler.
+
+[**Rohr et al. 2024**](https://doi.org/10.1038/s41598-023-50701-4) quantifizierte die Sensitivität (% Fehler pro ms Rausch-SD):
+
+| Metrik | Sensitivität | Robustheit |
+|---|---|---|
+| LF | 0.24% | sehr robust |
+| SDNN | 0.61% | robust |
+| HF | 0.71% | robust |
+| RMSSD | 1.57% | moderat |
+| **pNN50** | **2.75%** | **am sensitivsten** |
+
+> Wörtlich aus Rohr 2024: pNN50 *"should be used with caution, in particular when the baseline values are expected to be low"*.
+
+**Empfehlung**: **RMSSD bevorzugen** (gleiche physiologische Information, 4× robuster). Wenn pNN50 reported wird, immer Korrektur-Pipeline dokumentieren. Für Kubios-vergleichbare pNN50-Werte: in beiden Tools `BeatCorrection=none` nutzen. Siehe [Kubios Compatibility Guide](../user-guide/kubios-compatibility.md#the-pnn50-difference-important).
+
+Weitere Quellen:
+- [Berntson & Lozano 2005 — RMSSD als robuster High-Pass](https://doi.org/10.1111/j.1469-8986.2005.00277.x)
+- [Mietus et al. 2002 — pNNx Floor-Effekte, pNN20 als Alternative](https://doi.org/10.1136/heart.88.4.378)
+- [Alcántara et al. 2020 — Kubios-Filter-Stärke beeinflusst pNN50 signifikant](https://doi.org/10.3390/jcm9020325)
+
 ---
 
 ## 3. Guideline-Konformität

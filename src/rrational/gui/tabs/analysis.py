@@ -127,6 +127,12 @@ follow Task Force 1996 on raw NN intervals after artifact correction.
 variant). RRational always uses the Task Force 1996 standard definition (raw NN).
 That's why SDNN values may differ by 30–50% between tools — this is **by design**.
 
+**pNN50 caveat**: pNN50 is a discrete threshold counter (only diffs > 50 ms count).
+When beat correction is active, pNN50 can differ ~3× between tools even though
+RMSSD matches. Rohr et al. 2024 quantified pNN50 as the most error-sensitive HRV
+metric (2.75% per ms noise SD, vs 1.57% for RMSSD). **Prefer RMSSD** for
+parasympathetic activity.
+
 See [Validation page](https://rrational.readthedocs.io/en/latest/science/validation/)
 for the full Kubios cross-validation report (DOI links to all reference studies).
             """
@@ -1562,6 +1568,9 @@ def render_analysis_tab():
             ],
             horizontal=True,
         )
+
+        # Global frequency-domain pipeline selector — applies to ALL modes
+        _render_freq_method_selector(key_suffix="global")
 
         if analysis_mode == "Single Participant":
             _render_single_participant_analysis()
@@ -4640,8 +4649,10 @@ Using overlapping windows improves the reliability of HRV estimates by providing
         return
 
     st.markdown("**Analysis Settings**")
-
-    _render_freq_method_selector(key_suffix="group")
+    st.caption(
+        f"_Frequency-domain pipeline: **{_FREQ_METHOD_LABELS[_current_freq_method()]}**_ "
+        "(change at top of the Analysis tab)"
+    )
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -5574,8 +5585,10 @@ This analysis groups participants by sequence and compares conditions within and
     )
 
     st.markdown("**Analysis Settings**")
-
-    _render_freq_method_selector(key_suffix="seq")
+    st.caption(
+        f"_Frequency-domain pipeline: **{_FREQ_METHOD_LABELS[_current_freq_method()]}**_ "
+        "(change at top of the Analysis tab)"
+    )
 
     col1, col2 = st.columns(2)
     with col1:
