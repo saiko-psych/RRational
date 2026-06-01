@@ -2420,139 +2420,10 @@ def render_rr_plot_fragment(participant_id: str):
                 "vns_note": True,
             }
 
-    # Keyboard shortcuts for inspection mode (I and R keys)
-    from streamlit_shortcuts import shortcut_button, clear_shortcuts
-
-    # Clear shortcuts on each render to ensure they get re-attached
-    clear_shortcuts()
-
-    # Store participant_id in session state so callback can access it
-    inspection_action_key = f"inspection_action_{participant_id}"
-    st.session_state["_inspection_participant_id"] = participant_id
-
-    def handle_inspection_shortcut():
-        """Handle I key press - switch mode and/or toggle zoom."""
-        pid = st.session_state.get("_inspection_participant_id", "")
-        if not pid:
-            return
-
-        plot_mode_key = f"plot_mode_{pid}"
-        zoom_key = f"inspection_zoom_{pid}"
-
-        current = st.session_state.get(plot_mode_key, "Add Events")
-
-        pan_key = f"inspection_pan_offset_{pid}"
-
-        if current != "Signal Inspection":
-            # Switch to Signal Inspection mode AND enable zoom
-            st.session_state[plot_mode_key] = "Signal Inspection"
-            st.session_state[zoom_key] = {
-                "y_min": 400,
-                "y_max": 1200,
-                "x_window_seconds": 60,
-                "center_on_mean": True,
-            }
-            st.session_state[pan_key] = 0
-            st.toast("Signal Inspection + Zoom ON")
-        else:
-            # Toggle zoom
-            if zoom_key in st.session_state:
-                del st.session_state[zoom_key]
-                st.toast("Inspection zoom OFF")
-            else:
-                st.session_state[zoom_key] = {
-                    "y_min": 400,
-                    "y_max": 1200,
-                    "x_window_seconds": 60,
-                    "center_on_mean": True,
-                }
-                st.toast("Inspection zoom ON")
-
-    def handle_reset_zoom():
-        """Handle R key press - reset zoom to auto-scaling."""
-        pid = st.session_state.get("_inspection_participant_id", "")
-        if not pid:
-            return
-        zoom_key = f"inspection_zoom_{pid}"
-        pan_key = f"inspection_pan_offset_{pid}"
-        if zoom_key in st.session_state:
-            del st.session_state[zoom_key]
-        st.session_state[pan_key] = 0
-        st.toast("Zoom reset to auto")
-
-    def handle_pan_left():
-        """Handle Left arrow - pan view 15 seconds earlier."""
-        pid = st.session_state.get("_inspection_participant_id", "")
-        if not pid:
-            return
-        pan_key = f"inspection_pan_offset_{pid}"
-        st.session_state[pan_key] = st.session_state.get(pan_key, 0) - 15
-
-    def handle_pan_right():
-        """Handle Right arrow - pan view 15 seconds later."""
-        pid = st.session_state.get("_inspection_participant_id", "")
-        if not pid:
-            return
-        pan_key = f"inspection_pan_offset_{pid}"
-        st.session_state[pan_key] = st.session_state.get(pan_key, 0) + 15
-
-    # Hidden shortcut buttons
-    reset_zoom_key = f"reset_zoom_{participant_id}"
-    pan_left_key = f"pan_left_{participant_id}"
-    pan_right_key = f"pan_right_{participant_id}"
-    shortcut_button(
-        "I", "i", key=inspection_action_key, on_click=handle_inspection_shortcut
-    )
-    shortcut_button("R", "r", key=reset_zoom_key, on_click=handle_reset_zoom)
-    shortcut_button("Left", "arrowleft", key=pan_left_key, on_click=handle_pan_left)
-    shortcut_button("Right", "arrowright", key=pan_right_key, on_click=handle_pan_right)
-
-    # Use components.html to inject JS that hides the buttons in the parent window
-    import streamlit.components.v1 as components
-
-    components.html(
-        """
-    <script>
-    (function() {
-        // Try multiple ways to access parent document
-        var doc = null;
-        try { doc = window.parent.document; } catch(e) {}
-        if (!doc) try { doc = window.top.document; } catch(e) {}
-        if (!doc) return;
-
-        function hideShortcutButtons() {
-            doc.querySelectorAll('button').forEach(function(btn) {
-                var text = btn.textContent.trim();
-                if (text === 'I i' || text === 'R r' || text === 'Left arrowleft' || text === 'Right arrowright') {
-                    var el = btn;
-                    // Walk up to find the stButton container
-                    while (el && el.parentElement) {
-                        el = el.parentElement;
-                        if (el.getAttribute && el.getAttribute('data-testid') === 'stButton') {
-                            el.style.cssText = 'position:fixed;top:-100px;left:-100px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;';
-                            // But keep button clickable for keyboard shortcuts
-                            btn.style.pointerEvents = 'auto';
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-
-        hideShortcutButtons();
-        setTimeout(hideShortcutButtons, 100);
-        setTimeout(hideShortcutButtons, 300);
-        setTimeout(hideShortcutButtons, 1000);
-
-        // Keep watching for rerenders
-        var observer = new MutationObserver(hideShortcutButtons);
-        observer.observe(doc.body, {childList: true, subtree: true});
-    })();
-    </script>
-    """,
-        height=0,
-        scrolling=False,
-    )
+    # Keyboard shortcuts are registered OUTSIDE this fragment by main() via
+    # _setup_inspection_shortcuts(participant_id). Placing them here forced
+    # fragment-only reruns and the 'Plot interaction' radio (in main()) never
+    # picked up the new mode.
 
     # Signal Inspection mode UI controls
     if current_mode == "Signal Inspection":
@@ -6943,6 +6814,127 @@ def _load_project(project_path: Path | str | None) -> None:
         del st.session_state["summaries"]
 
 
+_INSPECTION_DEFAULT_ZOOM = {
+    "y_min": 400,
+    "y_max": 1200,
+    "x_window_seconds": 60,
+    "center_on_mean": True,
+}
+
+
+def _setup_inspection_shortcuts(participant_id: str) -> None:
+    """Register I / R / Left / Right keyboard shortcuts for the RR plot.
+
+    Defined at module level (not inside the @st.fragment) so the hidden
+    shortcut buttons' on_click callbacks trigger full app reruns. When the
+    same buttons live inside the fragment, on_click only causes a fragment
+    rerun — the 'Plot interaction' radio and downstream widgets that depend
+    on the mode never refresh and the user sees stale UI.
+    """
+    from streamlit_shortcuts import shortcut_button, clear_shortcuts
+    import streamlit.components.v1 as components
+
+    clear_shortcuts()
+
+    st.session_state["_inspection_participant_id"] = participant_id
+    inspection_action_key = f"inspection_action_{participant_id}"
+    reset_zoom_key = f"reset_zoom_{participant_id}"
+    pan_left_key = f"pan_left_{participant_id}"
+    pan_right_key = f"pan_right_{participant_id}"
+
+    def _handle_inspection_shortcut():
+        pid = st.session_state.get("_inspection_participant_id", "")
+        if not pid:
+            return
+        plot_mode_key = f"plot_mode_{pid}"
+        zoom_key = f"inspection_zoom_{pid}"
+        pan_key = f"inspection_pan_offset_{pid}"
+
+        current = st.session_state.get(plot_mode_key, "Add Events")
+        if current != "Signal Inspection":
+            st.session_state[plot_mode_key] = "Signal Inspection"
+            st.session_state[zoom_key] = dict(_INSPECTION_DEFAULT_ZOOM)
+            st.session_state[pan_key] = 0
+        elif zoom_key in st.session_state:
+            del st.session_state[zoom_key]
+        else:
+            st.session_state[zoom_key] = dict(_INSPECTION_DEFAULT_ZOOM)
+
+    def _handle_reset_zoom():
+        pid = st.session_state.get("_inspection_participant_id", "")
+        if not pid:
+            return
+        zoom_key = f"inspection_zoom_{pid}"
+        pan_key = f"inspection_pan_offset_{pid}"
+        if zoom_key in st.session_state:
+            del st.session_state[zoom_key]
+        st.session_state[pan_key] = 0
+
+    def _handle_pan_left():
+        pid = st.session_state.get("_inspection_participant_id", "")
+        if not pid:
+            return
+        pan_key = f"inspection_pan_offset_{pid}"
+        st.session_state[pan_key] = st.session_state.get(pan_key, 0) - 15
+
+    def _handle_pan_right():
+        pid = st.session_state.get("_inspection_participant_id", "")
+        if not pid:
+            return
+        pan_key = f"inspection_pan_offset_{pid}"
+        st.session_state[pan_key] = st.session_state.get(pan_key, 0) + 15
+
+    shortcut_button(
+        "I", "i", key=inspection_action_key, on_click=_handle_inspection_shortcut
+    )
+    shortcut_button("R", "r", key=reset_zoom_key, on_click=_handle_reset_zoom)
+    shortcut_button("Left", "arrowleft", key=pan_left_key, on_click=_handle_pan_left)
+    shortcut_button(
+        "Right", "arrowright", key=pan_right_key, on_click=_handle_pan_right
+    )
+
+    # Hide the shortcut buttons off-screen but keep them keyboard-clickable
+    components.html(
+        """
+    <script>
+    (function() {
+        var doc = null;
+        try { doc = window.parent.document; } catch(e) {}
+        if (!doc) try { doc = window.top.document; } catch(e) {}
+        if (!doc) return;
+
+        function hideShortcutButtons() {
+            doc.querySelectorAll('button').forEach(function(btn) {
+                var text = btn.textContent.trim();
+                if (text === 'I i' || text === 'R r' || text === 'Left arrowleft' || text === 'Right arrowright') {
+                    var el = btn;
+                    while (el && el.parentElement) {
+                        el = el.parentElement;
+                        if (el.getAttribute && el.getAttribute('data-testid') === 'stButton') {
+                            el.style.cssText = 'position:fixed;top:-100px;left:-100px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;';
+                            btn.style.pointerEvents = 'auto';
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        hideShortcutButtons();
+        setTimeout(hideShortcutButtons, 100);
+        setTimeout(hideShortcutButtons, 300);
+        setTimeout(hideShortcutButtons, 1000);
+
+        var observer = new MutationObserver(hideShortcutButtons);
+        observer.observe(doc.body, {childList: true, subtree: true});
+    })();
+    </script>
+    """,
+        height=0,
+        scrolling=False,
+    )
+
+
 def main():
     """Main Streamlit app."""
     import time as _time
@@ -7997,6 +7989,11 @@ def main():
                             "timestamps": list(timestamps),
                             "rr_values": list(rr_values),
                         }
+
+                        # Register I / R / Left / Right keyboard shortcuts. Defined
+                        # outside the @st.fragment so on_click triggers a full app
+                        # rerun and the radio below picks up the new mode.
+                        _setup_inspection_shortcuts(selected_participant)
 
                         # Mode selector for plot interaction (Events, Exclusions, or Signal Inspection)
                         st.markdown("---")
