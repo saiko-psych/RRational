@@ -12,6 +12,7 @@ from pathlib import Path
 
 from qtpy.QtGui import QKeySequence, QAction
 from qtpy.QtWidgets import (
+    QApplication,
     QFileDialog,
     QListWidget,
     QListWidgetItem,
@@ -19,11 +20,12 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QSplitter,
     QStatusBar,
+    QToolBar,
     QWidget,
     QVBoxLayout,
     QLabel,
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, QEvent, QObject
 
 from rrational.inspector.plot_widget import RRPlotWidget
 
@@ -69,6 +71,34 @@ def _load_rrational_sections(filepath: Path) -> dict:
     return sections
 
 
+class _GlobalKeyFilter(QObject):
+    """Application-wide event filter that routes Home/End to the plot.
+
+    Why a filter and not a QShortcut: QListWidget (sidebar) consumes
+    Home/End in its own keyPressEvent for list-item navigation, and
+    QGraphicsView (PlotWidget's base class) consumes them for scroll-area
+    handling. Both swallow the event before any QShortcut — even one with
+    ApplicationShortcut context — can fire. An eventFilter installed on
+    QApplication sees every key press FIRST, so we can intercept Home/End
+    no matter which widget currently has the focus.
+    """
+
+    def __init__(self, window: "MainWindow") -> None:
+        super().__init__()
+        self._window = window
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 — Qt API name
+        if event.type() == QEvent.KeyPress:
+            key = event.key()
+            if key == Qt.Key_Home:
+                self._window.jump_to_start()
+                return True  # consume so QListWidget doesn't also handle it
+            if key == Qt.Key_End:
+                self._window.jump_to_end()
+                return True
+        return False  # not for us — let normal dispatch continue
+
+
 class MainWindow(QMainWindow):
     def __init__(self, initial_path: Path | None = None) -> None:
         super().__init__()
@@ -106,9 +136,18 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(center)
 
-        # ----- Menu & status bar ------------------------------------------
+        # ----- Menu, toolbar, status bar ----------------------------------
         self._build_menu()
+        self._build_toolbar()
         self.setStatusBar(QStatusBar())
+
+        # ----- Global Home/End handling -----------------------------------
+        # Installed on QApplication (not on a single widget) so it sees
+        # every key press before any widget — including the QListWidget
+        # sidebar and the PlotWidget's underlying QGraphicsView — gets a
+        # chance to consume Home/End.
+        self._key_filter = _GlobalKeyFilter(self)
+        QApplication.instance().installEventFilter(self._key_filter)
 
         # ----- Optionally open a file at startup --------------------------
         if initial_path is not None:
@@ -130,6 +169,83 @@ class MainWindow(QMainWindow):
         quit_act.setShortcut(QKeySequence.Quit)  # Ctrl+Q / Cmd+Q
         quit_act.triggered.connect(self.close)
         file_menu.addAction(quit_act)
+
+    def _build_toolbar(self) -> None:
+        """Toolbar with discoverable nav buttons.
+
+        Even though Home/End/arrows work via keyboard, surfacing them as
+        clickable buttons makes the feature discoverable for users who
+        don't read the docstring.
+        """
+        tb = QToolBar("Navigation", self)
+        tb.setMovable(False)
+        self.addToolBar(tb)
+
+        home_act = QAction("Start (Home)", self)
+        home_act.setToolTip("Jump to beginning of signal (Home)")
+        home_act.triggered.connect(self.jump_to_start)
+        tb.addAction(home_act)
+
+        end_act = QAction("End (End)", self)
+        end_act.setToolTip("Jump to end of signal (End)")
+        end_act.triggered.connect(self.jump_to_end)
+        tb.addAction(end_act)
+
+        tb.addSeparator()
+
+        pan_l = QAction("Pan left", self)
+        pan_l.setToolTip("Pan left (Left arrow)")
+        pan_l.triggered.connect(
+            lambda: self._with_feedback(self._plot.pan_left, "Pan left")
+        )
+        tb.addAction(pan_l)
+
+        pan_r = QAction("Pan right", self)
+        pan_r.setToolTip("Pan right (Right arrow)")
+        pan_r.triggered.connect(
+            lambda: self._with_feedback(self._plot.pan_right, "Pan right")
+        )
+        tb.addAction(pan_r)
+
+        tb.addSeparator()
+
+        zoom_in = QAction("Zoom in", self)
+        zoom_in.setToolTip("Zoom in (Down arrow)")
+        zoom_in.triggered.connect(
+            lambda: self._with_feedback(self._plot.zoom_in, "Zoom in")
+        )
+        tb.addAction(zoom_in)
+
+        zoom_out = QAction("Zoom out", self)
+        zoom_out.setToolTip("Zoom out (Up arrow)")
+        zoom_out.triggered.connect(
+            lambda: self._with_feedback(self._plot.zoom_out, "Zoom out")
+        )
+        tb.addAction(zoom_out)
+
+    # ------------------------------------------------------------------
+    # Public navigation API — used by both toolbar buttons and the
+    # global key filter. Centralised so every entry point shows the
+    # same status-bar feedback (so the user knows the action registered
+    # even when the viewport is already at the target).
+    # ------------------------------------------------------------------
+    def jump_to_start(self) -> None:
+        if self._plot._times is None:
+            self.statusBar().showMessage("Home: no section loaded", 2000)
+            return
+        self._plot.jump_start()
+        self.statusBar().showMessage("Jumped to start of signal", 2000)
+
+    def jump_to_end(self) -> None:
+        if self._plot._times is None:
+            self.statusBar().showMessage("End: no section loaded", 2000)
+            return
+        self._plot.jump_end()
+        self.statusBar().showMessage("Jumped to end of signal", 2000)
+
+    def _with_feedback(self, action, label: str) -> None:
+        action()
+        self.statusBar().showMessage(label, 1500)
 
     # ------------------------------------------------------------------
     def _on_open_clicked(self) -> None:
