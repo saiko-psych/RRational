@@ -24,6 +24,13 @@ dev = [
 [project.scripts]
 rrational = "rrational.cli:main"
 
+[project.optional-dependencies]
+inspector = [
+    "pyqtgraph>=0.14.0",
+    "pyside6>=6.11.1",
+    "qtpy>=2.4.3",
+]
+
 [build-system]
 requires = ["uv_build>=0.9.9,<0.10.0"]
 build-backend = "uv_build"
