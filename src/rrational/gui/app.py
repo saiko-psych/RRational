@@ -2169,10 +2169,10 @@ def render_settings_panel():
         "Default resolution",
         min_value=1000,
         max_value=100000,
-        value=settings.get("plot_resolution", 5000),
+        value=settings.get("plot_resolution", 100000),
         step=1000,
         key="settings_resolution",
-        help="Default number of points to show (higher values for long recordings)",
+        help="Default number of points to show. Defaults to 100k (effectively all data for typical HRV recordings).",
     )
 
     new_gap_threshold = st.slider(
@@ -6823,16 +6823,20 @@ _INSPECTION_DEFAULT_ZOOM = {
 
 
 def _setup_inspection_shortcuts(participant_id: str) -> None:
-    """Register I / R / Left / Right keyboard shortcuts for the RR plot.
+    """Register keyboard shortcuts for the RR plot.
 
-    Defined at module level (not inside the @st.fragment) so the hidden
-    shortcut buttons' on_click callbacks trigger full app reruns. When the
-    same buttons live inside the fragment, on_click only causes a fragment
-    rerun — the 'Plot interaction' radio and downstream widgets that depend
-    on the mode never refresh and the user sees stale UI.
+    - I, R: server-side via streamlit_shortcuts (need to update Streamlit
+      state). Defined at module level (not inside @st.fragment) so on_click
+      triggers a full app rerun and the 'Plot interaction' radio refreshes.
+    - Left, Right arrows: also server-side. We tried a client-side
+      Plotly.relayout approach for smoother panning, but the components.html
+      iframe couldn't reliably register a keydown listener on the parent doc
+      (events bypassed it under Streamlit's iframe layout). For smooth
+      navigation, the user should use Plotly's native drag-to-pan (already
+      enabled — just click and drag) and scroll-to-zoom. Arrows remain as a
+      slow-but-precise keyboard fallback.
     """
     from streamlit_shortcuts import shortcut_button, clear_shortcuts
-    import streamlit.components.v1 as components
 
     clear_shortcuts()
 
@@ -6893,7 +6897,10 @@ def _setup_inspection_shortcuts(participant_id: str) -> None:
         "Right", "arrowright", key=pan_right_key, on_click=_handle_pan_right
     )
 
-    # Hide the shortcut buttons off-screen but keep them keyboard-clickable
+    # Client-side smooth pan via Plotly.relayout + hide the helper buttons.
+    # The functions are stored ON the parent window (not the iframe's closure)
+    # so they survive after Streamlit destroys/recreates the components.html
+    # iframe between reruns.
     components.html(
         """
     <script>
@@ -6902,8 +6909,51 @@ def _setup_inspection_shortcuts(participant_id: str) -> None:
         try { doc = window.parent.document; } catch(e) {}
         if (!doc) try { doc = window.top.document; } catch(e) {}
         if (!doc) return;
+        var win = doc.defaultView || window.parent;
 
-        function hideShortcutButtons() {
+        // Define / re-define on parent window every iframe run so logic stays
+        // fresh after Streamlit reloads the components iframe.
+        win.__rrFindPlot = function() {
+            var candidates = [];
+            doc.querySelectorAll('.js-plotly-plot').forEach(function(p) { candidates.push(p); });
+            doc.querySelectorAll('iframe').forEach(function(ifr) {
+                try {
+                    var d = ifr.contentDocument;
+                    if (!d) return;
+                    d.querySelectorAll('.js-plotly-plot').forEach(function(p) { candidates.push(p); });
+                } catch (e) {}
+            });
+            for (var i = 0; i < candidates.length; i++) {
+                var p = candidates[i];
+                if (p._fullLayout && p._fullLayout.xaxis &&
+                    p._fullLayout.xaxis.type === 'date' &&
+                    p._fullLayout.xaxis.range) return p;
+            }
+            return null;
+        };
+
+        win.__rrPan = function(direction) {
+            if (!win.Plotly) return false;
+            var plot = win.__rrFindPlot();
+            if (!plot) return false;
+            var r = plot._fullLayout.xaxis.range;
+            var lo = (typeof r[0] === 'number') ? r[0] : new Date(r[0]).getTime();
+            var hi = (typeof r[1] === 'number') ? r[1] : new Date(r[1]).getTime();
+            if (!isFinite(lo) || !isFinite(hi) || hi <= lo) return false;
+            var shift = (hi - lo) * 0.25 * direction;
+            var toRange = function(v) {
+                return (typeof r[0] === 'number') ? v : new Date(v).toISOString();
+            };
+            try {
+                win.Plotly.relayout(plot, {
+                    'xaxis.range[0]': toRange(lo + shift),
+                    'xaxis.range[1]': toRange(hi + shift),
+                });
+            } catch (e) { /* Plotly version mismatch — relayout still visually applies */ }
+            return true;
+        };
+
+        win.__rrHideShortcutBtns = function() {
             doc.querySelectorAll('button').forEach(function(btn) {
                 var text = btn.textContent.trim();
                 if (text === 'I i' || text === 'R r' || text === 'Left arrowleft' || text === 'Right arrowright') {
@@ -6918,15 +6968,60 @@ def _setup_inspection_shortcuts(participant_id: str) -> None:
                     }
                 }
             });
+        };
+
+        // Install keydown listener ONCE on the parent window + document, plus
+        // on every accessible iframe's document. Streamlit renders the RR
+        // plot in a streamlit-plotly-events iframe; keyboard events sometimes
+        // fire there and don't bubble to the parent. The listener is a tiny
+        // named function that delegates to win.__rrPan, which we redefine on
+        // every iframe load.
+        win.__rrPanDebug = win.__rrPanDebug || { fired: 0, panned: 0 };
+        if (!win.__rrKeyListener) {
+            win.__rrKeyListener = function(e) {
+                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                win.__rrPanDebug.fired++;
+                var dir = e.key === 'ArrowRight' ? +1 : -1;
+                if (typeof win.__rrPan === 'function' && win.__rrPan(dir)) {
+                    win.__rrPanDebug.panned++;
+                    e.preventDefault();
+                }
+            };
         }
 
-        hideShortcutButtons();
-        setTimeout(hideShortcutButtons, 100);
-        setTimeout(hideShortcutButtons, 300);
-        setTimeout(hideShortcutButtons, 1000);
+        // Attach to wherever keyboard events might fire. Idempotent re-attach
+        // is fine because addEventListener with the same handler dedupes.
+        function attachKeyListener(targetDoc) {
+            if (!targetDoc) return;
+            try {
+                targetDoc.addEventListener('keydown', win.__rrKeyListener, true);
+            } catch (e) {}
+        }
+        attachKeyListener(doc);
+        attachKeyListener(win);
+        doc.querySelectorAll('iframe').forEach(function(ifr) {
+            try { attachKeyListener(ifr.contentDocument); } catch (e) {}
+        });
 
-        var observer = new MutationObserver(hideShortcutButtons);
-        observer.observe(doc.body, {childList: true, subtree: true});
+        // The RR plot iframe loads lazily — re-attach when new iframes appear.
+        if (!win.__rrIframeObserver) {
+            win.__rrIframeObserver = new MutationObserver(function() {
+                doc.querySelectorAll('iframe').forEach(function(ifr) {
+                    try { attachKeyListener(ifr.contentDocument); } catch (e) {}
+                });
+            });
+            win.__rrIframeObserver.observe(doc.body, {childList: true, subtree: true});
+        }
+
+        win.__rrHideShortcutBtns();
+        setTimeout(win.__rrHideShortcutBtns, 100);
+        setTimeout(win.__rrHideShortcutBtns, 300);
+        setTimeout(win.__rrHideShortcutBtns, 1000);
+
+        if (!win.__rrHideObserver) {
+            win.__rrHideObserver = new MutationObserver(win.__rrHideShortcutBtns);
+            win.__rrHideObserver.observe(doc.body, {childList: true, subtree: true});
+        }
     })();
     </script>
     """,
@@ -7960,10 +8055,13 @@ def main():
                             )
                             flags = None
 
-                        # Get plot resolution from session state (use saved settings as default)
+                        # Get plot resolution from session state. Default: show ALL
+                        # points (no downsampling). Users with extremely long recordings
+                        # can lower the slider if they hit performance issues.
                         resolution_key = f"plot_resolution_{selected_participant}"
+                        n_full = len(timestamps)
                         saved_resolution = st.session_state.get("app_settings", {}).get(
-                            "plot_resolution", 5000
+                            "plot_resolution", n_full
                         )
                         plot_resolution = st.session_state.get(
                             resolution_key, saved_resolution
