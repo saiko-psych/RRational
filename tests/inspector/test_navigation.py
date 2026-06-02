@@ -1,10 +1,10 @@
 """Keyboard- and toolbar-driven navigation tests for the inspector.
 
-These tests exist primarily as a regression net for the Home/End bug we
-hit in development: the original ``jump_start``/``jump_end`` preserved
-the current viewport width, which made the keys a no-op whenever the
-user was already showing the whole signal. The test below would have
-caught that — it asserts the viewport size, not just position.
+Regression net for the Phase-1 Home/End bug: the original
+``jump_start``/``jump_end`` preserved the current viewport width, which
+made the keys a no-op whenever the user was already showing the whole
+signal. The tests below assert window SIZE in addition to position, so
+that bug would have been caught immediately.
 
 Pattern borrowed from mne-qt-browser's ``tests/test_pg_specific.py``:
 state assertions on the viewbox after a ``qtbot.keyClick`` rather than
@@ -15,31 +15,20 @@ from __future__ import annotations
 
 import pytest
 
-# pytest-qt's auto-use ``qapp`` fixture creates one QApplication per
-# session, so we just need to import the widgets lazily.
 pytest.importorskip("pytestqt")
 pytest.importorskip("pyqtgraph")
 
 
 @pytest.fixture
-def main_window(qtbot, synthetic_section):
-    """Construct a MainWindow with one synthetic section pre-loaded."""
-    from qtpy.QtCore import Qt
-    from qtpy.QtWidgets import QListWidgetItem
-
+def main_window(qtbot, synthetic_inspector_data):
+    """Construct a MainWindow with synthetic InspectorData pre-loaded."""
     from rrational.inspector.main_window import MainWindow
 
     win = MainWindow()
-    qtbot.addWidget(win)  # ensures cleanup even if the test crashes
+    win.test_mode = True  # silence modal dialogs
+    qtbot.addWidget(win)
 
-    # Inject the synthetic section directly into the in-memory store —
-    # avoids needing a real .rrational file on disk for the keyboard test.
-    timestamps, rr_ms = synthetic_section
-    win._sections = {"test_section": (timestamps, rr_ms)}
-    item = QListWidgetItem("test_section")
-    item.setData(Qt.UserRole, "test_section")
-    win._section_list.addItem(item)
-    win._on_section_selected(item)  # triggers set_data + sets initial view
+    win.load_data(synthetic_inspector_data)
 
     win.show()
     qtbot.waitExposed(win)
@@ -54,53 +43,51 @@ def _x_range(win):
 # ---------------------------------------------------------------------
 # Initial state
 # ---------------------------------------------------------------------
-def test_initial_view_is_first_60s(main_window, synthetic_section):
-    """``set_data`` should auto-zoom to first 60 s on long signals.
+def test_initial_view_shows_full_recording(main_window, synthetic_inspector_data):
+    """Phase-2 default: load shows the WHOLE timeline, not first 60 s.
 
-    Anchors the rest of the suite: tests below assume we don't start
-    fully zoomed out (which would mask Home/End bugs).
+    The user picks structure out of the overview, then zooms via
+    sidebar/keys. This is the inverse of the Phase-1 default and the
+    central UX premise behind the continuous-timeline rewrite.
     """
-    timestamps, _ = synthetic_section
-    t0 = timestamps[0].timestamp()
+    data = synthetic_inspector_data
     xmin, xmax = _x_range(main_window)
-    assert xmin == pytest.approx(t0, abs=0.5)
-    assert (xmax - xmin) == pytest.approx(60, abs=1.0)
+    span = xmax - xmin
+    expected_span = data.t_end - data.t_start
+    # padding=0.02 in set_data → up to ±4% wider
+    assert span == pytest.approx(expected_span, rel=0.08)
+    assert xmin <= data.t_start
+    assert xmax >= data.t_end
 
 
 # ---------------------------------------------------------------------
 # Home / End — the original bug
 # ---------------------------------------------------------------------
-def test_end_key_jumps_to_last_60s(main_window, qtbot, synthetic_section):
+def test_end_key_jumps_to_last_60s(main_window, qtbot, synthetic_inspector_data):
     """End must move the viewport to the LAST 60 s of the signal.
 
-    Regression: the original code preserved current width, so pressing
-    End from the default 60 s view *did* move correctly; but when the
-    user had zoomed out to the full 300 s, End became a no-op. We
-    therefore test from the full-zoom state to lock in the new
-    fixed-60-s-window semantics.
+    Regression: original ``jump_end`` preserved current width — when
+    the viewport already covered the full signal (which Phase 2 makes
+    the DEFAULT load state!), pressing End was a no-op. This test
+    starts from full-zoom (the new default) and asserts the fixed
+    60 s window.
     """
     from qtpy.QtCore import Qt
 
-    # Zoom out to full signal first — this is the state where the old
-    # bug manifested.
-    timestamps, _ = synthetic_section
-    t0, t1 = timestamps[0].timestamp(), timestamps[-1].timestamp()
-    main_window._plot.getViewBox().setXRange(t0, t1, padding=0)
+    t1 = synthetic_inspector_data.t_end
 
     qtbot.keyClick(main_window, Qt.Key_End)
 
     xmin, xmax = _x_range(main_window)
     assert xmax == pytest.approx(t1, abs=0.5)
-    # Window must be ~60 s — NOT the previous full-signal width.
     assert (xmax - xmin) == pytest.approx(60, abs=1.0)
 
 
-def test_home_key_jumps_to_first_60s(main_window, qtbot, synthetic_section):
+def test_home_key_jumps_to_first_60s(main_window, qtbot, synthetic_inspector_data):
     """Home must jump back to first 60 s after the user has panned away."""
     from qtpy.QtCore import Qt
 
-    timestamps, _ = synthetic_section
-    t0, t1 = timestamps[0].timestamp(), timestamps[-1].timestamp()
+    t0, t1 = synthetic_inspector_data.t_start, synthetic_inspector_data.t_end
     # Pan to the end first
     main_window._plot.getViewBox().setXRange(t1 - 30, t1, padding=0)
 
@@ -112,7 +99,7 @@ def test_home_key_jumps_to_first_60s(main_window, qtbot, synthetic_section):
 
 
 def test_home_key_fires_even_when_sidebar_has_focus(
-    main_window, qtbot, synthetic_section
+    main_window, qtbot, synthetic_inspector_data
 ):
     """The global eventFilter must intercept Home before QListWidget eats it.
 
@@ -122,8 +109,7 @@ def test_home_key_fires_even_when_sidebar_has_focus(
     """
     from qtpy.QtCore import Qt
 
-    timestamps, _ = synthetic_section
-    t0, t1 = timestamps[0].timestamp(), timestamps[-1].timestamp()
+    t0, t1 = synthetic_inspector_data.t_start, synthetic_inspector_data.t_end
     main_window._plot.getViewBox().setXRange(t1 - 30, t1, padding=0)
     main_window._section_list.setFocus()  # focus sidebar, not plot
 
@@ -141,6 +127,10 @@ def test_home_key_fires_even_when_sidebar_has_focus(
 def test_right_arrow_pans_right(main_window, qtbot):
     """Right arrow shifts the viewport forward by 25 % of current width."""
     from qtpy.QtCore import Qt
+
+    # Zoom into a defined window first so the pan amount is predictable.
+    t0 = main_window._data.t_start
+    main_window._plot.getViewBox().setXRange(t0, t0 + 100, padding=0)
 
     xmin_before, xmax_before = _x_range(main_window)
     width = xmax_before - xmin_before
@@ -166,16 +156,15 @@ def test_down_arrow_zooms_in(main_window, qtbot):
 
 
 # ---------------------------------------------------------------------
-# Toolbar buttons trigger the same navigation API
+# Toolbar parity
 # ---------------------------------------------------------------------
 def test_toolbar_start_button_triggers_jump_to_start(
-    main_window, qtbot, synthetic_section
+    main_window, qtbot, synthetic_inspector_data
 ):
     """Clicking the toolbar Start button must do the same as Home key."""
     from qtpy.QtWidgets import QToolBar
 
-    timestamps, _ = synthetic_section
-    t0, t1 = timestamps[0].timestamp(), timestamps[-1].timestamp()
+    t0, t1 = synthetic_inspector_data.t_start, synthetic_inspector_data.t_end
     main_window._plot.getViewBox().setXRange(t1 - 30, t1, padding=0)
 
     toolbar = main_window.findChild(QToolBar)
@@ -184,3 +173,20 @@ def test_toolbar_start_button_triggers_jump_to_start(
 
     xmin, _ = _x_range(main_window)
     assert xmin == pytest.approx(t0, abs=0.5)
+
+
+def test_toolbar_fit_all_button(main_window, synthetic_inspector_data):
+    """Fit all must restore the full-recording view after any zoom."""
+    from qtpy.QtWidgets import QToolBar
+
+    # Zoom into a tiny window first
+    t0 = synthetic_inspector_data.t_start
+    main_window._plot.getViewBox().setXRange(t0, t0 + 10, padding=0)
+
+    toolbar = main_window.findChild(QToolBar)
+    fit_action = next(a for a in toolbar.actions() if "Fit all" in a.text())
+    fit_action.trigger()
+
+    xmin, xmax = _x_range(main_window)
+    data = synthetic_inspector_data
+    assert (xmax - xmin) == pytest.approx(data.t_end - data.t_start, rel=0.05)

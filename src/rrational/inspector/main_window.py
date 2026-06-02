@@ -1,19 +1,33 @@
-"""Top-level QMainWindow for the inspector.
+"""Top-level QMainWindow for the RR inspector.
 
-Phase 1 spike: just enough to open a .rrational file, render its first
-section's RR tachogram, and let the user scroll around. Sections list,
-event markers, artifact editing, and project loading land in later phases.
+Phase 2 UX: ONE continuous timeline is rendered on file load — every
+section in the .rrational v2 file is concatenated into a single
+tachogram with NaN gaps for breaks, colored ``SectionRegion`` bands
+mark the section spans, and ``EventMarker`` lines stand at each
+section-boundary event.
+
+The sidebar still lists sections (now sorted by start time), but
+clicking one no longer swaps the plot data — it zooms the viewport
+to that section's time range and highlights its band. This mirrors
+mne-qt-browser's "channels list + main plot" interaction model.
+
+Architectural choices borrowed from mne-qt-browser:
+- one shared state container (here: ``InspectorData`` from data_loader)
+- overlays as separate graphic items with strong Python refs
+- public navigation API on MainWindow so toolbar + key filter share it
+- test_mode flag so non-modal dialogs don't block pytest-qt runs
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from pathlib import Path
 
-from qtpy.QtGui import QKeySequence, QAction
+from qtpy.QtCore import QEvent, QObject, Qt
+from qtpy.QtGui import QAction, QKeySequence
 from qtpy.QtWidgets import (
     QApplication,
     QFileDialog,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -21,66 +35,23 @@ from qtpy.QtWidgets import (
     QSplitter,
     QStatusBar,
     QToolBar,
-    QWidget,
     QVBoxLayout,
-    QLabel,
+    QWidget,
 )
-from qtpy.QtCore import Qt, QEvent, QObject
 
+from rrational.inspector.data_loader import InspectorData, load_inspector_data
 from rrational.inspector.plot_widget import RRPlotWidget
-
-
-def _load_rrational_sections(filepath: Path) -> dict:
-    """Read a .rrational v2 file and return ``{section_name: (timestamps, rr_ms)}``.
-
-    Imports are deferred so the inspector module stays importable in
-    environments that don't have NeuroKit2 installed (Streamlit-only setups).
-    """
-    from rrational.gui.rrational_export import (
-        load_rrational_v2,
-        get_rrational_version,
-        RRATIONAL_VERSION_V2,
-    )
-
-    version = get_rrational_version(filepath)
-    if version != RRATIONAL_VERSION_V2:
-        raise ValueError(
-            f"Inspector currently supports v2.0 .rrational files only "
-            f"(got v{version} for {filepath.name}). Export a v2.0 file via "
-            "the Streamlit app's 'Save All Validated Sections' button."
-        )
-
-    data = load_rrational_v2(filepath)
-    sections: dict[str, tuple[list[datetime], list[float]]] = {}
-    for sec_name, sec in data.sections.items():
-        if not sec.nn_intervals or not sec.nn_intervals.data:
-            continue
-        # nn_intervals.data is a list of [timestamp_ms_offset, rr_ms, is_corrected]
-        # Convert offsets back to absolute datetimes using the section's start.
-        start_ts_str = sec.validation.start_event.timestamp if sec.validation else None
-        if not start_ts_str:
-            continue
-        start_dt = datetime.fromisoformat(start_ts_str)
-        timestamps: list[datetime] = []
-        rr_ms: list[float] = []
-        for row in sec.nn_intervals.data:
-            offset_ms, rr, _ = row
-            timestamps.append(start_dt + timedelta(milliseconds=offset_ms))
-            rr_ms.append(float(rr))
-        sections[sec_name] = (timestamps, rr_ms)
-    return sections
 
 
 class _GlobalKeyFilter(QObject):
     """Application-wide event filter that routes Home/End to the plot.
 
-    Why a filter and not a QShortcut: QListWidget (sidebar) consumes
-    Home/End in its own keyPressEvent for list-item navigation, and
-    QGraphicsView (PlotWidget's base class) consumes them for scroll-area
-    handling. Both swallow the event before any QShortcut — even one with
-    ApplicationShortcut context — can fire. An eventFilter installed on
-    QApplication sees every key press FIRST, so we can intercept Home/End
-    no matter which widget currently has the focus.
+    QListWidget (sidebar) consumes Home/End for its own list navigation,
+    and QGraphicsView (PlotWidget's base class) consumes them for its
+    scroll-area handling. Both swallow the event before any QShortcut
+    — even one with ApplicationShortcut context — can fire. An
+    eventFilter installed on QApplication sees every key press FIRST,
+    so we can intercept Home/End no matter which widget has the focus.
     """
 
     def __init__(self, window: "MainWindow") -> None:
@@ -92,27 +63,51 @@ class _GlobalKeyFilter(QObject):
             key = event.key()
             if key == Qt.Key_Home:
                 self._window.jump_to_start()
-                return True  # consume so QListWidget doesn't also handle it
+                return True
             if key == Qt.Key_End:
                 self._window.jump_to_end()
                 return True
-        return False  # not for us — let normal dispatch continue
+        return False
 
 
 class MainWindow(QMainWindow):
+    """Inspector main window: sidebar + toolbar + continuous timeline plot."""
+
     def __init__(self, initial_path: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("RRational Inspector")
         self.resize(1400, 700)
 
-        # ----- Central widget: section list (left) + plot (right) ---------
-        self._sections: dict = {}
+        # Flipped on by pytest fixtures so modal QMessageBox calls don't
+        # block headless test runs. Same convention as mne-qt-browser's
+        # ``test_mode`` flag.
+        self.test_mode = False
+
+        # Currently-loaded data (None until the user opens a file).
+        self._data: InspectorData | None = None
+        self._loaded_path: Path | None = None
+
+        self._build_central_widget()
+        self._build_menu()
+        self._build_toolbar()
+        self.setStatusBar(QStatusBar())
+
+        self._key_filter = _GlobalKeyFilter(self)
+        QApplication.instance().installEventFilter(self._key_filter)
+
+        if initial_path is not None:
+            self._open_path(initial_path)
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
+    def _build_central_widget(self) -> None:
         self._section_list = QListWidget()
-        self._section_list.itemClicked.connect(self._on_section_selected)
-        self._section_list.setMaximumWidth(260)
+        self._section_list.itemClicked.connect(self._on_section_clicked)
+        self._section_list.setMaximumWidth(280)
 
         self._plot = RRPlotWidget()
-        self._plot.setFocusPolicy(Qt.StrongFocus)  # so it receives keyboard events
+        self._plot.setFocusPolicy(Qt.StrongFocus)
 
         self._empty_label = QLabel(
             "No .rrational file loaded.\n\n"
@@ -136,24 +131,6 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(center)
 
-        # ----- Menu, toolbar, status bar ----------------------------------
-        self._build_menu()
-        self._build_toolbar()
-        self.setStatusBar(QStatusBar())
-
-        # ----- Global Home/End handling -----------------------------------
-        # Installed on QApplication (not on a single widget) so it sees
-        # every key press before any widget — including the QListWidget
-        # sidebar and the PlotWidget's underlying QGraphicsView — gets a
-        # chance to consume Home/End.
-        self._key_filter = _GlobalKeyFilter(self)
-        QApplication.instance().installEventFilter(self._key_filter)
-
-        # ----- Optionally open a file at startup --------------------------
-        if initial_path is not None:
-            self._open_path(initial_path)
-
-    # ------------------------------------------------------------------
     def _build_menu(self) -> None:
         menubar = self.menuBar()
         file_menu = menubar.addMenu("&File")
@@ -171,11 +148,11 @@ class MainWindow(QMainWindow):
         file_menu.addAction(quit_act)
 
     def _build_toolbar(self) -> None:
-        """Toolbar with discoverable nav buttons.
+        """Toolbar with discoverable navigation buttons.
 
-        Even though Home/End/arrows work via keyboard, surfacing them as
-        clickable buttons makes the feature discoverable for users who
-        don't read the docstring.
+        Home/End/arrows work via keyboard, but surfacing them as
+        clickable buttons makes the feature discoverable for users
+        who don't read the docstring.
         """
         tb = QToolBar("Navigation", self)
         tb.setMovable(False)
@@ -223,30 +200,46 @@ class MainWindow(QMainWindow):
         )
         tb.addAction(zoom_out)
 
+        tb.addSeparator()
+
+        fit_all = QAction("Fit all", self)
+        fit_all.setToolTip("Zoom out to show the entire recording")
+        fit_all.triggered.connect(self.fit_all)
+        tb.addAction(fit_all)
+
     # ------------------------------------------------------------------
-    # Public navigation API — used by both toolbar buttons and the
-    # global key filter. Centralised so every entry point shows the
-    # same status-bar feedback (so the user knows the action registered
-    # even when the viewport is already at the target).
+    # Public navigation API
     # ------------------------------------------------------------------
     def jump_to_start(self) -> None:
         if self._plot._times is None:
-            self.statusBar().showMessage("Home: no section loaded", 2000)
+            self.statusBar().showMessage("Home: no file loaded", 2000)
             return
         self._plot.jump_start()
         self.statusBar().showMessage("Jumped to start of signal", 2000)
 
     def jump_to_end(self) -> None:
         if self._plot._times is None:
-            self.statusBar().showMessage("End: no section loaded", 2000)
+            self.statusBar().showMessage("End: no file loaded", 2000)
             return
         self._plot.jump_end()
         self.statusBar().showMessage("Jumped to end of signal", 2000)
+
+    def fit_all(self) -> None:
+        """Zoom the X-axis out to the full recording span."""
+        if self._data is None:
+            self.statusBar().showMessage("Fit all: no file loaded", 2000)
+            return
+        self._plot.zoom_to_range(
+            self._data.t_start, self._data.t_end, padding_frac=0.01
+        )
+        self.statusBar().showMessage("Showing full recording", 1500)
 
     def _with_feedback(self, action, label: str) -> None:
         action()
         self.statusBar().showMessage(label, 1500)
 
+    # ------------------------------------------------------------------
+    # File loading
     # ------------------------------------------------------------------
     def _on_open_clicked(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
@@ -260,47 +253,99 @@ class MainWindow(QMainWindow):
 
     def _open_path(self, path: Path) -> None:
         if not path.exists():
-            QMessageBox.warning(self, "Not found", f"{path} does not exist.")
+            self._warn("Not found", f"{path} does not exist.")
             return
         try:
-            self._sections = _load_rrational_sections(path)
+            data = load_inspector_data(path)
         except Exception as e:
-            QMessageBox.critical(self, "Could not load", str(e))
+            self._critical("Could not load", str(e))
             return
 
-        self._section_list.clear()
-        for name, (ts, rr) in self._sections.items():
-            label = (
-                f"{name}  ({len(rr)} beats, {(ts[-1] - ts[0]).total_seconds():.0f}s)"
-            )
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, name)
-            self._section_list.addItem(item)
-
-        self.statusBar().showMessage(
-            f"Loaded {path.name} — {len(self._sections)} section(s) with NN data"
-        )
-        # Auto-select the first section
-        if self._section_list.count() > 0:
-            self._section_list.setCurrentRow(0)
-            self._on_section_selected(self._section_list.item(0))
-        else:
-            QMessageBox.information(
-                self,
+        if len(data.t) == 0:
+            self._info(
                 "No sections",
                 f"{path.name} contains no sections with NN data to display.",
             )
-
-    def _on_section_selected(self, item: QListWidgetItem) -> None:
-        name = item.data(Qt.UserRole)
-        if name not in self._sections:
             return
-        timestamps, rr_ms = self._sections[name]
+
+        self.load_data(data, source_path=path)
+
+    # ------------------------------------------------------------------
+    # Public data API — used directly by tests so they can inject
+    # synthetic InspectorData without round-tripping through a real file.
+    # ------------------------------------------------------------------
+    def load_data(self, data: InspectorData, source_path: Path | None = None) -> None:
+        """Render an ``InspectorData`` instance in the plot."""
+        self._data = data
+        self._loaded_path = source_path
+
+        # 1. Render the continuous timeline
         self._empty_label.setVisible(False)
         self._plot.setVisible(True)
-        self._plot.set_data(timestamps, rr_ms)
-        self._plot.setFocus()  # so keyboard nav works immediately after click
-        self.statusBar().showMessage(
-            f"Section '{name}': {len(rr_ms)} beats, "
-            f"{(timestamps[-1] - timestamps[0]).total_seconds():.1f}s"
+        self._plot.set_data(data)
+
+        # 2. Overlay section bands
+        for meta in data.sections:
+            self._plot.add_section_region(meta)
+
+        # 3. Overlay event markers
+        for ev in data.events:
+            self._plot.add_event_marker(ev)
+
+        # 4. Populate sidebar (sorted by start time, same order as overlays)
+        self._section_list.clear()
+        for meta in data.sections:
+            duration = meta.t_end - meta.t_start
+            label = f"{meta.name}  ({meta.beat_count} beats, {duration:.0f}s)"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, meta.name)
+            self._section_list.addItem(item)
+
+        # 5. Status bar summary
+        msg = (
+            f"{source_path.name if source_path else 'Data'} — "
+            f"{len(data.sections)} section(s), "
+            f"{len(data.events)} event(s), "
+            f"{data.t_end - data.t_start:.0f}s total"
         )
+        self.statusBar().showMessage(msg)
+
+        self._plot.setFocus()
+
+    def _on_section_clicked(self, item: QListWidgetItem) -> None:
+        """Zoom the plot to the clicked section and highlight its band."""
+        name = item.data(Qt.UserRole)
+        if self._data is None:
+            return
+        meta = next((s for s in self._data.sections if s.name == name), None)
+        if meta is None:
+            return
+        self._plot.zoom_to_range(meta.t_start, meta.t_end, padding_frac=0.02)
+        self._plot.highlight_section(name)
+        self._plot.setFocus()
+        self.statusBar().showMessage(
+            f"Section '{name}': {meta.beat_count} beats, "
+            f"{meta.t_end - meta.t_start:.1f}s",
+            3000,
+        )
+
+    # ------------------------------------------------------------------
+    # Dialog helpers — silenced in test_mode so pytest-qt doesn't block.
+    # ------------------------------------------------------------------
+    def _warn(self, title: str, msg: str) -> None:
+        if self.test_mode:
+            self.statusBar().showMessage(f"{title}: {msg}")
+            return
+        QMessageBox.warning(self, title, msg)
+
+    def _critical(self, title: str, msg: str) -> None:
+        if self.test_mode:
+            self.statusBar().showMessage(f"{title}: {msg}")
+            return
+        QMessageBox.critical(self, title, msg)
+
+    def _info(self, title: str, msg: str) -> None:
+        if self.test_mode:
+            self.statusBar().showMessage(f"{title}: {msg}")
+            return
+        QMessageBox.information(self, title, msg)
