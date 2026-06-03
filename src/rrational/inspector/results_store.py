@@ -50,12 +50,29 @@ class GroupTestRow:
     n_per_group: dict[str, int]
 
 
+@dataclass(frozen=True)
+class SequenceTestRow:
+    """One repeated-measures sequence-comparison result."""
+
+    sequence_name: str
+    metric: str
+    sections: tuple[str, ...]
+    n_complete_subjects: int
+    test_name: str  # "Friedman" or "RM-ANOVA"
+    statistic: float
+    p_value: float
+    effect_size_name: str
+    effect_size: float
+    is_parametric: bool
+
+
 @dataclass
 class ResultsStore:
     """All HRV results accumulated this session."""
 
     metric_rows: list[MetricRow] = field(default_factory=list)
     group_test_rows: list[GroupTestRow] = field(default_factory=list)
+    sequence_test_rows: list[SequenceTestRow] = field(default_factory=list)
 
     def add_metric_row(self, row: MetricRow) -> None:
         self.metric_rows.append(row)
@@ -63,6 +80,10 @@ class ResultsStore:
     def add_group_test_row(self, row: GroupTestRow) -> None:
         self.group_test_rows.append(row)
 
+    def add_sequence_test_row(self, row: SequenceTestRow) -> None:
+        self.sequence_test_rows.append(row)
+
     def clear(self) -> None:
         self.metric_rows.clear()
         self.group_test_rows.clear()
+        self.sequence_test_rows.clear()

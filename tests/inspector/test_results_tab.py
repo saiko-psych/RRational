@@ -11,10 +11,12 @@ pytest.importorskip("pyqtgraph")
 
 @pytest.fixture(autouse=True)
 def isolated_settings(qapp, tmp_path):
-    from rrational.inspector import settings
+    from rrational.inspector import persistence, settings
 
     settings.enable_test_mode(tmp_path)
+    persistence.set_inspector_config_dir(tmp_path)
     yield
+    persistence.set_inspector_config_dir(None)
 
 
 def _make_data(section_names: list[str], beats_per_section: int = 250):
@@ -109,10 +111,10 @@ def test_results_store_add_and_clear():
 # ---------------------------------------------------------------------
 # Results tab shell
 # ---------------------------------------------------------------------
-def test_results_tab_has_two_subtabs(main_window):
+def test_results_tab_has_three_subtabs(main_window):
     results = main_window._results_tab
     titles = [results._subtabs.tabText(i) for i in range(results._subtabs.count())]
-    assert titles == ["HRV metrics", "Group tests"]
+    assert titles == ["HRV metrics", "Group tests", "Sequence tests"]
 
 
 def test_export_button_disabled_when_empty(main_window):

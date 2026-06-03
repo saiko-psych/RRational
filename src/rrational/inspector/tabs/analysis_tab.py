@@ -542,17 +542,343 @@ class _GroupComparisonPane(QWidget):
         self._main_window._results_tab.refresh_results()
 
 
-class _ComingSoonPane(QWidget):
-    """Generic placeholder used for Sequence Comparison (Phase 5)."""
+class _SequenceComparisonPane(QWidget):
+    """Repeated-measures analysis across an ordered Sequence of sections.
 
-    def __init__(self, label: str, body: str, parent=None) -> None:
+    Pick a saved Sequence (defined in Setup tab), pick a metric, pick
+    parametric/non-parametric — the pane computes the metric per section
+    per dataset, then runs Friedman (default) or RM-ANOVA, plus all-pairwise
+    post-hoc with Holm correction, plus a line chart of the per-dataset
+    trajectories.
+    """
+
+    def __init__(self, main_window, parent=None) -> None:
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignCenter)
-        msg = QLabel(f"<h3>{label}</h3><p style='color:#888'>{body}</p>")
-        msg.setAlignment(Qt.AlignCenter)
-        msg.setWordWrap(True)
-        layout.addWidget(msg)
+        self._main_window = main_window
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+
+        # ---- Inputs --------------------------------------------------
+        form_box = QGroupBox("Inputs")
+        form = QFormLayout(form_box)
+        self._sequence_combo = QComboBox()
+        self._sequence_combo.currentIndexChanged.connect(self._on_sequence_changed)
+        self._metric_combo = QComboBox()
+        for m in _DEFAULT_METRICS:
+            self._metric_combo.addItem(m)
+        from qtpy.QtWidgets import QCheckBox
+
+        self._prefer_parametric = QCheckBox(
+            "Prefer parametric (RM-ANOVA) when normality + n >= 10"
+        )
+        form.addRow("Sequence:", self._sequence_combo)
+        form.addRow("Metric:", self._metric_combo)
+        form.addRow("", self._prefer_parametric)
+        outer.addWidget(form_box)
+
+        # Sequence preview label — shows the chain of section names
+        self._sequence_preview = QLabel("<i>No sequence selected.</i>")
+        self._sequence_preview.setWordWrap(True)
+        self._sequence_preview.setStyleSheet("color: #666; padding: 4px;")
+        outer.addWidget(self._sequence_preview)
+
+        button_row = QHBoxLayout()
+        self._compute_btn = QPushButton("Run repeated-measures comparison")
+        self._compute_btn.clicked.connect(self._on_compute)
+        self._compute_btn.setEnabled(False)
+        button_row.addWidget(self._compute_btn)
+        button_row.addStretch()
+        outer.addLayout(button_row)
+
+        # ---- Result label (omnibus test summary) ---------------------
+        self._result_label = QLabel(
+            "<i>Define a sequence in the Setup tab, then pick it above + click Compute.</i>"
+        )
+        self._result_label.setWordWrap(True)
+        self._result_label.setStyleSheet("padding: 8px;")
+        outer.addWidget(self._result_label)
+
+        # ---- Per-section descriptives --------------------------------
+        outer.addWidget(QLabel("<b>Per-section descriptives</b>"))
+        self._section_stats_table = QTableWidget(0, 5, self)
+        self._section_stats_table.setHorizontalHeaderLabels(
+            ["Section", "n", "Mean", "SD", "Normality (p)"]
+        )
+        self._section_stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._section_stats_table.setAlternatingRowColors(True)
+        self._section_stats_table.verticalHeader().setVisible(False)
+        self._section_stats_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+        self._section_stats_table.setMaximumHeight(180)
+        outer.addWidget(self._section_stats_table)
+
+        # ---- Per-dataset line chart ----------------------------------
+        outer.addWidget(QLabel("<b>Per-dataset trajectories</b>"))
+        import pyqtgraph as pg
+
+        self._plot_widget = pg.PlotWidget(background="w")
+        self._plot_widget.setMinimumHeight(220)
+        self._plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self._plot_widget.getAxis("left").setPen("k")
+        self._plot_widget.getAxis("bottom").setPen("k")
+        outer.addWidget(self._plot_widget, 1)
+
+        # ---- Post-hoc table ------------------------------------------
+        outer.addWidget(QLabel("<b>Post-hoc pairwise comparisons (Holm-corrected)</b>"))
+        self._post_hoc_table = QTableWidget(0, 6, self)
+        self._post_hoc_table.setHorizontalHeaderLabels(
+            ["Section A", "Section B", "Test", "Statistic", "p (raw)", "p (Holm)"]
+        )
+        self._post_hoc_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._post_hoc_table.setAlternatingRowColors(True)
+        self._post_hoc_table.verticalHeader().setVisible(False)
+        self._post_hoc_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+        outer.addWidget(self._post_hoc_table)
+
+        # Initial population
+        self.refresh_sequences()
+
+    # ------------------------------------------------------------------
+    # Workspace + sequences sync
+    # ------------------------------------------------------------------
+    def refresh_sequences(self) -> None:
+        """Reload the dropdown from disk + setup-tab pane.
+
+        We prefer the live in-memory list from the SetupTab's
+        SequencesPane (so unsaved edits would show through too), but
+        fall back to loading from disk if the setup tab isn't built yet.
+        """
+        prev = self._sequence_combo.currentText()
+        setup_pane = getattr(self._main_window._setup_tab, "_sequences_pane", None)
+        if setup_pane is not None:
+            seqs = setup_pane.sequences
+        else:
+            from rrational.inspector.persistence import load_sequences
+
+            seqs = load_sequences()
+
+        self._sequence_combo.blockSignals(True)
+        self._sequence_combo.clear()
+        for s in seqs:
+            self._sequence_combo.addItem(s.name, s)
+        if prev:
+            idx = self._sequence_combo.findText(prev)
+            if idx >= 0:
+                self._sequence_combo.setCurrentIndex(idx)
+        self._sequence_combo.blockSignals(False)
+        self._on_sequence_changed(self._sequence_combo.currentIndex())
+
+    def refresh_workspace(self) -> None:
+        # The compute button depends on having datasets loaded.
+        self._refresh_compute_enabled()
+
+    def _on_sequence_changed(self, _idx: int) -> None:
+        seq = self._sequence_combo.currentData()
+        if seq is None:
+            self._sequence_preview.setText("<i>No sequence selected.</i>")
+        else:
+            self._sequence_preview.setText(
+                "<b>Sections:</b> " + " → ".join(seq.sections)
+            )
+        self._refresh_compute_enabled()
+
+    def _refresh_compute_enabled(self) -> None:
+        has_seq = self._sequence_combo.currentData() is not None
+        has_data = len(self._main_window._datasets) > 0
+        self._compute_btn.setEnabled(has_seq and has_data)
+
+    # ------------------------------------------------------------------
+    # Compute
+    # ------------------------------------------------------------------
+    def _on_compute(self) -> None:
+        from rrational.analysis.sequence_statistics import analyze_sequence
+        from rrational.inspector.results_store import SequenceTestRow
+
+        seq = self._sequence_combo.currentData()
+        metric = self._metric_combo.currentText()
+        if seq is None or not metric:
+            return
+
+        # Build {section: [per-subject metric values]} — subject order
+        # = dataset order so subject i is dataset i across every section.
+        values_per_section: dict[str, list[float]] = {s: [] for s in seq.sections}
+        for ds in self._main_window._datasets:
+            for s in seq.sections:
+                rr = _slice_section(ds.data, s)
+                if rr is None or len(rr) == 0:
+                    values_per_section[s].append(float("nan"))
+                    continue
+                metrics = _compute_metrics(rr)
+                v = metrics.get(metric)
+                values_per_section[s].append(
+                    float("nan")
+                    if v is None or (isinstance(v, float) and math.isnan(v))
+                    else float(v)
+                )
+
+        try:
+            result = analyze_sequence(
+                values_per_section,
+                sequence_name=seq.name,
+                metric=metric,
+                sections=list(seq.sections),
+                prefer_parametric=self._prefer_parametric.isChecked(),
+            )
+        except Exception as e:
+            self._result_label.setText(
+                f"<span style='color:#d62728'>Analysis failed: {e}</span>"
+            )
+            return
+
+        self._render_result(result, values_per_section)
+
+        # Push into central results store
+        self._main_window._results_store.add_sequence_test_row(
+            SequenceTestRow(
+                sequence_name=result.sequence_name,
+                metric=result.metric,
+                sections=tuple(result.sections),
+                n_complete_subjects=result.n_complete_subjects,
+                test_name=result.test_name,
+                statistic=float(result.statistic)
+                if not math.isnan(result.statistic)
+                else float("nan"),
+                p_value=float(result.p_value)
+                if not math.isnan(result.p_value)
+                else float("nan"),
+                effect_size_name=result.effect_size_name,
+                effect_size=float(result.effect_size)
+                if not math.isnan(result.effect_size)
+                else float("nan"),
+                is_parametric=bool(result.is_parametric),
+            )
+        )
+        self._main_window._results_tab.refresh_results()
+
+    def _render_result(
+        self, result, values_per_section: dict[str, list[float]]
+    ) -> None:
+        # ----- Omnibus result label -----
+        if math.isnan(result.p_value):
+            sig_color = "#888"
+            p_str = "—"
+        else:
+            sig_color = "#2ca02c" if result.p_value < 0.05 else "#555"
+            p_str = f"{result.p_value:.4f}"
+
+        if math.isnan(result.effect_size):
+            effect_str = ""
+        else:
+            effect_str = (
+                f" · {result.effect_size_name} = <b>{result.effect_size:.3f}</b>"
+            )
+
+        df_str = ""
+        if isinstance(result.df, tuple):
+            df_str = f"<small> (df={int(result.df[0])}, {int(result.df[1])})</small>"
+        elif result.df:
+            df_str = f"<small> (df={int(result.df)})</small>"
+
+        self._result_label.setText(
+            f"<b>{result.test_name}</b> on <b>{result.metric}</b> across "
+            f"<b>{result.sequence_name}</b> "
+            f"({result.n_complete_subjects} complete subjects"
+            f"{', ' + str(result.n_excluded_subjects) + ' excluded' if result.n_excluded_subjects else ''})"
+            f"<br>statistic = <b>{result.statistic:.3f}</b>{df_str}, "
+            f"<span style='color:{sig_color}'>p = <b>{p_str}</b> {result.significance}</span>"
+            f"{effect_str}<br>"
+            f"<small style='color:#777'>"
+            f"{'parametric' if result.is_parametric else 'non-parametric'} test"
+            f"{(' · ' + result.note) if result.note else ''}</small>"
+        )
+
+        # ----- Per-section descriptives table -----
+        self._section_stats_table.setRowCount(0)
+        for s in result.sections:
+            row = self._section_stats_table.rowCount()
+            self._section_stats_table.insertRow(row)
+            n = sum(
+                1
+                for v in values_per_section[s]
+                if not (v is None or (isinstance(v, float) and math.isnan(v)))
+            )
+            self._section_stats_table.setItem(row, 0, QTableWidgetItem(s))
+            self._section_stats_table.setItem(row, 1, QTableWidgetItem(str(n)))
+            self._section_stats_table.setItem(
+                row, 2, QTableWidgetItem(_format_metric(result.means.get(s)))
+            )
+            self._section_stats_table.setItem(
+                row, 3, QTableWidgetItem(_format_metric(result.sds.get(s)))
+            )
+            norm_p = result.normality_p.get(s)
+            self._section_stats_table.setItem(
+                row,
+                4,
+                QTableWidgetItem(_format_metric(norm_p) if norm_p else "—"),
+            )
+
+        # ----- Line chart -----
+        import pyqtgraph as pg
+
+        self._plot_widget.clear()
+        n_subjects = max((len(vals) for vals in values_per_section.values()), default=0)
+        # X positions = 1..len(sections); tick labels = section names
+        x_positions = list(range(1, len(result.sections) + 1))
+        ax = self._plot_widget.getAxis("bottom")
+        ax.setTicks([list(zip(x_positions, result.sections))])
+        # One curve per dataset (subject). Use a colormap to distinguish.
+        colormap = pg.colormap.get("CET-C7")  # smooth perceptual
+        for i in range(n_subjects):
+            ys = []
+            xs = []
+            for j, s in enumerate(result.sections):
+                vals = values_per_section[s]
+                if i < len(vals):
+                    v = vals[i]
+                    if not (v is None or (isinstance(v, float) and math.isnan(v))):
+                        ys.append(v)
+                        xs.append(x_positions[j])
+            if not ys:
+                continue
+            color = colormap.map(i / max(1, n_subjects - 1), mode="qcolor")
+            name = (
+                self._main_window._datasets[i].name
+                if i < len(self._main_window._datasets)
+                else f"S{i}"
+            )
+            self._plot_widget.plot(
+                xs,
+                ys,
+                pen=pg.mkPen(color, width=2),
+                symbol="o",
+                symbolBrush=color,
+                symbolSize=7,
+                name=name,
+            )
+        self._plot_widget.setLabel("left", f"{result.metric}")
+        self._plot_widget.setLabel("bottom", "Section (in sequence order)")
+
+        # ----- Post-hoc table -----
+        self._post_hoc_table.setRowCount(0)
+        for pair in result.post_hoc:
+            row = self._post_hoc_table.rowCount()
+            self._post_hoc_table.insertRow(row)
+            self._post_hoc_table.setItem(row, 0, QTableWidgetItem(pair.section_a))
+            self._post_hoc_table.setItem(row, 1, QTableWidgetItem(pair.section_b))
+            self._post_hoc_table.setItem(row, 2, QTableWidgetItem(pair.test_name))
+            self._post_hoc_table.setItem(
+                row, 3, QTableWidgetItem(_format_metric(pair.statistic))
+            )
+            self._post_hoc_table.setItem(
+                row, 4, QTableWidgetItem(_format_metric(pair.p_value_raw))
+            )
+            self._post_hoc_table.setItem(
+                row, 5, QTableWidgetItem(_format_metric(pair.p_value_corrected))
+            )
 
 
 class AnalysisTab(InspectorTab):
@@ -571,7 +897,7 @@ class AnalysisTab(InspectorTab):
         self._mode_combo.addItem("Single Participant", "single")
         self._mode_combo.addItem("Repeating Section", "repeating")
         self._mode_combo.addItem("Group comparison", "group")
-        self._mode_combo.addItem("Sequence Comparison (Phase 5)", "sequence_stub")
+        self._mode_combo.addItem("Sequence Comparison", "sequence")
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(self._mode_combo)
         mode_row.addStretch()
@@ -581,13 +907,7 @@ class AnalysisTab(InspectorTab):
         self._single_pane = _SingleParticipantPane(main_window, self)
         self._repeating_pane = _RepeatingSectionPane(main_window, self)
         self._group_pane = _GroupComparisonPane(main_window, self)
-        self._sequence_pane = _ComingSoonPane(
-            "Sequence Comparison",
-            "Compare ordered chains of sections (e.g. music_block_1 → rest → "
-            "music_block_2) across participants. Needs sequence definitions "
-            "in the Setup tab — coming in Phase 5.",
-            self,
-        )
+        self._sequence_pane = _SequenceComparisonPane(main_window, self)
         self._stack.addWidget(self._single_pane)
         self._stack.addWidget(self._repeating_pane)
         self._stack.addWidget(self._group_pane)
@@ -604,6 +924,7 @@ class AnalysisTab(InspectorTab):
         self._single_pane.refresh_workspace()
         self._repeating_pane.refresh_workspace()
         self._group_pane.refresh_workspace()
+        self._sequence_pane.refresh_workspace()
 
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
         # Single-Participant pane defaults to whatever's currently active;

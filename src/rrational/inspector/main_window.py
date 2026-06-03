@@ -703,6 +703,16 @@ class MainWindow(QMainWindow):
         for tab in self._tabs:
             tab.on_workspace_changed()
 
+    def _on_sequences_changed(self) -> None:
+        """Called by Setup tab after persisting a sequence edit.
+
+        The Analysis tab's sequence pane re-reads from disk so its
+        dropdown stays in sync without the user clicking refresh.
+        """
+        pane = getattr(self._analysis_tab, "_sequence_pane", None)
+        if pane is not None and hasattr(pane, "refresh_sequences"):
+            pane.refresh_sequences()
+
     def _notify_tabs_active_changed(self) -> None:
         data = self._data  # None when no active dataset
         for tab in self._tabs:

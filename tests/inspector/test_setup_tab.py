@@ -11,10 +11,12 @@ pytest.importorskip("pyqtgraph")
 
 @pytest.fixture(autouse=True)
 def isolated_settings(qapp, tmp_path):
-    from rrational.inspector import settings
+    from rrational.inspector import persistence, settings
 
     settings.enable_test_mode(tmp_path)
+    persistence.set_inspector_config_dir(tmp_path)
     yield
+    persistence.set_inspector_config_dir(None)
 
 
 def _make_data(n_sections=2, n_events=3):
@@ -130,3 +132,71 @@ def test_groups_pane_clears_on_close_all(main_window):
     main_window.set_active_dataset(0)
     main_window.close_all_datasets()
     assert main_window._setup_tab._groups_pane._table.rowCount() == 0
+
+
+# ---------------------------------------------------------------------
+# Sequences pane
+# ---------------------------------------------------------------------
+def test_sequences_pane_starts_empty(main_window):
+    pane = main_window._setup_tab._sequences_pane
+    assert pane._table.rowCount() == 0
+    assert pane.sequences == []
+
+
+def test_sequences_pane_loads_preexisting_yaml(qtbot, tmp_path, qapp):
+    """A sequence written to disk before MainWindow is built shows up on load."""
+    from rrational.inspector import persistence, settings
+    from rrational.inspector.main_window import MainWindow
+
+    settings.enable_test_mode(tmp_path)
+    persistence.set_inspector_config_dir(tmp_path)
+    persistence.save_sequences(
+        [persistence.Sequence(name="Pre-Post", sections=["a", "b"])]
+    )
+    try:
+        win = MainWindow()
+        win.test_mode = True
+        qtbot.addWidget(win)
+        pane = win._setup_tab._sequences_pane
+        assert pane._table.rowCount() == 1
+        assert pane._table.item(0, 0).text() == "Pre-Post"
+        assert pane._table.item(0, 1).text() == "2"
+    finally:
+        persistence.set_inspector_config_dir(None)
+
+
+def test_sequences_pane_add_persists_to_disk(main_window):
+    """Adding a sequence directly (bypassing modal dialog) writes to disk."""
+    from rrational.inspector.persistence import Sequence, load_sequences
+
+    pane = main_window._setup_tab._sequences_pane
+    pane._sequences.append(Sequence(name="X", sections=["s1", "s2"]))
+    pane._persist()
+    pane._refresh_table()
+
+    assert pane._table.rowCount() == 1
+    on_disk = load_sequences()
+    assert len(on_disk) == 1
+    assert on_disk[0].name == "X"
+
+
+def test_sequences_pane_action_buttons_disabled_without_selection(main_window):
+    pane = main_window._setup_tab._sequences_pane
+    assert pane._edit_btn.isEnabled() is False
+    assert pane._remove_btn.isEnabled() is False
+    assert pane._duplicate_btn.isEnabled() is False
+    # Add stays enabled regardless
+    assert pane._add_btn.isEnabled() is True
+
+
+def test_sequences_pane_available_sections_is_union_across_datasets(main_window):
+    from rrational.inspector.data_loader import Dataset
+
+    main_window.add_dataset(Dataset(name="A", data=_make_data(n_sections=2)))
+    main_window.add_dataset(Dataset(name="B", data=_make_data(n_sections=4)))
+    main_window.set_active_dataset(0)
+
+    pane = main_window._setup_tab._sequences_pane
+    available = pane._available_sections()
+    # n_sections=2 → sec0, sec1; n_sections=4 → sec0..sec3
+    assert set(available) == {"sec0", "sec1", "sec2", "sec3"}

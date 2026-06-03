@@ -11,10 +11,12 @@ pytest.importorskip("pyqtgraph")
 
 @pytest.fixture(autouse=True)
 def isolated_settings(qapp, tmp_path):
-    from rrational.inspector import settings
+    from rrational.inspector import persistence, settings
 
     settings.enable_test_mode(tmp_path)
+    persistence.set_inspector_config_dir(tmp_path)
     yield
+    persistence.set_inspector_config_dir(None)
 
 
 def _make_data(section_names: list[str], beats_per_section: int = 250):
@@ -329,4 +331,112 @@ def test_group_pane_clears_on_close_all(main_window):
 
     main_window.close_all_datasets()
     assert pane._assign_table.rowCount() == 0
+    assert pane._compute_btn.isEnabled() is False
+
+
+# ---------------------------------------------------------------------
+# Sequence Comparison (Phase 5)
+# ---------------------------------------------------------------------
+def test_sequence_pane_dropdown_starts_empty(main_window):
+    pane = main_window._analysis_tab._sequence_pane
+    assert pane._sequence_combo.count() == 0
+    assert pane._compute_btn.isEnabled() is False
+
+
+def test_sequence_pane_dropdown_populates_from_setup_tab(main_window):
+    """Adding a sequence via Setup tab + notify -> Analysis dropdown refreshes."""
+    from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.persistence import Sequence
+
+    main_window.add_dataset(Dataset(name="A", data=_make_data(["a", "b", "c"])))
+    main_window.set_active_dataset(0)
+
+    setup = main_window._setup_tab._sequences_pane
+    setup._sequences.append(Sequence(name="my_seq", sections=["a", "b", "c"]))
+    setup._persist()  # triggers _on_sequences_changed
+    setup._refresh_table()
+
+    pane = main_window._analysis_tab._sequence_pane
+    assert pane._sequence_combo.count() == 1
+    assert pane._sequence_combo.itemText(0) == "my_seq"
+
+
+def test_sequence_pane_compute_enabled_when_seq_and_data(main_window):
+    from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.persistence import Sequence
+
+    setup = main_window._setup_tab._sequences_pane
+    setup._sequences.append(Sequence(name="s", sections=["a", "b"]))
+    setup._persist()
+
+    pane = main_window._analysis_tab._sequence_pane
+    # No datasets loaded yet → still disabled
+    assert pane._compute_btn.isEnabled() is False
+
+    main_window.add_dataset(Dataset(name="A", data=_make_data(["a", "b"])))
+    main_window.set_active_dataset(0)
+    # Need to refresh — refresh_workspace fires on add_dataset
+    assert pane._compute_btn.isEnabled() is True
+
+
+def test_sequence_pane_compute_populates_tables(main_window):
+    """A full compute populates the section stats + post-hoc tables."""
+    from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.persistence import Sequence
+
+    # 5 datasets going through the same 3-section chain → Friedman with n=5
+    for i in range(5):
+        main_window.add_dataset(
+            Dataset(name=f"S{i}", data=_make_data(["pre", "stim", "post"]))
+        )
+    main_window.set_active_dataset(0)
+
+    setup = main_window._setup_tab._sequences_pane
+    setup._sequences.append(Sequence(name="protocol", sections=["pre", "stim", "post"]))
+    setup._persist()
+
+    pane = main_window._analysis_tab._sequence_pane
+    pane._sequence_combo.setCurrentIndex(pane._sequence_combo.findText("protocol"))
+    pane._metric_combo.setCurrentIndex(pane._metric_combo.findText("RMSSD"))
+    pane._on_compute()
+
+    # Section stats table: one row per section
+    assert pane._section_stats_table.rowCount() == 3
+    # Post-hoc: C(3,2) = 3 pairs
+    assert pane._post_hoc_table.rowCount() == 3
+    # Result label mentions the sequence name + metric
+    label = pane._result_label.text()
+    assert "protocol" in label
+    assert "RMSSD" in label
+
+
+def test_sequence_compute_appends_results_store_row(main_window):
+    from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.persistence import Sequence
+
+    for i in range(4):
+        main_window.add_dataset(Dataset(name=f"S{i}", data=_make_data(["a", "b", "c"])))
+    main_window.set_active_dataset(0)
+
+    setup = main_window._setup_tab._sequences_pane
+    setup._sequences.append(Sequence(name="proto", sections=["a", "b", "c"]))
+    setup._persist()
+
+    pane = main_window._analysis_tab._sequence_pane
+    pane._sequence_combo.setCurrentIndex(0)
+    pane._on_compute()
+
+    store = main_window._results_store
+    assert len(store.sequence_test_rows) == 1
+    row = store.sequence_test_rows[0]
+    assert row.sequence_name == "proto"
+    assert row.sections == ("a", "b", "c")
+    assert row.test_name == "Friedman"
+
+
+def test_sequence_pane_compute_refuses_when_no_sequence_selected(main_window):
+    """Empty dropdown → compute button stays disabled, no exception."""
+    pane = main_window._analysis_tab._sequence_pane
+    # No-op should not raise
+    pane._on_compute()
     assert pane._compute_btn.isEnabled() is False

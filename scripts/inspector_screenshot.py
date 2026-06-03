@@ -85,8 +85,27 @@ def main() -> int:
         "--analysis-mode",
         type=str,
         default=None,
-        choices=["single", "repeating", "group"],
+        choices=["single", "repeating", "group", "sequence"],
         help="Switch the Analysis-tab mode-combo + click Compute",
+    )
+    parser.add_argument(
+        "--sequence-name",
+        type=str,
+        default=None,
+        help=(
+            "When --analysis-mode=sequence: name of a Sequence saved in "
+            "~/.rrational/inspector/sequences.yml to compute against. If "
+            "omitted, the first available sequence is used."
+        ),
+    )
+    parser.add_argument(
+        "--define-sequence",
+        type=str,
+        default=None,
+        help=(
+            "Inline-create a Sequence before computing. Format: "
+            "'name:sec1,sec2,sec3'. Useful for screenshot scripts."
+        ),
     )
     parser.add_argument(
         "--group-assignments",
@@ -163,9 +182,25 @@ def main() -> int:
         win._tabs_widget.setCurrentWidget(tab)
         app.processEvents()
 
+    # Define a sequence inline (must come BEFORE analysis-mode handling
+    # so the dropdown sees it).
+    if args.define_sequence:
+        name, _, raw_secs = args.define_sequence.partition(":")
+        sections = [s.strip() for s in raw_secs.split(",") if s.strip()]
+        if name and sections:
+            from rrational.inspector.persistence import Sequence as _Seq
+
+            setup_pane = win._setup_tab._sequences_pane
+            setup_pane._sequences.append(_Seq(name=name.strip(), sections=sections))
+            setup_pane._persist()
+            setup_pane._refresh_table()
+            app.processEvents()
+
     if args.analysis_mode is not None:
         analysis = win._analysis_tab
-        mode_idx = {"single": 0, "repeating": 1, "group": 2}[args.analysis_mode]
+        mode_idx = {"single": 0, "repeating": 1, "group": 2, "sequence": 3}[
+            args.analysis_mode
+        ]
         analysis._mode_combo.setCurrentIndex(mode_idx)
         pane = analysis._stack.currentWidget()
 
@@ -184,6 +219,16 @@ def main() -> int:
                     table.setItem(i, 1, _Item(label))
                     table.blockSignals(False)
             pane._refresh_compute_enabled()
+
+        # Pick a sequence by name if requested
+        if args.analysis_mode == "sequence":
+            target_name = args.sequence_name
+            if target_name is None and pane._sequence_combo.count() > 0:
+                target_name = pane._sequence_combo.itemText(0)
+            if target_name is not None:
+                idx = pane._sequence_combo.findText(target_name)
+                if idx >= 0:
+                    pane._sequence_combo.setCurrentIndex(idx)
 
         if hasattr(pane, "_on_compute"):
             pane._on_compute()
