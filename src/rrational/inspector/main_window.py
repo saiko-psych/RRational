@@ -1,21 +1,18 @@
 """Top-level QMainWindow for the RR inspector.
 
-Phase 2 UX: ONE continuous timeline is rendered on file load — every
-section in the .rrational v2 file is concatenated into a single
-tachogram with NaN gaps for breaks, colored ``SectionRegion`` bands
-mark the section spans, and ``EventMarker`` lines stand at each
-section-boundary event.
+Phase 3a: multi-dataset workspace. The user can open several .rrational
+files in parallel; the sidebar becomes a ``QTreeWidget`` with one
+top-level node per file and the file's sections as children. Click a
+filename to switch the active dataset; click a section to zoom into it.
 
-The sidebar still lists sections (now sorted by start time), but
-clicking one no longer swaps the plot data — it zooms the viewport
-to that section's time range and highlights its band. This mirrors
-mne-qt-browser's "channels list + main plot" interaction model.
+File menu mirrors MNELAB conventions: Open, Open folder, Recent (with
+existence-check + auto-purge), Close current, Close all, Quit. Recent
+files persist via ``QSettings`` (Windows registry / macOS plist /
+Linux INI).
 
-Architectural choices borrowed from mne-qt-browser:
-- one shared state container (here: ``InspectorData`` from data_loader)
-- overlays as separate graphic items with strong Python refs
-- public navigation API on MainWindow so toolbar + key filter share it
-- test_mode flag so non-modal dialogs don't block pytest-qt runs
+Backward-compat with Phase 2 tests:
+- ``load_data(data, source_path)`` still closes all + loads one
+- ``_data`` and ``_loaded_path`` remain readable as the ACTIVE dataset
 """
 
 from __future__ import annotations
@@ -23,30 +20,36 @@ from __future__ import annotations
 from pathlib import Path
 
 from qtpy.QtCore import QEvent, QObject, Qt
-from qtpy.QtGui import QAction, QKeySequence
+from qtpy.QtGui import QAction, QFont, QKeySequence
 from qtpy.QtWidgets import (
     QApplication,
     QFileDialog,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QSplitter,
     QStatusBar,
     QToolBar,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from rrational.inspector.data_loader import InspectorData, load_inspector_data
+from rrational.inspector import settings
+from rrational.inspector.data_loader import Dataset, InspectorData
 from rrational.inspector.plot_widget import RRPlotWidget
+
+# UserRole payload tags so itemClicked can distinguish "dataset node"
+# from "section node" without sniffing the parent.
+_ROLE_DATASET_IDX = Qt.UserRole + 1
+_ROLE_SECTION_NAME = Qt.UserRole + 2
 
 
 class _GlobalKeyFilter(QObject):
     """Application-wide event filter that routes Home/End to the plot.
 
-    QListWidget (sidebar) consumes Home/End for its own list navigation,
+    QTreeWidget (sidebar) consumes Home/End for its own tree navigation,
     and QGraphicsView (PlotWidget's base class) consumes them for its
     scroll-area handling. Both swallow the event before any QShortcut
     — even one with ApplicationShortcut context — can fire. An
@@ -71,7 +74,7 @@ class _GlobalKeyFilter(QObject):
 
 
 class MainWindow(QMainWindow):
-    """Inspector main window: sidebar + toolbar + continuous timeline plot."""
+    """Inspector main window: dataset tree + toolbar + continuous timeline."""
 
     def __init__(self, initial_path: Path | None = None) -> None:
         super().__init__()
@@ -79,13 +82,17 @@ class MainWindow(QMainWindow):
         self.resize(1400, 700)
 
         # Flipped on by pytest fixtures so modal QMessageBox calls don't
-        # block headless test runs. Same convention as mne-qt-browser's
-        # ``test_mode`` flag.
+        # block headless test runs.
         self.test_mode = False
 
-        # Currently-loaded data (None until the user opens a file).
-        self._data: InspectorData | None = None
-        self._loaded_path: Path | None = None
+        # The workspace: every loaded file lives here. Active index
+        # points at the one currently rendered in the plot.
+        self._datasets: list[Dataset] = []
+        self._active_idx: int | None = None
+
+        # Recent-files actions get rebuilt every time the File menu
+        # opens, so we keep a handle on the submenu itself.
+        self._recent_menu = None
 
         self._build_central_widget()
         self._build_menu()
@@ -96,28 +103,47 @@ class MainWindow(QMainWindow):
         QApplication.instance().installEventFilter(self._key_filter)
 
         if initial_path is not None:
-            self._open_path(initial_path)
+            self.open_path(initial_path)
+
+    # ------------------------------------------------------------------
+    # Backward-compat properties: lots of tests still read ``_data`` /
+    # ``_loaded_path``. They map to the ACTIVE dataset now.
+    # ------------------------------------------------------------------
+    @property
+    def _data(self) -> InspectorData | None:
+        if self._active_idx is None:
+            return None
+        return self._datasets[self._active_idx].data
+
+    @property
+    def _loaded_path(self) -> Path | None:
+        if self._active_idx is None:
+            return None
+        return self._datasets[self._active_idx].path
 
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
     def _build_central_widget(self) -> None:
-        self._section_list = QListWidget()
-        self._section_list.itemClicked.connect(self._on_section_clicked)
-        self._section_list.setMaximumWidth(280)
+        self._dataset_tree = QTreeWidget()
+        self._dataset_tree.setHeaderHidden(True)
+        self._dataset_tree.setIndentation(14)
+        self._dataset_tree.itemClicked.connect(self._on_tree_item_clicked)
+        self._dataset_tree.setMaximumWidth(320)
 
         self._plot = RRPlotWidget()
         self._plot.setFocusPolicy(Qt.StrongFocus)
 
         self._empty_label = QLabel(
             "No .rrational file loaded.\n\n"
-            "Use File → Open .rrational… (Ctrl+O) to load a v2.0 export."
+            "Use File → Open .rrational… (Ctrl+O) to load a v2.0 export,\n"
+            "or File → Open folder… to load every .rrational in a directory."
         )
         self._empty_label.setAlignment(Qt.AlignCenter)
         self._empty_label.setStyleSheet("color: #666; font-size: 14px;")
 
         center = QSplitter(Qt.Horizontal)
-        center.addWidget(self._section_list)
+        center.addWidget(self._dataset_tree)
 
         right_pane = QWidget()
         right_layout = QVBoxLayout(right_pane)
@@ -135,25 +161,46 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("&File")
 
-        open_act = QAction("Open .rrational…", self)
+        open_act = QAction("&Open .rrational…", self)
         open_act.setShortcut(QKeySequence.Open)  # Ctrl+O / Cmd+O
+        open_act.setStatusTip("Open one or more .rrational v2.0 files")
         open_act.triggered.connect(self._on_open_clicked)
         file_menu.addAction(open_act)
 
+        open_folder_act = QAction("Open &folder…", self)
+        open_folder_act.setShortcut("Ctrl+Shift+O")
+        open_folder_act.setStatusTip(
+            "Load every .rrational file inside a chosen folder"
+        )
+        open_folder_act.triggered.connect(self._on_open_folder_clicked)
+        file_menu.addAction(open_folder_act)
+
+        self._recent_menu = file_menu.addMenu("Open &recent")
+        # Rebuild the recent list every time the user opens File menu
+        # (so deletions made outside the app are reflected).
+        file_menu.aboutToShow.connect(self._rebuild_recent_menu)
+        self._rebuild_recent_menu()
+
         file_menu.addSeparator()
 
-        quit_act = QAction("Quit", self)
+        close_act = QAction("&Close current dataset", self)
+        close_act.setShortcut("Ctrl+W")
+        close_act.triggered.connect(self.close_active_dataset)
+        file_menu.addAction(close_act)
+
+        close_all_act = QAction("Close &all datasets", self)
+        close_all_act.triggered.connect(self.close_all_datasets)
+        file_menu.addAction(close_all_act)
+
+        file_menu.addSeparator()
+
+        quit_act = QAction("&Quit", self)
         quit_act.setShortcut(QKeySequence.Quit)  # Ctrl+Q / Cmd+Q
         quit_act.triggered.connect(self.close)
         file_menu.addAction(quit_act)
 
     def _build_toolbar(self) -> None:
-        """Toolbar with discoverable navigation buttons.
-
-        Home/End/arrows work via keyboard, but surfacing them as
-        clickable buttons makes the feature discoverable for users
-        who don't read the docstring.
-        """
+        """Toolbar with discoverable navigation buttons."""
         tb = QToolBar("Navigation", self)
         tb.setMovable(False)
         self.addToolBar(tb)
@@ -208,7 +255,43 @@ class MainWindow(QMainWindow):
         tb.addAction(fit_all)
 
     # ------------------------------------------------------------------
-    # Public navigation API
+    # Recent files submenu (rebuilt on every File-menu open)
+    # ------------------------------------------------------------------
+    def _rebuild_recent_menu(self) -> None:
+        if self._recent_menu is None:
+            return
+        self._recent_menu.clear()
+        try:
+            recents = settings.get_recent_files()
+        except Exception:
+            recents = []
+
+        if not recents:
+            empty = QAction("(no recent files)", self)
+            empty.setEnabled(False)
+            self._recent_menu.addAction(empty)
+            return
+
+        for p in recents:
+            # Capture ``p`` by default-argument trick — Python's late
+            # binding of for-loop variables would otherwise make every
+            # action open the LAST file in the list.
+            act = QAction(p.name, self)
+            act.setStatusTip(str(p))
+            act.triggered.connect(lambda _checked=False, path=p: self.open_path(path))
+            self._recent_menu.addAction(act)
+
+        self._recent_menu.addSeparator()
+        clear_act = QAction("Clear recent files", self)
+        clear_act.triggered.connect(self._clear_recent)
+        self._recent_menu.addAction(clear_act)
+
+    def _clear_recent(self) -> None:
+        settings.clear_recent_files()
+        self._rebuild_recent_menu()
+
+    # ------------------------------------------------------------------
+    # Public navigation API (toolbar + key filter share this)
     # ------------------------------------------------------------------
     def jump_to_start(self) -> None:
         if self._plot._times is None:
@@ -225,7 +308,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Jumped to end of signal", 2000)
 
     def fit_all(self) -> None:
-        """Zoom the X-axis out to the full recording span."""
         if self._data is None:
             self.statusBar().showMessage("Fit all: no file loaded", 2000)
             return
@@ -239,92 +321,223 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(label, 1500)
 
     # ------------------------------------------------------------------
-    # File loading
+    # File dialogs
     # ------------------------------------------------------------------
     def _on_open_clicked(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        last_dir = settings.read_setting("last_dir") or str(Path.cwd())
+        paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Open .rrational",
-            str(Path.cwd()),
+            last_dir,
             "RRational v2.0 (*.rrational);;All files (*.*)",
         )
-        if path_str:
-            self._open_path(Path(path_str))
+        for path_str in paths:
+            self.open_path(Path(path_str))
 
-    def _open_path(self, path: Path) -> None:
+    def _on_open_folder_clicked(self) -> None:
+        last_dir = settings.read_setting("last_dir") or str(Path.cwd())
+        folder_str = QFileDialog.getExistingDirectory(
+            self, "Open folder containing .rrational files", last_dir
+        )
+        if not folder_str:
+            return
+        folder = Path(folder_str)
+        files = sorted(folder.glob("*.rrational"))
+        if not files:
+            self._info(
+                "No files found",
+                f"No .rrational files in {folder.name}.",
+            )
+            return
+        for p in files:
+            self.open_path(p)
+
+    # ------------------------------------------------------------------
+    # Public dataset API
+    # ------------------------------------------------------------------
+    def open_path(self, path: Path) -> int | None:
+        """Load a .rrational file and add it as a new dataset.
+
+        Returns the new dataset's index, or None on failure. Activates
+        the new dataset if it's the first one loaded; otherwise leaves
+        the active selection alone (the user explicitly switches).
+        """
         if not path.exists():
             self._warn("Not found", f"{path} does not exist.")
-            return
+            return None
         try:
-            data = load_inspector_data(path)
+            ds = Dataset.from_path(path)
         except Exception as e:
             self._critical("Could not load", str(e))
-            return
+            return None
 
-        if len(data.t) == 0:
+        if len(ds.data.t) == 0:
             self._info(
                 "No sections",
                 f"{path.name} contains no sections with NN data to display.",
             )
-            return
+            return None
 
-        self.load_data(data, source_path=path)
+        # Persist last-dir + bump in recent files (skip during tests so
+        # the user's preference history isn't polluted by CI runs).
+        if not self.test_mode:
+            settings.write_setting("last_dir", str(path.parent))
+            settings.add_recent_file(path)
+
+        idx = self.add_dataset(ds)
+        if self._active_idx is None:
+            self.set_active_dataset(idx)
+        return idx
+
+    def add_dataset(self, ds: Dataset) -> int:
+        """Append a dataset to the workspace. Returns its index."""
+        self._datasets.append(ds)
+        self._add_dataset_to_tree(len(self._datasets) - 1, ds)
+        return len(self._datasets) - 1
+
+    def set_active_dataset(self, idx: int) -> None:
+        """Switch which dataset is currently rendered in the plot."""
+        if not (0 <= idx < len(self._datasets)):
+            raise IndexError(f"invalid dataset index: {idx}")
+        self._active_idx = idx
+        ds = self._datasets[idx]
+        self._render_dataset(ds)
+        self._update_tree_active_marker()
+        self.setWindowTitle(f"RRational Inspector — {ds.name}")
+
+    def close_active_dataset(self) -> None:
+        """Remove the currently-active dataset from the workspace."""
+        if self._active_idx is None:
+            self.statusBar().showMessage("Close: no active dataset", 2000)
+            return
+        self.close_dataset(self._active_idx)
+
+    def close_dataset(self, idx: int) -> None:
+        if not (0 <= idx < len(self._datasets)):
+            return
+        del self._datasets[idx]
+
+        # Re-index the active pointer. Three cases:
+        # - closed the active one → activate the next-best, or none
+        # - closed one BEFORE the active → shift active down by 1
+        # - closed one AFTER the active → no shift
+        if self._active_idx is None:
+            pass
+        elif idx == self._active_idx:
+            self._active_idx = None
+        elif idx < self._active_idx:
+            self._active_idx -= 1
+
+        # Re-render the sidebar from scratch (simpler than fiddling with
+        # individual QTreeWidgetItems whose indices have shifted).
+        self._rebuild_tree()
+
+        if not self._datasets:
+            self._show_empty_state()
+        elif self._active_idx is None:
+            # Auto-activate first remaining dataset for usability.
+            self.set_active_dataset(0)
+
+    def close_all_datasets(self) -> None:
+        self._datasets.clear()
+        self._active_idx = None
+        self._rebuild_tree()
+        self._show_empty_state()
 
     # ------------------------------------------------------------------
-    # Public data API — used directly by tests so they can inject
-    # synthetic InspectorData without round-tripping through a real file.
+    # Phase-2 entry point retained for tests + scripts that don't care
+    # about multi-dataset.
     # ------------------------------------------------------------------
     def load_data(self, data: InspectorData, source_path: Path | None = None) -> None:
-        """Render an ``InspectorData`` instance in the plot."""
-        self._data = data
-        self._loaded_path = source_path
+        """Replace the workspace with ONE dataset built from ``data``."""
+        self.close_all_datasets()
+        name = source_path.name if source_path else "Untitled"
+        idx = self.add_dataset(Dataset(name=name, data=data, path=source_path))
+        self.set_active_dataset(idx)
 
-        # 1. Render the continuous timeline
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+    def _render_dataset(self, ds: Dataset) -> None:
         self._empty_label.setVisible(False)
         self._plot.setVisible(True)
-        self._plot.set_data(data)
-
-        # 2. Overlay section bands
-        for meta in data.sections:
+        self._plot.set_data(ds.data)
+        for meta in ds.data.sections:
             self._plot.add_section_region(meta)
-
-        # 3. Overlay event markers
-        for ev in data.events:
+        for ev in ds.data.events:
             self._plot.add_event_marker(ev)
-
-        # 4. Populate sidebar (sorted by start time, same order as overlays)
-        self._section_list.clear()
-        for meta in data.sections:
-            duration = meta.t_end - meta.t_start
-            label = f"{meta.name}  ({meta.beat_count} beats, {duration:.0f}s)"
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, meta.name)
-            self._section_list.addItem(item)
-
-        # 5. Status bar summary
-        msg = (
-            f"{source_path.name if source_path else 'Data'} — "
-            f"{len(data.sections)} section(s), "
-            f"{len(data.events)} event(s), "
-            f"{data.t_end - data.t_start:.0f}s total"
+        self.statusBar().showMessage(
+            f"{ds.name} — "
+            f"{len(ds.data.sections)} section(s), "
+            f"{len(ds.data.events)} event(s), "
+            f"{ds.data.t_end - ds.data.t_start:.0f}s total"
         )
-        self.statusBar().showMessage(msg)
-
         self._plot.setFocus()
 
-    def _on_section_clicked(self, item: QListWidgetItem) -> None:
-        """Zoom the plot to the clicked section and highlight its band."""
-        name = item.data(Qt.UserRole)
-        if self._data is None:
+    def _show_empty_state(self) -> None:
+        self._plot.clear_overlays()
+        self._plot._curve.clear()
+        self._plot._times = None
+        self._plot._values = None
+        self._plot.setVisible(False)
+        self._empty_label.setVisible(True)
+        self.setWindowTitle("RRational Inspector")
+        self.statusBar().clearMessage()
+
+    # ------------------------------------------------------------------
+    # Sidebar tree management
+    # ------------------------------------------------------------------
+    def _add_dataset_to_tree(self, idx: int, ds: Dataset) -> None:
+        top = QTreeWidgetItem(self._dataset_tree, [ds.name])
+        top.setData(0, _ROLE_DATASET_IDX, idx)
+        top.setToolTip(0, str(ds.path) if ds.path else "(synthetic)")
+        for meta in ds.data.sections:
+            label = f"{meta.name}  ({meta.beat_count} beats, {meta.t_end - meta.t_start:.0f}s)"
+            child = QTreeWidgetItem(top, [label])
+            child.setData(0, _ROLE_DATASET_IDX, idx)
+            child.setData(0, _ROLE_SECTION_NAME, meta.name)
+        top.setExpanded(True)
+        self._update_tree_active_marker()
+
+    def _rebuild_tree(self) -> None:
+        self._dataset_tree.clear()
+        for i, ds in enumerate(self._datasets):
+            self._add_dataset_to_tree(i, ds)
+
+    def _update_tree_active_marker(self) -> None:
+        """Bold the top-level item of the active dataset."""
+        for i in range(self._dataset_tree.topLevelItemCount()):
+            top = self._dataset_tree.topLevelItem(i)
+            font = top.font(0)
+            font.setBold(i == self._active_idx)
+            font.setWeight(QFont.Bold if i == self._active_idx else QFont.Normal)
+            top.setFont(0, font)
+
+    def _on_tree_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        idx = item.data(0, _ROLE_DATASET_IDX)
+        section_name = item.data(0, _ROLE_SECTION_NAME)
+
+        if idx is None:
+            return  # unexpected — every item should carry an index
+
+        # Activate the dataset first if the user clicked into a non-active one
+        if self._active_idx != idx:
+            self.set_active_dataset(idx)
+
+        if section_name is None:
+            # Top-level dataset click — already activated, nothing else.
             return
-        meta = next((s for s in self._data.sections if s.name == name), None)
+
+        # Section click — zoom + highlight inside the active dataset
+        ds = self._datasets[idx]
+        meta = next((s for s in ds.data.sections if s.name == section_name), None)
         if meta is None:
             return
         self._plot.zoom_to_range(meta.t_start, meta.t_end, padding_frac=0.02)
-        self._plot.highlight_section(name)
+        self._plot.highlight_section(section_name)
         self._plot.setFocus()
         self.statusBar().showMessage(
-            f"Section '{name}': {meta.beat_count} beats, "
+            f"Section '{section_name}': {meta.beat_count} beats, "
             f"{meta.t_end - meta.t_start:.1f}s",
             3000,
         )

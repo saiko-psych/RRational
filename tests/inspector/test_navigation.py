@@ -111,9 +111,9 @@ def test_home_key_fires_even_when_sidebar_has_focus(
 
     t0, t1 = synthetic_inspector_data.t_start, synthetic_inspector_data.t_end
     main_window._plot.getViewBox().setXRange(t1 - 30, t1, padding=0)
-    main_window._section_list.setFocus()  # focus sidebar, not plot
+    main_window._dataset_tree.setFocus()  # focus sidebar, not plot
 
-    qtbot.keyClick(main_window._section_list, Qt.Key_Home)
+    qtbot.keyClick(main_window._dataset_tree, Qt.Key_Home)
 
     xmin, _ = _x_range(main_window)
     assert xmin == pytest.approx(t0, abs=0.5), (

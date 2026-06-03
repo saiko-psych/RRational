@@ -75,19 +75,29 @@ def test_event_marker_labels_round_trip(main_window, synthetic_inspector_data):
 # ---------------------------------------------------------------------
 # Sidebar interaction
 # ---------------------------------------------------------------------
+def _find_section_tree_item(window, section_name):
+    """Walk the dataset-tree and return the QTreeWidgetItem for a section.
+
+    Tree shape: top-level = dataset(s), children = sections.
+    """
+    from rrational.inspector.main_window import _ROLE_SECTION_NAME
+
+    tree = window._dataset_tree
+    for i in range(tree.topLevelItemCount()):
+        top = tree.topLevelItem(i)
+        for j in range(top.childCount()):
+            child = top.child(j)
+            if child.data(0, _ROLE_SECTION_NAME) == section_name:
+                return child
+    raise LookupError(f"section {section_name!r} not in sidebar")
+
+
 def test_sidebar_click_zooms_to_section(main_window, synthetic_inspector_data):
     """Clicking a section in the sidebar must zoom to that section's span."""
-    from qtpy.QtCore import Qt
-
     target = synthetic_inspector_data.sections[1]  # "music_block", 900 s
 
-    # Find the sidebar item for that section
-    item = next(
-        main_window._section_list.item(i)
-        for i in range(main_window._section_list.count())
-        if main_window._section_list.item(i).data(Qt.UserRole) == target.name
-    )
-    main_window._on_section_clicked(item)
+    item = _find_section_tree_item(main_window, target.name)
+    main_window._on_tree_item_clicked(item, 0)
 
     xmin, xmax = main_window._plot.getViewBox().viewRange()[0]
     # padding_frac=0.02 means up to ±2% beyond the meta range
@@ -101,16 +111,11 @@ def test_sidebar_click_highlights_only_clicked_section(
     main_window, synthetic_inspector_data
 ):
     """``highlight_section`` must boost the alpha of exactly one band."""
-    from qtpy.QtCore import Qt
     from rrational.inspector.graphic_items import SECTION_ALPHA
 
     target = synthetic_inspector_data.sections[1]
-    item = next(
-        main_window._section_list.item(i)
-        for i in range(main_window._section_list.count())
-        if main_window._section_list.item(i).data(Qt.UserRole) == target.name
-    )
-    main_window._on_section_clicked(item)
+    item = _find_section_tree_item(main_window, target.name)
+    main_window._on_tree_item_clicked(item, 0)
 
     for name, region in main_window._plot._sections_by_label.items():
         alpha = region.brush.color().alpha()

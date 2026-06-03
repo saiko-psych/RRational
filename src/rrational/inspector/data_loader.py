@@ -74,6 +74,27 @@ class InspectorData:
         return float(self.t[finite][-1])
 
 
+@dataclass
+class Dataset:
+    """One loaded .rrational file: its parsed data + the path it came from.
+
+    MainWindow holds a ``list[Dataset]`` so the user can open multiple
+    files in parallel (mnelab-style). ``path`` is None for synthetic
+    datasets injected by tests; ``name`` is what shows up in the
+    sidebar tree.
+    """
+
+    name: str
+    data: InspectorData
+    path: Path | None = None
+
+    @classmethod
+    def from_path(cls, path: Path) -> "Dataset":
+        """Load a .rrational file and wrap it in a Dataset."""
+        data = load_inspector_data(path)
+        return cls(name=path.name, data=data, path=path)
+
+
 def load_inspector_data(filepath: Path) -> InspectorData:
     """Read a .rrational v2 file and return a flat ``InspectorData``.
 
