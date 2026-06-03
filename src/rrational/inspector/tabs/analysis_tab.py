@@ -270,8 +270,232 @@ class _RepeatingSectionPane(QWidget):
                 )
 
 
+class _GroupComparisonPane(QWidget):
+    """Per-dataset group assignment + hypothesis-test comparison.
+
+    The group label is currently set INLINE (free-text column in the
+    assignment table). The Setup tab's Groups sub-pane will eventually
+    own the persistence layer; for now we treat the in-memory label as
+    the source of truth.
+    """
+
+    DEFAULT_GROUP = ""  # empty string = unassigned
+
+    def __init__(self, main_window, parent=None) -> None:
+        super().__init__(parent)
+        self._main_window = main_window
+        # Per-dataset group label (keyed by dataset index — re-keyed on
+        # workspace change so close-then-reload doesn't carry stale labels).
+        self._group_by_idx: dict[int, str] = {}
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+
+        # ---- 1. Group assignment table -------------------------------
+        assign_box = QGroupBox("Group assignment (edit cells in column 2)")
+        assign_layout = QVBoxLayout(assign_box)
+        self._assign_table = QTableWidget(0, 2, self)
+        self._assign_table.setHorizontalHeaderLabels(["Dataset", "Group"])
+        self._assign_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._assign_table.verticalHeader().setVisible(False)
+        self._assign_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._assign_table.itemChanged.connect(self._on_assignment_changed)
+        assign_layout.addWidget(self._assign_table)
+        outer.addWidget(assign_box)
+
+        # ---- 2. Inputs + Compute -------------------------------------
+        form_box = QGroupBox("Comparison inputs")
+        form = QFormLayout(form_box)
+        self._section_combo = QComboBox()
+        self._metric_combo = QComboBox()
+        for m in _DEFAULT_METRICS:
+            self._metric_combo.addItem(m)
+        form.addRow("Section name:", self._section_combo)
+        form.addRow("Metric:", self._metric_combo)
+        outer.addWidget(form_box)
+
+        button_row = QHBoxLayout()
+        self._compute_btn = QPushButton("Compare across groups")
+        self._compute_btn.clicked.connect(self._on_compute)
+        self._compute_btn.setEnabled(False)
+        button_row.addWidget(self._compute_btn)
+        button_row.addStretch()
+        outer.addLayout(button_row)
+
+        # ---- 3. Result panel -----------------------------------------
+        self._result_label = QLabel(
+            "<i>Assign a group label to at least two datasets, then click "
+            "<b>Compare across groups</b>.</i>"
+        )
+        self._result_label.setWordWrap(True)
+        self._result_label.setStyleSheet("padding: 8px;")
+        outer.addWidget(self._result_label)
+
+        self._group_stats_table = QTableWidget(0, 5, self)
+        self._group_stats_table.setHorizontalHeaderLabels(
+            ["Group", "n", "Mean", "SD", "Normal (p)"]
+        )
+        self._group_stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._group_stats_table.setAlternatingRowColors(True)
+        self._group_stats_table.verticalHeader().setVisible(False)
+        self._group_stats_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+        outer.addWidget(self._group_stats_table)
+
+    # ------------------------------------------------------------------
+    # Workspace sync
+    # ------------------------------------------------------------------
+    def refresh_workspace(self) -> None:
+        # Rebuild section list (union across datasets)
+        prev_sec = self._section_combo.currentText()
+        section_names = sorted(
+            {sec.name for ds in self._main_window._datasets for sec in ds.data.sections}
+        )
+        self._section_combo.blockSignals(True)
+        self._section_combo.clear()
+        for name in section_names:
+            self._section_combo.addItem(name)
+        if prev_sec in section_names:
+            self._section_combo.setCurrentIndex(self._section_combo.findText(prev_sec))
+        self._section_combo.blockSignals(False)
+
+        # Re-key the group labels by current dataset index. We use the
+        # dataset NAME as the persistence key so closing+reopening a
+        # file keeps its assignment.
+        new_label_by_idx: dict[int, str] = {}
+        old_label_by_name = {
+            self._main_window._datasets[i].name: lbl
+            for i, lbl in self._group_by_idx.items()
+            if i < len(self._main_window._datasets)
+        }
+        for i, ds in enumerate(self._main_window._datasets):
+            new_label_by_idx[i] = old_label_by_name.get(ds.name, self.DEFAULT_GROUP)
+        self._group_by_idx = new_label_by_idx
+
+        # Repopulate the assignment table
+        self._assign_table.blockSignals(True)
+        self._assign_table.setRowCount(0)
+        for i, ds in enumerate(self._main_window._datasets):
+            row = self._assign_table.rowCount()
+            self._assign_table.insertRow(row)
+            name_item = QTableWidgetItem(ds.name)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            self._assign_table.setItem(row, 0, name_item)
+            self._assign_table.setItem(row, 1, QTableWidgetItem(self._group_by_idx[i]))
+        self._assign_table.blockSignals(False)
+        self._refresh_compute_enabled()
+
+    def _on_assignment_changed(self, item: QTableWidgetItem) -> None:
+        # Only react to edits in the "Group" column.
+        if item.column() != 1:
+            return
+        self._group_by_idx[item.row()] = item.text().strip()
+        self._refresh_compute_enabled()
+
+    def _refresh_compute_enabled(self) -> None:
+        """Compute is enabled iff ≥2 distinct non-empty group labels exist
+        AND the section combo has at least one entry."""
+        labels = {lbl for lbl in self._group_by_idx.values() if lbl}
+        self._compute_btn.setEnabled(
+            len(labels) >= 2 and self._section_combo.count() > 0
+        )
+
+    # ------------------------------------------------------------------
+    # Compute
+    # ------------------------------------------------------------------
+    def _on_compute(self) -> None:
+        from rrational.analysis.group_statistics import compare_groups
+
+        sec_name = self._section_combo.currentText()
+        metric = self._metric_combo.currentText()
+        if not sec_name or not metric:
+            return
+
+        # Build {group_label: [metric_value_per_dataset]}
+        values_per_group: dict[str, list[float]] = {}
+        for i, ds in enumerate(self._main_window._datasets):
+            label = self._group_by_idx.get(i, "")
+            if not label:
+                continue
+            rr = _slice_section(ds.data, sec_name)
+            if rr is None or len(rr) == 0:
+                continue
+            metrics = _compute_metrics(rr)
+            value = metrics.get(metric)
+            if value is None or (isinstance(value, float) and math.isnan(value)):
+                continue
+            values_per_group.setdefault(label, []).append(float(value))
+
+        # Need ≥2 groups WITH data
+        non_empty = {k: v for k, v in values_per_group.items() if v}
+        if len(non_empty) < 2:
+            self._result_label.setText(
+                "<span style='color:#d62728'><b>Need ≥2 groups with at least "
+                "1 valid value each.</b></span> Assign labels in the table above."
+            )
+            self._group_stats_table.setRowCount(0)
+            return
+
+        try:
+            result = compare_groups(
+                non_empty,
+                metric=metric,
+                section=sec_name,
+            )
+        except Exception as e:
+            self._result_label.setText(
+                f"<span style='color:#d62728'>Comparison failed: {e}</span>"
+            )
+            return
+
+        # Render
+        sig_color = "#2ca02c" if result.p_value < 0.05 else "#555"
+        effect_str = (
+            f" · {result.effect_size_name} = <b>{result.effect_size:.3f}</b>"
+            if result.effect_size is not None
+            else ""
+        )
+        self._result_label.setText(
+            f"<b>{result.test_name}</b> on <b>{metric}</b> in section "
+            f"<b>{sec_name}</b><br>"
+            f"statistic = <b>{result.statistic:.3f}</b>, "
+            f"<span style='color:{sig_color}'>"
+            f"p = <b>{result.p_value:.4f}</b> {result.significance}</span>"
+            f"{effect_str}<br>"
+            f"<small style='color:#777'>"
+            f"{'parametric' if result.is_parametric else 'non-parametric'} test"
+            f"{(' · ' + result.note) if result.note else ''}</small>"
+        )
+
+        self._group_stats_table.setRowCount(0)
+        for group_name in result.groups:
+            row = self._group_stats_table.rowCount()
+            self._group_stats_table.insertRow(row)
+            self._group_stats_table.setItem(row, 0, QTableWidgetItem(group_name))
+            self._group_stats_table.setItem(
+                row, 1, QTableWidgetItem(str(result.n_per_group[group_name]))
+            )
+            self._group_stats_table.setItem(
+                row,
+                2,
+                QTableWidgetItem(_format_metric(result.means[group_name])),
+            )
+            self._group_stats_table.setItem(
+                row,
+                3,
+                QTableWidgetItem(_format_metric(result.sds[group_name])),
+            )
+            norm_p = result.normality_p.get(group_name)
+            self._group_stats_table.setItem(
+                row,
+                4,
+                QTableWidgetItem(_format_metric(norm_p) if norm_p else "—"),
+            )
+
+
 class _ComingSoonPane(QWidget):
-    """Placeholder for Group + Sequence Comparison (Phase 4d)."""
+    """Generic placeholder used for Sequence Comparison (Phase 5)."""
 
     def __init__(self, label: str, body: str, parent=None) -> None:
         super().__init__(parent)
@@ -298,8 +522,8 @@ class AnalysisTab(InspectorTab):
         self._mode_combo = QComboBox()
         self._mode_combo.addItem("Single Participant", "single")
         self._mode_combo.addItem("Repeating Section", "repeating")
-        self._mode_combo.addItem("Group (Phase 4d)", "group_stub")
-        self._mode_combo.addItem("Sequence Comparison (Phase 4d)", "sequence_stub")
+        self._mode_combo.addItem("Group comparison", "group")
+        self._mode_combo.addItem("Sequence Comparison (Phase 5)", "sequence_stub")
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(self._mode_combo)
         mode_row.addStretch()
@@ -308,16 +532,12 @@ class AnalysisTab(InspectorTab):
         self._stack = QStackedWidget(self)
         self._single_pane = _SingleParticipantPane(main_window, self)
         self._repeating_pane = _RepeatingSectionPane(main_window, self)
-        self._group_pane = _ComingSoonPane(
-            "Group",
-            "Compare HRV metrics across condition groups with hypothesis tests. "
-            "Coming in Phase 4d.",
-            self,
-        )
+        self._group_pane = _GroupComparisonPane(main_window, self)
         self._sequence_pane = _ComingSoonPane(
             "Sequence Comparison",
             "Compare ordered chains of sections (e.g. music_block_1 → rest → "
-            "music_block_2) across participants. Coming in Phase 4d.",
+            "music_block_2) across participants. Needs sequence definitions "
+            "in the Setup tab — coming in Phase 5.",
             self,
         )
         self._stack.addWidget(self._single_pane)
@@ -335,6 +555,7 @@ class AnalysisTab(InspectorTab):
     def on_workspace_changed(self) -> None:
         self._single_pane.refresh_workspace()
         self._repeating_pane.refresh_workspace()
+        self._group_pane.refresh_workspace()
 
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
         # Single-Participant pane defaults to whatever's currently active;

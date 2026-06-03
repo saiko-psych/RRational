@@ -85,8 +85,17 @@ def main() -> int:
         "--analysis-mode",
         type=str,
         default=None,
-        choices=["single", "repeating"],
+        choices=["single", "repeating", "group"],
         help="Switch the Analysis-tab mode-combo + click Compute",
+    )
+    parser.add_argument(
+        "--group-assignments",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated group labels (one per loaded dataset, in load "
+            "order) for the Group analysis mode. Example: 'A,B,A,B'"
+        ),
     )
     args = parser.parse_args()
 
@@ -146,9 +155,26 @@ def main() -> int:
 
     if args.analysis_mode is not None:
         analysis = win._analysis_tab
-        mode_idx = {"single": 0, "repeating": 1}[args.analysis_mode]
+        mode_idx = {"single": 0, "repeating": 1, "group": 2}[args.analysis_mode]
         analysis._mode_combo.setCurrentIndex(mode_idx)
         pane = analysis._stack.currentWidget()
+
+        # Apply group assignments before computing if the user supplied any.
+        if args.analysis_mode == "group" and args.group_assignments:
+            labels = [s.strip() for s in args.group_assignments.split(",")]
+            for i, label in enumerate(labels):
+                if i >= len(win._datasets):
+                    break
+                pane._group_by_idx[i] = label
+                table = pane._assign_table
+                if i < table.rowCount():
+                    table.blockSignals(True)
+                    from qtpy.QtWidgets import QTableWidgetItem as _Item
+
+                    table.setItem(i, 1, _Item(label))
+                    table.blockSignals(False)
+            pane._refresh_compute_enabled()
+
         if hasattr(pane, "_on_compute"):
             pane._on_compute()
         app.processEvents()
