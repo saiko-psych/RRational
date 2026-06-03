@@ -34,6 +34,7 @@ from qtpy.QtWidgets import (
 
 from rrational.inspector import settings
 from rrational.inspector.data_loader import Dataset, InspectorData
+from rrational.inspector.results_store import ResultsStore
 from rrational.inspector.tabs import AnalysisTab, BrowseTab, ResultsTab, SetupTab
 
 # Re-exported for older tests that import them from here. New code
@@ -89,6 +90,10 @@ class MainWindow(QMainWindow):
         # points at the one currently rendered in the plot.
         self._datasets: list[Dataset] = []
         self._active_idx: int | None = None
+
+        # All HRV results accumulated this session. The Analysis tab
+        # appends; the Results tab reads.
+        self._results_store = ResultsStore()
 
         # Recent-files actions get rebuilt every time the File menu
         # opens, so we keep a handle on the submenu itself.

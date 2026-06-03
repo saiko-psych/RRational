@@ -148,6 +148,8 @@ class _SingleParticipantPane(QWidget):
         self._compute_btn.setEnabled(self._section_combo.count() > 0)
 
     def _on_compute(self) -> None:
+        from rrational.inspector.results_store import MetricRow
+
         ds_idx = self._dataset_combo.currentData()
         sec_name = self._section_combo.currentText()
         if ds_idx is None or not sec_name:
@@ -164,6 +166,17 @@ class _SingleParticipantPane(QWidget):
         )
         metrics = _compute_metrics(rr)
         self._populate_result_table(metrics, n_beats=len(rr), section=sec_name)
+        # Push to the central results store; Results tab picks it up.
+        self._main_window._results_store.add_metric_row(
+            MetricRow(
+                mode="single",
+                dataset=ds.name,
+                section=sec_name,
+                n_beats=int(len(rr)),
+                metrics=dict(metrics),
+            )
+        )
+        self._main_window._results_tab.refresh_results()
         self._main_window.statusBar().showMessage(
             f"HRV computed for {ds.name} · {sec_name} ({len(rr)} beats)", 4000
         )
@@ -240,20 +253,34 @@ class _RepeatingSectionPane(QWidget):
         self._compute_btn.setEnabled(bool(section_names))
 
     def _on_compute(self) -> None:
+        from rrational.inspector.results_store import MetricRow
+
         sec_name = self._section_combo.currentText()
         if not sec_name:
             return
         self._main_window.statusBar().showMessage(
             f"Computing HRV on '{sec_name}' across every dataset…"
         )
-        rows: list[tuple[str, dict]] = []
+        rows: list[tuple[str, dict, int]] = []
         for ds in self._main_window._datasets:
             rr = _slice_section(ds.data, sec_name)
             if rr is None or len(rr) == 0:
                 continue
             metrics = _compute_metrics(rr)
-            rows.append((ds.name, metrics))
-        self._populate_result_table(rows)
+            rows.append((ds.name, metrics, int(len(rr))))
+        self._populate_result_table([(n, m) for n, m, _ in rows])
+        # Push each per-dataset row into the central store.
+        for ds_name, metrics, n_beats in rows:
+            self._main_window._results_store.add_metric_row(
+                MetricRow(
+                    mode="repeating",
+                    dataset=ds_name,
+                    section=sec_name,
+                    n_beats=n_beats,
+                    metrics=dict(metrics),
+                )
+            )
+        self._main_window._results_tab.refresh_results()
         self._main_window.statusBar().showMessage(
             f"HRV computed for '{sec_name}' on {len(rows)} dataset(s)", 4000
         )
@@ -492,6 +519,27 @@ class _GroupComparisonPane(QWidget):
                 4,
                 QTableWidgetItem(_format_metric(norm_p) if norm_p else "—"),
             )
+
+        # Push into the central results store; Results tab picks it up.
+        from rrational.inspector.results_store import GroupTestRow
+
+        self._main_window._results_store.add_group_test_row(
+            GroupTestRow(
+                section=sec_name,
+                metric=metric,
+                test_name=result.test_name,
+                statistic=float(result.statistic),
+                p_value=float(result.p_value),
+                effect_size_name=result.effect_size_name,
+                effect_size=(
+                    None if result.effect_size is None else float(result.effect_size)
+                ),
+                is_parametric=bool(result.is_parametric),
+                groups=tuple(result.groups),
+                n_per_group=dict(result.n_per_group),
+            )
+        )
+        self._main_window._results_tab.refresh_results()
 
 
 class _ComingSoonPane(QWidget):

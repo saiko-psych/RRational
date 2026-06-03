@@ -97,6 +97,16 @@ def main() -> int:
             "order) for the Group analysis mode. Example: 'A,B,A,B'"
         ),
     )
+    parser.add_argument(
+        "--results-subtab",
+        type=str,
+        default=None,
+        choices=["metrics", "group"],
+        help=(
+            "After everything else, switch the Results tab to a specific "
+            "sub-pane. Useful for showing populated tables."
+        ),
+    )
     args = parser.parse_args()
 
     import pyqtgraph as pg
@@ -181,6 +191,11 @@ def main() -> int:
 
     if args.detect_artifacts and win._data is not None:
         win._browse_tab._preprocessing_panel._on_detect_clicked()
+        app.processEvents()
+
+    if args.results_subtab is not None:
+        sub_idx = {"metrics": 0, "group": 1}[args.results_subtab]
+        win._results_tab._subtabs.setCurrentIndex(sub_idx)
         app.processEvents()
 
     if args.show_section and win._data is not None:
