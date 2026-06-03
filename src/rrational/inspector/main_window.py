@@ -32,7 +32,13 @@ from qtpy.QtWidgets import (
     QToolBar,
 )
 
-from rrational.inspector import settings
+from rrational.gui.project import (
+    ProjectManager,
+    add_recent_project,
+    get_recent_projects,
+    remove_recent_project,
+)
+from rrational.inspector import persistence, settings
 from rrational.inspector.data_loader import Dataset, InspectorData
 from rrational.inspector.results_store import ResultsStore
 from rrational.inspector.tabs import AnalysisTab, BrowseTab, ResultsTab, SetupTab
@@ -94,6 +100,15 @@ class MainWindow(QMainWindow):
         # All HRV results accumulated this session. The Analysis tab
         # appends; the Results tab reads.
         self._results_store = ResultsStore()
+
+        # Currently-open project (or None for the global / "ad-hoc" workspace).
+        # When set, the persistence layer redirects sequence/group state into
+        # the project's config/ folder and Open/Save dialogs default to its
+        # data/ folders.
+        self._project: ProjectManager | None = None
+
+        # Recent-projects submenu handle, rebuilt on File-menu open.
+        self._recent_project_menu = None
 
         # Recent-files actions get rebuilt every time the File menu
         # opens, so we keep a handle on the submenu itself.
@@ -204,6 +219,33 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("&File")
 
+        # ----- Project block (mirrors MNE-LAB's project menu) -------------
+        new_proj_act = QAction("&New project…", self)
+        new_proj_act.setShortcut("Ctrl+Shift+N")
+        new_proj_act.setStatusTip(
+            "Create a new RRational project (folder + project.rrational manifest)"
+        )
+        new_proj_act.triggered.connect(self._on_new_project_clicked)
+        file_menu.addAction(new_proj_act)
+
+        open_proj_act = QAction("Open &project…", self)
+        open_proj_act.setShortcut("Ctrl+Shift+P")
+        open_proj_act.setStatusTip("Open an existing RRational project folder")
+        open_proj_act.triggered.connect(self._on_open_project_clicked)
+        file_menu.addAction(open_proj_act)
+
+        self._recent_project_menu = file_menu.addMenu("Open recent p&roject")
+
+        close_proj_act = QAction("Close project", self)
+        close_proj_act.setStatusTip(
+            "Close the current project (datasets stay loaded; persistence "
+            "reverts to the global ~/.rrational store)"
+        )
+        close_proj_act.triggered.connect(self.close_project)
+        file_menu.addAction(close_proj_act)
+
+        file_menu.addSeparator()
+
         open_act = QAction("&Open .rrational…", self)
         open_act.setShortcut(QKeySequence.Open)  # Ctrl+O / Cmd+O
         open_act.setStatusTip("Open one or more .rrational v2.0 files")
@@ -222,7 +264,9 @@ class MainWindow(QMainWindow):
         # Rebuild the recent list every time the user opens File menu
         # (so deletions made outside the app are reflected).
         file_menu.aboutToShow.connect(self._rebuild_recent_menu)
+        file_menu.aboutToShow.connect(self._rebuild_recent_project_menu)
         self._rebuild_recent_menu()
+        self._rebuild_recent_project_menu()
 
         file_menu.addSeparator()
 
@@ -514,6 +558,143 @@ class MainWindow(QMainWindow):
         self._rebuild_recent_menu()
 
     # ------------------------------------------------------------------
+    # Project lifecycle
+    # ------------------------------------------------------------------
+    def _on_new_project_clicked(self) -> None:
+        from rrational.inspector.project_dialogs import NewProjectDialog
+
+        if self.test_mode:
+            self.statusBar().showMessage("New project dialog (test_mode: suppressed)")
+            return
+        default_parent_str = settings.read_setting("last_dir") or str(Path.home())
+        dlg = NewProjectDialog(self, default_parent_dir=Path(default_parent_str))
+        if dlg.exec() != dlg.Accepted:
+            return
+        pm = dlg.project_manager()
+        if pm is None:
+            return
+        self.set_active_project(pm)
+        self.statusBar().showMessage(
+            f"Created project '{pm.metadata.name}' at {pm.project_path}", 5000
+        )
+
+    def _on_open_project_clicked(self) -> None:
+        if self.test_mode:
+            self.statusBar().showMessage("Open project dialog (test_mode: suppressed)")
+            return
+        default_dir = settings.read_setting("last_dir") or str(Path.home())
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Open project folder", default_dir
+        )
+        if not chosen:
+            return
+        self.open_project_path(Path(chosen))
+
+    def open_project_path(self, path: Path) -> bool:
+        """Open the project at ``path``. Returns True on success."""
+        valid, issues = ProjectManager.is_valid_project(path)
+        if not valid:
+            self._warn(
+                "Not a project",
+                f"{path} is not a valid RRational project:\n\n"
+                + "\n".join(f"• {i}" for i in issues),
+            )
+            return False
+        try:
+            pm = ProjectManager.open_project(path)
+        except (FileNotFoundError, ValueError) as e:
+            self._critical("Could not open project", str(e))
+            return False
+        self.set_active_project(pm)
+        return True
+
+    def set_active_project(self, pm: ProjectManager | None) -> None:
+        """Switch the active project. ``None`` closes the current one."""
+        self._project = pm
+        if pm is None:
+            persistence.set_active_project_config_dir(None)
+        else:
+            persistence.set_active_project_config_dir(pm.get_config_dir())
+            if not self.test_mode:
+                add_recent_project(pm.project_path, pm.metadata.name)
+                settings.write_setting("last_dir", str(pm.project_path))
+            # Auto-load existing .rrational files from the project's
+            # processed folder, so opening a project gives the user
+            # immediate access to their previously-saved exports.
+            processed = pm.get_processed_dir()
+            for fp in sorted(processed.glob("*.rrational")):
+                self.open_path(fp)
+        # Tell every persistence-aware tab to re-read.
+        sequences_pane = getattr(self._setup_tab, "_sequences_pane", None)
+        if sequences_pane is not None:
+            from rrational.inspector.persistence import load_sequences as _load
+
+            sequences_pane._sequences = _load()
+            sequences_pane._refresh_table()
+        analysis_seq_pane = getattr(self._analysis_tab, "_sequence_pane", None)
+        if analysis_seq_pane is not None and hasattr(
+            analysis_seq_pane, "refresh_sequences"
+        ):
+            analysis_seq_pane.refresh_sequences()
+        self._update_window_title()
+
+    def close_project(self) -> None:
+        """Close the current project (datasets stay loaded)."""
+        if self._project is None:
+            self.statusBar().showMessage("No project open", 2000)
+            return
+        name = self._project.metadata.name if self._project.metadata else "(unnamed)"
+        self.set_active_project(None)
+        self.statusBar().showMessage(f"Closed project '{name}'", 3000)
+
+    def _rebuild_recent_project_menu(self) -> None:
+        if self._recent_project_menu is None:
+            return
+        self._recent_project_menu.clear()
+        recents = get_recent_projects()
+        if not recents:
+            empty = QAction("(no recent projects)", self)
+            empty.setEnabled(False)
+            self._recent_project_menu.addAction(empty)
+            return
+        for entry in recents:
+            path = Path(entry["path"])
+            label = f"{entry.get('name', path.name)}  ({path})"
+            act = QAction(label, self)
+            act.triggered.connect(
+                lambda _checked=False, p=path: self._open_recent_project(p)
+            )
+            self._recent_project_menu.addAction(act)
+
+    def _open_recent_project(self, path: Path) -> None:
+        if not path.exists():
+            self._warn(
+                "Project not found",
+                f"{path} no longer exists. Removed from recent list.",
+            )
+            remove_recent_project(path)
+            self._rebuild_recent_project_menu()
+            return
+        self.open_project_path(path)
+
+    def _update_window_title(self) -> None:
+        """Title format: 'project_name — dataset_name' or 'dataset_name' alone."""
+        ds_part = None
+        if self._active_idx is not None:
+            ds_part = self._datasets[self._active_idx].name
+        proj_part = None
+        if self._project is not None and self._project.metadata is not None:
+            proj_part = self._project.metadata.name
+        if proj_part and ds_part:
+            self.setWindowTitle(f"RRational Inspector — [{proj_part}] {ds_part}")
+        elif proj_part:
+            self.setWindowTitle(f"RRational Inspector — [{proj_part}]")
+        elif ds_part:
+            self.setWindowTitle(f"RRational Inspector — {ds_part}")
+        else:
+            self.setWindowTitle("RRational Inspector")
+
+    # ------------------------------------------------------------------
     # Public navigation API (toolbar + key filter share this)
     # ------------------------------------------------------------------
     def jump_to_start(self) -> None:
@@ -546,8 +727,16 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # File dialogs
     # ------------------------------------------------------------------
+    def _open_dialog_default_dir(self) -> str:
+        """Open-file dialogs default to project/data/raw if a project is active."""
+        if self._project is not None:
+            raw_dir = self._project.get_data_dir()
+            if raw_dir.exists():
+                return str(raw_dir)
+        return settings.read_setting("last_dir") or str(Path.cwd())
+
     def _on_open_clicked(self) -> None:
-        last_dir = settings.read_setting("last_dir") or str(Path.cwd())
+        last_dir = self._open_dialog_default_dir()
         # Filter offers .rrational v2 exports AND every raw format the
         # io.generic_rr parser supports. "All RR files" first so the
         # default file-picker shows them all without the user having to
@@ -566,7 +755,7 @@ class MainWindow(QMainWindow):
             self.open_path(Path(path_str))
 
     def _on_open_folder_clicked(self) -> None:
-        last_dir = settings.read_setting("last_dir") or str(Path.cwd())
+        last_dir = self._open_dialog_default_dir()
         folder_str = QFileDialog.getExistingDirectory(
             self, "Open folder containing recordings", last_dir
         )
@@ -639,8 +828,7 @@ class MainWindow(QMainWindow):
         if not (0 <= idx < len(self._datasets)):
             raise IndexError(f"invalid dataset index: {idx}")
         self._active_idx = idx
-        ds = self._datasets[idx]
-        self.setWindowTitle(f"RRational Inspector — {ds.name}")
+        self._update_window_title()
         self._notify_tabs_active_changed()
 
     def close_active_dataset(self) -> None:
@@ -669,7 +857,7 @@ class MainWindow(QMainWindow):
         self._notify_tabs_workspace_changed()
 
         if not self._datasets:
-            self.setWindowTitle("RRational Inspector")
+            self._update_window_title()
             self.statusBar().clearMessage()
             self._notify_tabs_active_changed()  # data=None
         elif self._active_idx is None:
@@ -680,7 +868,7 @@ class MainWindow(QMainWindow):
     def close_all_datasets(self) -> None:
         self._datasets.clear()
         self._active_idx = None
-        self.setWindowTitle("RRational Inspector")
+        self._update_window_title()
         self.statusBar().clearMessage()
         self._notify_tabs_workspace_changed()
         self._notify_tabs_active_changed()

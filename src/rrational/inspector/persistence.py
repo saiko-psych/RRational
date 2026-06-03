@@ -3,22 +3,22 @@
 QSettings is the right tool for scalar preferences (window geometry,
 last-dir, recent-files); it falls over once you need nested structures
 like "a list of named sequences, each with an ordered list of section
-names." For those we use a YAML file under the user's home directory
-so the format is hand-editable and trivially diffable.
+names." For those we use a YAML file so the format is hand-editable
+and trivially diffable.
 
-Layout:
+Resolution order for the storage directory:
 
-    ~/.rrational/inspector/
-        sequences.yml          # this file
+1. ``set_inspector_config_dir(path)`` override (used by tests)
+2. ``set_active_project_config_dir(path)`` — points at the active
+   project's ``config/`` directory, so the inspector's sequences live
+   alongside the rest of the project state on disk
+3. Default fallback: ``~/.rrational/inspector/``
 
 A sequence is just::
 
     sequences:
       - name: "Pre-Music-Post"
         sections: [rest_pre, music_block_1, rest_post]
-
-The :func:`set_inspector_config_dir` hook lets tests redirect the
-storage location into a temp directory.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ import yaml
 
 _DEFAULT_CONFIG_DIR = Path.home() / ".rrational" / "inspector"
 _config_dir_override: Path | None = None
+_project_config_dir: Path | None = None
 
 
 @dataclass
@@ -50,13 +51,26 @@ class Sequence:
 
 
 def set_inspector_config_dir(path: Path | None) -> None:
-    """Redirect persistence reads/writes to ``path`` (None = default)."""
+    """Redirect persistence reads/writes to ``path`` (None = default).
+
+    Test override — wins over the project scope.
+    """
     global _config_dir_override
     _config_dir_override = path
 
 
+def set_active_project_config_dir(path: Path | None) -> None:
+    """Point the persistence layer at a project's ``config/`` directory.
+
+    Called by MainWindow when the user opens / closes a project.
+    ``None`` reverts to the global fallback.
+    """
+    global _project_config_dir
+    _project_config_dir = path
+
+
 def _config_dir() -> Path:
-    base = _config_dir_override or _DEFAULT_CONFIG_DIR
+    base = _config_dir_override or _project_config_dir or _DEFAULT_CONFIG_DIR
     base.mkdir(parents=True, exist_ok=True)
     return base
 

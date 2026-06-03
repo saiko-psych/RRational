@@ -126,6 +126,24 @@ def main() -> int:
             "sub-pane. Useful for showing populated tables."
         ),
     )
+    parser.add_argument(
+        "--project",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a project folder to open (must contain project.rrational). "
+            "Activates project scope before any --file load."
+        ),
+    )
+    parser.add_argument(
+        "--create-project",
+        type=str,
+        default=None,
+        help=(
+            "Inline-create a project before opening. Format: "
+            "'parent_dir:project_name'. Useful for screenshot scripts."
+        ),
+    )
     args = parser.parse_args()
 
     import pyqtgraph as pg
@@ -151,6 +169,26 @@ def main() -> int:
     win.setAttribute(_Qt.WA_DontShowOnScreen, True)
     win.show()
     app.processEvents()
+
+    # Open / create the project FIRST so the project's data/raw/ folder
+    # is the default for any subsequent file loads, and the persistence
+    # scope is right.
+    if args.create_project is not None:
+        from rrational.gui.project import ProjectManager as _PM
+
+        parent_str, _, proj_name = args.create_project.partition(":")
+        parent = Path(parent_str.strip())
+        name = proj_name.strip() or "InspectorDemoProject"
+        full = parent / name
+        if full.exists():
+            pm = _PM.open_project(full)
+        else:
+            pm = _PM.create_project(full, name=name, description="screenshot demo")
+        win.set_active_project(pm)
+        app.processEvents()
+    elif args.project is not None:
+        win.open_project_path(args.project)
+        app.processEvents()
 
     for fp in args.file:
         if not fp.exists():
