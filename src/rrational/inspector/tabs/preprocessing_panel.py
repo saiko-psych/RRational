@@ -11,18 +11,24 @@ Mirrors the Streamlit Participants tab's preprocessing flow:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QCheckBox,
+    QFileDialog,
     QFrame,
+    QInputDialog,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
+
+from rrational.inspector import settings
 
 if TYPE_CHECKING:
     from rrational.inspector.data_loader import InspectorData
@@ -127,18 +133,22 @@ class PreprocessingPanel(QWidget):
                 "<i>No dataset loaded.</i> Use File → Open to load a recording."
             )
             self._detect_btn.setEnabled(False)
+            self._export_btn.setEnabled(False)
         else:
             self._summary.setText(
                 f"Loaded: <b>{len(data.t)}</b> beats.\n\n"
                 "Click <i>Detect artifacts</i> to run the Kubios algorithm."
             )
             self._detect_btn.setEnabled(True)
+            # Export is allowed even without artifact detection — the
+            # raw RR + sections still make a valid (if lower-quality)
+            # .rrational v2 file.
+            self._export_btn.setEnabled(True)
         self._toggle_show_artifacts.setEnabled(False)
         self._toggle_use_corrected.setEnabled(False)
         self._toggle_use_corrected.blockSignals(True)
         self._toggle_use_corrected.setChecked(False)
         self._toggle_use_corrected.blockSignals(False)
-        self._export_btn.setEnabled(False)
 
     # ------------------------------------------------------------------
     # Actions
@@ -201,10 +211,70 @@ class PreprocessingPanel(QWidget):
             plot._curve.setData(data.t, data.v)
 
     def _on_export_clicked(self) -> None:
-        """Stub — full export wiring lands in Phase 4-Prep step 2."""
-        self._main_window._info(
-            "Save as .rrational",
-            "Section validation + .rrational v2 export are wired up in "
-            "the next Phase 4-Prep sub-step. The artifact-detection "
-            "result is already kept in memory.",
+        """Export the active dataset as a .rrational v2 file.
+
+        Asks for a participant ID (defaults to the dataset name minus
+        any extension), then pops a Save-As dialog. The export carries
+        the last artifact-detection result if one has been run; otherwise
+        raw RR is written with quality = "unknown".
+        """
+        from rrational.inspector.export import export_inspector_to_rrational
+
+        data = self._main_window._data
+        if data is None:
+            return
+
+        active_ds = self._main_window._datasets[self._main_window._active_idx]
+        default_pid = Path(active_ds.name).stem
+        if self._main_window.test_mode:
+            participant_id = default_pid
+            ok = True
+        else:
+            participant_id, ok = QInputDialog.getText(
+                self,
+                "Participant ID",
+                "Enter participant ID for this export:",
+                text=default_pid,
+            )
+        if not ok or not participant_id.strip():
+            return
+        participant_id = participant_id.strip()
+
+        last_dir = settings.read_setting("last_dir") or str(Path.cwd())
+        suggested = str(Path(last_dir) / f"{participant_id}.rrational")
+        if self._main_window.test_mode:
+            out_path_str = suggested
+        else:
+            out_path_str, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save as .rrational v2",
+                suggested,
+                "RRational v2 files (*.rrational)",
+            )
+        if not out_path_str:
+            return
+        out_path = Path(out_path_str)
+
+        try:
+            export = export_inspector_to_rrational(
+                data,
+                out_path,
+                participant_id=participant_id,
+                preprocessing=self._last_result,
+                source_path=active_ds.path,
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Export failed", f"Could not save .rrational file:\n\n{e}"
+            )
+            return
+
+        n_sections = len(export.sections)
+        n_corrected = sum(
+            s.nn_correction.intervals_corrected for s in export.sections.values()
+        )
+        self._main_window.statusBar().showMessage(
+            f"Exported {n_sections} section(s), "
+            f"{n_corrected} corrected interval(s) → {out_path.name}",
+            5000,
         )

@@ -195,3 +195,38 @@ def test_panel_resets_when_dataset_switched(main_window):
     assert panel._detect_btn.isEnabled() is False
     assert panel._toggle_show_artifacts.isEnabled() is False
     assert panel._export_btn.isEnabled() is False
+
+
+def test_export_button_enabled_immediately_after_load(main_window):
+    """Phase 6: Save-as button is usable before Detect runs (raw export)."""
+    p = _exists_or_skip("data/demo/empatica/IBI_stress_predict_S10.csv")
+    main_window.open_path(p)
+    panel = main_window._browse_tab._preprocessing_panel
+    # Export should be available straight away — corrected data is optional
+    assert panel._export_btn.isEnabled() is True
+
+
+def test_export_clicked_in_test_mode_writes_real_file(
+    main_window, tmp_path, monkeypatch
+):
+    """In test_mode, _on_export_clicked skips dialogs and writes a real file."""
+    from rrational.gui.rrational_export import load_rrational_v2
+    from rrational.inspector import settings
+
+    p = _exists_or_skip("data/demo/empatica/IBI_stress_predict_S10.csv")
+    main_window.open_path(p)
+
+    # Redirect last_dir to the temp path so the export lands inside tmp_path
+    settings.write_setting("last_dir", str(tmp_path))
+
+    panel = main_window._browse_tab._preprocessing_panel
+    panel._on_export_clicked()
+
+    # File should be in tmp_path with the dataset's stem as participant_id
+    written = list(tmp_path.glob("*.rrational"))
+    assert len(written) == 1
+    loaded = load_rrational_v2(written[0])
+    assert loaded.metadata.source_app == "RRational Inspector"
+    # The CSV has at least one section (empatica generic_rr parser
+    # creates a single-section dataset)
+    assert len(loaded.sections) >= 1
