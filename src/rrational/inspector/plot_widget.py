@@ -98,7 +98,12 @@ class RRPlotWidget(pg.PlotWidget):
         date_axis = pg.DateAxisItem(orientation="bottom")
         self.setAxisItems({"bottom": date_axis})
 
+        # Y-axis: RR in ms. Disable PyQtGraph's autoSIPrefix — RR values
+        # cluster around 800 ms, which the SI auto-formatter would
+        # otherwise relabel as "0.8 kms" (kiloseconds). That unit just
+        # doesn't exist in HRV literature; we keep it plain ms.
         self.setLabel("left", "RR interval", units="ms")
+        self.getAxis("left").enableAutoSIPrefix(False)
         self.setLabel("bottom", "Time")
         self.showGrid(x=True, y=True, alpha=0.25)
 
