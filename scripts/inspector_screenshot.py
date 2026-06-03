@@ -81,6 +81,13 @@ def main() -> int:
         help="Click 'Detect artifacts' in the Preprocessing panel before "
         "the screenshot — useful for showing the full detected state",
     )
+    parser.add_argument(
+        "--analysis-mode",
+        type=str,
+        default=None,
+        choices=["single", "repeating"],
+        help="Switch the Analysis-tab mode-combo + click Compute",
+    )
     args = parser.parse_args()
 
     import pyqtgraph as pg
@@ -135,6 +142,15 @@ def main() -> int:
         }[args.tab]
         tab = getattr(win, tab_attr)
         win._tabs_widget.setCurrentWidget(tab)
+        app.processEvents()
+
+    if args.analysis_mode is not None:
+        analysis = win._analysis_tab
+        mode_idx = {"single": 0, "repeating": 1}[args.analysis_mode]
+        analysis._mode_combo.setCurrentIndex(mode_idx)
+        pane = analysis._stack.currentWidget()
+        if hasattr(pane, "_on_compute"):
+            pane._on_compute()
         app.processEvents()
 
     if args.detect_artifacts and win._data is not None:
