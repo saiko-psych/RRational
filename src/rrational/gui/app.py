@@ -648,6 +648,7 @@ def cached_artifact_detection(
             from rrational.gui.segmentation import (
                 generate_segments,
                 assess_segment_quality,
+                should_exclude_segment,
             )
 
             nk = get_neurokit()
@@ -726,7 +727,7 @@ def cached_artifact_detection(
                     else 0.0
                 )
                 seg.quality_grade = assess_segment_quality(seg)
-                seg.included = seg.quality_grade != "exclude"
+                seg.included = not should_exclude_segment(seg)
 
                 # Backward-compatible segment stats
                 segment_stats.append(
@@ -5618,7 +5619,10 @@ def render_rr_plot_fragment(participant_id: str):
             segment_stats = artifact_result.get("segment_stats", [])
             detection_segments = artifact_result.get("segments", [])
             if segment_stats:
-                from rrational.gui.segmentation import format_ms_as_time
+                from rrational.gui.segmentation import (
+                    format_ms_as_time,
+                    should_exclude_segment,
+                )
 
                 with st.expander(
                     f"Segment Assessment ({len(segment_stats)} segments)", expanded=True
@@ -5658,10 +5662,10 @@ def render_rr_plot_fragment(participant_id: str):
 
                     # Color-coded display
                     quality_colors = {
-                        "good": "#d4edda",  # green
-                        "fair": "#fff3cd",  # yellow
-                        "poor": "#f8d7da",  # light red
-                        "exclude": "#ffcccc",  # red
+                        "excellent": "#d4edda",  # green
+                        "good": "#e2f0cb",  # light green
+                        "moderate": "#fff3cd",  # yellow
+                        "poor": "#f8d7da",  # red
                     }
 
                     def highlight_quality(row):
@@ -5711,7 +5715,7 @@ def render_rr_plot_fragment(participant_id: str):
                                 help="Exclude segments with >10% artifacts or <50 beats",
                             ):
                                 st.session_state[seg_inclusion_key] = {
-                                    seg.idx: seg.quality_grade != "exclude"
+                                    seg.idx: not should_exclude_segment(seg)
                                     for seg in detection_segments
                                 }
                                 st.rerun()

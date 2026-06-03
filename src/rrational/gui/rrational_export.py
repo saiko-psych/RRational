@@ -625,18 +625,15 @@ def validate_rrational(data: RRationalExport) -> tuple[bool, list[str]]:
 
 
 def get_quality_grade(artifact_rate: float) -> str:
-    """Determine quality grade based on artifact rate.
+    """Determine quality grade based on artifact rate (Quigley et al. 2024).
 
-    Based on Quigley et al. (2024) guidelines.
+    Delegates to the canonical grading in ``segmentation`` so the artifact-
+    detection panel, the analysis tab and the .rrational export all use one
+    scheme ("excellent" / "good" / "moderate" / "poor").
     """
-    if artifact_rate <= 0.02:  # <= 2%
-        return "excellent"
-    elif artifact_rate <= 0.05:  # <= 5%
-        return "good"
-    elif artifact_rate <= 0.10:  # <= 10%
-        return "moderate"
-    else:
-        return "poor"
+    from rrational.gui.segmentation import quality_grade_from_rate
+
+    return quality_grade_from_rate(artifact_rate)
 
 
 def get_quigley_recommendation(artifact_rate: float, beat_count: int) -> str:

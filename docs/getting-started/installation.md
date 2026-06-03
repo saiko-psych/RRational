@@ -81,7 +81,7 @@ uv sync
 
 - Close other browser tabs
 - Reduce plot resolution in Settings
-- Use "Load Preview" first for large datasets
+- Use "Analyze Folder" to load data; previews load on demand per participant
 
 ### Port already in use
 

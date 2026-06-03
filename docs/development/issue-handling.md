@@ -7,7 +7,7 @@ Guidelines for handling user-reported issues in RRational.
 ### 1. Reproduce First
 Before making any code changes:
 - **Always try to reproduce the issue** in the current codebase
-- Use the Chrome extension for visual testing
+- Use the Playwright MCP plugin for visual testing (saves screenshots to disk)
 - Document the exact steps to reproduce
 - If the issue cannot be reproduced, it may already be fixed or needs more information
 
@@ -23,7 +23,7 @@ Before making any code changes:
 
 ### 4. Test Thoroughly
 - Run `uv run pytest` to ensure no regressions
-- Visually test the fix using Chrome extension
+- Visually test the fix using the Playwright MCP plugin
 - Test edge cases (empty inputs, invalid data, etc.)
 - Verify the fix doesn't break related functionality
 

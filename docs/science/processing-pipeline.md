@@ -33,7 +33,7 @@ flowchart LR
 
 ## Stage 1: Data Import
 
-RRational accepts 8 input formats including HRV Logger, VNS Analyse, Polar, Empatica, Elite HRV, Kubios, and plain text RR files. See [Data Formats](../user-guide/data-formats.md) for details.
+RRational accepts 8 input formats: HRV Logger, VNS Analyse, Polar Sensor Logger, Polar Flow, Empatica E4, Elite HRV, Kubios HRV, and plain-text RR files. See [Data Formats](../user-guide/data-formats.md) for details.
 
 On import, RRational:
 
@@ -51,7 +51,7 @@ Basic physiological filtering removes impossible values:
 |-----------|---------|---------|
 | Minimum RR | 200 ms | Removes impossibly fast beats (> 300 BPM) |
 | Maximum RR | 2000 ms | Removes impossibly slow beats (< 30 BPM) |
-| Sudden change | 100% | Flags beats that change > 100% from predecessor |
+| Sudden change | disabled (100%) | A 100% threshold is a no-op; large beat-to-beat changes are handled by the NeuroKit2 artifact correction instead |
 
 !!! note
     For VNS Analyse data, no cleaning is applied during import. Artifact detection is handled separately at analysis time, since VNS timestamps are cumulative and removing beats would distort the time axis.
@@ -80,7 +80,7 @@ RRational uses **time-based segmentation** (Quigley 2024): the recording is divi
 1. Compute successive RR differences (dRR) and deviation from local median (mRR)
 2. Apply time-varying thresholds based on dRR and mRR distributions
 3. Classify each beat: normal, ectopic, long, short, missed, or extra
-4. Assign quality grade per segment (A/B/C/D based on artifact rate)
+4. Assign quality grade per segment (Excellent/Good/Moderate/Poor based on artifact rate)
 
 **Detection scope options**:
 
@@ -92,7 +92,7 @@ RRational uses **time-based segmentation** (Quigley 2024): the recording is divi
 
 ## Stage 5: Artifact Correction
 
-For segments with 2–10% artifacts, RRational applies **cubic interpolation** to replace detected artifacts with estimated values:
+For segments with 2–10% artifacts, RRational replaces detected artifacts with values interpolated from the surrounding beats:
 
 - Short artifacts (ectopic): replaced by mean of neighbors
 - Long artifacts (missed beats): interpolated from surrounding beats
@@ -124,9 +124,9 @@ See [Recommended Workflow](recommended-workflow.md) for the full rationale behin
 | Domain | Metrics |
 |--------|---------|
 | Time (basic) | RMSSD, SDNN, MeanNN, MeanHR, pNN50 |
-| Time (extended) | SDSD, CVNN, CVSD, MedianNN, MadNN, MCVNN, IQRNN, TINN, HTI |
+| Time (extended) | pNN20, SDSD, CVNN, CVSD, MedianNN, MadNN, MCVNN, IQRNN, TINN, HTI |
 | Frequency | VLF, LF, HF, LF/HF, LFn, HFn, Total Power |
-| Nonlinear | SD1, SD2, SD1/SD2, ApEn, SampEn |
+| Nonlinear | SD1, SD2, SD1/SD2, ApEn, SampEn, DFA α1, DFA α2 |
 
 ### Frequency-Domain Pipeline (`freq_method`)
 
@@ -135,13 +135,13 @@ the Analysis tab under "Frequency-domain pipeline":
 
 | Pipeline | Detrending | Interpolation | Welch window | PSD output | Bands |
 |----------|-----------|---------------|--------------|------------|-------|
-| **`neurokit`** (default) | Mean subtraction | 100 Hz | NK2 default (~50 s @ 4 Hz) | Normalized | NK2 default (incl. ULF/VHF) |
+| **`neurokit`** (default) | Mean subtraction | NeuroKit2 default | NeuroKit2 default | Normalized | NK2 default (incl. ULF/VHF) |
 | **`kubios`** | Smoothness Priors λ=500 | 4 Hz (Cubic Spline) | 180 s Hann, 50% overlap | Absolute ms² | VLF 0–0.04 / LF 0.04–0.15 / HF 0.15–0.40 Hz |
 
 **When to use Kubios mode**: Direct cross-validation against Kubios HRV Scientific,
 publishing in journals that reference Kubios values, or when reviewers request
 absolute ms² units. See [Validation](validation.md) for the cross-validation report
-(±5% agreement on LF/HF/RMSSD with proper segment matching).
+(<10% agreement on frequency-domain metrics — RMSSD and HF within ±5%, LF within ±9% — with proper segment matching).
 
 **Time-domain metrics are identical** in both modes — they always follow Task Force
 1996 on raw NN intervals after artifact correction. Only the frequency-domain pipeline

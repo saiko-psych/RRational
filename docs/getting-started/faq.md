@@ -19,7 +19,7 @@ See [Data Formats](../user-guide/data-formats.md) for detailed specifications.
 
 ### How are participant IDs extracted?
 
-By default, RRational extracts participant IDs from filenames using the pattern `(\d+)` (first number found). For example, `VP01_RR_2024-01-15.csv` becomes `VP01`. You can customize the pattern in the Data tab settings.
+By default, RRational extracts participant IDs from filenames using the pattern `(\d{4}[A-Z]{4})` (four digits followed by four uppercase letters). For example, `0001CTRL_RR_2024-01-15.csv` becomes `0001CTRL`. You can customize the pattern in the Data tab settings — a simpler `(\d+)` ("first number found") is one of the selectable presets.
 
 ### Can I merge multiple recording files per participant?
 
@@ -35,10 +35,12 @@ Following the 2024 Quigley guidelines:
 
 | Artifact Rate | Quality Grade | Recommendation |
 |---------------|---------------|----------------|
-| < 2% | A (Excellent) | All metrics valid |
-| 2–5% | B (Good) | All metrics valid |
-| 5–10% | C (Acceptable) | Time-domain only |
-| > 10% | D (Poor) | Exclude segment |
+| ≤ 2% | Excellent | All metrics valid |
+| 2–5% | Good | All metrics valid |
+| 5–10% | Moderate | Time-domain only |
+| > 10% | Poor | Segment excluded |
+
+A segment is also excluded automatically if it has fewer than 50 beats, regardless of artifact rate (too short for any reliable HRV metric).
 
 ### Which artifact detection method should I use?
 
@@ -128,7 +130,7 @@ comparison can be reproduced on equivalent data.
 ### What export formats are available?
 
 - **CSV** — metric tables with all computed HRV values
-- **JSON** — structured results with metadata
+- **HTML / Markdown report** — formatted analysis report for sharing
 - **.rrational** — native format preserving full analysis state (reimportable)
 
 ### What should I report in a publication?
@@ -191,12 +193,8 @@ Yes. RRational runs entirely locally. No data is transmitted externally. All pro
 ### How do I update RRational?
 
 ```bash
-uv pip install --upgrade rrational
-```
-
-Or pull the latest from the repository:
-
-```bash
 git pull origin main
 uv sync
 ```
+
+RRational is installed from source (it is not published on PyPI), so updating means pulling the latest `main` and re-syncing dependencies.

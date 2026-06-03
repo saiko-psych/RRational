@@ -80,7 +80,7 @@ Any study with repeating experimental conditions:
 
 | Requirement | Details |
 |-------------|---------|
-| **HRV data** | CSV files from HRV Logger or TXT files from VNS Analyse |
+| **HRV data** | RR-interval files in any of 8 supported formats (HRV Logger, VNS Analyse, Polar, Empatica, Elite HRV, Kubios, plain text) — see [Data Formats](../user-guide/data-formats.md) |
 | **Computer** | Windows, macOS, or Linux |
 | **Python** | Version 3.11, 3.12, or 3.13 |
 | **Time** | ~10 minutes for setup, ~5 minutes per participant for analysis |
@@ -91,8 +91,7 @@ Any study with repeating experimental conditions:
 
 - **R-peak detection from raw ECG/PPG** — RRational works with pre-detected RR intervals, not raw physiological signals
 - **Real-time monitoring** — RRational is for post-hoc analysis, not live data
-- **Advanced nonlinear analysis** — DFA, sample entropy, and multiscale entropy are not yet implemented
-- **Automated report generation** — Results are exported as CSV; you write the report
+- **Multiscale entropy (MSE)** — DFA and sample entropy *are* supported (via NeuroKit2's nonlinear HRV); only multiscale entropy (MSE) is not implemented
 
 ---
 

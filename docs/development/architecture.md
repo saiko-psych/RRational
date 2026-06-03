@@ -8,6 +8,7 @@ src/rrational/
 │   ├── app.py                 # Main Streamlit app + Participants tab
 │   ├── tabs/                  # Tab modules
 │   │   ├── data.py            # Data import, participant overview
+│   │   ├── participant.py     # Participant tab (delegates to app.py)
 │   │   ├── setup.py           # Events, Groups, Sequences, Sections
 │   │   └── analysis.py        # HRV analysis, group comparison
 │   ├── plots/                 # Visualization modules
@@ -24,13 +25,16 @@ src/rrational/
 ├── analysis/
 │   ├── repeating_sections.py  # Repeating section extraction
 │   ├── hrv_metrics.py         # Metric catalogs, presets, windowing
-│   └── hrv_compute.py         # HRV calculation, result transforms
+│   ├── hrv_compute.py         # HRV calculation, result transforms
+│   ├── group_statistics.py    # Between-group hypothesis tests + effect sizes
+│   └── sequence_statistics.py # Repeated-measures sequence statistics
 ├── cleaning/
 │   ├── rr.py                  # RR interval cleaning
 │   └── quality.py             # Artifact detection, quality grading
 ├── io/
 │   ├── hrv_logger.py          # HRV Logger CSV parser
-│   └── vns_analyse.py         # VNS Analyse TXT parser
+│   ├── vns_analyse.py         # VNS Analyse TXT parser
+│   └── generic_rr.py          # Polar / Empatica / Elite HRV / Kubios / plain-text parsers
 ├── segments/
 │   ├── section_normalizer.py  # Event name normalization
 │   └── section_validation.py  # Section boundary validation
@@ -68,3 +72,5 @@ All configuration is stored as YAML files, either in the project folder (`config
 | Pandas | Data manipulation |
 | NumPy | Numerical operations |
 | PyYAML | Configuration storage |
+| streamlit-plotly-events | Click-to-add events directly on plots |
+| streamlit-shortcuts | Keyboard shortcuts (Signal Inspection mode) |

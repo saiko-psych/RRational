@@ -37,7 +37,7 @@ It provides an interactive Streamlit GUI for importing, inspecting, cleaning, an
 
     ---
 
-    Batch analysis across study groups and event sequences with bar charts, violin plots, and raincloud plots.
+    Batch analysis across study groups and event sequences with automatic hypothesis tests (t-test / Mann-Whitney / ANOVA / Kruskal-Wallis), effect sizes, and bar / violin / raincloud charts.
 
 -   :material-palette:{ .lg .middle } **Color Theming**
 
@@ -53,6 +53,7 @@ It provides an interactive Streamlit GUI for importing, inspecting, cleaning, an
 - **Project management** — Self-contained project folders with data, config, and results
 - **Report generation** — Export as HTML or Markdown for publication-ready documentation
 - **Scientific rigor** — Follows 2024 Quigley guidelines for artifact handling and reporting
+- **Kubios-compatible mode** — Optional frequency-domain pipeline matching Kubios HRV Scientific (absolute ms², Smoothness Priors detrending) for cross-validation
 - **Color theming** — 5 preset color schemes with custom color pickers for all plot elements
 - **Export ready** — CSV export for statistical analysis, `.rrational` files with full audit trail
 
@@ -66,7 +67,7 @@ It provides an interactive Streamlit GUI for importing, inspecting, cleaning, an
 | Polar Flow | Web export | TSV | [Format Reference](user-guide/data-formats.md#polar-flow-hrv-export-tsv) |
 | Empatica E4 / EmbracePlus | Wristband (PPG) | CSV | [Format Reference](user-guide/data-formats.md#empatica-e4--embraceplus-ibicsv) |
 | Elite HRV / Plain text | iOS / Android | TXT | [Format Reference](user-guide/data-formats.md#elite-hrv--plain-text-rr) |
-| Kubios HRV | Desktop | TXT | [Format Reference](user-guide/data-formats.md#kubios-hrv-export) |
+| Kubios HRV | Desktop | TXT | [Format Reference](user-guide/data-formats.md#kubios-hrv-export-txt) |
 
 ## Getting Started
 
