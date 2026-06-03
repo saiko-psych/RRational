@@ -18,8 +18,11 @@ from typing import TYPE_CHECKING
 
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -122,31 +125,257 @@ class _SectionsPane(QWidget):
             self._table.setItem(row, 4, QTableWidgetItem(str(sec.beat_count)))
 
 
+class _GroupEditDialog(QDialog):
+    """Modal editor for a single Group definition.
+
+    Schema (Streamlit-compatible, additive):
+        name           # YAML key
+        label          # display name
+        description    # free text (inspector-specific addition)
+        members        # list[str] of dataset names (inspector-specific addition)
+        expected_events: {}   # kept empty here, owned by Streamlit
+        selected_sections: []  # kept empty here, owned by Streamlit
+    """
+
+    def __init__(
+        self,
+        available_datasets: list[str],
+        existing_names: list[str],
+        initial: dict | None = None,
+        initial_name: str | None = None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Edit group" if initial else "New group")
+        self.setMinimumWidth(540)
+        self._existing_names = [n for n in existing_names if n != (initial_name or "")]
+
+        outer = QVBoxLayout(self)
+
+        form = QFormLayout()
+        self._name_edit = QLineEdit(initial_name or "")
+        self._name_edit.setPlaceholderText("e.g. Music, Control, Treatment_A")
+        form.addRow("Name *:", self._name_edit)
+        self._label_edit = QLineEdit(
+            (initial or {}).get("label", "") if initial else ""
+        )
+        self._label_edit.setPlaceholderText("Display name (defaults to Name)")
+        form.addRow("Label:", self._label_edit)
+        self._description_edit = QLineEdit(
+            (initial or {}).get("description", "") if initial else ""
+        )
+        form.addRow("Description:", self._description_edit)
+        outer.addLayout(form)
+
+        # Member checkboxes
+        members_box = QGroupBox("Members (datasets currently in workspace)")
+        members_layout = QVBoxLayout(members_box)
+        self._member_checks: dict[str, QCheckBox] = {}
+        initial_members = set((initial or {}).get("members", []) if initial else [])
+        for ds_name in available_datasets:
+            cb = QCheckBox(ds_name)
+            cb.setChecked(ds_name in initial_members)
+            members_layout.addWidget(cb)
+            self._member_checks[ds_name] = cb
+        if not available_datasets:
+            note = QLabel(
+                "<i>No datasets loaded. Members can be assigned later by re-editing "
+                "this group with files open.</i>"
+            )
+            note.setWordWrap(True)
+            note.setStyleSheet("color: #888;")
+            members_layout.addWidget(note)
+        outer.addWidget(members_box)
+
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self._on_accept)
+        bb.rejected.connect(self.reject)
+        outer.addWidget(bb)
+
+    def _on_accept(self) -> None:
+        name = self._name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Missing name", "Group name is required.")
+            return
+        if name in self._existing_names:
+            QMessageBox.warning(
+                self, "Duplicate name", f"A group named '{name}' already exists."
+            )
+            return
+        self.accept()
+
+    def result_group(self) -> tuple[str, dict]:
+        name = self._name_edit.text().strip()
+        members = [n for n, cb in self._member_checks.items() if cb.isChecked()]
+        payload = {
+            "label": self._label_edit.text().strip() or name,
+            "description": self._description_edit.text().strip(),
+            "members": members,
+            "expected_events": {},
+            "selected_sections": [],
+        }
+        return name, payload
+
+
 class _GroupsPane(QWidget):
-    """Shows all loaded datasets with their (currently unset) group label."""
+    """Editor for Group definitions, backed by ``gui.persistence.save_groups``.
+
+    File location resolves to ``{project}/config/groups.yml`` when a
+    project is open, else ``~/.rrational/groups.yml`` (Streamlit-shared
+    global location).
+    """
 
     def __init__(self, main_window, parent=None) -> None:
         super().__init__(parent)
         self._main_window = main_window
+        self._groups: dict[str, dict] = self._load()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
-        self._info = QLabel(
-            "<i>Group assignment edits coming in Phase 4b step 2 — "
-            "ported from <code>gui.persistence.condition_labels</code>.</i>"
+        info = QLabel(
+            "<i>Group definitions are saved to "
+            "<code>{project}/config/groups.yml</code> (or "
+            "<code>~/.rrational/groups.yml</code> when no project is open). "
+            "Shared with the Streamlit app.</i>"
         )
-        self._info.setWordWrap(True)
-        layout.addWidget(self._info)
-        self._table = _ReadOnlyTable(["Dataset", "Sections", "Group (read-only)"])
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #777;")
+        layout.addWidget(info)
+
+        btn_row = QHBoxLayout()
+        self._add_btn = QPushButton("Add group…")
+        self._add_btn.clicked.connect(self._on_add)
+        self._edit_btn = QPushButton("Edit…")
+        self._edit_btn.clicked.connect(self._on_edit)
+        self._remove_btn = QPushButton("Remove")
+        self._remove_btn.clicked.connect(self._on_remove)
+        for b in (self._add_btn, self._edit_btn, self._remove_btn):
+            btn_row.addWidget(b)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self._table = _ReadOnlyTable(["Name", "Label", "Members", "Description"])
+        self._table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._table.itemSelectionChanged.connect(self._refresh_buttons)
         layout.addWidget(self._table)
 
+        self._refresh_table()
+        self._refresh_buttons()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    @property
+    def groups(self) -> dict[str, dict]:
+        return dict(self._groups)
+
     def refresh_from_workspace(self) -> None:
+        """Re-read from disk and rebuild — called on workspace/project change."""
+        self._groups = self._load()
+        self._refresh_table()
+        self._refresh_buttons()
+
+    # ------------------------------------------------------------------
+    # Persistence — direct reuse of gui.persistence (no inspector wrapper)
+    # ------------------------------------------------------------------
+    def _project_path(self):
+        proj = getattr(self._main_window, "_project", None)
+        return proj.project_path if proj is not None else None
+
+    def _load(self) -> dict[str, dict]:
+        from rrational.gui.persistence import load_groups as _lg
+
+        return _lg(project_path=self._project_path()) or {}
+
+    def _persist(self) -> None:
+        from rrational.gui.persistence import save_groups as _sg
+
+        _sg(self._groups, project_path=self._project_path())
+        # Notify the Analysis tab's Group-Comparison pane so its dropdown
+        # picks up the new definitions without manual refresh.
+        notify = getattr(self._main_window, "_on_groups_changed", None)
+        if callable(notify):
+            notify()
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _refresh_table(self) -> None:
         self._table.setRowCount(0)
-        for ds in self._main_window._datasets:
+        for name, data in self._groups.items():
             row = self._table.rowCount()
             self._table.insertRow(row)
-            self._table.setItem(row, 0, QTableWidgetItem(ds.name))
-            self._table.setItem(row, 1, QTableWidgetItem(str(len(ds.data.sections))))
-            self._table.setItem(row, 2, QTableWidgetItem("—"))
+            self._table.setItem(row, 0, QTableWidgetItem(name))
+            self._table.setItem(row, 1, QTableWidgetItem(data.get("label", name)))
+            members = data.get("members", []) or []
+            self._table.setItem(row, 2, QTableWidgetItem(str(len(members))))
+            self._table.setItem(row, 3, QTableWidgetItem(data.get("description", "")))
+
+    def _refresh_buttons(self) -> None:
+        has_selection = self._table.currentRow() >= 0
+        self._edit_btn.setEnabled(has_selection)
+        self._remove_btn.setEnabled(has_selection)
+
+    def _selected_name(self) -> str | None:
+        row = self._table.currentRow()
+        if row < 0:
+            return None
+        item = self._table.item(row, 0)
+        return item.text() if item is not None else None
+
+    def _workspace_dataset_names(self) -> list[str]:
+        return [ds.name for ds in self._main_window._datasets]
+
+    def _on_add(self) -> None:
+        dlg = _GroupEditDialog(
+            available_datasets=self._workspace_dataset_names(),
+            existing_names=list(self._groups.keys()),
+            parent=self,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        name, payload = dlg.result_group()
+        self._groups[name] = payload
+        self._persist()
+        self._refresh_table()
+
+    def _on_edit(self) -> None:
+        name = self._selected_name()
+        if name is None:
+            return
+        dlg = _GroupEditDialog(
+            available_datasets=self._workspace_dataset_names(),
+            existing_names=list(self._groups.keys()),
+            initial=self._groups[name],
+            initial_name=name,
+            parent=self,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        new_name, payload = dlg.result_group()
+        # Rename if needed
+        if new_name != name:
+            del self._groups[name]
+        self._groups[new_name] = payload
+        self._persist()
+        self._refresh_table()
+
+    def _on_remove(self) -> None:
+        name = self._selected_name()
+        if name is None:
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Remove group",
+                f"Delete group '{name}'? This cannot be undone.",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        del self._groups[name]
+        self._persist()
+        self._refresh_table()
 
 
 class _SequenceEditDialog(QDialog):

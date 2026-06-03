@@ -127,6 +127,13 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--setup-subtab",
+        type=str,
+        default=None,
+        choices=["events", "sections", "groups", "sequences"],
+        help="Switch the Setup tab to a specific sub-pane.",
+    )
+    parser.add_argument(
         "--project",
         type=Path,
         default=None,
@@ -279,6 +286,13 @@ def main() -> int:
     if args.results_subtab is not None:
         sub_idx = {"metrics": 0, "group": 1}[args.results_subtab]
         win._results_tab._subtabs.setCurrentIndex(sub_idx)
+        app.processEvents()
+
+    if args.setup_subtab is not None:
+        sub_idx = {"events": 0, "sections": 1, "groups": 2, "sequences": 3}[
+            args.setup_subtab
+        ]
+        win._setup_tab._subtabs.setCurrentIndex(sub_idx)
         app.processEvents()
 
     if args.show_section and win._data is not None:

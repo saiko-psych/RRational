@@ -300,10 +300,15 @@ class _RepeatingSectionPane(QWidget):
 class _GroupComparisonPane(QWidget):
     """Per-dataset group assignment + hypothesis-test comparison.
 
-    The group label is currently set INLINE (free-text column in the
-    assignment table). The Setup tab's Groups sub-pane will eventually
-    own the persistence layer; for now we treat the in-memory label as
-    the source of truth.
+    Two assignment modes:
+
+    - **Saved groups** (Streamlit-shared): pick from groups defined in
+      the Setup tab's Groups sub-pane (which writes ``groups.yml`` via
+      ``gui.persistence.save_groups``). Members are auto-applied.
+    - **Ad-hoc labels**: type a free-text label directly in the second
+      column of the assignment table. Useful for quick exploration.
+      When Compute is clicked, the ad-hoc assignment can be persisted
+      as a new group definition via the "Save as group…" button.
     """
 
     DEFAULT_GROUP = ""  # empty string = unassigned
@@ -318,8 +323,28 @@ class _GroupComparisonPane(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
 
-        # ---- 1. Group assignment table -------------------------------
-        assign_box = QGroupBox("Group assignment (edit cells in column 2)")
+        # ---- 1a. Saved-groups picker (top) ---------------------------
+        saved_box = QGroupBox("Saved groups (from Setup → Groups)")
+        saved_row = QHBoxLayout(saved_box)
+        self._saved_groups_combo = QComboBox()
+        self._saved_groups_combo.setPlaceholderText("Pick a saved group definition…")
+        self._apply_saved_btn = QPushButton("Apply members")
+        self._apply_saved_btn.setToolTip(
+            "Apply the selected saved group's member list to the assignment table"
+        )
+        self._apply_saved_btn.clicked.connect(self._on_apply_saved)
+        self._apply_saved_btn.setEnabled(False)
+        self._saved_groups_combo.currentIndexChanged.connect(
+            lambda _: self._apply_saved_btn.setEnabled(
+                self._saved_groups_combo.currentIndex() >= 0
+            )
+        )
+        saved_row.addWidget(self._saved_groups_combo, 1)
+        saved_row.addWidget(self._apply_saved_btn)
+        outer.addWidget(saved_box)
+
+        # ---- 1b. Group assignment table ------------------------------
+        assign_box = QGroupBox("Group assignment (edit column 2 for ad-hoc labels)")
         assign_layout = QVBoxLayout(assign_box)
         self._assign_table = QTableWidget(0, 2, self)
         self._assign_table.setHorizontalHeaderLabels(["Dataset", "Group"])
@@ -328,6 +353,19 @@ class _GroupComparisonPane(QWidget):
         self._assign_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self._assign_table.itemChanged.connect(self._on_assignment_changed)
         assign_layout.addWidget(self._assign_table)
+
+        # "Save as group" button — persists current ad-hoc labels as a
+        # named group definition the Streamlit app will see too.
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        self._save_as_group_btn = QPushButton("Save assignment as new group…")
+        self._save_as_group_btn.setToolTip(
+            "Persist the current assignment as one or more groups in groups.yml"
+        )
+        self._save_as_group_btn.clicked.connect(self._on_save_as_group)
+        self._save_as_group_btn.setEnabled(False)
+        save_row.addWidget(self._save_as_group_btn)
+        assign_layout.addLayout(save_row)
         outer.addWidget(assign_box)
 
         # ---- 2. Inputs + Compute -------------------------------------
@@ -400,6 +438,18 @@ class _GroupComparisonPane(QWidget):
             new_label_by_idx[i] = old_label_by_name.get(ds.name, self.DEFAULT_GROUP)
         self._group_by_idx = new_label_by_idx
 
+        # Auto-populate from saved groups: if a dataset's name appears in
+        # a saved group's members list, pre-fill its label with that
+        # group name (only when current label is empty — never overwrite
+        # user-typed ad-hoc labels).
+        saved = self._load_saved_groups()
+        for i, ds in enumerate(self._main_window._datasets):
+            if not self._group_by_idx[i]:
+                for grp_name, grp_data in saved.items():
+                    if ds.name in (grp_data.get("members") or []):
+                        self._group_by_idx[i] = grp_name
+                        break
+
         # Repopulate the assignment table
         self._assign_table.blockSignals(True)
         self._assign_table.setRowCount(0)
@@ -411,7 +461,125 @@ class _GroupComparisonPane(QWidget):
             self._assign_table.setItem(row, 0, name_item)
             self._assign_table.setItem(row, 1, QTableWidgetItem(self._group_by_idx[i]))
         self._assign_table.blockSignals(False)
+        self._refresh_saved_groups_combo()
         self._refresh_compute_enabled()
+        self._refresh_save_as_enabled()
+
+    def _load_saved_groups(self) -> dict[str, dict]:
+        """Project-aware reuse of gui.persistence.load_groups."""
+        from rrational.gui.persistence import load_groups as _lg
+
+        proj = getattr(self._main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+        return _lg(project_path=project_path) or {}
+
+    def refresh_saved_groups(self) -> None:
+        """Called by MainWindow when Setup's GroupsPane has persisted edits."""
+        self._refresh_saved_groups_combo()
+
+    def _refresh_saved_groups_combo(self) -> None:
+        prev = self._saved_groups_combo.currentText()
+        saved = self._load_saved_groups()
+        self._saved_groups_combo.blockSignals(True)
+        self._saved_groups_combo.clear()
+        for name, data in saved.items():
+            display = (
+                f"{name}  ({len(data.get('members') or [])} members)"
+                if data.get("members")
+                else name
+            )
+            self._saved_groups_combo.addItem(display, name)
+        if prev:
+            idx = self._saved_groups_combo.findText(prev)
+            if idx >= 0:
+                self._saved_groups_combo.setCurrentIndex(idx)
+        self._saved_groups_combo.blockSignals(False)
+        self._apply_saved_btn.setEnabled(self._saved_groups_combo.count() > 0)
+
+    def _on_apply_saved(self) -> None:
+        """Apply the picked saved group's members → assignment table."""
+        idx = self._saved_groups_combo.currentIndex()
+        if idx < 0:
+            return
+        group_name = self._saved_groups_combo.itemData(idx)
+        saved = self._load_saved_groups()
+        members = set(saved.get(group_name, {}).get("members") or [])
+        # Assign group_name to every workspace dataset whose name is in
+        # the group's member list. Leave others unchanged so the user
+        # can chain multiple applies (e.g. apply Control first, then
+        # apply Music to fill in the rest).
+        self._assign_table.blockSignals(True)
+        for i, ds in enumerate(self._main_window._datasets):
+            if ds.name in members:
+                self._group_by_idx[i] = group_name
+                if i < self._assign_table.rowCount():
+                    self._assign_table.setItem(i, 1, QTableWidgetItem(group_name))
+        self._assign_table.blockSignals(False)
+        self._refresh_compute_enabled()
+        self._refresh_save_as_enabled()
+        self._main_window.statusBar().showMessage(
+            f"Applied saved group '{group_name}' to {sum(1 for ds in self._main_window._datasets if ds.name in members)} dataset(s)",
+            4000,
+        )
+
+    def _refresh_save_as_enabled(self) -> None:
+        """Save-as button needs at least 1 non-empty label."""
+        has_labels = any(lbl for lbl in self._group_by_idx.values())
+        self._save_as_group_btn.setEnabled(has_labels)
+
+    def _on_save_as_group(self) -> None:
+        """Persist current ad-hoc assignment as named groups in groups.yml."""
+        from qtpy.QtWidgets import QMessageBox
+
+        from rrational.gui.persistence import load_groups, save_groups
+
+        # Build per-label member list from current assignment
+        members_by_label: dict[str, list[str]] = {}
+        for i, ds in enumerate(self._main_window._datasets):
+            lbl = self._group_by_idx.get(i, "")
+            if lbl:
+                members_by_label.setdefault(lbl, []).append(ds.name)
+        if not members_by_label:
+            return
+
+        proj = getattr(self._main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+        existing = load_groups(project_path=project_path) or {}
+
+        # Conflict check
+        conflicts = [lbl for lbl in members_by_label if lbl in existing]
+        if conflicts and not self._main_window.test_mode:
+            reply = QMessageBox.question(
+                self,
+                "Overwrite existing groups",
+                "These groups already exist: "
+                + ", ".join(conflicts)
+                + "\n\nOverwrite their member lists with the current assignment?",
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+        for lbl, members in members_by_label.items():
+            existing[lbl] = {
+                "label": (existing.get(lbl, {}) or {}).get("label", lbl),
+                "description": (existing.get(lbl, {}) or {}).get("description", ""),
+                "members": members,
+                "expected_events": (existing.get(lbl, {}) or {}).get(
+                    "expected_events", {}
+                ),
+                "selected_sections": (existing.get(lbl, {}) or {}).get(
+                    "selected_sections", []
+                ),
+            }
+        save_groups(existing, project_path=project_path)
+        # Refresh the Setup tab's GroupsPane + our own combo
+        setup_groups = getattr(self._main_window._setup_tab, "_groups_pane", None)
+        if setup_groups is not None and hasattr(setup_groups, "refresh_from_workspace"):
+            setup_groups.refresh_from_workspace()
+        self._refresh_saved_groups_combo()
+        self._main_window.statusBar().showMessage(
+            f"Saved {len(members_by_label)} group(s) to groups.yml", 4000
+        )
 
     def _on_assignment_changed(self, item: QTableWidgetItem) -> None:
         # Only react to edits in the "Group" column.
@@ -419,6 +587,7 @@ class _GroupComparisonPane(QWidget):
             return
         self._group_by_idx[item.row()] = item.text().strip()
         self._refresh_compute_enabled()
+        self._refresh_save_as_enabled()
 
     def _refresh_compute_enabled(self) -> None:
         """Compute is enabled iff ≥2 distinct non-empty group labels exist

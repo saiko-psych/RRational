@@ -10,11 +10,16 @@ pytest.importorskip("pyqtgraph")
 
 
 @pytest.fixture(autouse=True)
-def isolated_settings(qapp, tmp_path):
+def isolated_settings(qapp, tmp_path, monkeypatch):
+    from rrational.gui import persistence as gui_persistence
     from rrational.inspector import persistence, settings
 
     settings.enable_test_mode(tmp_path)
     persistence.set_inspector_config_dir(tmp_path)
+    monkeypatch.setattr(gui_persistence, "CONFIG_DIR", tmp_path / "gui_config")
+    monkeypatch.setattr(
+        gui_persistence, "SETTINGS_FILE", tmp_path / "gui_config" / "settings.yml"
+    )
     yield
     persistence.set_inspector_config_dir(None)
 
@@ -440,3 +445,160 @@ def test_sequence_pane_compute_refuses_when_no_sequence_selected(main_window):
     # No-op should not raise
     pane._on_compute()
     assert pane._compute_btn.isEnabled() is False
+
+
+# ---------------------------------------------------------------------
+# Phase 8: Saved groups integration in GroupComparisonPane
+# ---------------------------------------------------------------------
+def test_group_pane_loads_saved_groups_into_combo(main_window):
+    """Groups defined in groups.yml appear in the saved-groups combo."""
+    from rrational.gui.persistence import save_groups
+
+    save_groups(
+        {
+            "Music": {
+                "label": "Music",
+                "members": ["alpha", "beta"],
+                "expected_events": {},
+                "selected_sections": [],
+            },
+            "Control": {
+                "label": "Control",
+                "members": ["gamma", "delta"],
+                "expected_events": {},
+                "selected_sections": [],
+            },
+        }
+    )
+    pane = main_window._analysis_tab._group_pane
+    pane._refresh_saved_groups_combo()
+    items = [
+        pane._saved_groups_combo.itemData(i)
+        for i in range(pane._saved_groups_combo.count())
+    ]
+    assert set(items) == {"Music", "Control"}
+
+
+def test_group_pane_auto_populates_labels_from_saved_groups(main_window):
+    """When refresh_workspace runs and a dataset matches a saved-group
+    member list, the label is pre-filled with the group name."""
+    from rrational.gui.persistence import save_groups
+    from rrational.inspector.data_loader import Dataset
+
+    save_groups(
+        {
+            "Music": {
+                "label": "Music",
+                "members": ["alpha"],
+                "expected_events": {},
+                "selected_sections": [],
+            },
+            "Control": {
+                "label": "Control",
+                "members": ["beta"],
+                "expected_events": {},
+                "selected_sections": [],
+            },
+        }
+    )
+    main_window.add_dataset(Dataset(name="alpha", data=_make_data(["rest"])))
+    main_window.add_dataset(Dataset(name="beta", data=_make_data(["rest"])))
+    main_window.set_active_dataset(0)
+
+    pane = main_window._analysis_tab._group_pane
+    assert pane._group_by_idx[0] == "Music"
+    assert pane._group_by_idx[1] == "Control"
+
+
+def test_apply_saved_group_button_fills_assignment_table(main_window):
+    from rrational.gui.persistence import save_groups
+    from rrational.inspector.data_loader import Dataset
+
+    save_groups(
+        {
+            "Treatment": {
+                "label": "Treatment",
+                "members": ["d1", "d3"],
+                "expected_events": {},
+                "selected_sections": [],
+            }
+        }
+    )
+    for n in ("d1", "d2", "d3"):
+        main_window.add_dataset(Dataset(name=n, data=_make_data(["rest"])))
+    main_window.set_active_dataset(0)
+
+    pane = main_window._analysis_tab._group_pane
+    # User initially clears (simulating freshly-loaded session without
+    # auto-population kicking in):
+    pane._group_by_idx = dict.fromkeys(range(3), "")
+    pane._saved_groups_combo.setCurrentIndex(
+        pane._saved_groups_combo.findData("Treatment")
+    )
+    pane._on_apply_saved()
+    assert pane._group_by_idx[0] == "Treatment"
+    assert pane._group_by_idx[1] == ""
+    assert pane._group_by_idx[2] == "Treatment"
+
+
+def test_save_as_group_persists_ad_hoc_assignment(main_window):
+    """Ad-hoc labels typed in the table can be persisted as named groups."""
+    from rrational.gui.persistence import load_groups
+    from rrational.inspector.data_loader import Dataset
+
+    for n in ("p1", "p2", "p3", "p4"):
+        main_window.add_dataset(Dataset(name=n, data=_make_data(["rest"])))
+    main_window.set_active_dataset(0)
+
+    pane = main_window._analysis_tab._group_pane
+    pane._group_by_idx = {0: "A", 1: "A", 2: "B", 3: "B"}
+    pane._on_save_as_group()
+
+    on_disk = load_groups()
+    assert set(on_disk.keys()) == {"A", "B"}
+    assert sorted(on_disk["A"]["members"]) == ["p1", "p2"]
+    assert sorted(on_disk["B"]["members"]) == ["p3", "p4"]
+
+
+def test_setup_groups_edit_notifies_analysis_pane(main_window):
+    """Setup tab's _persist must trigger Analysis pane to refresh."""
+    setup_pane = main_window._setup_tab._groups_pane
+    analysis_pane = main_window._analysis_tab._group_pane
+
+    setup_pane._groups["NewOne"] = {
+        "label": "x",
+        "members": [],
+        "expected_events": {},
+        "selected_sections": [],
+    }
+    setup_pane._persist()  # triggers main_window._on_groups_changed
+    items = [
+        analysis_pane._saved_groups_combo.itemData(i)
+        for i in range(analysis_pane._saved_groups_combo.count())
+    ]
+    assert "NewOne" in items
+
+
+def test_project_open_redirects_groups_yml(main_window, tmp_path):
+    """When a project is open, groups.yml lives in project/config/."""
+    from rrational.gui.persistence import load_groups
+    from rrational.gui.project import ProjectManager
+
+    pm = ProjectManager.create_project(tmp_path / "P", name="P")
+    main_window.set_active_project(pm)
+
+    setup_pane = main_window._setup_tab._groups_pane
+    setup_pane._groups["ProjOnly"] = {
+        "label": "proj only",
+        "members": [],
+        "expected_events": {},
+        "selected_sections": [],
+    }
+    setup_pane._persist()
+
+    # Global yaml does NOT see the project's group
+    global_groups = load_groups()
+    assert "ProjOnly" not in global_groups
+    # Project yaml does
+    project_groups = load_groups(project_path=pm.project_path)
+    assert "ProjOnly" in project_groups

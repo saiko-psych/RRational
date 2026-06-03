@@ -10,11 +10,19 @@ pytest.importorskip("pyqtgraph")
 
 
 @pytest.fixture(autouse=True)
-def isolated_settings(qapp, tmp_path):
+def isolated_settings(qapp, tmp_path, monkeypatch):
+    from rrational.gui import persistence as gui_persistence
     from rrational.inspector import persistence, settings
 
     settings.enable_test_mode(tmp_path)
     persistence.set_inspector_config_dir(tmp_path)
+    # Streamlit-backend persistence (groups.yml, events.yml, etc.) also
+    # reads/writes a global location — patch it to the temp dir so the
+    # tests don't see the developer's real RRational config.
+    monkeypatch.setattr(gui_persistence, "CONFIG_DIR", tmp_path / "gui_config")
+    monkeypatch.setattr(
+        gui_persistence, "SETTINGS_FILE", tmp_path / "gui_config" / "settings.yml"
+    )
     yield
     persistence.set_inspector_config_dir(None)
 
@@ -101,37 +109,98 @@ def test_sections_pane_populated_after_load(main_window):
 # ---------------------------------------------------------------------
 # Groups pane
 # ---------------------------------------------------------------------
-def test_groups_pane_lists_every_loaded_dataset(main_window):
-    """One row per loaded Dataset."""
+def test_groups_pane_starts_empty(main_window):
+    """Groups pane shows group DEFINITIONS, not datasets. Empty on first run."""
+    assert main_window._setup_tab._groups_pane._table.rowCount() == 0
+    assert main_window._setup_tab._groups_pane.groups == {}
+
+
+def test_groups_pane_add_definition_persists_to_disk(main_window):
+    """Adding a group via _persist() writes groups.yml that Streamlit can read."""
+    from rrational.gui.persistence import load_groups
+
+    pane = main_window._setup_tab._groups_pane
+    pane._groups["Music"] = {
+        "label": "Music Group",
+        "description": "Music intervention cohort",
+        "members": ["alpha", "beta"],
+        "expected_events": {},
+        "selected_sections": [],
+    }
+    pane._persist()
+    pane._refresh_table()
+
+    assert pane._table.rowCount() == 1
+    # Round-trip through gui.persistence.load_groups (the Streamlit reader)
+    on_disk = load_groups()
+    assert "Music" in on_disk
+    assert on_disk["Music"]["label"] == "Music Group"
+    assert on_disk["Music"]["members"] == ["alpha", "beta"]
+
+
+def test_groups_pane_columns_show_name_label_members_description(main_window):
+    pane = main_window._setup_tab._groups_pane
+    pane._groups["Ctrl"] = {
+        "label": "Control",
+        "description": "no intervention",
+        "members": ["m1", "m2", "m3"],
+        "expected_events": {},
+        "selected_sections": [],
+    }
+    pane._refresh_table()
+    assert pane._table.item(0, 0).text() == "Ctrl"
+    assert pane._table.item(0, 1).text() == "Control"
+    assert pane._table.item(0, 2).text() == "3"  # member count
+    assert pane._table.item(0, 3).text() == "no intervention"
+
+
+def test_groups_pane_remove_removes_from_disk(main_window):
+    from rrational.gui.persistence import load_groups
+
+    pane = main_window._setup_tab._groups_pane
+    pane._groups["ToDelete"] = {
+        "label": "x",
+        "members": [],
+        "expected_events": {},
+        "selected_sections": [],
+    }
+    pane._persist()
+    assert "ToDelete" in load_groups()
+    # Simulate delete
+    del pane._groups["ToDelete"]
+    pane._persist()
+    pane._refresh_table()
+    assert "ToDelete" not in load_groups()
+    assert pane._table.rowCount() == 0
+
+
+def test_groups_pane_buttons_disabled_without_selection(main_window):
+    pane = main_window._setup_tab._groups_pane
+    assert pane._edit_btn.isEnabled() is False
+    assert pane._remove_btn.isEnabled() is False
+    # Add button stays enabled regardless
+    assert pane._add_btn.isEnabled() is True
+
+
+def test_groups_pane_survives_close_all_workspace(main_window):
+    """Group definitions live independently of the loaded datasets."""
     from rrational.inspector.data_loader import Dataset
 
-    main_window.add_dataset(Dataset(name="A", data=_make_data(n_sections=2)))
-    main_window.add_dataset(Dataset(name="B", data=_make_data(n_sections=4)))
-    main_window.set_active_dataset(0)
-
-    table = main_window._setup_tab._groups_pane._table
-    assert table.rowCount() == 2
-    names = {table.item(i, 0).text() for i in range(2)}
-    assert names == {"A", "B"}
-
-
-def test_groups_pane_shows_section_count(main_window):
-    from rrational.inspector.data_loader import Dataset
-
-    main_window.add_dataset(Dataset(name="A", data=_make_data(n_sections=2)))
-    main_window.set_active_dataset(0)
-    table = main_window._setup_tab._groups_pane._table
-    # Section-count column for first dataset
-    assert table.item(0, 1).text() == "2"
-
-
-def test_groups_pane_clears_on_close_all(main_window):
-    from rrational.inspector.data_loader import Dataset
+    pane = main_window._setup_tab._groups_pane
+    pane._groups["Stable"] = {
+        "label": "Stable group",
+        "members": ["A", "B"],
+        "expected_events": {},
+        "selected_sections": [],
+    }
+    pane._persist()
 
     main_window.add_dataset(Dataset(name="A", data=_make_data()))
     main_window.set_active_dataset(0)
     main_window.close_all_datasets()
-    assert main_window._setup_tab._groups_pane._table.rowCount() == 0
+    # The dataset workspace is empty, but the group definition persists
+    assert pane._table.rowCount() == 1
+    assert "Stable" in pane.groups
 
 
 # ---------------------------------------------------------------------

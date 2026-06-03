@@ -901,6 +901,16 @@ class MainWindow(QMainWindow):
         if pane is not None and hasattr(pane, "refresh_sequences"):
             pane.refresh_sequences()
 
+    def _on_groups_changed(self) -> None:
+        """Called by Setup tab after persisting a group edit.
+
+        The Analysis tab's group-comparison pane re-reads groups.yml so
+        its saved-groups dropdown stays in sync.
+        """
+        pane = getattr(self._analysis_tab, "_group_pane", None)
+        if pane is not None and hasattr(pane, "refresh_saved_groups"):
+            pane.refresh_saved_groups()
+
     def _notify_tabs_active_changed(self) -> None:
         data = self._data  # None when no active dataset
         for tab in self._tabs:
