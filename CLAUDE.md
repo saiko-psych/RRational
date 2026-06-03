@@ -38,9 +38,8 @@ uv run ruff check src/ tests/ --fix            # Lint
 **v0.9.3 features**:
 - Kubios-compatible frequency-domain mode (`freq_method="kubios"`): SP detrending λ=500 + Welch 180s, ±5% match on LF/HF/RMSSD
 - GUI "Frequency-domain pipeline" selector in Group + Sequence Analysis
-- `docs/science/validation.md` (full Kubios cross-validation + DOIs for students)
+- `docs/science/validation.md` (full Kubios cross-validation methodology + verified DOIs for students)
 - `docs/user-guide/kubios-compatibility.md` (step-by-step Kubios reproduction)
-- `KUBIOS_COMPARISON.md` root-level technical report
 
 **v0.9.2 Group Analysis features** (NOT yet in RTD — see `project_rtd_todo.md`):
 - Hypothesis Tests UI (Welch t / Mann-Whitney / ANOVA / Kruskal + Holm correction + Cohen's d / η²)
