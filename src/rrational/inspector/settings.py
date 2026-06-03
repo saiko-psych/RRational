@@ -34,6 +34,7 @@ _DEFAULTS: dict[str, object] = {
     "show_overview_bar": True,  # Phase 3c will use this
     "show_events": True,
     "show_sections": True,
+    "show_grid": True,
     "show_crosshair": True,  # Phase 3d will use this
 }
 

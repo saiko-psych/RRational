@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pyqtgraph as pg
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor, QKeySequence, QShortcut
 
 from rrational.inspector.graphic_items import EventMarker, SectionRegion
@@ -81,6 +81,13 @@ class RRViewBox(pg.ViewBox):
 
 class RRPlotWidget(pg.PlotWidget):
     """A pan/zoom-able plot of one RR signal vs absolute time, with overlays."""
+
+    # Emitted whenever the mouse moves over the plot AND data is loaded.
+    # (t = seconds-since-epoch, v = interpolated RR ms; v is NaN if the
+    # cursor is over a gap between sections.)
+    cursor_moved = Signal(float, float)
+    # Emitted when the mouse leaves the plot region — readout should clear.
+    cursor_left = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent, viewBox=RRViewBox())
@@ -145,6 +152,26 @@ class RRPlotWidget(pg.PlotWidget):
         self._make_shortcut(QKeySequence(Qt.Key_Right), self.pan_right)
         self._make_shortcut(QKeySequence(Qt.Key_Up), self.zoom_out)
         self._make_shortcut(QKeySequence(Qt.Key_Down), self.zoom_in)
+
+        # ----- Crosshair ----------------------------------------------------
+        # Vertical InfiniteLine that tracks the cursor X position. Hidden
+        # by default until set_crosshair_visible(True) is called by the
+        # MainWindow (based on the View menu toggle). Z above section
+        # bands but below the user's right-click menu — so the cursor
+        # stays visible without blocking interaction.
+        self._crosshair = pg.InfiniteLine(
+            angle=90,
+            pen=pg.mkPen(QColor(70, 70, 70, 160), width=1, style=Qt.DashLine),
+            movable=False,
+        )
+        self._crosshair.setZValue(20)
+        self._crosshair.setVisible(False)
+        self.addItem(self._crosshair)
+        self._crosshair_enabled = False
+
+        # The PyQtGraph scene exposes a mouse-moved signal that gives us
+        # pixel coordinates; we'll convert to data coords in the handler.
+        self.scene().sigMouseMoved.connect(self._on_scene_mouse_moved)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -218,6 +245,72 @@ class RRPlotWidget(pg.PlotWidget):
         self.addItem(marker)
         self._event_markers.append(marker)
         return marker
+
+    def set_sections_visible(self, visible: bool) -> None:
+        """Show or hide every SectionRegion band without dropping them."""
+        for r in self._section_regions:
+            r.setVisible(visible)
+
+    def set_events_visible(self, visible: bool) -> None:
+        """Show or hide every EventMarker line without dropping them."""
+        for m in self._event_markers:
+            m.setVisible(visible)
+
+    def set_grid_visible(self, visible: bool) -> None:
+        """Toggle the X+Y gridlines."""
+        self.showGrid(x=visible, y=visible, alpha=0.25 if visible else 0)
+
+    def set_crosshair_visible(self, visible: bool) -> None:
+        """Enable / disable the cursor-tracking crosshair."""
+        self._crosshair_enabled = visible
+        self._crosshair.setVisible(False)  # hidden until next mouse move
+
+    def _on_scene_mouse_moved(self, scene_pos) -> None:
+        """Map cursor scene pos → data coords, update crosshair + emit signal."""
+        if not self._crosshair_enabled or self._times is None:
+            return
+        vb = self.getViewBox()
+        if not self.sceneBoundingRect().contains(scene_pos):
+            self._crosshair.setVisible(False)
+            self.cursor_left.emit()
+            return
+        data_pos = vb.mapSceneToView(scene_pos)
+        t_cursor = data_pos.x()
+        v_cursor = self._value_at(t_cursor)
+        self._crosshair.setPos(t_cursor)
+        self._crosshair.setVisible(True)
+        self.cursor_moved.emit(t_cursor, v_cursor)
+
+    def _value_at(self, t_cursor: float) -> float:
+        """Linearly-interpolated RR value at ``t_cursor``.
+
+        Returns NaN if the cursor sits in a between-section gap (where
+        the NaN sample placed by ``data_loader`` lives) or outside the
+        loaded range. The MainWindow status-bar formatter uses NaN as
+        the "show a dash" sentinel.
+        """
+        t = self._times
+        if t is None or len(t) == 0:
+            return float("nan")
+        if t_cursor < t[0] or t_cursor > t[-1]:
+            return float("nan")
+        # np.interp ignores NaN in the y array — propagate NaN ourselves
+        # so the readout honestly shows "no data here" over a gap.
+        finite = np.isfinite(self._values)
+        if not np.any(finite):
+            return float("nan")
+        # Find the nearest finite samples on either side; if the cursor
+        # lies between two NaN samples, the closest samples themselves
+        # will be NaN and we want to report NaN.
+        idx = int(np.searchsorted(t, t_cursor))
+        # Check the neighbours we'd use for interpolation
+        lo = max(0, idx - 1)
+        hi = min(len(t) - 1, idx)
+        if not (finite[lo] and finite[hi]):
+            return float("nan")
+        return float(
+            np.interp(t_cursor, [t[lo], t[hi]], [self._values[lo], self._values[hi]])
+        )
 
     def clear_overlays(self) -> None:
         """Remove every section region and event marker from the scene."""
