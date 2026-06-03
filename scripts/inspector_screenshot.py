@@ -68,6 +68,13 @@ def main() -> int:
         choices=["sidebar", "overview", "sections", "events", "grid", "crosshair"],
         help="Turn off a View-menu toggle before taking the screenshot",
     )
+    parser.add_argument(
+        "--tab",
+        type=str,
+        default=None,
+        choices=["browse", "setup", "analysis", "results"],
+        help="Switch to a specific tab before grabbing",
+    )
     args = parser.parse_args()
 
     import pyqtgraph as pg
@@ -112,6 +119,17 @@ def main() -> int:
     for hide_key in args.hide:
         getattr(win, toggle_map[hide_key]).setChecked(False)
     app.processEvents()
+
+    if args.tab is not None:
+        tab_attr = {
+            "browse": "_browse_tab",
+            "setup": "_setup_tab",
+            "analysis": "_analysis_tab",
+            "results": "_results_tab",
+        }[args.tab]
+        tab = getattr(win, tab_attr)
+        win._tabs_widget.setCurrentWidget(tab)
+        app.processEvents()
 
     if args.show_section and win._data is not None:
         # Click the matching section in the sidebar tree.

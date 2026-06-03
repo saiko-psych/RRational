@@ -20,31 +20,30 @@ from __future__ import annotations
 from pathlib import Path
 
 from qtpy.QtCore import QEvent, QObject, Qt
-from qtpy.QtGui import QAction, QFont, QKeySequence
+from qtpy.QtGui import QAction, QKeySequence
 from qtpy.QtWidgets import (
     QApplication,
     QFileDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
-    QSplitter,
     QStatusBar,
+    QTabWidget,
     QToolBar,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QVBoxLayout,
-    QWidget,
 )
 
 from rrational.inspector import settings
 from rrational.inspector.data_loader import Dataset, InspectorData
-from rrational.inspector.overview_bar import OverviewBar
-from rrational.inspector.plot_widget import RRPlotWidget
+from rrational.inspector.tabs import AnalysisTab, BrowseTab, ResultsTab, SetupTab
 
-# UserRole payload tags so itemClicked can distinguish "dataset node"
-# from "section node" without sniffing the parent.
-_ROLE_DATASET_IDX = Qt.UserRole + 1
-_ROLE_SECTION_NAME = Qt.UserRole + 2
+# Re-exported for older tests that import them from here. New code
+# should import from ``inspector.tabs.browse_tab``.
+from rrational.inspector.tabs.browse_tab import (  # noqa: F401
+    ROLE_DATASET_IDX as _ROLE_DATASET_IDX,
+)
+from rrational.inspector.tabs.browse_tab import (  # noqa: F401
+    ROLE_SECTION_NAME as _ROLE_SECTION_NAME,
+)
 
 
 class _GlobalKeyFilter(QObject):
@@ -130,53 +129,71 @@ class MainWindow(QMainWindow):
     # UI construction
     # ------------------------------------------------------------------
     def _build_central_widget(self) -> None:
-        self._dataset_tree = QTreeWidget()
-        self._dataset_tree.setHeaderHidden(True)
-        self._dataset_tree.setIndentation(14)
-        self._dataset_tree.itemClicked.connect(self._on_tree_item_clicked)
-        self._dataset_tree.setMaximumWidth(320)
+        """Construct the central QTabWidget + each top-level tab.
 
-        self._plot = RRPlotWidget()
-        self._plot.setFocusPolicy(Qt.StrongFocus)
+        Browse owns the timeline/sidebar/overview widgets we used to
+        host directly on MainWindow; Setup/Analysis/Results are
+        placeholders until Phase 4b/c/d wire them up. The active tab
+        is also where Pan/Zoom/Home/End make sense — the global key
+        filter still routes them to the Browse plot regardless of which
+        tab is visible, since the user expects keyboard nav to "always
+        affect the timeline."
+        """
+        self._tabs_widget = QTabWidget(self)
+        self._tabs_widget.setDocumentMode(True)
+        self._tabs_widget.setMovable(False)
 
-        # Mini-map above the main plot, bound bidirectionally — the
-        # rectangle in the overview tracks the main plot's viewport,
-        # and dragging the rectangle pans/zooms the main plot.
-        self._overview_bar = OverviewBar()
-        self._overview_bar.link_to(self._plot)
+        self._browse_tab = BrowseTab(self)
+        self._setup_tab = SetupTab(self)
+        self._analysis_tab = AnalysisTab(self)
+        self._results_tab = ResultsTab(self)
 
-        # Permanent label on the right side of the status bar — shows
-        # the (time, RR) reading under the cursor. Stays alongside the
-        # transient status messages from navigation / file ops.
+        self._tabs = [
+            self._browse_tab,
+            self._setup_tab,
+            self._analysis_tab,
+            self._results_tab,
+        ]
+        for tab in self._tabs:
+            self._tabs_widget.addTab(tab, tab.TAB_LABEL)
+
+        self.setCentralWidget(self._tabs_widget)
+
+        # ----- Cursor readout (permanent status-bar widget) ---------------
+        # The plot lives inside BrowseTab now; we hook into its signals
+        # from here so the readout stays on the MainWindow's status bar
+        # regardless of which tab is active.
         self._cursor_readout = QLabel("")
         self._cursor_readout.setStyleSheet("color: #555; padding-right: 8px;")
-        self._plot.cursor_moved.connect(self._update_cursor_readout)
-        self._plot.cursor_left.connect(self._clear_cursor_readout)
+        self._browse_tab._plot.cursor_moved.connect(self._update_cursor_readout)
+        self._browse_tab._plot.cursor_left.connect(self._clear_cursor_readout)
 
-        self._empty_label = QLabel(
-            "No .rrational file loaded.\n\n"
-            "Use File → Open .rrational… (Ctrl+O) to load a v2.0 export,\n"
-            "or File → Open folder… to load every .rrational in a directory."
-        )
-        self._empty_label.setAlignment(Qt.AlignCenter)
-        self._empty_label.setStyleSheet("color: #666; font-size: 14px;")
+    # ------------------------------------------------------------------
+    # Backward-compat proxies — tests + earlier-phase code still reach
+    # for widgets that now live inside BrowseTab. Forward the access so
+    # nothing has to change at call sites.
+    # ------------------------------------------------------------------
+    @property
+    def _dataset_tree(self):
+        return self._browse_tab._dataset_tree
 
-        center = QSplitter(Qt.Horizontal)
-        center.addWidget(self._dataset_tree)
+    @property
+    def _plot(self):
+        return self._browse_tab._plot
 
-        right_pane = QWidget()
-        right_layout = QVBoxLayout(right_pane)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(self._empty_label)
-        right_layout.addWidget(self._overview_bar)
-        right_layout.addWidget(self._plot)
-        self._plot.setVisible(False)
-        self._overview_bar.setVisible(False)
-        center.addWidget(right_pane)
-        center.setStretchFactor(0, 0)
-        center.setStretchFactor(1, 1)
+    @property
+    def _overview_bar(self):
+        return self._browse_tab._overview_bar
 
-        self.setCentralWidget(center)
+    @property
+    def _empty_label(self):
+        return self._browse_tab._empty_label
+
+    def _on_tree_item_clicked(self, item, column) -> None:
+        """Forward sidebar clicks to BrowseTab (kept as a method for
+        tests that call ``main_window._on_tree_item_clicked(item, 0)``).
+        """
+        self._browse_tab._on_tree_item_clicked(item, column)
 
     def _build_menu(self) -> None:
         menubar = self.menuBar()
@@ -593,7 +610,7 @@ class MainWindow(QMainWindow):
     def add_dataset(self, ds: Dataset) -> int:
         """Append a dataset to the workspace. Returns its index."""
         self._datasets.append(ds)
-        self._add_dataset_to_tree(len(self._datasets) - 1, ds)
+        self._notify_tabs_workspace_changed()
         return len(self._datasets) - 1
 
     def set_active_dataset(self, idx: int) -> None:
@@ -602,9 +619,8 @@ class MainWindow(QMainWindow):
             raise IndexError(f"invalid dataset index: {idx}")
         self._active_idx = idx
         ds = self._datasets[idx]
-        self._render_dataset(ds)
-        self._update_tree_active_marker()
         self.setWindowTitle(f"RRational Inspector — {ds.name}")
+        self._notify_tabs_active_changed()
 
     def close_active_dataset(self) -> None:
         """Remove the currently-active dataset from the workspace."""
@@ -629,21 +645,24 @@ class MainWindow(QMainWindow):
         elif idx < self._active_idx:
             self._active_idx -= 1
 
-        # Re-render the sidebar from scratch (simpler than fiddling with
-        # individual QTreeWidgetItems whose indices have shifted).
-        self._rebuild_tree()
+        self._notify_tabs_workspace_changed()
 
         if not self._datasets:
-            self._show_empty_state()
+            self.setWindowTitle("RRational Inspector")
+            self.statusBar().clearMessage()
+            self._notify_tabs_active_changed()  # data=None
         elif self._active_idx is None:
-            # Auto-activate first remaining dataset for usability.
             self.set_active_dataset(0)
+        else:
+            self._notify_tabs_active_changed()
 
     def close_all_datasets(self) -> None:
         self._datasets.clear()
         self._active_idx = None
-        self._rebuild_tree()
-        self._show_empty_state()
+        self.setWindowTitle("RRational Inspector")
+        self.statusBar().clearMessage()
+        self._notify_tabs_workspace_changed()
+        self._notify_tabs_active_changed()
 
     # ------------------------------------------------------------------
     # Phase-2 entry point retained for tests + scripts that don't care
@@ -657,100 +676,16 @@ class MainWindow(QMainWindow):
         self.set_active_dataset(idx)
 
     # ------------------------------------------------------------------
-    # Rendering
+    # Tab notification helpers
     # ------------------------------------------------------------------
-    def _render_dataset(self, ds: Dataset) -> None:
-        self._empty_label.setVisible(False)
-        self._plot.setVisible(True)
-        self._plot.set_data(ds.data)
-        for meta in ds.data.sections:
-            self._plot.add_section_region(meta)
-        for ev in ds.data.events:
-            self._plot.add_event_marker(ev)
+    def _notify_tabs_workspace_changed(self) -> None:
+        for tab in self._tabs:
+            tab.on_workspace_changed()
 
-        # Mirror the curve onto the overview bar (visibility is
-        # controlled separately by the View → Show overview-bar toggle).
-        self._overview_bar.set_data(ds.data.t, ds.data.v)
-        if self._toggle_overview_act.isChecked():
-            self._overview_bar.setVisible(True)
-
-        self.statusBar().showMessage(
-            f"{ds.name} — "
-            f"{len(ds.data.sections)} section(s), "
-            f"{len(ds.data.events)} event(s), "
-            f"{ds.data.t_end - ds.data.t_start:.0f}s total"
-        )
-        self._plot.setFocus()
-
-    def _show_empty_state(self) -> None:
-        self._plot.clear_overlays()
-        self._plot._curve.clear()
-        self._plot._times = None
-        self._plot._values = None
-        self._plot.setVisible(False)
-        self._overview_bar.clear_data()
-        self._overview_bar.setVisible(False)
-        self._empty_label.setVisible(True)
-        self.setWindowTitle("RRational Inspector")
-        self.statusBar().clearMessage()
-
-    # ------------------------------------------------------------------
-    # Sidebar tree management
-    # ------------------------------------------------------------------
-    def _add_dataset_to_tree(self, idx: int, ds: Dataset) -> None:
-        top = QTreeWidgetItem(self._dataset_tree, [ds.name])
-        top.setData(0, _ROLE_DATASET_IDX, idx)
-        top.setToolTip(0, str(ds.path) if ds.path else "(synthetic)")
-        for meta in ds.data.sections:
-            label = f"{meta.name}  ({meta.beat_count} beats, {meta.t_end - meta.t_start:.0f}s)"
-            child = QTreeWidgetItem(top, [label])
-            child.setData(0, _ROLE_DATASET_IDX, idx)
-            child.setData(0, _ROLE_SECTION_NAME, meta.name)
-        top.setExpanded(True)
-        self._update_tree_active_marker()
-
-    def _rebuild_tree(self) -> None:
-        self._dataset_tree.clear()
-        for i, ds in enumerate(self._datasets):
-            self._add_dataset_to_tree(i, ds)
-
-    def _update_tree_active_marker(self) -> None:
-        """Bold the top-level item of the active dataset."""
-        for i in range(self._dataset_tree.topLevelItemCount()):
-            top = self._dataset_tree.topLevelItem(i)
-            font = top.font(0)
-            font.setBold(i == self._active_idx)
-            font.setWeight(QFont.Bold if i == self._active_idx else QFont.Normal)
-            top.setFont(0, font)
-
-    def _on_tree_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        idx = item.data(0, _ROLE_DATASET_IDX)
-        section_name = item.data(0, _ROLE_SECTION_NAME)
-
-        if idx is None:
-            return  # unexpected — every item should carry an index
-
-        # Activate the dataset first if the user clicked into a non-active one
-        if self._active_idx != idx:
-            self.set_active_dataset(idx)
-
-        if section_name is None:
-            # Top-level dataset click — already activated, nothing else.
-            return
-
-        # Section click — zoom + highlight inside the active dataset
-        ds = self._datasets[idx]
-        meta = next((s for s in ds.data.sections if s.name == section_name), None)
-        if meta is None:
-            return
-        self._plot.zoom_to_range(meta.t_start, meta.t_end, padding_frac=0.02)
-        self._plot.highlight_section(section_name)
-        self._plot.setFocus()
-        self.statusBar().showMessage(
-            f"Section '{section_name}': {meta.beat_count} beats, "
-            f"{meta.t_end - meta.t_start:.1f}s",
-            3000,
-        )
+    def _notify_tabs_active_changed(self) -> None:
+        data = self._data  # None when no active dataset
+        for tab in self._tabs:
+            tab.on_active_dataset_changed(data)
 
     # ------------------------------------------------------------------
     # Dialog helpers — silenced in test_mode so pytest-qt doesn't block.
