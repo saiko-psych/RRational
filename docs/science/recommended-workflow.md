@@ -126,7 +126,7 @@ rest_pre        measurement_1         pause        measurement_2         rest_po
 **Why:**
 
 - **Same segments for detection and analysis**: If you detect artifacts on the full recording but analyze 5-minute windows, the artifact rate per window is unknown. A segment might have 0% artifacts overall but 25% concentrated in one window.
-- **Per-segment quality grades**: Each segment gets its own quality assessment (Grade A/B/C/D). This enables informed decisions about which segments to include.
+- **Per-segment quality grades**: Each segment gets its own quality assessment (Excellent / Good / Moderate / Poor). This enables informed decisions about which segments to include.
 
 **In RRational:**
 
@@ -138,13 +138,13 @@ rest_pre        measurement_1         pause        measurement_2         rest_po
 
 ``` mermaid
 flowchart TD
-    A[Artifact rate per segment] --> B{< 2%?}
-    B -->|Yes| C[Grade A — use as-is]
-    B -->|No| D{< 5%?}
-    D -->|Yes| E[Grade B — correct, then analyze]
-    D -->|No| F{< 10%?}
-    F -->|Yes| G[Grade C — correct, time-domain only]
-    F -->|No| H[Grade D — EXCLUDE]
+    A[Artifact rate per segment] --> B{≤ 2%?}
+    B -->|Yes| C[Excellent — use as-is]
+    B -->|No| D{≤ 5%?}
+    D -->|Yes| E[Good — correct, then analyze]
+    D -->|No| F{≤ 10%?}
+    F -->|Yes| G[Moderate — correct, time-domain only]
+    F -->|No| H[Poor — EXCLUDE]
 
     style C fill:#28a745,color:#fff
     style E fill:#2E86AB,color:#fff
@@ -169,7 +169,7 @@ flowchart TD
 | Approach | When to use | In RRational |
 |----------|-------------|--------------|
 | **Individual assessment** | Checking each segment manually | Segment Assessment Table with include/exclude checkboxes |
-| **Automatic threshold** | Large datasets, reproducibility | Segments with Grade D are auto-excluded |
+| **Automatic threshold** | Large datasets, reproducibility | Segments graded Poor (>10%) or with <50 beats are auto-excluded |
 
 **In RRational:**
 
@@ -181,11 +181,11 @@ flowchart TD
 
 ### Step 6: Correct Artifacts & Compute HRV
 
-**What:** Apply artifact correction to included segments (Grade B/C), then compute HRV metrics per segment.
+**What:** Apply artifact correction to included segments (Good/Moderate), then compute HRV metrics per segment.
 
 **Why:**
 
-- **Correction, not deletion**: Ectopic beats are replaced by interpolated values (cubic spline), preserving the time structure. Simply deleting ectopic beats would shift all subsequent timestamps.
+- **Correction, not deletion**: Detected artifacts are replaced with interpolated values from the surrounding beats, preserving the time structure. Simply deleting ectopic beats would shift all subsequent timestamps.
 - **Per-segment metrics**: Computing metrics per segment enables both individual reporting and later aggregation.
 
 **In RRational:**
@@ -200,7 +200,7 @@ flowchart TD
 |--------|---------|---------|
 | Time | RMSSD, SDNN, pNN50, Mean HR | 100 beats |
 | Frequency | LF, HF, LF/HF, Total Power | 300 beats, 5 min |
-| Nonlinear | SD1, SD2, SD1/SD2 | 100 beats |
+| Nonlinear | SD1, SD2, SD1/SD2, ApEn, SampEn, DFA α1/α2 | 100 beats |
 
 ---
 
@@ -223,7 +223,7 @@ flowchart TD
 | Mean SDNN | 51.2 ± 12.1 ms |
 | Mean HF Power | 845 ± 312 ms² |
 | Window duration | 5 min, no overlap |
-| Correction method | Kubios (NeuroKit2), Grade D excluded |
+| Correction method | Kubios (NeuroKit2), Poor segments excluded |
 
 **In RRational:**
 

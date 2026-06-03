@@ -73,7 +73,7 @@
 :   Percentage of detected artifacts relative to total beats. Critical quality indicator — segments with > 10% should be excluded.
 
 **Quality Grade** (Quigley 2024)
-:   A–D classification based on artifact rate. Grade A (< 2%): excellent; Grade B (2–5%): good; Grade C (5–10%): acceptable for time-domain only; Grade D (> 10%): exclude.
+:   Quality classification based on artifact rate: **Excellent** (≤ 2%); **Good** (2–5%); **Moderate** (5–10%, time-domain only); **Poor** (> 10%, excluded). Segments with fewer than 50 beats are excluded regardless of artifact rate.
 
 **Kubios Algorithm**
 :   Artifact detection method by Lipponen & Tarvainen (2019). Classifies artifacts as extra beats, missed beats, or misaligned. Used in NeuroKit2's `signal_fixpeaks`.

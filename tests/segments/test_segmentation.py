@@ -8,6 +8,8 @@ from rrational.gui.segmentation import (
     assess_segment_quality,
     format_ms_as_time,
     generate_segments,
+    quality_grade_from_rate,
+    should_exclude_segment,
 )
 
 
@@ -57,7 +59,7 @@ class TestGenerateSegments:
         rr = _make_rr(1000)
         segs = generate_segments(rr, window_s=300.0, overlap_pct=0.0)
         for seg in segs:
-            sliced = rr[seg.beat_start:seg.beat_end]
+            sliced = rr[seg.beat_start : seg.beat_end]
             assert len(sliced) == seg.n_beats
 
     def test_no_overlap_covers_all_beats(self):
@@ -100,35 +102,77 @@ class TestGenerateSegments:
 class TestAssessSegmentQuality:
     def _seg(self, artifact_pct: float = 0.0, n_beats: int = 300) -> Segment:
         return Segment(
-            idx=0, start_ms=0, end_ms=300_000, beat_start=0,
-            beat_end=n_beats, n_beats=n_beats, duration_s=300.0,
+            idx=0,
+            start_ms=0,
+            end_ms=300_000,
+            beat_start=0,
+            beat_end=n_beats,
+            n_beats=n_beats,
+            duration_s=300.0,
             artifact_count=int(n_beats * artifact_pct / 100),
             artifact_pct=artifact_pct,
         )
 
+    def test_excellent(self):
+        assert assess_segment_quality(self._seg(1.0)) == "excellent"
+
     def test_good(self):
-        assert assess_segment_quality(self._seg(1.0)) == "good"
+        assert assess_segment_quality(self._seg(3.0)) == "good"
 
-    def test_fair(self):
-        assert assess_segment_quality(self._seg(3.0)) == "fair"
+    def test_moderate(self):
+        assert assess_segment_quality(self._seg(7.0)) == "moderate"
 
-    def test_poor(self):
-        assert assess_segment_quality(self._seg(7.0)) == "poor"
+    def test_poor_high_artifacts(self):
+        assert assess_segment_quality(self._seg(12.0)) == "poor"
+
+    def test_boundary_2pct_is_excellent(self):
+        assert assess_segment_quality(self._seg(2.0)) == "excellent"
+
+    def test_boundary_5pct_is_good(self):
+        assert assess_segment_quality(self._seg(5.0)) == "good"
+
+    def test_boundary_10pct_is_moderate(self):
+        assert assess_segment_quality(self._seg(10.0)) == "moderate"
+
+    def test_grade_ignores_beat_count(self):
+        # Quality grade reflects only artifact rate; exclusion is separate.
+        assert assess_segment_quality(self._seg(0.0, n_beats=30)) == "excellent"
+
+
+class TestShouldExcludeSegment:
+    def _seg(self, artifact_pct: float = 0.0, n_beats: int = 300) -> Segment:
+        return Segment(
+            idx=0,
+            start_ms=0,
+            end_ms=300_000,
+            beat_start=0,
+            beat_end=n_beats,
+            n_beats=n_beats,
+            duration_s=300.0,
+            artifact_count=int(n_beats * artifact_pct / 100),
+            artifact_pct=artifact_pct,
+        )
+
+    def test_keep_clean_segment(self):
+        assert should_exclude_segment(self._seg(3.0)) is False
 
     def test_exclude_high_artifacts(self):
-        assert assess_segment_quality(self._seg(12.0)) == "exclude"
+        assert should_exclude_segment(self._seg(12.0)) is True
+
+    def test_keep_at_10pct_boundary(self):
+        assert should_exclude_segment(self._seg(10.0)) is False
 
     def test_exclude_too_few_beats(self):
-        assert assess_segment_quality(self._seg(0.0, n_beats=30)) == "exclude"
+        assert should_exclude_segment(self._seg(0.0, n_beats=30)) is True
 
-    def test_boundary_2pct_is_good(self):
-        assert assess_segment_quality(self._seg(2.0)) == "good"
 
-    def test_boundary_5pct_is_fair(self):
-        assert assess_segment_quality(self._seg(5.0)) == "fair"
-
-    def test_boundary_10pct_is_poor(self):
-        assert assess_segment_quality(self._seg(10.0)) == "poor"
+class TestQualityGradeFromRate:
+    def test_rate_thresholds(self):
+        assert quality_grade_from_rate(0.0) == "excellent"
+        assert quality_grade_from_rate(0.02) == "excellent"
+        assert quality_grade_from_rate(0.05) == "good"
+        assert quality_grade_from_rate(0.10) == "moderate"
+        assert quality_grade_from_rate(0.25) == "poor"
 
 
 class TestFormatMsAsTime:
@@ -193,8 +237,9 @@ class TestSegmentConsistency:
         rr = _make_rr(1500)
         segs = generate_segments(rr, window_s=300.0, overlap_pct=0.0)
         for i in range(len(segs) - 1):
-            assert segs[i].beat_end == segs[i + 1].beat_start, \
-                f"Gap between segment {i} and {i+1}"
+            assert segs[i].beat_end == segs[i + 1].beat_start, (
+                f"Gap between segment {i} and {i + 1}"
+            )
 
     def test_analysis_with_segments_parameter(self):
         """_calculate_hrv_metrics should accept and use pre-computed segments."""

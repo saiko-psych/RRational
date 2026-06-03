@@ -20,10 +20,10 @@ RRational uses the **Lipponen-Tarvainen algorithm** (via NeuroKit2's Kubios impl
 ``` mermaid
 flowchart TD
   A[Run artifact detection] --> B{Artifact rate?}
-  B -->|< 2%| C[Grade A\nUse as-is]
-  B -->|2-5%| D[Grade B\nCorrect + analyze]
-  B -->|5-10%| E[Grade C\nCorrect, time-domain only]
-  B -->|> 10%| F[Grade D\nExclude segment]
+  B -->|≤ 2%| C[Excellent\nUse as-is]
+  B -->|2-5%| D[Good\nCorrect + analyze]
+  B -->|5-10%| E[Moderate\nCorrect, time-domain only]
+  B -->|> 10%| F[Poor\nExclude segment]
 
   style C fill:#28a745,color:#fff
   style D fill:#2E86AB,color:#fff
@@ -44,10 +44,12 @@ RRational assigns quality grades following Quigley et al. (2024):
 
 | Grade | Artifact Rate | Valid Metrics | Action |
 |-------|---------------|---------------|--------|
-| **A** | < 2% | All (time, frequency, nonlinear) | Use as-is |
-| **B** | 2–5% | All | Correct artifacts, then analyze |
-| **C** | 5–10% | Time-domain only | Correct, but avoid frequency metrics |
-| **D** | > 10% | None reliably | **Exclude from analysis** |
+| **Excellent** | ≤ 2% | All (time, frequency, nonlinear) | Use as-is |
+| **Good** | 2–5% | All | Correct artifacts, then analyze |
+| **Moderate** | 5–10% | Time-domain only | Correct, but avoid frequency metrics |
+| **Poor** | > 10% | None reliably | **Exclude from analysis** |
+
+Segments with fewer than 50 beats are excluded automatically regardless of artifact rate (too short for any reliable HRV metric).
 
 ### Minimum Data Requirements
 
@@ -55,7 +57,7 @@ RRational assigns quality grades following Quigley et al. (2024):
 |----------|---------|-------------|-----|
 | Time-domain (RMSSD, SDNN) | 100 beats | 300+ beats | Statistical reliability |
 | Frequency-domain (LF, HF) | 300 beats | 500+ beats | Spectral estimation needs sufficient data |
-| Recording duration for frequency | 2 minutes | 5 minutes | Standard short-term window (Task Force 1996) |
+| Recording duration for frequency | 2 minutes | 5 minutes | 5 min is the Task Force (1996) short-term window; the 2 min minimum is RRational's practical floor |
 
 ## Metric Interpretation
 
@@ -75,6 +77,28 @@ RRational assigns quality grades following Quigley et al. (2024):
 
 !!! warning "SDNN Across Different Durations"
     SDNN scales with recording duration. **Never compare SDNN values from segments of different lengths.** Use consistent window sizes (e.g., always 5 minutes) within a study.
+
+## Statistical Testing (Group & Sequence Comparison)
+
+When you compare groups or conditions, RRational selects an appropriate test automatically and reports an effect size alongside each p-value.
+
+**Test selection** is driven by the number of groups and a normality check (Shapiro-Wilk) on each metric:
+
+| Comparison | Distribution | Test | Effect size |
+|------------|--------------|------|-------------|
+| 2 groups | normal | Welch's t-test (unequal variances) | Cohen's d |
+| 2 groups | non-normal | Mann-Whitney U | — |
+| 3+ groups | normal | one-way ANOVA | η² (eta-squared) |
+| 3+ groups | non-normal | Kruskal-Wallis | η² |
+
+**Why effect sizes?** A p-value indicates whether a difference is unlikely under the null hypothesis; it does not say how *large* the difference is. Always report an effect size (Cohen's d or η²) so readers can judge practical significance — current reporting guidelines (Quigley et al., 2024) require this.
+
+**Multiple comparisons.** Testing many metrics at once inflates the false-positive rate. RRational adjusts p-values across the metrics in a comparison using **Holm** (default), **Bonferroni**, or **Benjamini-Hochberg FDR**. State which correction you used.
+
+**Log-normal metrics.** Frequency-domain powers (LF, HF, VLF, Total Power) are right-skewed and approximately log-normal. RRational log-transforms them before parametric testing so the normality assumption holds, in line with common HRV practice.
+
+!!! warning "Normality on small samples"
+    The Shapiro-Wilk test has low power with very small groups, so a "normal" verdict on a handful of participants is weak evidence. With small or clearly skewed samples, prefer the non-parametric option and interpret parametric results cautiously.
 
 ## Reporting Checklist
 

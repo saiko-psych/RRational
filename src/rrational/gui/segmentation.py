@@ -11,21 +11,23 @@ from dataclasses import dataclass
 
 import numpy as np
 
-# Quigley 2024 thresholds
-_ARTIFACT_EXCLUDE = 10.0  # % -> exclude segment
-_ARTIFACT_POOR = 5.0      # % -> poor quality
-_ARTIFACT_FAIR = 2.0      # % -> fair quality
-_MIN_BEATS = 50           # absolute minimum for any analysis
+# Quigley 2024 artifact-rate thresholds (fraction of beats, 0-1)
+_RATE_EXCELLENT = 0.02  # <= 2%  -> excellent
+_RATE_GOOD = 0.05  # <= 5%  -> good
+_RATE_MODERATE = 0.10  # <= 10% -> moderate; > 10% -> poor
+_EXCLUDE_RATE_PCT = 10.0  # artifact % above which a segment is excluded
+_MIN_BEATS = 50  # absolute minimum beats for any analysis
 
 
 @dataclass(slots=True)
 class Segment:
     """A time-based analysis segment used by both artifact detection and HRV analysis."""
+
     idx: int
-    start_ms: float       # cumulative ms from recording start
+    start_ms: float  # cumulative ms from recording start
     end_ms: float
-    beat_start: int       # index into RR array (inclusive)
-    beat_end: int          # index into RR array (exclusive, slice-compatible)
+    beat_start: int  # index into RR array (inclusive)
+    beat_end: int  # index into RR array (exclusive, slice-compatible)
     n_beats: int
     duration_s: float
     # populated after artifact detection
@@ -96,31 +98,54 @@ def generate_segments(
         if n < 1:
             continue
         dur_s = float(ends[i] - starts[i]) / 1000.0
-        segments.append(Segment(
-            idx=len(segments),
-            start_ms=float(starts[i]),
-            end_ms=float(ends[i]),
-            beat_start=bs,
-            beat_end=be,
-            n_beats=n,
-            duration_s=dur_s,
-        ))
+        segments.append(
+            Segment(
+                idx=len(segments),
+                start_ms=float(starts[i]),
+                end_ms=float(ends[i]),
+                beat_start=bs,
+                beat_end=be,
+                n_beats=n,
+                duration_s=dur_s,
+            )
+        )
 
     return segments
 
 
-def assess_segment_quality(seg: Segment) -> str:
-    """Assign quality grade based on Quigley 2024 guidelines.
+def quality_grade_from_rate(artifact_rate: float) -> str:
+    """Map an artifact rate (fraction of beats, 0-1) to a quality grade.
 
-    Returns one of: "good", "fair", "poor", "exclude".
+    Quigley 2024 thresholds. Returns one of: "excellent", "good", "moderate",
+    "poor". This is the single source of truth for quality grades across the
+    artifact-detection panel, the analysis tab and the .rrational export.
     """
-    if seg.artifact_pct > _ARTIFACT_EXCLUDE or seg.n_beats < _MIN_BEATS:
-        return "exclude"
-    if seg.artifact_pct > _ARTIFACT_POOR:
-        return "poor"
-    if seg.artifact_pct > _ARTIFACT_FAIR:
-        return "fair"
-    return "good"
+    if artifact_rate <= _RATE_EXCELLENT:
+        return "excellent"
+    if artifact_rate <= _RATE_GOOD:
+        return "good"
+    if artifact_rate <= _RATE_MODERATE:
+        return "moderate"
+    return "poor"
+
+
+def assess_segment_quality(seg: Segment) -> str:
+    """Quality grade for a segment, per Quigley 2024.
+
+    Returns "excellent", "good", "moderate" or "poor". Whether a segment must
+    be *excluded* from analysis is a separate decision — see
+    should_exclude_segment().
+    """
+    return quality_grade_from_rate(seg.artifact_pct / 100.0)
+
+
+def should_exclude_segment(seg: Segment) -> bool:
+    """Whether a segment must be excluded from analysis (Quigley 2024).
+
+    A segment is excluded when its artifact rate exceeds 10% or it has fewer
+    than 50 beats (too short for any reliable HRV metric).
+    """
+    return seg.artifact_pct > _EXCLUDE_RATE_PCT or seg.n_beats < _MIN_BEATS
 
 
 def format_ms_as_time(ms: float) -> str:

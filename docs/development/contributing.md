@@ -102,7 +102,7 @@ uv run ruff check src/ tests/ --fix
 
 - Run full suite: `uv run pytest`
 - Run specific tests: `uv run pytest tests/cleaning/ -v`
-- Target: 85%+ statement coverage
+- Aim for high test coverage on new features and bug fixes
 - Always add tests for new features or bug fixes
 
 ### Pull Request Guidelines
@@ -138,7 +138,7 @@ refactor: extract artifact detection to separate module
 
 ## Questions?
 
-- Check the [QUICKSTART.md](../QUICKSTART.md) guide
+- Check the [Quick Start](../getting-started/quickstart.md) guide
 - Search [existing issues](https://github.com/saiko-psych/rrational/issues)
 - Open a new issue with the "Question" label
 

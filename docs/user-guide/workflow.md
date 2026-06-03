@@ -156,7 +156,7 @@ Below the metrics, you'll see the interaction modes and plot settings:
 
 | Control | What it does |
 |---------|-------------|
-| **Gap threshold (s)** | Minimum gap duration (in seconds) to display. Default: 30s |
+| **Gap threshold (s)** | Minimum gap duration (in seconds) to display. Default: 15s |
 | **Help** | Dropdown with explanation of keyboard shortcuts and interaction modes |
 | **Refresh** | Reloads the current participant's data and redraws the plot |
 | **Quick Save for Analysis** | Expander to save artifact markings without full export |
@@ -375,7 +375,10 @@ Click **"Analysis"** in the sidebar.
 
 ![Analysis mode selection](../assets/screenshots/27-analysis-mode-selection.png)
 
-*What you see: Three radio buttons for analysis mode, a participant selector, and a section multiselect. The available sections are pre-selected based on validation.*
+*What you see: Four radio buttons for analysis mode, a participant selector, and a section multiselect. The available sections are pre-selected based on validation.*
+
+!!! note "Frequency-domain pipeline selector"
+    Above the mode selector, a single global **Frequency-domain pipeline** dropdown (NeuroKit2 default vs Kubios-compatible) applies to **all four** analysis modes. See the [Kubios Compatibility Guide](kubios-compatibility.md).
 
 | Mode | What it does | When to use |
 |------|-------------|-------------|
@@ -413,7 +416,30 @@ Click **"Analysis"** in the sidebar.
 
 ![Group Analysis mode](../assets/screenshots/31-analysis-group.png)
 
-*What you see: Group Analysis mode where you select groups to compare and run batch analysis.*
+*What you see: Group Analysis mode where you select two or more study groups, choose a metric preset, and run a batch comparison across all participants in those groups.*
+
+Group Analysis reads each participant's `.rrational` file once and aggregates the per-section metrics across the group. Results appear in three tabs:
+
+**Data tab** — a descriptive table of per-group means and dispersion for every selected metric, with CSV export.
+
+**Statistics tab** — descriptive statistics plus a **Hypothesis Tests** panel. The appropriate test is selected automatically based on the number of groups and a normality check (Shapiro-Wilk):
+
+| Groups | Distribution | Test | Effect size |
+|--------|--------------|------|-------------|
+| 2 | normal | Welch's t-test | Cohen's d |
+| 2 | non-normal | Mann-Whitney U | — |
+| 3+ | normal | one-way ANOVA | η² (eta-squared) |
+| 3+ | non-normal | Kruskal-Wallis | η² |
+
+When several metrics are tested together, p-values are adjusted for multiple comparisons (**Holm** by default; **Bonferroni** and **Benjamini-Hochberg FDR** are also available). Frequency-domain metrics (LF, HF, VLF, Total Power) are log-transformed before parametric testing because their distributions are log-normal.
+
+**Chart tab** — bar charts, box plots, violin plots, raincloud plots and SD1/SD2 scatter, with options to:
+
+- choose the error-bar type (**SEM** default, **SD**, **CI95**, or **None**),
+- overlay **individual data points** behind the summary statistics,
+- use a **log Y-axis** (enabled automatically for log-normal metrics such as LF/HF).
+
+**Cached results.** A completed analysis can be saved to the project (`data/processed/group_analysis_results.yml`). When a cache exists, a *"Cached results available"* banner offers **Load** (instant) or **Delete**, with the last-saved timestamp; the analysis can also be exported as an **HTML report**. Because each `.rrational` file is read only once per participant, a fresh run is substantially faster than per-metric loading.
 
 ### 6.5 Sequence Comparison
 
@@ -423,7 +449,7 @@ Click **"Analysis"** in the sidebar.
 
 ![Sequence Comparison settings](../assets/screenshots/38-sequence-comparison-settings.png)
 
-*Step 2 shows conditions to compare (extracted from sequence definitions). Step 3 provides the same metric presets and analysis settings as Group Analysis.*
+*Step 2 shows conditions to compare (extracted from sequence definitions). Step 3 provides metric presets and analysis settings similar to Group Analysis.*
 
 | Setting | What it does |
 |---------|-------------|
@@ -432,7 +458,7 @@ Click **"Analysis"** in the sidebar.
 | **Select Conditions** | Choose which experimental conditions to analyze |
 | **Compare Sequences** | Run the comparison and display results with charts |
 
-Results are displayed in Data, Statistics, and Chart tabs — the same visualization options as Group Analysis (bar charts, box plots, violin plots, raincloud plots, SD1/SD2 scatter).
+Results are displayed in Data, Statistics, and Chart tabs, using the same chart types as Group Analysis (bar charts, box plots, violin plots, raincloud plots, SD1/SD2 scatter).
 
 ### 6.6 Power Spectrum (PSD)
 
@@ -506,7 +532,7 @@ In the Participants tab sidebar, click **"Export for Analysis"** to save a `.rra
 
 ![Sidebar with navigation, documentation and bug report links](../assets/screenshots/33-sidebar-bottom.png)
 
-*The sidebar bottom shows: **Settings** expander, **Documentation** button (links to rrational.readthedocs.io), **Report a Bug** button (links to GitHub Issues), and the **version number** with git commit hash (e.g., "v0.8.1 (2db7ad7)").*
+*The sidebar bottom shows: **Settings** expander, **Documentation** button (links to rrational.readthedocs.io), **Report a Bug** button (links to GitHub Issues), and the **version number** with git commit hash (e.g., "v0.9.3 (a1b2c3d)").*
 
 ---
 
@@ -529,10 +555,9 @@ In the Participants tab sidebar, click **"Export for Analysis"** to save a `.rra
 
 | Key | Action | Context |
 |-----|--------|---------|
-| `R` | Refresh/rerun app | Anywhere |
-| `C` | Clear cache | Anywhere |
-| `I` | Toggle inspection zoom | Signal Inspection mode |
-| `Left/Right` | Pan zoomed view | Signal Inspection zoom |
+| `I` | Toggle Signal Inspection mode / zoom | RR plot |
+| `R` | Reset zoom | Signal Inspection mode |
+| `Left` / `Right` | Pan the zoomed view | Signal Inspection zoom |
 
 ---
 

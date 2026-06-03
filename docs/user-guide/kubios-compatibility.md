@@ -170,7 +170,7 @@ Common causes of remaining discrepancies (in order of likelihood):
 - Existing cached `group_analysis_results.yml` files were computed with whichever
   `freq_method` was active at the time. Re-run the analysis after switching
   modes to refresh cached values.
-- The Single Participant tab's PSD plot uses a separate computation
+- The Participants tab's PSD plot uses a separate computation
   (see `analysis_plots.py`). It does not yet honor the `freq_method` setting —
   this affects only the displayed graph, not the metrics in the tables.
 
