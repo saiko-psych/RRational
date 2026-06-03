@@ -108,3 +108,38 @@ class EventMarker(pg.InfiniteLine):
         # Events sit on TOP of section bands but below the cursor crosshair
         # (which we'll add in Phase 3 at z=10).
         self.setZValue(0)
+
+
+# Visual constants for artifact overlay. Orange picked to contrast with
+# the blue tachogram and the cooler section-band palette.
+_ARTIFACT_COLOR = "#ff7f0e"
+_ARTIFACT_SIZE = 8  # pixel diameter of each dot
+
+
+class ArtifactOverlay(pg.ScatterPlotItem):
+    """Scatter overlay marking detected artifact positions on the plot.
+
+    One ``ArtifactOverlay`` is added per signal — calling ``set_points``
+    replaces the entire artifact set so we don't accumulate stale items
+    across re-detections. Using ScatterPlotItem (one C++ object) instead
+    of one InfiniteLine per artifact keeps Qt's scene tree small even
+    for >1000-artifact recordings.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            size=_ARTIFACT_SIZE,
+            pen=pg.mkPen(_ARTIFACT_COLOR, width=1),
+            brush=pg.mkBrush(_ARTIFACT_COLOR),
+            symbol="o",
+            pxMode=True,
+        )
+        # Above section bands + events, below the crosshair.
+        self.setZValue(5)
+
+    def set_points(self, ts: list[float], vs: list[float]) -> None:
+        """Replace the artifact set with the supplied (time, value) pairs."""
+        self.setData(x=ts, y=vs)
+
+    def clear_points(self) -> None:
+        self.setData(x=[], y=[])

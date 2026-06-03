@@ -69,20 +69,31 @@ class BrowseTab(InspectorTab):
         self._empty_label.setAlignment(Qt.AlignCenter)
         self._empty_label.setStyleSheet("color: #666; font-size: 14px;")
 
+        # Right-side preprocessing panel (artifact detection + summary).
+        # Defer the import so importing browse_tab.py at module load
+        # time doesn't drag in NeuroKit2 (which preprocessing_panel
+        # uses transitively).
+        from rrational.inspector.tabs.preprocessing_panel import PreprocessingPanel
+
+        self._preprocessing_panel = PreprocessingPanel(self._main_window, self)
+
         center = QSplitter(Qt.Horizontal, self)
         center.addWidget(self._dataset_tree)
 
-        right_pane = QWidget()
-        right_layout = QVBoxLayout(right_pane)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(self._empty_label)
-        right_layout.addWidget(self._overview_bar)
-        right_layout.addWidget(self._plot)
+        middle_pane = QWidget()
+        middle_layout = QVBoxLayout(middle_pane)
+        middle_layout.setContentsMargins(0, 0, 0, 0)
+        middle_layout.addWidget(self._empty_label)
+        middle_layout.addWidget(self._overview_bar)
+        middle_layout.addWidget(self._plot)
         self._plot.setVisible(False)
         self._overview_bar.setVisible(False)
-        center.addWidget(right_pane)
+        center.addWidget(middle_pane)
+
+        center.addWidget(self._preprocessing_panel)
         center.setStretchFactor(0, 0)
         center.setStretchFactor(1, 1)
+        center.setStretchFactor(2, 0)
 
         # The tab's own QWidget hosts the splitter through a VBoxLayout.
         layout = QVBoxLayout(self)
@@ -101,11 +112,13 @@ class BrowseTab(InspectorTab):
             self._show_empty_state()
 
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
+        # Preprocessing panel always wants to know — even when data is
+        # None, so it can disable the Detect button.
+        self._preprocessing_panel.on_active_dataset_changed(data)
+
         if data is None:
             self._show_empty_state()
             return
-        # Find the active dataset object (we only got the data, not the
-        # Dataset wrapper — the MainWindow knows the index).
         idx = self._main_window._active_idx
         if idx is None or not (0 <= idx < len(self._main_window._datasets)):
             return

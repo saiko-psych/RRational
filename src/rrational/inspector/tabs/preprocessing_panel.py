@@ -1,0 +1,210 @@
+"""Right-side panel of the Browse tab — artifact detection + summary.
+
+Mirrors the Streamlit Participants tab's preprocessing flow:
+1. Click "Detect artifacts" → runs NK2 Kubios algorithm on the active
+   dataset's RR array
+2. Shows artifact rate + Quigley-2024 quality grade
+3. Toggles overlay visibility on the main plot
+4. (Phase 4-Prep step 2: export as .rrational v2 once user has
+   validated sections)
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import (
+    QCheckBox,
+    QFrame,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+if TYPE_CHECKING:
+    from rrational.inspector.data_loader import InspectorData
+    from rrational.inspector.preprocessing import PreprocessingResult
+
+
+# Colour-code the quality grade so the eye lands on it before reading
+# the text. Chosen for white-background readability.
+_GRADE_COLOR = {
+    "excellent": "#2ca02c",  # green
+    "good": "#5b8def",  # blue
+    "moderate": "#ff7f0e",  # orange
+    "poor": "#d62728",  # red
+    "unknown": "#888888",  # grey
+}
+
+
+class PreprocessingPanel(QWidget):
+    """Side panel that runs artifact detection and shows the result."""
+
+    def __init__(self, main_window, parent=None) -> None:
+        super().__init__(parent)
+        self._main_window = main_window
+        self._last_result: "PreprocessingResult | None" = None
+
+        self.setMaximumWidth(280)
+        self.setMinimumWidth(220)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        header = QLabel("<b>Preprocessing</b>")
+        header.setAlignment(Qt.AlignLeft)
+        layout.addWidget(header)
+
+        self._detect_btn = QPushButton("Detect artifacts")
+        self._detect_btn.setToolTip(
+            "Run NeuroKit2 Kubios algorithm on the active dataset's RR series"
+        )
+        self._detect_btn.clicked.connect(self._on_detect_clicked)
+        # Disabled until on_active_dataset_changed fires with real data.
+        self._detect_btn.setEnabled(False)
+        layout.addWidget(self._detect_btn)
+
+        # Quality summary (multi-line label).
+        self._summary = QLabel(
+            "No artifact detection run yet.\n\nLoad a recording, then "
+            "click <i>Detect artifacts</i>."
+        )
+        self._summary.setWordWrap(True)
+        self._summary.setStyleSheet("color: #555; padding: 4px 0;")
+        layout.addWidget(self._summary)
+
+        # Divider so the toggle group reads as a separate block.
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(sep)
+
+        self._toggle_show_artifacts = QCheckBox("Show artifact markers")
+        self._toggle_show_artifacts.setChecked(True)
+        self._toggle_show_artifacts.toggled.connect(self._on_toggle_show_artifacts)
+        self._toggle_show_artifacts.setEnabled(False)
+        layout.addWidget(self._toggle_show_artifacts)
+
+        self._toggle_use_corrected = QCheckBox("Use corrected RR values")
+        self._toggle_use_corrected.setChecked(False)
+        self._toggle_use_corrected.setToolTip(
+            "Replace the plotted RR series with the artifact-corrected "
+            "(interpolated) version."
+        )
+        self._toggle_use_corrected.toggled.connect(self._on_toggle_use_corrected)
+        self._toggle_use_corrected.setEnabled(False)
+        layout.addWidget(self._toggle_use_corrected)
+
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.HLine)
+        sep2.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(sep2)
+
+        self._export_btn = QPushButton("Save as .rrational v2…")
+        self._export_btn.setToolTip(
+            "Export the current dataset (plus detected artifacts + "
+            "any section overrides) as a .rrational v2 file"
+        )
+        self._export_btn.clicked.connect(self._on_export_clicked)
+        self._export_btn.setEnabled(False)
+        layout.addWidget(self._export_btn)
+
+        layout.addStretch()
+
+    # ------------------------------------------------------------------
+    # State sync
+    # ------------------------------------------------------------------
+    def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
+        """Reset the panel when the user switches/unloads a dataset."""
+        self._last_result = None
+        if data is None:
+            self._summary.setText(
+                "<i>No dataset loaded.</i> Use File → Open to load a recording."
+            )
+            self._detect_btn.setEnabled(False)
+        else:
+            self._summary.setText(
+                f"Loaded: <b>{len(data.t)}</b> beats.\n\n"
+                "Click <i>Detect artifacts</i> to run the Kubios algorithm."
+            )
+            self._detect_btn.setEnabled(True)
+        self._toggle_show_artifacts.setEnabled(False)
+        self._toggle_use_corrected.setEnabled(False)
+        self._toggle_use_corrected.blockSignals(True)
+        self._toggle_use_corrected.setChecked(False)
+        self._toggle_use_corrected.blockSignals(False)
+        self._export_btn.setEnabled(False)
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+    def _on_detect_clicked(self) -> None:
+        from rrational.inspector.preprocessing import detect_artifacts
+
+        data = self._main_window._data
+        if data is None or len(data.v) == 0:
+            return
+        result = detect_artifacts(data.v)
+        self._last_result = result
+
+        # Push markers to the plot, then update summary text.
+        plot = self._main_window._browse_tab._plot
+        plot.set_artifacts(result.indices)
+        plot.set_artifacts_visible(self._toggle_show_artifacts.isChecked())
+
+        color = _GRADE_COLOR.get(result.grade, "#888888")
+        type_breakdown = (
+            ", ".join(
+                f"{name}: {count}"
+                for name, count in result.by_type.items()
+                if count > 0
+            )
+            or "no individual types reported"
+        )
+        self._summary.setText(
+            f"<b>{result.total}</b> artifacts in {len(data.v)} beats<br>"
+            f"<b>Rate:</b> {result.rate * 100:.2f}%<br>"
+            f"<b>Grade:</b> "
+            f"<span style='color:{color};'><b>{result.grade}</b></span><br>"
+            f"<small style='color:#666'>{result.recommendation}</small><br>"
+            f"<small style='color:#888'>{type_breakdown}</small>"
+        )
+        self._toggle_show_artifacts.setEnabled(True)
+        # Corrected-values toggle only useful when there are actual artifacts.
+        self._toggle_use_corrected.setEnabled(result.total > 0)
+        self._export_btn.setEnabled(True)
+        self._main_window.statusBar().showMessage(
+            f"Artifact detection: {result.total} found "
+            f"({result.rate * 100:.2f}%, {result.grade})",
+            4000,
+        )
+
+    def _on_toggle_show_artifacts(self, checked: bool) -> None:
+        plot = self._main_window._browse_tab._plot
+        plot.set_artifacts_visible(checked)
+
+    def _on_toggle_use_corrected(self, checked: bool) -> None:
+        if self._last_result is None or self._last_result.corrected_v is None:
+            return
+        plot = self._main_window._browse_tab._plot
+        data = self._main_window._data
+        if data is None:
+            return
+        if checked:
+            plot._curve.setData(data.t, self._last_result.corrected_v)
+        else:
+            plot._curve.setData(data.t, data.v)
+
+    def _on_export_clicked(self) -> None:
+        """Stub — full export wiring lands in Phase 4-Prep step 2."""
+        self._main_window._info(
+            "Save as .rrational",
+            "Section validation + .rrational v2 export are wired up in "
+            "the next Phase 4-Prep sub-step. The artifact-detection "
+            "result is already kept in memory.",
+        )

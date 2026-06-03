@@ -75,6 +75,12 @@ def main() -> int:
         choices=["browse", "setup", "analysis", "results"],
         help="Switch to a specific tab before grabbing",
     )
+    parser.add_argument(
+        "--detect-artifacts",
+        action="store_true",
+        help="Click 'Detect artifacts' in the Preprocessing panel before "
+        "the screenshot — useful for showing the full detected state",
+    )
     args = parser.parse_args()
 
     import pyqtgraph as pg
@@ -129,6 +135,10 @@ def main() -> int:
         }[args.tab]
         tab = getattr(win, tab_attr)
         win._tabs_widget.setCurrentWidget(tab)
+        app.processEvents()
+
+    if args.detect_artifacts and win._data is not None:
+        win._browse_tab._preprocessing_panel._on_detect_clicked()
         app.processEvents()
 
     if args.show_section and win._data is not None:

@@ -29,7 +29,11 @@ import pyqtgraph as pg
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor, QKeySequence, QShortcut
 
-from rrational.inspector.graphic_items import EventMarker, SectionRegion
+from rrational.inspector.graphic_items import (
+    ArtifactOverlay,
+    EventMarker,
+    SectionRegion,
+)
 
 if TYPE_CHECKING:
     from rrational.inspector.data_loader import (
@@ -141,6 +145,13 @@ class RRPlotWidget(pg.PlotWidget):
         self._section_regions: list[SectionRegion] = []
         self._event_markers: list[EventMarker] = []
         self._sections_by_label: dict[str, SectionRegion] = {}
+
+        # Artifact overlay — one ScatterPlotItem holds every artifact
+        # dot for the current dataset; ``set_artifacts`` replaces the
+        # whole point set, so re-detection doesn't stack stale dots.
+        self._artifact_overlay = ArtifactOverlay()
+        self._artifact_overlay.setVisible(False)
+        self.addItem(self._artifact_overlay)
 
         # Focus is required for mouse-wheel zoom to feel responsive even
         # before the user has clicked into the plot.
@@ -265,6 +276,28 @@ class RRPlotWidget(pg.PlotWidget):
         """Toggle the X+Y gridlines."""
         self.showGrid(x=visible, y=visible, alpha=0.25 if visible else 0)
 
+    def set_artifacts(self, indices: np.ndarray) -> None:
+        """Mark the supplied array indices as artifacts on the plot.
+
+        Reads the (t, v) of each index from the data cache; pass an
+        empty array to clear the overlay (or use ``clear_artifacts``).
+        """
+        if self._times is None or len(indices) == 0:
+            self._artifact_overlay.clear_points()
+            return
+        ts = self._times[indices].tolist()
+        vs = self._values[indices].tolist()
+        self._artifact_overlay.set_points(ts, vs)
+        self._artifact_overlay.setVisible(True)
+
+    def clear_artifacts(self) -> None:
+        self._artifact_overlay.clear_points()
+        self._artifact_overlay.setVisible(False)
+
+    def set_artifacts_visible(self, visible: bool) -> None:
+        """Toggle visibility of artifact overlay without dropping points."""
+        self._artifact_overlay.setVisible(visible)
+
     def set_crosshair_visible(self, visible: bool) -> None:
         """Enable / disable the cursor-tracking crosshair."""
         self._crosshair_enabled = visible
@@ -318,7 +351,7 @@ class RRPlotWidget(pg.PlotWidget):
         )
 
     def clear_overlays(self) -> None:
-        """Remove every section region and event marker from the scene."""
+        """Remove every section region, event marker, and artifact dot."""
         for r in self._section_regions:
             self.removeItem(r)
         for m in self._event_markers:
@@ -326,6 +359,7 @@ class RRPlotWidget(pg.PlotWidget):
         self._section_regions.clear()
         self._event_markers.clear()
         self._sections_by_label.clear()
+        self.clear_artifacts()
 
     def highlight_section(self, label: str | None) -> None:
         """Boost the band alpha for one section, dim the rest.
