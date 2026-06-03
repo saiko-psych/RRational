@@ -90,8 +90,18 @@ class Dataset:
 
     @classmethod
     def from_path(cls, path: Path) -> "Dataset":
-        """Load a .rrational file and wrap it in a Dataset."""
-        data = load_inspector_data(path)
+        """Auto-detect the file format and wrap it in a Dataset.
+
+        Routes to:
+        - ``load_inspector_data`` for ``.rrational`` v2 exports
+        - ``load_raw_rr`` for raw RR formats (Polar / Empatica / Kubios /
+          Elite HRV / plain text), auto-detected via
+          ``io.generic_rr.detect_format``
+        """
+        if path.suffix.lower() == ".rrational":
+            data = load_inspector_data(path)
+        else:
+            data = load_raw_rr(path)
         return cls(name=path.name, data=data, path=path)
 
 
@@ -216,4 +226,93 @@ def load_inspector_data(filepath: Path) -> InspectorData:
         v=v_full,
         sections=sections_meta,
         events=events,
+    )
+
+
+# ----------------------------------------------------------------------
+# Raw RR formats (Polar / Empatica / Kubios / Elite HRV / plain text)
+# ----------------------------------------------------------------------
+def load_raw_rr(filepath: Path) -> InspectorData:
+    """Load a raw RR file into ``InspectorData`` (one synthetic section).
+
+    Auto-detects the format via ``io.generic_rr.detect_format``. Returns
+    an InspectorData whose ``sections`` list has exactly one entry named
+    ``"recording"`` covering the whole file — Phase 4-Prep will let the
+    user split it into named sections via event markers.
+
+    Timestamp source priority (per-beat):
+    1. Real wall-clock ``timestamp`` if the format carries it (Polar
+       Sensor Logger, Empatica with unix-epoch header, etc.)
+    2. ``elapsed_ms`` from recording start (synthesised from file mtime)
+    3. Cumulative sum of ``rr_ms`` from t=0 (last-resort)
+    """
+    from rrational.io.generic_rr import detect_format, load_generic_rr
+
+    fmt = detect_format(filepath)
+    if fmt is None:
+        raise ValueError(
+            f"Could not detect raw RR format for {filepath.name}. "
+            "Supported: Polar Sensor Logger, Polar Flow, Empatica E4, "
+            "Kubios HRV exports, Elite HRV / plain text."
+        )
+
+    recording = load_generic_rr(filepath, source_app=fmt)
+    intervals = recording.rr_intervals
+    if not intervals:
+        return InspectorData(
+            t=np.array([], dtype=np.float64), v=np.array([], dtype=np.float64)
+        )
+
+    # Build timestamps. If any beat carries a real ``timestamp``, we
+    # use that throughout (and trust the source); otherwise fall back to
+    # file mtime + elapsed_ms (or cumulative RR if elapsed missing).
+    has_real_timestamps = any(iv.timestamp is not None for iv in intervals)
+
+    rr_ms = np.array([iv.rr_ms for iv in intervals], dtype=np.float64)
+
+    if has_real_timestamps:
+        # Use real wall-clock timestamps where available; fill any
+        # straggler with the previous timestamp + rr_ms.
+        ts: list[float] = []
+        last: float | None = None
+        for iv in intervals:
+            if iv.timestamp is not None:
+                last = iv.timestamp.timestamp()
+            elif last is not None:
+                last = last + iv.rr_ms / 1000.0
+            else:
+                # Shouldn't happen if has_real_timestamps was True, but
+                # be defensive.
+                last = 0.0
+            ts.append(last)
+        t = np.array(ts, dtype=np.float64)
+    else:
+        # Anchor at file mtime so the X-axis shows a plausible date —
+        # users don't usually care about absolute time when there's no
+        # device clock, but a DateAxis-friendly start beats "1970".
+        anchor = filepath.stat().st_mtime
+        if intervals[0].elapsed_ms is not None:
+            # Use the provided elapsed_ms offsets
+            offsets = np.array(
+                [iv.elapsed_ms or 0 for iv in intervals], dtype=np.float64
+            )
+            t = anchor + offsets / 1000.0
+        else:
+            # Cumulative sum of RR (each beat occurs ``rr_ms`` after the
+            # previous one). Offset by zero so t[0] == anchor.
+            cum = np.concatenate([[0.0], np.cumsum(rr_ms[:-1])])
+            t = anchor + cum / 1000.0
+
+    section = SectionMeta(
+        name="recording",
+        t_start=float(t[0]),
+        t_end=float(t[-1]),
+        beat_count=len(rr_ms),
+    )
+
+    return InspectorData(
+        t=t,
+        v=rr_ms,
+        sections=[section],
+        events=[EventMeta(label="recording_start", t=float(t[0]))],
     )

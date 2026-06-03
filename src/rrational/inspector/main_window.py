@@ -543,11 +543,19 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _on_open_clicked(self) -> None:
         last_dir = settings.read_setting("last_dir") or str(Path.cwd())
+        # Filter offers .rrational v2 exports AND every raw format the
+        # io.generic_rr parser supports. "All RR files" first so the
+        # default file-picker shows them all without the user having to
+        # switch filters.
+        file_filter = (
+            "All RR files (*.rrational *.csv *.txt *.dat);;"
+            "RRational v2.0 (*.rrational);;"
+            "Polar / Empatica / Plain CSV (*.csv);;"
+            "Kubios / Elite HRV / Plain text (*.txt *.dat);;"
+            "All files (*.*)"
+        )
         paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Open .rrational",
-            last_dir,
-            "RRational v2.0 (*.rrational);;All files (*.*)",
+            self, "Open recording", last_dir, file_filter
         )
         for path_str in paths:
             self.open_path(Path(path_str))
@@ -555,16 +563,24 @@ class MainWindow(QMainWindow):
     def _on_open_folder_clicked(self) -> None:
         last_dir = settings.read_setting("last_dir") or str(Path.cwd())
         folder_str = QFileDialog.getExistingDirectory(
-            self, "Open folder containing .rrational files", last_dir
+            self, "Open folder containing recordings", last_dir
         )
         if not folder_str:
             return
         folder = Path(folder_str)
+        # Try .rrational first; if none, glob for raw RR file extensions.
+        # We deliberately don't mix the two — a folder is either a project
+        # export directory or a raw-data dump, not both.
         files = sorted(folder.glob("*.rrational"))
+        if not files:
+            raw_files: list[Path] = []
+            for ext in ("*.csv", "*.txt", "*.dat"):
+                raw_files.extend(folder.glob(ext))
+            files = sorted(raw_files)
         if not files:
             self._info(
                 "No files found",
-                f"No .rrational files in {folder.name}.",
+                f"No .rrational, .csv, .txt or .dat files in {folder.name}.",
             )
             return
         for p in files:
