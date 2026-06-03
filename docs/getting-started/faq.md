@@ -93,15 +93,17 @@ and RMSSD on properly matched segments. See [Kubios Compatibility Guide](../user
 This is by design — RRational follows the **Task Force 1996 standard** definition
 (standard deviation of raw NN intervals). Kubios computes SDNN on a detrended
 interpolated signal, which removes low-frequency variance and lowers SDNN by
-30–60%. Both are valid; cite which one you used. See [Kubios Compatibility Guide](../user-guide/kubios-compatibility.md#the-sdnn-difference-important).
+roughly 30–50%. Both are valid; cite which one you used. See [Kubios Compatibility Guide](../user-guide/kubios-compatibility.md#the-sdnn-difference-important).
 
 ### Is RRational scientifically validated?
 
-Yes. The HRV engine is NeuroKit2 (Makowski et al. 2021, >2000 citations). We
-provide an independent cross-validation against Kubios HRV Scientific with
-DOI-linked references in the [Validation report](../science/validation.md).
-You can also re-run the validation locally with the test data in
-`data/Kubios_Output_+_rrational_files.zip`.
+Yes. The HRV engine is NeuroKit2 (Makowski et al. 2021), a peer-reviewed,
+widely cited library. We provide an independent cross-validation against
+Kubios HRV Scientific, together with guideline conformance and DOI-linked
+references, in the [Validation report](../science/validation.md). The
+validation recordings contain identifiable participant data and are not
+redistributed, but the report documents the exact pipeline parameters so the
+comparison can be reproduced on equivalent data.
 
 ---
 
