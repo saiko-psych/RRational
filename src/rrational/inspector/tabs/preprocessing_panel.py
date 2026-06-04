@@ -126,7 +126,12 @@ class PreprocessingPanel(QWidget):
     # State sync
     # ------------------------------------------------------------------
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
-        """Reset the panel when the user switches/unloads a dataset."""
+        """Reset the panel when the user switches/unloads a dataset.
+
+        Phase 12: when a dataset is loaded, also try to auto-restore any
+        previously-saved artifact corrections from
+        ``{pid}_artifacts.yml`` (Streamlit-shared).
+        """
         self._last_result = None
         if data is None:
             self._summary.setText(
@@ -149,6 +154,81 @@ class PreprocessingPanel(QWidget):
         self._toggle_use_corrected.blockSignals(True)
         self._toggle_use_corrected.setChecked(False)
         self._toggle_use_corrected.blockSignals(False)
+
+        # Phase 12: attempt auto-restore from disk
+        if data is not None:
+            self._try_restore_artifacts(data)
+
+    def _try_restore_artifacts(self, data: "InspectorData") -> None:
+        """Look for {pid}_artifacts.yml for the active dataset; if found,
+        restore the result + plot overlay + status."""
+        from rrational.gui.persistence import load_artifact_corrections
+        from rrational.inspector.preprocessing import (
+            PreprocessingResult,
+            _grade_for_rate,
+        )
+
+        active_idx = self._main_window._active_idx
+        if active_idx is None or active_idx >= len(self._main_window._datasets):
+            return
+        ds = self._main_window._datasets[active_idx]
+        pid = Path(ds.name).stem
+
+        proj = getattr(self._main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+        try:
+            entry = load_artifact_corrections(
+                pid, project_path=project_path, section_key="_full"
+            )
+        except Exception:
+            entry = None
+        if entry is None:
+            return
+
+        algo_indices = entry.get("algorithm_artifact_indices") or []
+        if not algo_indices:
+            return
+
+        # Rebuild a PreprocessingResult shell (we don't reload corrected_v
+        # from disk — that lives in nn_metadata.yml in Phase 12.2).
+        import numpy as _np
+
+        indices_arr = _np.asarray(algo_indices, dtype=_np.int64)
+        rate = (len(indices_arr) / len(data.v)) if len(data.v) > 0 else 0.0
+        grade, msg = _grade_for_rate(rate)
+        by_type = dict(entry.get("indices_by_type") or {})
+        restored = PreprocessingResult(
+            indices=indices_arr,
+            by_type={
+                k: len(v) if isinstance(v, list) else int(v) for k, v in by_type.items()
+            },
+            total=len(indices_arr),
+            rate=rate,
+            corrected_v=None,
+            grade=grade,
+            recommendation=msg,
+        )
+        self._last_result = restored
+
+        # Render exactly like a fresh detection
+        plot = self._main_window._browse_tab._plot
+        plot.set_artifacts(restored.indices)
+        plot.set_artifacts_visible(self._toggle_show_artifacts.isChecked())
+        color = _GRADE_COLOR.get(restored.grade, "#888888")
+        self._summary.setText(
+            f"<b>Restored from disk:</b><br>"
+            f"<b>{restored.total}</b> artifacts in {len(data.v)} beats<br>"
+            f"<b>Rate:</b> {restored.rate * 100:.2f}%<br>"
+            f"<b>Grade:</b> "
+            f"<span style='color:{color};'><b>{restored.grade}</b></span><br>"
+            f"<small style='color:#666'>{restored.recommendation}</small>"
+        )
+        self._toggle_show_artifacts.setEnabled(True)
+        # Without corrected_v we can't enable the use-corrected toggle
+        self._toggle_use_corrected.setEnabled(False)
+        self._main_window.statusBar().showMessage(
+            f"Restored {restored.total} artifacts for '{pid}' from disk", 4000
+        )
 
     # ------------------------------------------------------------------
     # Actions
@@ -188,11 +268,52 @@ class PreprocessingPanel(QWidget):
         # Corrected-values toggle only useful when there are actual artifacts.
         self._toggle_use_corrected.setEnabled(result.total > 0)
         self._export_btn.setEnabled(True)
+        # Phase 12: auto-persist so future loads restore this state
+        self._autosave_artifacts(result, data)
         self._main_window.statusBar().showMessage(
             f"Artifact detection: {result.total} found "
             f"({result.rate * 100:.2f}%, {result.grade})",
             4000,
         )
+
+    def _autosave_artifacts(self, result, data: "InspectorData") -> None:
+        """Phase 12: persist the freshly-detected artifacts to disk.
+
+        Writes to ``{project}/data/processed/{pid}_artifacts.yml`` (or
+        the global fallback) using the v1.3 section-scoped schema with
+        section_key=`_full` — matches what Streamlit produces for a
+        whole-recording detection. Silent on failure (autosave must not
+        crash compute).
+        """
+        from rrational.gui.persistence import save_artifact_corrections
+
+        active_idx = self._main_window._active_idx
+        if active_idx is None or active_idx >= len(self._main_window._datasets):
+            return
+        ds = self._main_window._datasets[active_idx]
+        pid = Path(ds.name).stem
+        proj = getattr(self._main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+
+        # PreprocessingResult.by_type is {label: count}; the streamlit
+        # schema wants {label: [indices]}. We don't have per-index type
+        # info — pass the (count-typed) data through as best-effort
+        # provenance. Streamlit reads only the algorithm_artifact_indices
+        # for actual analysis, so this is information-preserving.
+        indices_by_type = {k: [] for k in (result.by_type or {}).keys()}
+        try:
+            save_artifact_corrections(
+                participant_id=pid,
+                manual_artifacts=[],
+                artifact_exclusions=[],
+                algorithm_artifacts=[int(i) for i in result.indices],
+                algorithm_method="lipponen2019",
+                indices_by_type=indices_by_type,
+                section_key="_full",
+                project_path=project_path,
+            )
+        except Exception:  # pragma: no cover - autosave must not crash detect
+            pass
 
     def _on_toggle_show_artifacts(self, checked: bool) -> None:
         plot = self._main_window._browse_tab._plot

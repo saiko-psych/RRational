@@ -138,10 +138,15 @@ def _build_section_export(
     nn_correction = NNCorrectionV2()
 
     if preprocessing is not None:
+        # Cast each index to plain Python int — preprocessing.indices is
+        # a numpy.int64 array and yaml.dump emits Python-object tags for
+        # numpy scalars that yaml.safe_load then refuses on read-back.
         section_artifact_idxs = sorted(
-            (i - start_idx) for i in preprocessing.indices if start_idx <= i < end_idx
+            int(i - start_idx)
+            for i in preprocessing.indices
+            if start_idx <= i < end_idx
         )
-        section_rate = (
+        section_rate = float(
             len(section_artifact_idxs) / beat_count if beat_count > 0 else 0.0
         )
         # PreprocessingResult.by_type is aggregate (str → total count),

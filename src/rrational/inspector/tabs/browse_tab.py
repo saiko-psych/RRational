@@ -112,19 +112,23 @@ class BrowseTab(InspectorTab):
             self._show_empty_state()
 
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
-        # Preprocessing panel always wants to know — even when data is
-        # None, so it can disable the Detect button.
-        self._preprocessing_panel.on_active_dataset_changed(data)
-
         if data is None:
+            # Inform the panel first when there's no data — it clears
+            # toggles and disables Detect immediately.
+            self._preprocessing_panel.on_active_dataset_changed(data)
             self._show_empty_state()
             return
         idx = self._main_window._active_idx
         if idx is None or not (0 <= idx < len(self._main_window._datasets)):
             return
         ds = self._main_window._datasets[idx]
+        # Render the plot + overlays BEFORE the panel runs — _render_dataset
+        # calls plot.set_data which resets the artifact overlay, and the
+        # panel's on_active_dataset_changed (Phase 12) auto-restores
+        # cached artifacts onto the overlay. Order matters.
         self._render_dataset(ds)
         self._update_tree_active_marker()
+        self._preprocessing_panel.on_active_dataset_changed(data)
 
     # ------------------------------------------------------------------
     # Rendering
