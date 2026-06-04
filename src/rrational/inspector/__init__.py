@@ -20,7 +20,10 @@ __all__ = ["main"]
 def main() -> int:
     """Entry point. Lazy-imports Qt so that importing rrational.inspector
     on a Streamlit-only install does not pull in the 60 MB Qt stack.
-    """
-    from rrational.inspector.app import run
 
-    return run()
+    Defers to ``rrational.inspector.app.main`` which is the real entry used
+    by the PyInstaller standalone build.
+    """
+    from rrational.inspector.app import main as _app_main
+
+    return _app_main()

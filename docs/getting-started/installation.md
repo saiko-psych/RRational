@@ -43,6 +43,13 @@ uv run streamlit run src/rrational/gui/app.py
 
 The app opens at http://localhost:8501.
 
+### Lightweight Inspector (no install required)
+
+If you only need a fast signal browser for a single `.rrational` file, the
+**Inspector** is available as a standalone executable for Windows, macOS,
+and Linux — no Python install required. See the
+[Inspector Standalone App](inspector.md) page for downloads and usage.
+
 ### Test Mode (Demo Data)
 
 ```bash

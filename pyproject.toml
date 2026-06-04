@@ -43,3 +43,7 @@ target-version = ["py311"]
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# PyInstaller .spec files are executed by PyInstaller, not Python; they have
+# Analysis / PYZ / EXE / COLLECT / SPECPATH injected at runtime. Ruff's static
+# analysis can't know that, so exclude them from lint to avoid F821 noise.
+extend-exclude = ["*.spec"]
