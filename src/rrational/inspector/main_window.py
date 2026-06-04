@@ -145,8 +145,63 @@ class MainWindow(QMainWindow):
         self._key_filter = _GlobalKeyFilter(self)
         QApplication.instance().installEventFilter(self._key_filter)
 
+        # Phase 20: restore window + BrowseTab dock layout from QSettings
+        # so user-adjusted geometry survives across runs.
+        self._restore_window_state()
+
         if initial_path is not None:
             self.open_path(initial_path)
+
+    # ------------------------------------------------------------------
+    # Phase 20: window + dock state persistence
+    # ------------------------------------------------------------------
+    def _restore_window_state(self) -> None:
+        """Reapply QMainWindow geometry + BrowseTab dock layout if cached."""
+        try:
+            geom = settings.read_setting("geometry")
+            if geom is not None:
+                self.restoreGeometry(geom)
+        except (KeyError, TypeError):  # pragma: no cover - defensive
+            pass
+        try:
+            win_state = settings.read_setting("window_state")
+            if win_state is not None:
+                self.restoreState(win_state)
+        except (KeyError, TypeError):  # pragma: no cover - defensive
+            pass
+        try:
+            dock_state = settings.read_setting("browse_dock_state")
+        except (KeyError, TypeError):  # pragma: no cover - defensive
+            dock_state = None
+        if dock_state is not None:
+            try:
+                self._browse_tab.restore_dock_state(dock_state)
+            except Exception:  # pragma: no cover - defensive
+                pass
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        """Persist window + dock geometry before the inspector closes.
+
+        Skipped in test_mode so pytest-qt runs don't write to the user's
+        real QSettings; tests that explicitly want to exercise the save
+        path can call ``_save_window_state`` directly.
+        """
+        if not self.test_mode:
+            self._save_window_state()
+        super().closeEvent(event)
+
+    def _save_window_state(self) -> None:
+        """Write QMainWindow geometry + BrowseTab dock state to QSettings."""
+        try:
+            settings.save_window_state(self.saveGeometry(), self.saveState())
+        except Exception:  # pragma: no cover - defensive
+            pass
+        try:
+            settings.write_setting(
+                "browse_dock_state", self._browse_tab.save_dock_state()
+            )
+        except Exception:  # pragma: no cover - defensive
+            pass
 
     # ------------------------------------------------------------------
     # Backward-compat properties: lots of tests still read ``_data`` /
@@ -371,6 +426,27 @@ class MainWindow(QMainWindow):
             "Show &crosshair",
             settings_key="show_crosshair",
             on_change=self._plot.set_crosshair_visible,
+        )
+
+        # Phase 20: dockable BrowseTab panels (Datasets + Preprocessing).
+        view_menu.addSeparator()
+        self._toggle_datasets_dock_act = self._make_view_toggle(
+            view_menu,
+            "Show &Datasets panel",
+            settings_key="show_datasets_dock"
+            if "show_datasets_dock" in settings._DEFAULTS
+            else None,
+            on_change=self._browse_tab.set_datasets_dock_visible,
+            default=True,
+        )
+        self._toggle_preprocessing_dock_act = self._make_view_toggle(
+            view_menu,
+            "Show &Preprocessing panel",
+            settings_key="show_preprocessing_dock"
+            if "show_preprocessing_dock" in settings._DEFAULTS
+            else None,
+            on_change=self._browse_tab.set_preprocessing_dock_visible,
+            default=True,
         )
 
         # ----- Edit menu --------------------------------------------------
@@ -889,7 +965,22 @@ class MainWindow(QMainWindow):
         )
         if not folder_str:
             return
-        folder = Path(folder_str)
+        self.open_folder(Path(folder_str))
+
+    def open_folder(self, folder: Path) -> None:
+        """Open every recording in ``folder``.
+
+        Phase 20: detects BIDS-style layouts (``participants.tsv`` at the
+        root + ``sub-*/`` subdirs) and routes them through
+        :meth:`_load_bids_folder` instead of the flat glob.
+        """
+        # Phase 20: BIDS-formatted recording trees take priority over
+        # the flat glob — they carry per-subject metadata that the
+        # ParticipantsTab can pre-populate.
+        if self._is_bids_folder(folder):
+            self._load_bids_folder(folder)
+            return
+
         # Try .rrational first; if none, glob for raw RR file extensions.
         # We deliberately don't mix the two — a folder is either a project
         # export directory or a raw-data dump, not both.
@@ -907,6 +998,129 @@ class MainWindow(QMainWindow):
             return
         for p in files:
             self.open_path(p)
+
+    # ------------------------------------------------------------------
+    # Phase 20: BIDS folder detection + loader
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _is_bids_folder(folder: Path) -> bool:
+        """A BIDS root has both ``participants.tsv`` AND at least one
+        ``sub-*`` subdirectory."""
+        if not folder.is_dir():
+            return False
+        if not (folder / "participants.tsv").exists():
+            return False
+        return any(p.is_dir() and p.name.startswith("sub-") for p in folder.iterdir())
+
+    def _parse_participants_tsv(self, tsv_path: Path) -> list[dict]:
+        """Return ordered list of dicts (one per row) from ``participants.tsv``."""
+        import csv
+
+        rows: list[dict] = []
+        try:
+            with tsv_path.open("r", encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f, delimiter="\t")
+                for row in reader:
+                    rows.append(dict(row))
+        except (OSError, csv.Error):
+            return []
+        return rows
+
+    def _load_bids_folder(self, folder: Path) -> None:
+        """Walk a BIDS root, loading every recording under each ``sub-*``.
+
+        For each row in ``participants.tsv`` we:
+        1. Open every supported recording inside ``sub-{id}/`` (recursive).
+        2. Add a Participants tab entry (id = ``participant_id`` column).
+        Existing participants are not overwritten — re-running is safe.
+        """
+        rows = self._parse_participants_tsv(folder / "participants.tsv")
+        # Filter rows that map to an existing subdir.
+        sub_recordings: dict[str, list[Path]] = {}
+        order: list[str] = []
+        recording_exts = {".rrational", ".csv", ".txt", ".dat"}
+        for row in rows:
+            pid_raw = row.get("participant_id") or row.get("participant") or ""
+            if not pid_raw:
+                continue
+            # BIDS participant IDs are stored with the "sub-" prefix; strip
+            # for the in-memory id but keep it for the folder name lookup.
+            pid = pid_raw[4:] if pid_raw.startswith("sub-") else pid_raw
+            sub_dir = folder / (
+                pid_raw if pid_raw.startswith("sub-") else f"sub-{pid_raw}"
+            )
+            if not sub_dir.is_dir():
+                continue
+            recs = sorted(
+                p
+                for p in sub_dir.rglob("*")
+                if p.is_file() and p.suffix.lower() in recording_exts
+            )
+            if not recs:
+                continue
+            order.append(pid)
+            sub_recordings[pid] = recs
+
+        if not sub_recordings:
+            self._info(
+                "Empty BIDS folder",
+                f"{folder.name} has participants.tsv but no recordings under any sub-*.",
+            )
+            return
+
+        # One-shot info dialog (test_mode silences the popup but still loads).
+        if not self.test_mode:
+            self._info(
+                "BIDS layout detected",
+                f"Detected BIDS layout — loading {len(sub_recordings)} participants.",
+            )
+
+        for pid in order:
+            for path in sub_recordings[pid]:
+                self.open_path(path)
+
+        # Pre-populate ParticipantsTab entries (id = pid, label = any
+        # additional column from the TSV).
+        self._add_bids_participants(rows, sub_recordings.keys())
+
+    def _add_bids_participants(self, rows: list[dict], loaded_ids) -> None:
+        """Inject one ParticipantsTab entry per loaded BIDS subject."""
+        from rrational.gui.persistence import (
+            load_participants as _lp,
+        )
+        from rrational.gui.persistence import (
+            save_participants as _sp,
+        )
+
+        proj = getattr(self, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+        existing = _lp(project_path=project_path) or {}
+        loaded_set = set(loaded_ids)
+        for row in rows:
+            pid_raw = row.get("participant_id") or row.get("participant") or ""
+            if not pid_raw:
+                continue
+            pid = pid_raw[4:] if pid_raw.startswith("sub-") else pid_raw
+            if pid not in loaded_set:
+                continue
+            if pid in existing:
+                continue
+            # Carry through any optional columns as a free-text label.
+            label_bits = [
+                f"{k}={v}"
+                for k, v in row.items()
+                if k not in ("participant_id", "participant") and v
+            ]
+            existing[pid] = {
+                "label": "; ".join(label_bits),
+                "event_order": [],
+                "manual_events": [],
+            }
+        _sp(existing, project_path=project_path)
+        # Notify the ParticipantsTab so its table refreshes.
+        pt = getattr(self, "_participants_tab", None)
+        if pt is not None:
+            pt.on_workspace_changed()
 
     # ------------------------------------------------------------------
     # Public dataset API

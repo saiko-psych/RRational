@@ -36,6 +36,10 @@ _DEFAULTS: dict[str, object] = {
     "show_sections": True,
     "show_grid": True,
     "show_crosshair": True,  # Phase 3d will use this
+    # Phase 20: dockable BrowseTab layout
+    "show_datasets_dock": True,
+    "show_preprocessing_dock": True,
+    "browse_dock_state": None,  # QByteArray — saveState() of BrowseTab's QMainWindow
 }
 
 

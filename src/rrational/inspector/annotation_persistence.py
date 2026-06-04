@@ -1,0 +1,100 @@
+"""Persistence for per-dataset annotations (Phase 20).
+
+Annotations are saved to ``{pid}_annotations.yml`` in the same
+``processed`` folder used by Streamlit's artifact corrections — keeping
+the convention so users find every per-recording side-car next to the
+``.rrational`` export.
+
+Storage priority (mirrors :func:`gui.persistence.get_processed_dir`):
+
+1. If ``project_path`` is provided: ``{project}/data/processed/``.
+2. Otherwise: a configurable global fallback (defaults to
+   ``~/.rrational/inspector_annotations/``).
+
+Schema::
+
+    participant_id: 0012MEBE
+    format_version: '1.0'
+    annotations:
+      - t: 1700000001.0
+        text: Subject coughed
+        created_at: '2026-06-04T12:34:56'
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+from rrational.inspector.annotations import Annotation
+
+# Global fallback when no project is open. Overridable by tests via
+# ``set_annotation_config_dir`` so the developer's home isn't touched.
+_DEFAULT_DIR = Path.home() / ".rrational" / "inspector_annotations"
+_dir_override: Path | None = None
+
+
+def set_annotation_config_dir(path: Path | None) -> None:
+    """Override the global-fallback directory (None resets to default)."""
+    global _dir_override
+    _dir_override = path
+
+
+def _resolve_dir(project_path: Path | None) -> Path:
+    """Decide where ``{pid}_annotations.yml`` lives for this call."""
+    if project_path is not None:
+        out = Path(project_path) / "data" / "processed"
+    else:
+        out = _dir_override or _DEFAULT_DIR
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def annotations_path(participant_id: str, project_path: Path | None = None) -> Path:
+    """Resolve the on-disk path for ``{pid}_annotations.yml``."""
+    return _resolve_dir(project_path) / f"{participant_id}_annotations.yml"
+
+
+def save_annotations(
+    participant_id: str,
+    annotations: list[Annotation],
+    project_path: Path | None = None,
+) -> Path:
+    """Overwrite the annotations file for ``participant_id``.
+
+    Always writes (even on empty list) so deleting the last annotation
+    leaves a tidy empty file rather than a stale set on disk.
+    """
+    path = annotations_path(participant_id, project_path=project_path)
+    payload = {
+        "participant_id": str(participant_id),
+        "format_version": "1.0",
+        "annotations": [a.to_dict() for a in annotations],
+    }
+    with path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(payload, f, default_flow_style=False, allow_unicode=True)
+    return path
+
+
+def load_annotations(
+    participant_id: str,
+    project_path: Path | None = None,
+) -> list[Annotation]:
+    """Return the saved annotation list (empty if no file / unreadable)."""
+    path = annotations_path(participant_id, project_path=project_path)
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return []
+    items = raw.get("annotations", []) or []
+    out: list[Annotation] = []
+    for entry in items:
+        try:
+            out.append(Annotation.from_dict(entry))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out

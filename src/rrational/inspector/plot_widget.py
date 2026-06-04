@@ -31,6 +31,7 @@ from qtpy.QtGui import QColor, QKeySequence, QShortcut
 
 from rrational.inspector.exclusion_persistence import ExclusionZone
 from rrational.inspector.graphic_items import (
+    AnnotationMarker,
     ArtifactOverlay,
     EventMarker,
     ExcludedArtifactOverlay,
@@ -38,6 +39,12 @@ from rrational.inspector.graphic_items import (
     ManualArtifactOverlay,
     SectionRegion,
 )
+
+# Module-level alias keeps the AnnotationMarker import alive in spite
+# of the ruff/black unused-import lint — every reference inside the
+# class body is hidden behind ``from __future__ import annotations``
+# (string-evaluated type hints), so the linter can't see them.
+_AnnotationMarker = AnnotationMarker
 
 if TYPE_CHECKING:
     from rrational.inspector.data_loader import (
@@ -134,9 +141,16 @@ class RRPlotWidget(pg.PlotWidget):
     # tag ("add" | "remove_manual" | "exclude_algo" | "include_algo").
     # PreprocessingPanel listens to auto-save + update the undo stack.
     manual_artifact_changed = Signal(int, str)
-    # Phase 15 — emitted after any zone create/edit/delete so the
+    # Phase 15 - emitted after any zone create/edit/delete so the
     # PreprocessingPanel can refresh its sidebar list + auto-save to disk.
     exclusion_zones_changed = Signal()
+    # Phase 20: emitted when the user left-clicks on an empty part of the
+    # plot AND annotation mode is enabled. Carries the data-coords X
+    # position (t, seconds-since-epoch).
+    plot_clicked = Signal(float)
+    # Phase 20: emitted on right-click of an AnnotationMarker so the
+    # panel can pop an edit / delete menu without coupling to QInfiniteLine.
+    annotation_context = Signal(object, object)  # (AnnotationMarker, QPoint)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent, viewBox=RRViewBox())
@@ -202,7 +216,7 @@ class RRPlotWidget(pg.PlotWidget):
         # ``_manual_added_indices`` are beat-indices the user clicked to
         # ADD as artifacts; ``_manual_removed_indices`` are algorithm-
         # detected indices the user clicked to exclude from analysis.
-        # The disjoint sets keep the click logic simple — there's no
+        # The disjoint sets keep the click logic simple - there's no
         # state where the same index is in both.
         self._manual_added_indices: set[int] = set()
         self._manual_removed_indices: set[int] = set()
@@ -218,11 +232,19 @@ class RRPlotWidget(pg.PlotWidget):
         self.addItem(self._excluded_overlay)
         # Flipped by PreprocessingPanel.manual-mark checkbox.
         self._manual_mark_mode = False
-        # Click tolerance — within this many seconds of a beat, a click
+        # Click tolerance - within this many seconds of a beat, a click
         # snaps to that beat. 2 s matches the resting RR period at the
         # low end (bradycardia ~30 bpm) so single-beat snapping always
         # works on real recordings.
         self._click_tolerance_s = 2.0
+
+        # Phase 20: annotation overlays. ``_annotation_markers`` keeps
+        # strong Python refs so PySide6 doesn't garbage-collect the
+        # InfiniteLine items out from under the scene.
+        self._annotation_markers: list[AnnotationMarker] = []
+        self._annotation_mode = False
+        # Scene-level click signal is connected once below alongside
+        # the Phase 14 sigMouseMoved hookup - keep ordering centralized.
 
         # Focus is required for mouse-wheel zoom to feel responsive even
         # before the user has clicked into the plot.
@@ -500,17 +522,17 @@ class RRPlotWidget(pg.PlotWidget):
         return best
 
     def _on_scene_mouse_clicked(self, ev) -> None:
-        """Phase 14: route left-clicks in manual-mark mode to the marker logic.
+        """Route scene clicks into Phase 14 (manual mark) or Phase 20 (annotation).
 
-        We deliberately ignore everything when manual-mark mode is off —
-        the default ViewBox click behaviour (pan, right-click menu) keeps
-        working for the other 99% of UX. When mode is ON we still let
-        right-click through (otherwise the user can't access the context
-        menu).
+        Phase 14: left-click in manual-mark mode toggles an artifact at
+        the nearest beat. Phase 20: left-click in annotation mode emits
+        ``plot_clicked(t)`` so the panel can open the new-annotation
+        dialog; right-click on an existing AnnotationMarker emits
+        ``annotation_context(marker, screen_pos)`` for an edit / delete
+        menu. Outside both modes the default ViewBox behaviour (pan,
+        right-click context menu) is left untouched.
         """
-        if not self._manual_mark_mode or self._times is None:
-            return
-        if ev.button() != Qt.LeftButton:
+        if self._times is None:
             return
         vb = self.getViewBox()
         scene_pos = ev.scenePos()
@@ -518,15 +540,37 @@ class RRPlotWidget(pg.PlotWidget):
             return
         data_pos = vb.mapSceneToView(scene_pos)
         t_click = float(data_pos.x())
-        idx = self._nearest_finite_beat(t_click)
-        if idx is None:
+
+        # Phase 20: right-click on an annotation marker fires the context
+        # signal so the panel can pop edit / delete options.
+        if ev.button() == Qt.RightButton:
+            marker = self._marker_under(t_click)
+            if marker is not None:
+                ev.accept()
+                screen_pos = ev.screenPos() if hasattr(ev, "screenPos") else None
+                self.annotation_context.emit(marker, screen_pos)
             return
-        # Eating the event prevents the ViewBox from also interpreting
-        # this click as the start of a rubber-band rectangle select.
-        ev.accept()
-        action = self._toggle_manual_at(idx)
-        if action is not None:
-            self.manual_artifact_changed.emit(int(idx), action)
+
+        if ev.button() != Qt.LeftButton:
+            return
+
+        # Phase 14: manual-mark mode click → toggle artifact at nearest beat.
+        if self._manual_mark_mode:
+            idx = self._nearest_finite_beat(t_click)
+            if idx is None:
+                return
+            # Eating the event prevents the ViewBox from also interpreting
+            # this click as the start of a rubber-band rectangle select.
+            ev.accept()
+            action = self._toggle_manual_at(idx)
+            if action is not None:
+                self.manual_artifact_changed.emit(int(idx), action)
+            return
+
+        # Phase 20: annotation-mode click → emit plot_clicked for the panel.
+        if self._annotation_mode:
+            ev.accept()
+            self.plot_clicked.emit(t_click)
 
     def _toggle_manual_at(self, idx: int) -> str | None:
         """State-machine for a click on beat ``idx``. Returns the action tag.
@@ -679,6 +723,57 @@ class RRPlotWidget(pg.PlotWidget):
             return None
         return int(np.searchsorted(ts, t))
 
+    # ------------------------------------------------------------------
+    # Phase 20: free-text annotations
+    # ------------------------------------------------------------------
+    def set_annotation_mode(self, enabled: bool) -> None:
+        """Toggle whether left-clicks on the plot emit ``plot_clicked``."""
+        self._annotation_mode = bool(enabled)
+
+    def is_annotation_mode(self) -> bool:
+        return self._annotation_mode
+
+    def add_annotation_marker(self, t: float, text: str) -> AnnotationMarker:
+        """Render one annotation as a vertical line + label. Returns the item."""
+        marker = AnnotationMarker(t=t, text=text)
+        self.addItem(marker)
+        self._annotation_markers.append(marker)
+        return marker
+
+    def remove_annotation_marker(self, marker: AnnotationMarker) -> None:
+        """Pop a marker from the overlay container + scene."""
+        if marker in self._annotation_markers:
+            self._annotation_markers.remove(marker)
+        try:
+            self.removeItem(marker)
+        except (RuntimeError, ValueError):  # pragma: no cover - defensive
+            pass
+
+    def clear_annotation_markers(self) -> None:
+        """Drop every annotation overlay (e.g. on dataset switch)."""
+        for m in list(self._annotation_markers):
+            try:
+                self.removeItem(m)
+            except (RuntimeError, ValueError):  # pragma: no cover - defensive
+                pass
+        self._annotation_markers.clear()
+
+    def annotation_markers(self) -> list[AnnotationMarker]:
+        return list(self._annotation_markers)
+
+    def _marker_under(self, t_click: float) -> AnnotationMarker | None:
+        """Return the nearest annotation marker within 1% of viewport width."""
+        if not self._annotation_markers:
+            return None
+        x_lo, x_hi, _ = self._x_window()
+        tolerance = max(1e-6, (x_hi - x_lo) * 0.01)
+        best: tuple[float, AnnotationMarker] | None = None
+        for m in self._annotation_markers:
+            d = abs(m.annotation_t - t_click)
+            if d <= tolerance and (best is None or d < best[0]):
+                best = (d, m)
+        return best[1] if best is not None else None
+
     def set_crosshair_visible(self, visible: bool) -> None:
         """Enable / disable the cursor-tracking crosshair."""
         self._crosshair_enabled = visible
@@ -741,10 +836,14 @@ class RRPlotWidget(pg.PlotWidget):
         self._event_markers.clear()
         self._sections_by_label.clear()
         self.clear_artifacts()
-        # Phase 15 — dataset switch must also drop the previous file's
+        # Phase 15 - dataset switch must also drop the previous file's
         # exclusion zones; the PreprocessingPanel is responsible for
         # re-loading the next dataset's zones from disk.
         self.clear_exclusion_zones()
+        # Phase 20: annotations are per-dataset; dropping overlays on
+        # dataset switch wipes the old ones so the panel can re-add the
+        # new dataset's markers from disk without dupes.
+        self.clear_annotation_markers()
 
     def highlight_section(self, label: str | None) -> None:
         """Boost the band alpha for one section, dim the rest.

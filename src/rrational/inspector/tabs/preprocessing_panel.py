@@ -44,6 +44,7 @@ from rrational.inspector.exclusion_persistence import (
 )
 
 if TYPE_CHECKING:
+    from rrational.inspector.annotations import Annotation
     from rrational.inspector.data_loader import InspectorData
     from rrational.inspector.preprocessing import PreprocessingResult
 
@@ -204,6 +205,39 @@ class PreprocessingPanel(QWidget):
         self._export_btn.setEnabled(False)
         layout.addWidget(self._export_btn)
 
+        # Phase 20: annotation mode -------------------------------------------
+        sep3 = QFrame()
+        sep3.setFrameShape(QFrame.HLine)
+        sep3.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(sep3)
+
+        self._toggle_annotation_mode = QCheckBox("Annotation mode")
+        self._toggle_annotation_mode.setToolTip(
+            "When ON, left-click on the timeline to add a free-text note."
+        )
+        self._toggle_annotation_mode.toggled.connect(self._on_toggle_annotation_mode)
+        self._toggle_annotation_mode.setEnabled(False)
+        layout.addWidget(self._toggle_annotation_mode)
+
+        self._annotation_count_label = QLabel(
+            "<small style='color:#888;'>No annotations.</small>"
+        )
+        self._annotation_count_label.setWordWrap(True)
+        layout.addWidget(self._annotation_count_label)
+
+        # Plumb plot signals — the plot fires plot_clicked / annotation_context
+        # only when our mode is on / a marker is under the cursor. The
+        # panel is instantiated INSIDE BrowseTab._build, so we reach for
+        # the plot via the parent rather than _main_window._browse_tab
+        # (which isn't assigned yet).
+        if parent is not None and hasattr(parent, "_plot"):
+            plot = parent._plot
+            plot.plot_clicked.connect(self._on_plot_clicked)
+            plot.annotation_context.connect(self._on_annotation_right_clicked)
+
+        # Annotation state — one list per active dataset, persisted.
+        self._annotations: list[Annotation] = []
+
         layout.addStretch()
 
         # Phase 14: wire the plot's manual-click signal to our handler.
@@ -266,6 +300,18 @@ class PreprocessingPanel(QWidget):
         plot.set_manual_artifact_indices(added=set(), removed=set())
         plot.set_manual_mark_mode(False)
         self._update_undo_redo_actions()
+
+        # Phase 20: annotation toggle follows dataset availability +
+        # auto-restore any persisted annotations for this dataset's pid.
+        self._toggle_annotation_mode.setEnabled(data is not None)
+        if data is None:
+            self._toggle_annotation_mode.blockSignals(True)
+            self._toggle_annotation_mode.setChecked(False)
+            self._toggle_annotation_mode.blockSignals(False)
+            self._annotations = []
+            self._refresh_annotation_label()
+        else:
+            self._restore_annotations()
 
         # Phase 12: attempt auto-restore from disk
         if data is not None:
@@ -829,3 +875,168 @@ class PreprocessingPanel(QWidget):
             f"{n_corrected} corrected interval(s) → {out_path.name}",
             5000,
         )
+
+    # ------------------------------------------------------------------
+    # Phase 20: Free-text annotations
+    # ------------------------------------------------------------------
+    def _on_toggle_annotation_mode(self, checked: bool) -> None:
+        plot = self._main_window._browse_tab._plot
+        plot.set_annotation_mode(checked)
+        if checked:
+            self._main_window.statusBar().showMessage(
+                "Annotation mode: click on the timeline to add a note.", 4000
+            )
+        else:
+            self._main_window.statusBar().showMessage("Annotation mode off.", 2000)
+
+    def _active_pid(self) -> str | None:
+        """Stem of the active dataset's filename, used as persistence key."""
+        active_idx = self._main_window._active_idx
+        if active_idx is None or active_idx >= len(self._main_window._datasets):
+            return None
+        return Path(self._main_window._datasets[active_idx].name).stem
+
+    def _project_path(self):
+        proj = getattr(self._main_window, "_project", None)
+        return proj.project_path if proj is not None else None
+
+    def _refresh_annotation_label(self) -> None:
+        n = len(self._annotations)
+        if n == 0:
+            self._annotation_count_label.setText(
+                "<small style='color:#888;'>No annotations.</small>"
+            )
+        else:
+            self._annotation_count_label.setText(
+                f"<small style='color:#555;'><b>{n}</b> annotation(s) "
+                "on this dataset.</small>"
+            )
+
+    def _persist_annotations(self) -> None:
+        from rrational.inspector.annotation_persistence import (
+            save_annotations as _save_annotations,
+        )
+
+        pid = self._active_pid()
+        if pid is None:
+            return
+        try:
+            _save_annotations(pid, self._annotations, project_path=self._project_path())
+        except Exception:  # pragma: no cover - autosave must not crash
+            pass
+
+    def _restore_annotations(self) -> None:
+        """Read annotations from disk + render markers for the active dataset."""
+        from rrational.inspector.annotation_persistence import (
+            load_annotations as _load_annotations,
+        )
+
+        plot = self._main_window._browse_tab._plot
+        plot.clear_annotation_markers()
+        self._annotations = []
+        pid = self._active_pid()
+        if pid is None:
+            self._refresh_annotation_label()
+            return
+        try:
+            stored = _load_annotations(pid, project_path=self._project_path())
+        except Exception:
+            stored = []
+        self._annotations = list(stored)
+        for ann in self._annotations:
+            plot.add_annotation_marker(ann.t, ann.text)
+        self._refresh_annotation_label()
+
+    def _on_plot_clicked(self, t: float) -> None:
+        """Annotation-mode left-click on the timeline: pop input dialog."""
+        from rrational.inspector.annotations import Annotation as _Annotation
+
+        if not self._toggle_annotation_mode.isChecked():
+            return
+        if self._main_window.test_mode:
+            text = f"auto-test annotation @ {t:.0f}"
+            ok = True
+        else:
+            text, ok = QInputDialog.getText(self, "New annotation", "Note text:")
+        if not ok or not str(text).strip():
+            return
+        text = str(text).strip()
+        ann = _Annotation.create(t=t, text=text)
+        self._annotations.append(ann)
+        plot = self._main_window._browse_tab._plot
+        plot.add_annotation_marker(ann.t, ann.text)
+        self._persist_annotations()
+        self._refresh_annotation_label()
+        self._main_window.statusBar().showMessage(
+            f"Added annotation '{ann.text[:40]}'", 3000
+        )
+
+    def _annotation_for_marker(self, marker) -> "Annotation | None":
+        """Find the dataclass that produced ``marker`` (match by time)."""
+        for ann in self._annotations:
+            if abs(ann.t - marker.annotation_t) < 1e-6:
+                return ann
+        return None
+
+    def _on_annotation_right_clicked(self, marker, screen_pos) -> None:
+        """Right-click on an annotation marker → edit / delete menu."""
+        from qtpy.QtWidgets import QMenu as _QMenu
+
+        ann = self._annotation_for_marker(marker)
+        if ann is None:
+            return
+        if self._main_window.test_mode:
+            # Default to "no-op" in headless tests; tests drive
+            # ``edit_annotation`` / ``delete_annotation`` directly.
+            return
+        menu = _QMenu(self)
+        edit_act = menu.addAction("Edit annotation…")
+        delete_act = menu.addAction("Delete annotation")
+        if screen_pos is None:
+            # Falling back to the panel's centre is fine — exec_ accepts None
+            # but Qt warns; offset slightly into the panel for visibility.
+            screen_pos = self.mapToGlobal(self.rect().center())
+        try:
+            point = screen_pos.toPoint()
+        except AttributeError:
+            point = screen_pos
+        chosen = menu.exec(point)
+        if chosen is edit_act:
+            self.edit_annotation(ann)
+        elif chosen is delete_act:
+            self.delete_annotation(ann)
+
+    def edit_annotation(self, ann: "Annotation") -> None:
+        """Pop an edit-text dialog for ``ann`` and persist on accept."""
+        if self._main_window.test_mode:
+            new_text = ann.text + " (edited)"
+            ok = True
+        else:
+            new_text, ok = QInputDialog.getText(
+                self, "Edit annotation", "Note text:", text=ann.text
+            )
+        if not ok or not str(new_text).strip():
+            return
+        ann.text = str(new_text).strip()
+        # Update the matching marker label / tooltip in place.
+        plot = self._main_window._browse_tab._plot
+        for m in plot.annotation_markers():
+            if abs(m.annotation_t - ann.t) < 1e-6:
+                m.set_annotation_text(ann.text)
+                break
+        self._persist_annotations()
+        self._refresh_annotation_label()
+
+    def delete_annotation(self, ann: "Annotation") -> None:
+        """Remove ``ann`` from state + disk + plot."""
+        plot = self._main_window._browse_tab._plot
+        for m in list(plot.annotation_markers()):
+            if abs(m.annotation_t - ann.t) < 1e-6:
+                plot.remove_annotation_marker(m)
+                break
+        try:
+            self._annotations.remove(ann)
+        except ValueError:
+            pass
+        self._persist_annotations()
+        self._refresh_annotation_label()

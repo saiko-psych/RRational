@@ -18,8 +18,9 @@ from typing import TYPE_CHECKING
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QFont
 from qtpy.QtWidgets import (
+    QDockWidget,
     QLabel,
-    QSplitter,
+    QMainWindow,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -31,6 +32,8 @@ from rrational.inspector.plot_widget import RRPlotWidget
 from rrational.inspector.tabs.base import InspectorTab
 
 if TYPE_CHECKING:
+    from qtpy.QtCore import QByteArray
+
     from rrational.inspector.data_loader import Dataset, InspectorData
 
 # UserRole payload tags so itemClicked can distinguish "dataset node"
@@ -49,11 +52,20 @@ class BrowseTab(InspectorTab):
         self._build()
 
     def _build(self) -> None:
+        # Phase 20: replace the old QSplitter with a nested QMainWindow
+        # so we can host real QDockWidgets — that gives the user
+        # tear-off panels (drag-undock) plus saveState/restoreState
+        # geometry persistence à la MNE-LAB.
+        self._dock_host = QMainWindow(self)
+        # Without this, the inner QMainWindow draws its own frame inside
+        # the parent tab, which looks like a window-in-a-window.
+        self._dock_host.setWindowFlags(Qt.Widget)
+
         self._dataset_tree = QTreeWidget()
         self._dataset_tree.setHeaderHidden(True)
         self._dataset_tree.setIndentation(14)
         self._dataset_tree.itemClicked.connect(self._on_tree_item_clicked)
-        self._dataset_tree.setMaximumWidth(320)
+        # Width is now governed by the dock — no maximum cap.
 
         self._plot = RRPlotWidget()
         self._plot.setFocusPolicy(Qt.StrongFocus)
@@ -77,9 +89,7 @@ class BrowseTab(InspectorTab):
 
         self._preprocessing_panel = PreprocessingPanel(self._main_window, self)
 
-        center = QSplitter(Qt.Horizontal, self)
-        center.addWidget(self._dataset_tree)
-
+        # ----- Central widget: plot + overview + empty-state label --------
         middle_pane = QWidget()
         middle_layout = QVBoxLayout(middle_pane)
         middle_layout.setContentsMargins(0, 0, 0, 0)
@@ -88,17 +98,60 @@ class BrowseTab(InspectorTab):
         middle_layout.addWidget(self._plot)
         self._plot.setVisible(False)
         self._overview_bar.setVisible(False)
-        center.addWidget(middle_pane)
+        self._dock_host.setCentralWidget(middle_pane)
 
-        center.addWidget(self._preprocessing_panel)
-        center.setStretchFactor(0, 0)
-        center.setStretchFactor(1, 1)
-        center.setStretchFactor(2, 0)
+        # ----- Left dock: dataset tree ------------------------------------
+        self._datasets_dock = QDockWidget("Datasets", self._dock_host)
+        self._datasets_dock.setObjectName("BrowseTab.DatasetsDock")
+        self._datasets_dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+        self._datasets_dock.setWidget(self._dataset_tree)
+        self._dock_host.addDockWidget(Qt.LeftDockWidgetArea, self._datasets_dock)
 
-        # The tab's own QWidget hosts the splitter through a VBoxLayout.
+        # ----- Right dock: preprocessing panel ----------------------------
+        self._preprocessing_dock = QDockWidget("Preprocessing", self._dock_host)
+        self._preprocessing_dock.setObjectName("BrowseTab.PreprocessingDock")
+        self._preprocessing_dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+        self._preprocessing_dock.setWidget(self._preprocessing_panel)
+        self._dock_host.addDockWidget(Qt.RightDockWidgetArea, self._preprocessing_dock)
+
+        # The tab's own QWidget hosts the dock-host through a VBoxLayout.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(center)
+        layout.addWidget(self._dock_host)
+
+    # ------------------------------------------------------------------
+    # Phase 20: dock visibility helpers (wired to MainWindow's View menu)
+    # ------------------------------------------------------------------
+    def set_datasets_dock_visible(self, visible: bool) -> None:
+        self._datasets_dock.setVisible(bool(visible))
+
+    def set_preprocessing_dock_visible(self, visible: bool) -> None:
+        self._preprocessing_dock.setVisible(bool(visible))
+
+    def datasets_dock_visible(self) -> bool:
+        return self._datasets_dock.isVisible()
+
+    def preprocessing_dock_visible(self) -> bool:
+        return self._preprocessing_dock.isVisible()
+
+    def save_dock_state(self) -> "QByteArray":
+        return self._dock_host.saveState()
+
+    def restore_dock_state(self, state) -> bool:
+        if state is None:
+            return False
+        try:
+            return bool(self._dock_host.restoreState(state))
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            return False
 
     # ------------------------------------------------------------------
     # Notification hooks from MainWindow

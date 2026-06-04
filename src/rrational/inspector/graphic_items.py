@@ -300,3 +300,83 @@ class ExclusionRegion(pg.LinearRegionItem):
         border_pen = pg.mkPen(border, width=2)
         for line in self.lines:
             line.setPen(border_pen)
+
+
+# Visual constants for free-text annotations (Phase 20). Purple chosen
+# so the line stands apart from both blue/grey section borders and the
+# orange artifact dots.
+_ANNOTATION_COLOR = "#8b3a8c"
+_ANNOTATION_LINE_ALPHA = 200
+
+
+class AnnotationMarker(pg.InfiniteLine):
+    """Vertical line + text label for one free-text annotation.
+
+    Built on ``pg.InfiniteLine`` so the label tracks the line on pan /
+    zoom. The widget itself is dumb — the PlotWidget wires click /
+    hover handlers from the outside. ``annotation`` stores the dataclass
+    so the edit / delete handlers can look it up without an indexable
+    container.
+    """
+
+    def __init__(self, t: float, text: str, label_text: str | None = None) -> None:
+        pen_color = QColor(_ANNOTATION_COLOR)
+        pen_color.setAlpha(_ANNOTATION_LINE_ALPHA)
+
+        # Trim long annotations to keep the on-plot label readable.
+        display = label_text if label_text is not None else (text or "(empty)")
+        if len(display) > 24:
+            display = display[:21] + "..."
+
+        super().__init__(
+            pos=t,
+            angle=90,
+            pen=pg.mkPen(pen_color, width=1, style=Qt.DotLine),
+            label=display,
+            labelOpts={
+                "position": 0.05,  # bottom of the visible y-range
+                "color": pen_color,
+                "fill": (255, 255, 220, 200),
+                "movable": False,
+            },
+            movable=False,
+        )
+        # Store the source text + timestamp so the hover tooltip can
+        # show the full text even when the label is truncated.
+        self.annotation_text = str(text)
+        self.annotation_t = float(t)
+        # Above section bands + events; below cursor crosshair.
+        self.setZValue(6)
+        # Hover-tooltip — set whenever the source text changes.
+        self._refresh_tooltip()
+
+    def set_annotation_text(self, new_text: str) -> None:
+        """Update the on-plot label + tooltip to match ``new_text``."""
+        self.annotation_text = str(new_text)
+        display = new_text or "(empty)"
+        if len(display) > 24:
+            display = display[:21] + "..."
+        # InfLineLabel exposes setFormat on PyQtGraph 0.13+; fall back
+        # to direct text rewrite on older versions.
+        try:
+            self.label.setFormat(display)
+        except AttributeError:  # pragma: no cover - PyQtGraph < 0.13
+            self.label.setText(display)
+        self._refresh_tooltip()
+
+    def _refresh_tooltip(self) -> None:
+        from datetime import datetime as _dt
+
+        try:
+            stamp = _dt.fromtimestamp(self.annotation_t).strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, OSError, OverflowError):  # pragma: no cover - defensive
+            stamp = str(self.annotation_t)
+        # InfiniteLine doesn't render a QWidget tooltip natively; we
+        # attach the string on the item so the PlotWidget hover handler
+        # can pull it back out without rebuilding it.
+        self._tooltip_text = f"{self.annotation_text}\n({stamp})"
+        self.setToolTip(self._tooltip_text)
+
+    @property
+    def tooltip_text(self) -> str:
+        return getattr(self, "_tooltip_text", self.annotation_text)
