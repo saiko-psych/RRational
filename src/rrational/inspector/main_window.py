@@ -285,6 +285,27 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        # ----- Report export ---------------------------------------------
+        export_html_act = QAction("Export report (&HTML)…", self)
+        export_html_act.setStatusTip(
+            "Save the current results as a self-contained HTML report"
+        )
+        export_html_act.triggered.connect(self._on_export_report_html_clicked)
+        file_menu.addAction(export_html_act)
+
+        export_md_act = QAction("Export report (&Markdown)…", self)
+        export_md_act.setStatusTip(
+            "Save the current results as a Markdown report (GitHub-flavoured)"
+        )
+        export_md_act.triggered.connect(self._on_export_report_markdown_clicked)
+        file_menu.addAction(export_md_act)
+        # Stash handles so tests can find/trigger the actions without
+        # walking the menu hierarchy.
+        self._export_html_act = export_html_act
+        self._export_md_act = export_md_act
+
+        file_menu.addSeparator()
+
         close_act = QAction("&Close current dataset", self)
         close_act.setShortcut("Ctrl+W")
         close_act.triggered.connect(self.close_active_dataset)
@@ -990,6 +1011,77 @@ class MainWindow(QMainWindow):
         data = self._data  # None when no active dataset
         for tab in self._tabs:
             tab.on_active_dataset_changed(data)
+
+    # ------------------------------------------------------------------
+    # Phase 18: Report export (HTML / Markdown)
+    # ------------------------------------------------------------------
+    def _report_default_dir(self) -> Path:
+        """Choose a sensible default directory for report exports.
+
+        Prefers the project's ``analysis/`` folder when a project is
+        open, otherwise the last directory the user opened a file from.
+        """
+        if self._project is not None:
+            analysis_dir = self._project.project_path / "analysis"
+            if analysis_dir.exists():
+                return analysis_dir
+            return self._project.project_path
+        last = settings.read_setting("last_dir")
+        if last:
+            return Path(last)
+        return Path.cwd()
+
+    def _on_export_report_html_clicked(self) -> None:
+        from rrational.inspector.report import ReportBuilder
+
+        builder = ReportBuilder(self)
+        default_dir = self._report_default_dir()
+        suggested = str(default_dir / "rrational_report.html")
+
+        if self.test_mode:
+            out_path_str = suggested
+        else:
+            out_path_str, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export report (HTML)",
+                suggested,
+                "HTML files (*.html *.htm);;All files (*.*)",
+            )
+        if not out_path_str:
+            return
+        out_path = Path(out_path_str)
+        try:
+            out_path.write_text(builder.build_html(), encoding="utf-8")
+        except OSError as e:
+            self._critical("Export failed", f"Could not write report:\n\n{e}")
+            return
+        self.statusBar().showMessage(f"Wrote HTML report → {out_path.name}", 4000)
+
+    def _on_export_report_markdown_clicked(self) -> None:
+        from rrational.inspector.report import ReportBuilder
+
+        builder = ReportBuilder(self)
+        default_dir = self._report_default_dir()
+        suggested = str(default_dir / "rrational_report.md")
+
+        if self.test_mode:
+            out_path_str = suggested
+        else:
+            out_path_str, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export report (Markdown)",
+                suggested,
+                "Markdown files (*.md *.markdown);;All files (*.*)",
+            )
+        if not out_path_str:
+            return
+        out_path = Path(out_path_str)
+        try:
+            out_path.write_text(builder.build_markdown(), encoding="utf-8")
+        except OSError as e:
+            self._critical("Export failed", f"Could not write report:\n\n{e}")
+            return
+        self.statusBar().showMessage(f"Wrote Markdown report → {out_path.name}", 4000)
 
     # ------------------------------------------------------------------
     # Dialog helpers — silenced in test_mode so pytest-qt doesn't block.
