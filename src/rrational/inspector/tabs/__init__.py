@@ -16,6 +16,7 @@ Notification flow:
 from rrational.inspector.tabs.analysis_tab import AnalysisTab
 from rrational.inspector.tabs.base import InspectorTab
 from rrational.inspector.tabs.browse_tab import BrowseTab
+from rrational.inspector.tabs.participants_tab import ParticipantsTab
 from rrational.inspector.tabs.results_tab import ResultsTab
 from rrational.inspector.tabs.setup_tab import SetupTab
 
@@ -23,6 +24,7 @@ __all__ = [
     "InspectorTab",
     "BrowseTab",
     "SetupTab",
+    "ParticipantsTab",
     "AnalysisTab",
     "ResultsTab",
 ]

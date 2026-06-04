@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -1215,8 +1216,182 @@ class _SequencesPane(QWidget):
         self._refresh_table()
 
 
+class _ProtocolPane(QWidget):
+    """Editor for protocol.yml — study-wide timing/threshold parameters.
+
+    Streamlit-compatible schema::
+
+        expected_duration_min: float    # Total session duration
+        section_length_min: float       # Duration per condition section
+        pre_pause_sections: int         # # sections before pause
+        post_pause_sections: int        # # sections after pause
+        min_section_duration_min: float
+        min_section_beats: int
+        mismatch_strategy: str          # 'flag_only' | 'reject' | ...
+
+    All fields are project-wide (one protocol per project / global).
+    """
+
+    # Defaults match the Streamlit app defaults
+    _DEFAULTS = {
+        "expected_duration_min": 90.0,
+        "section_length_min": 5.0,
+        "pre_pause_sections": 9,
+        "post_pause_sections": 9,
+        "min_section_duration_min": 4.0,
+        "min_section_beats": 100,
+        "mismatch_strategy": "flag_only",
+    }
+    _STRATEGY_CHOICES = ["flag_only", "reject", "auto_fix"]
+
+    def __init__(self, main_window, parent=None) -> None:
+        super().__init__(parent)
+        self._main_window = main_window
+        self._protocol: dict = self._load()
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+        info = QLabel(
+            "<b>Protocol</b> — study-wide timing + threshold parameters "
+            "(saved to <code>{project}/config/protocol.yml</code>, "
+            "Streamlit-shared)."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #777;")
+        outer.addWidget(info)
+
+        from qtpy.QtWidgets import QDoubleSpinBox, QSpinBox
+
+        form_box = QGroupBox("Session timing + section thresholds")
+        form = QFormLayout(form_box)
+
+        self._expected_dur = QDoubleSpinBox()
+        self._expected_dur.setRange(0.1, 1000.0)
+        self._expected_dur.setDecimals(2)
+        self._expected_dur.setSuffix(" min")
+        form.addRow("Expected total duration:", self._expected_dur)
+
+        self._section_length = QDoubleSpinBox()
+        self._section_length.setRange(0.1, 100.0)
+        self._section_length.setDecimals(2)
+        self._section_length.setSuffix(" min")
+        form.addRow("Section length:", self._section_length)
+
+        self._pre_pause = QSpinBox()
+        self._pre_pause.setRange(0, 200)
+        form.addRow("Sections before pause:", self._pre_pause)
+
+        self._post_pause = QSpinBox()
+        self._post_pause.setRange(0, 200)
+        form.addRow("Sections after pause:", self._post_pause)
+
+        self._min_dur = QDoubleSpinBox()
+        self._min_dur.setRange(0.1, 100.0)
+        self._min_dur.setDecimals(2)
+        self._min_dur.setSuffix(" min")
+        form.addRow("Min section duration:", self._min_dur)
+
+        self._min_beats = QSpinBox()
+        self._min_beats.setRange(1, 100_000)
+        form.addRow("Min section beats:", self._min_beats)
+
+        self._mismatch = QComboBox()
+        for choice in self._STRATEGY_CHOICES:
+            self._mismatch.addItem(choice)
+        form.addRow("Mismatch strategy:", self._mismatch)
+
+        outer.addWidget(form_box)
+
+        btn_row = QHBoxLayout()
+        self._save_btn = QPushButton("Save protocol")
+        self._save_btn.clicked.connect(self._on_save)
+        self._reset_btn = QPushButton("Reset to defaults")
+        self._reset_btn.clicked.connect(self._on_reset)
+        btn_row.addWidget(self._save_btn)
+        btn_row.addWidget(self._reset_btn)
+        btn_row.addStretch()
+        outer.addLayout(btn_row)
+        outer.addStretch()
+
+        self._apply_to_widgets(self._protocol)
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+    def _project_path(self):
+        proj = getattr(self._main_window, "_project", None)
+        return proj.project_path if proj is not None else None
+
+    def _load(self) -> dict:
+        from rrational.gui.persistence import load_protocol as _lp
+
+        loaded = _lp(project_path=self._project_path()) or {}
+        # Merge defaults so every field has a value
+        merged = dict(self._DEFAULTS)
+        merged.update(loaded)
+        return merged
+
+    def _persist(self) -> None:
+        from rrational.gui.persistence import save_protocol as _sp
+
+        _sp(self._protocol, project_path=self._project_path())
+
+    # ------------------------------------------------------------------
+    # API
+    # ------------------------------------------------------------------
+    @property
+    def protocol(self) -> dict:
+        return dict(self._protocol)
+
+    def refresh_from_workspace(self) -> None:
+        """Re-read protocol.yml after a project open/close."""
+        self._protocol = self._load()
+        self._apply_to_widgets(self._protocol)
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _apply_to_widgets(self, data: dict) -> None:
+        self._expected_dur.setValue(float(data.get("expected_duration_min", 90.0)))
+        self._section_length.setValue(float(data.get("section_length_min", 5.0)))
+        self._pre_pause.setValue(int(data.get("pre_pause_sections", 9)))
+        self._post_pause.setValue(int(data.get("post_pause_sections", 9)))
+        self._min_dur.setValue(float(data.get("min_section_duration_min", 4.0)))
+        self._min_beats.setValue(int(data.get("min_section_beats", 100)))
+        strategy = str(data.get("mismatch_strategy", "flag_only"))
+        idx = self._mismatch.findText(strategy)
+        if idx >= 0:
+            self._mismatch.setCurrentIndex(idx)
+
+    def _collect_from_widgets(self) -> dict:
+        return {
+            "expected_duration_min": float(self._expected_dur.value()),
+            "section_length_min": float(self._section_length.value()),
+            "pre_pause_sections": int(self._pre_pause.value()),
+            "post_pause_sections": int(self._post_pause.value()),
+            "min_section_duration_min": float(self._min_dur.value()),
+            "min_section_beats": int(self._min_beats.value()),
+            "mismatch_strategy": str(self._mismatch.currentText()),
+        }
+
+    def _on_save(self) -> None:
+        self._protocol = self._collect_from_widgets()
+        self._persist()
+        self._main_window.statusBar().showMessage(
+            "Protocol saved to protocol.yml", 3000
+        )
+
+    def _on_reset(self) -> None:
+        self._protocol = dict(self._DEFAULTS)
+        self._apply_to_widgets(self._protocol)
+        self._persist()
+        self._main_window.statusBar().showMessage(
+            "Protocol reset to defaults + saved", 3000
+        )
+
+
 class SetupTab(InspectorTab):
-    """Inspector Setup tab — sub-tabs for events / sections / groups / sequences."""
+    """Inspector Setup tab — sub-tabs for events / sections / groups / sequences / protocol."""
 
     TAB_LABEL = "Setup"
 
@@ -1230,11 +1405,13 @@ class SetupTab(InspectorTab):
         self._sections_pane = _SectionsPane(main_window, self)
         self._groups_pane = _GroupsPane(main_window, self)
         self._sequences_pane = _SequencesPane(main_window, self)
+        self._protocol_pane = _ProtocolPane(main_window, self)
 
         self._subtabs.addTab(self._events_pane, "Events")
         self._subtabs.addTab(self._sections_pane, "Sections")
         self._subtabs.addTab(self._groups_pane, "Groups")
         self._subtabs.addTab(self._sequences_pane, "Sequences")
+        self._subtabs.addTab(self._protocol_pane, "Protocol")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1244,8 +1421,11 @@ class SetupTab(InspectorTab):
     # Notification hooks
     # ------------------------------------------------------------------
     def on_workspace_changed(self) -> None:
+        self._events_pane.refresh_from_workspace()
+        self._sections_pane.refresh_from_workspace()
         self._groups_pane.refresh_from_workspace()
         self._sequences_pane.refresh_workspace()
+        self._protocol_pane.refresh_from_workspace()
 
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
         self._events_pane.update_from(data)

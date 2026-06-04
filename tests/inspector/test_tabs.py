@@ -62,12 +62,13 @@ def main_window(qtbot):
 # ---------------------------------------------------------------------
 # Tab shell
 # ---------------------------------------------------------------------
-def test_all_four_tabs_exist(main_window):
+def test_five_top_level_tabs_exist(main_window):
+    """Phase 11 added the Participants tab between Setup and Analysis."""
     titles = [
         main_window._tabs_widget.tabText(i)
         for i in range(main_window._tabs_widget.count())
     ]
-    assert titles == ["Browse", "Setup", "Analysis", "Results"]
+    assert titles == ["Browse", "Setup", "Participants", "Analysis", "Results"]
 
 
 def test_browse_is_initial_active_tab(main_window):

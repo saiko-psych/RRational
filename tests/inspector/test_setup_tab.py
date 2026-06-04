@@ -66,10 +66,11 @@ def main_window(qtbot):
 # ---------------------------------------------------------------------
 # Sub-tab shell
 # ---------------------------------------------------------------------
-def test_setup_has_four_subtabs(main_window):
+def test_setup_has_five_subtabs(main_window):
+    """Phase 11 added Protocol as the fifth sub-tab."""
     setup = main_window._setup_tab
     titles = [setup._subtabs.tabText(i) for i in range(setup._subtabs.count())]
-    assert titles == ["Events", "Sections", "Groups", "Sequences"]
+    assert titles == ["Events", "Sections", "Groups", "Sequences", "Protocol"]
 
 
 # ---------------------------------------------------------------------

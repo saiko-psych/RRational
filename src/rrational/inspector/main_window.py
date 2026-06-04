@@ -41,7 +41,13 @@ from rrational.gui.project import (
 from rrational.inspector import persistence, settings
 from rrational.inspector.data_loader import Dataset, InspectorData
 from rrational.inspector.results_store import ResultsStore
-from rrational.inspector.tabs import AnalysisTab, BrowseTab, ResultsTab, SetupTab
+from rrational.inspector.tabs import (
+    AnalysisTab,
+    BrowseTab,
+    ParticipantsTab,
+    ResultsTab,
+    SetupTab,
+)
 
 # Re-exported for older tests that import them from here. New code
 # should import from ``inspector.tabs.browse_tab``.
@@ -165,12 +171,14 @@ class MainWindow(QMainWindow):
 
         self._browse_tab = BrowseTab(self)
         self._setup_tab = SetupTab(self)
+        self._participants_tab = ParticipantsTab(self)
         self._analysis_tab = AnalysisTab(self)
         self._results_tab = ResultsTab(self)
 
         self._tabs = [
             self._browse_tab,
             self._setup_tab,
+            self._participants_tab,
             self._analysis_tab,
             self._results_tab,
         ]
