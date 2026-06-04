@@ -29,9 +29,11 @@ import pyqtgraph as pg
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor, QKeySequence, QShortcut
 
+from rrational.inspector.exclusion_persistence import ExclusionZone
 from rrational.inspector.graphic_items import (
     ArtifactOverlay,
     EventMarker,
+    ExclusionRegion,
     SectionRegion,
 )
 
@@ -42,10 +44,17 @@ if TYPE_CHECKING:
         SectionMeta,
     )
 
+# Re-exported so callers can ``from rrational.inspector.plot_widget
+# import ExclusionZone`` without crossing module boundaries — mirrors
+# how ``SectionRegion`` / ``EventMarker`` are surfaced here too.
+__all__ = ["RRPlotWidget", "ExclusionZone", "ExclusionRegion"]
+
 PAN_FRACTION = 0.25  # fraction of the visible window per Left/Right press
 ZOOM_FACTOR = 1.25  # multiplicative zoom per Up/Down press
 JUMP_WINDOW_S = 60.0  # Home/End viewport size
 LINE_COLOR = "#2E86AB"  # matches Scientific theme accent in color_scheme.py
+EXCLUSION_COLOR = "#FFA500"  # Phase 15 default; ColorScheme.exclusion overrides
+MIN_EXCLUSION_WIDTH_S = 0.5  # ignore microscopic drags (jitter from a click)
 
 # Distinct colours cycled through section regions / event markers. Picked
 # from the matplotlib "tab10" palette for adequate contrast against the
@@ -66,21 +75,47 @@ _SECTION_PALETTE = [
 
 
 class RRViewBox(pg.ViewBox):
-    """Custom ViewBox — placeholder for Phase 3 mouse-driven editing.
+    """Custom ViewBox — Phase 15 drag-create for exclusion zones.
 
-    Currently it's a pure no-op subclass: every default ``ViewBox``
-    behaviour (drag-to-pan, scroll-zoom, right-click menu) is inherited.
-    The subclass exists so Phase 3 can override ``mouseClickEvent`` /
-    ``mouseDragEvent`` for "click to add event marker" and "drag to
-    create exclusion zone" without changing the PlotWidget signature.
+    When ``exclusion_mode`` is ON (toggled from the PreprocessingPanel
+    sidebar), a left-button drag emits ``exclusion_drag_finished(t0, t1)``
+    instead of the default pan behaviour. The RRPlotWidget catches the
+    signal and materialises a new ``ExclusionRegion``.
+
+    When OFF, every default ``ViewBox`` behaviour (drag-to-pan,
+    scroll-zoom, right-click menu) is inherited so users can still
+    explore the timeline normally.
 
     Same architectural choice as mne-qt-browser's ``RawViewBox`` — a
     single override point keeps the rest of the codebase ignorant of
     Qt's event model.
     """
 
-    # Phase 3 will add `clicked = QtCore.Signal(float, float)` and
-    # override mouseClickEvent here.
+    # (t_start, t_end) of a finished left-drag, in data-coordinate seconds
+    exclusion_drag_finished = Signal(float, float)
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._exclusion_mode = False
+
+    def set_exclusion_mode(self, enabled: bool) -> None:
+        self._exclusion_mode = bool(enabled)
+
+    def mouseDragEvent(self, ev, axis=None) -> None:  # noqa: N802 — Qt API
+        # In exclusion mode we intercept LEFT-button drags only. Middle/
+        # right keep their stock zoom/menu semantics so users still have
+        # an escape hatch for navigation.
+        if not self._exclusion_mode or ev.button() != Qt.LeftButton:
+            return super().mouseDragEvent(ev, axis=axis)
+        ev.accept()
+        if ev.isFinish():
+            start_scene = ev.buttonDownScenePos()
+            end_scene = ev.scenePos()
+            t0 = float(self.mapSceneToView(start_scene).x())
+            t1 = float(self.mapSceneToView(end_scene).x())
+            if t0 > t1:
+                t0, t1 = t1, t0
+            self.exclusion_drag_finished.emit(t0, t1)
 
 
 class RRPlotWidget(pg.PlotWidget):
@@ -92,6 +127,9 @@ class RRPlotWidget(pg.PlotWidget):
     cursor_moved = Signal(float, float)
     # Emitted when the mouse leaves the plot region — readout should clear.
     cursor_left = Signal()
+    # Phase 15 — emitted after any zone create/edit/delete so the
+    # PreprocessingPanel can refresh its sidebar list + auto-save to disk.
+    exclusion_zones_changed = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent, viewBox=RRViewBox())
@@ -188,6 +226,24 @@ class RRPlotWidget(pg.PlotWidget):
         # The PyQtGraph scene exposes a mouse-moved signal that gives us
         # pixel coordinates; we'll convert to data coords in the handler.
         self.scene().sigMouseMoved.connect(self._on_scene_mouse_moved)
+
+        # ----- Phase 15 — exclusion zones -----------------------------------
+        # ``_exclusion_zones`` is the model: a list of dataclasses kept in
+        # lock-step with the on-plot ExclusionRegion widgets in
+        # ``_exclusion_regions``. Same array index => same zone. Selection
+        # tracks the currently-active region so Delete-key / context-menu
+        # actions know which one to mutate.
+        self._exclusion_zones: list[ExclusionZone] = []
+        self._exclusion_regions: list[ExclusionRegion] = []
+        self._exclusion_color: QColor = QColor(EXCLUSION_COLOR)
+        self._selected_exclusion_idx: int | None = None
+        self.getViewBox().exclusion_drag_finished.connect(
+            self._on_exclusion_drag_finished
+        )
+        # Delete-key shortcut removes the currently-selected zone.
+        self._make_shortcut(
+            QKeySequence(Qt.Key_Delete), self._delete_selected_exclusion
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -298,6 +354,132 @@ class RRPlotWidget(pg.PlotWidget):
         """Toggle visibility of artifact overlay without dropping points."""
         self._artifact_overlay.setVisible(visible)
 
+    # ------------------------------------------------------------------
+    # Phase 15 — Exclusion zones API
+    # ------------------------------------------------------------------
+    def set_exclusion_mode(self, enabled: bool) -> None:
+        """Toggle drag-to-create exclusion mode on the underlying ViewBox.
+
+        When ON, the next left-click-drag becomes a new ``ExclusionRegion``;
+        when OFF, default pan behaviour is restored.
+        """
+        vb = self.getViewBox()
+        if hasattr(vb, "set_exclusion_mode"):
+            vb.set_exclusion_mode(enabled)
+
+    def add_exclusion_zone(
+        self, zone: ExclusionZone, *, emit: bool = True
+    ) -> ExclusionRegion:
+        """Materialise ``zone`` as an on-plot region and stash both.
+
+        ``emit`` toggles the ``exclusion_zones_changed`` notification —
+        callers loading from disk use ``emit=False`` so auto-restore
+        doesn't immediately re-fire an auto-save loop.
+        """
+        region = ExclusionRegion(
+            zone.start_t, zone.end_t, zone.reason, self._exclusion_color
+        )
+        # Keep the model in sync as the user drags the region edges; this
+        # also doubles as selection (last-interacted region is "selected"
+        # for the Delete shortcut). PyQtGraph's LinearRegionItem does not
+        # expose a click signal, so we hijack the interaction signals.
+        region.sigRegionChangeFinished.connect(
+            lambda _r, z=zone, reg=region: self._on_region_edited(z, reg)
+        )
+        region.sigRegionChanged.connect(
+            lambda _r, reg=region: self._on_region_clicked(reg)
+        )
+        self.addItem(region)
+        self._exclusion_zones.append(zone)
+        self._exclusion_regions.append(region)
+        if emit:
+            self.exclusion_zones_changed.emit()
+        return region
+
+    def remove_exclusion_zone(self, index: int) -> None:
+        """Delete the zone at ``index`` (model + view + selection)."""
+        if not (0 <= index < len(self._exclusion_zones)):
+            return
+        region = self._exclusion_regions.pop(index)
+        self._exclusion_zones.pop(index)
+        self.removeItem(region)
+        if self._selected_exclusion_idx == index:
+            self._selected_exclusion_idx = None
+        elif (
+            self._selected_exclusion_idx is not None
+            and self._selected_exclusion_idx > index
+        ):
+            self._selected_exclusion_idx -= 1
+        self.exclusion_zones_changed.emit()
+
+    def clear_exclusion_zones(self) -> None:
+        """Drop every zone (used on dataset switch before auto-restore)."""
+        for region in self._exclusion_regions:
+            self.removeItem(region)
+        self._exclusion_zones.clear()
+        self._exclusion_regions.clear()
+        self._selected_exclusion_idx = None
+        # No emit on clear — switching datasets is internal bookkeeping.
+
+    def update_exclusion_reason(self, index: int, reason: str) -> None:
+        """Edit the ``reason`` of the zone at ``index`` (auto-save will fire)."""
+        if not (0 <= index < len(self._exclusion_zones)):
+            return
+        self._exclusion_zones[index].reason = str(reason or "")
+        self._exclusion_regions[index].reason = self._exclusion_zones[index].reason
+        self.exclusion_zones_changed.emit()
+
+    def _on_exclusion_drag_finished(self, t0: float, t1: float) -> None:
+        """Handle a finished left-button drag in exclusion mode."""
+        if abs(t1 - t0) < MIN_EXCLUSION_WIDTH_S:
+            return
+        zone = ExclusionZone(
+            start_t=float(t0),
+            end_t=float(t1),
+            start_beat_idx=self._beat_idx_for_time(t0),
+            end_beat_idx=self._beat_idx_for_time(t1),
+        )
+        self.add_exclusion_zone(zone)
+
+    def _on_region_edited(self, zone: ExclusionZone, region: ExclusionRegion) -> None:
+        """Sync model.start_t/end_t after a drag-edit of an existing region."""
+        lo, hi = region.getRegion()
+        zone.start_t = float(min(lo, hi))
+        zone.end_t = float(max(lo, hi))
+        zone.start_beat_idx = self._beat_idx_for_time(zone.start_t)
+        zone.end_beat_idx = self._beat_idx_for_time(zone.end_t)
+        self.exclusion_zones_changed.emit()
+
+    def _on_region_clicked(self, region: ExclusionRegion) -> None:
+        """Click-to-select bookkeeping for Delete-key / context-menu ops."""
+        try:
+            self._selected_exclusion_idx = self._exclusion_regions.index(region)
+        except ValueError:
+            self._selected_exclusion_idx = None
+
+    def _delete_selected_exclusion(self) -> None:
+        """Bound to the Delete shortcut — drops the currently-selected zone."""
+        if self._selected_exclusion_idx is None:
+            return
+        self.remove_exclusion_zone(self._selected_exclusion_idx)
+
+    def _beat_idx_for_time(self, t: float) -> int | None:
+        """Return the nearest beat index to ``t`` for provenance, or None.
+
+        Best-effort: when no data is loaded or ``t`` falls outside the
+        recording, returns None so persistence stores None rather than
+        a misleading clamped value.
+        """
+        if self._times is None or len(self._times) == 0:
+            return None
+        finite = np.isfinite(self._times)
+        if not np.any(finite):
+            return None
+        ts = self._times
+        if t < ts[finite][0] or t > ts[finite][-1]:
+            return None
+        return int(np.searchsorted(ts, t))
+
     def set_crosshair_visible(self, visible: bool) -> None:
         """Enable / disable the cursor-tracking crosshair."""
         self._crosshair_enabled = visible
@@ -360,6 +542,10 @@ class RRPlotWidget(pg.PlotWidget):
         self._event_markers.clear()
         self._sections_by_label.clear()
         self.clear_artifacts()
+        # Phase 15 — dataset switch must also drop the previous file's
+        # exclusion zones; the PreprocessingPanel is responsible for
+        # re-loading the next dataset's zones from disk.
+        self.clear_exclusion_zones()
 
     def highlight_section(self, label: str | None) -> None:
         """Boost the band alpha for one section, dim the rest.
@@ -395,6 +581,12 @@ class RRPlotWidget(pg.PlotWidget):
         evt_color = QColor(scheme.event_marker)
         for marker in self._event_markers:
             marker.apply_color(evt_color)
+        # Exclusion zones — store the colour so future zones inherit it,
+        # then re-skin every existing region.
+        excl_color = QColor(getattr(scheme, "exclusion", EXCLUSION_COLOR))
+        self._exclusion_color = excl_color
+        for region in self._exclusion_regions:
+            region.apply_color(excl_color)
 
     def zoom_to_range(
         self, t_start: float, t_end: float, padding_frac: float = 0.05

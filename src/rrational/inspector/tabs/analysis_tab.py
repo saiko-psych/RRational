@@ -36,6 +36,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from rrational.inspector.exclusion_persistence import ExclusionZone
 from rrational.inspector.tabs.base import InspectorTab
 
 if TYPE_CHECKING:
@@ -62,14 +63,41 @@ def _format_metric(value) -> str:
     return f"{f:.2f}"
 
 
-def _slice_section(data: "InspectorData", section_name: str) -> np.ndarray | None:
-    """Return the RR (ms) values inside the section with the given name."""
+def _slice_section(
+    data: "InspectorData",
+    section_name: str,
+    exclusions: list[ExclusionZone] | None = None,
+) -> np.ndarray | None:
+    """Return the RR (ms) values inside ``section_name``, minus excluded beats.
+
+    Phase 15 adds the optional ``exclusions`` argument: any beat whose
+    timestamp falls inside ANY ``ExclusionZone`` is dropped from the
+    returned array. Pass ``None`` (or an empty list) for the legacy
+    behaviour.
+    """
     section = next((s for s in data.sections if s.name == section_name), None)
     if section is None:
         return None
     in_section = (data.t >= section.t_start) & (data.t <= section.t_end)
     finite = np.isfinite(data.v)
-    return data.v[in_section & finite]
+    mask = in_section & finite
+    if exclusions:
+        for z in exclusions:
+            inside = (data.t >= z.start_t) & (data.t <= z.end_t)
+            mask &= ~inside
+    return data.v[mask]
+
+
+def _active_exclusion_zones(main_window) -> list[ExclusionZone]:
+    """Read the live exclusion-zone list from the Browse tab's plot.
+
+    Centralised so every compute pane uses the same source — there's only
+    ever one plot, but its zones change over time.
+    """
+    try:
+        return list(main_window._browse_tab._plot._exclusion_zones)
+    except AttributeError:
+        return []
 
 
 def _compute_metrics(rr_ms: np.ndarray) -> dict[str, float]:
@@ -155,7 +183,8 @@ class _SingleParticipantPane(QWidget):
         if ds_idx is None or not sec_name:
             return
         ds = self._main_window._datasets[ds_idx]
-        rr = _slice_section(ds.data, sec_name)
+        exclusions = _active_exclusion_zones(self._main_window)
+        rr = _slice_section(ds.data, sec_name, exclusions=exclusions)
         if rr is None or len(rr) == 0:
             self._main_window.statusBar().showMessage(
                 f"No samples in section '{sec_name}'", 3000
@@ -262,8 +291,9 @@ class _RepeatingSectionPane(QWidget):
             f"Computing HRV on '{sec_name}' across every dataset…"
         )
         rows: list[tuple[str, dict, int]] = []
+        exclusions = _active_exclusion_zones(self._main_window)
         for ds in self._main_window._datasets:
-            rr = _slice_section(ds.data, sec_name)
+            rr = _slice_section(ds.data, sec_name, exclusions=exclusions)
             if rr is None or len(rr) == 0:
                 continue
             metrics = _compute_metrics(rr)
@@ -610,11 +640,12 @@ class _GroupComparisonPane(QWidget):
 
         # Build {group_label: [metric_value_per_dataset]}
         values_per_group: dict[str, list[float]] = {}
+        exclusions = _active_exclusion_zones(self._main_window)
         for i, ds in enumerate(self._main_window._datasets):
             label = self._group_by_idx.get(i, "")
             if not label:
                 continue
-            rr = _slice_section(ds.data, sec_name)
+            rr = _slice_section(ds.data, sec_name, exclusions=exclusions)
             if rr is None or len(rr) == 0:
                 continue
             metrics = _compute_metrics(rr)
@@ -875,9 +906,10 @@ class _SequenceComparisonPane(QWidget):
         # Build {section: [per-subject metric values]} — subject order
         # = dataset order so subject i is dataset i across every section.
         values_per_section: dict[str, list[float]] = {s: [] for s in seq.sections}
+        exclusions = _active_exclusion_zones(self._main_window)
         for ds in self._main_window._datasets:
             for s in seq.sections:
-                rr = _slice_section(ds.data, s)
+                rr = _slice_section(ds.data, s, exclusions=exclusions)
                 if rr is None or len(rr) == 0:
                     values_per_section[s].append(float("nan"))
                     continue

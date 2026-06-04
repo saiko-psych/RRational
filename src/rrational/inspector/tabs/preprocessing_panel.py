@@ -7,10 +7,14 @@ Mirrors the Streamlit Participants tab's preprocessing flow:
 3. Toggles overlay visibility on the main plot
 4. (Phase 4-Prep step 2: export as .rrational v2 once user has
    validated sections)
+
+Phase 15 adds an exclusion-mode toggle + a per-dataset zones list (with
+Edit / Delete buttons) that auto-persists to ``{pid}_exclusions.yml``.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,16 +23,24 @@ from qtpy.QtWidgets import (
     QCheckBox,
     QFileDialog,
     QFrame,
+    QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from rrational.inspector import settings
+from rrational.inspector.exclusion_persistence import (
+    load_exclusion_zones,
+    save_exclusion_zones,
+)
 
 if TYPE_CHECKING:
     from rrational.inspector.data_loader import InspectorData
@@ -106,6 +118,43 @@ class PreprocessingPanel(QWidget):
         self._toggle_use_corrected.setEnabled(False)
         layout.addWidget(self._toggle_use_corrected)
 
+        # ----- Phase 15 — Exclusion zones -----------------------------------
+        sep_excl = QFrame()
+        sep_excl.setFrameShape(QFrame.HLine)
+        sep_excl.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(sep_excl)
+
+        excl_header = QLabel("<b>Exclusion zones</b>")
+        layout.addWidget(excl_header)
+
+        self._toggle_exclusion_mode = QCheckBox("Exclusion mode (drag-select)")
+        self._toggle_exclusion_mode.setToolTip(
+            "When ON, click-drag on the plot creates a new exclusion zone. "
+            "Beats inside a zone are filtered out of every HRV analysis."
+        )
+        self._toggle_exclusion_mode.toggled.connect(self._on_toggle_exclusion_mode)
+        layout.addWidget(self._toggle_exclusion_mode)
+
+        self._zones_table = QTableWidget(0, 4, self)
+        self._zones_table.setHorizontalHeaderLabels(["Start", "End", "Reason", ""])
+        self._zones_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._zones_table.verticalHeader().setVisible(False)
+        self._zones_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeToContents
+        )
+        self._zones_table.setMaximumHeight(160)
+        layout.addWidget(self._zones_table)
+
+        # Listen for any zone mutation so we can refresh the table + auto-save.
+        # The plot is created inside BrowseTab BEFORE this panel — but the
+        # BrowseTab hasn't published itself on ``main_window`` yet, so we
+        # reach the plot through the panel's ``parent`` (the BrowseTab
+        # instance). Guarded with getattr to keep the panel testable in
+        # isolation.
+        plot = getattr(parent, "_plot", None)
+        if plot is not None:
+            plot.exclusion_zones_changed.connect(self._on_zones_changed)
+
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.HLine)
         sep2.setFrameShadow(QFrame.Sunken)
@@ -131,6 +180,7 @@ class PreprocessingPanel(QWidget):
         Phase 12: when a dataset is loaded, also try to auto-restore any
         previously-saved artifact corrections from
         ``{pid}_artifacts.yml`` (Streamlit-shared).
+        Phase 15: same drill for exclusion zones from ``{pid}_exclusions.yml``.
         """
         self._last_result = None
         if data is None:
@@ -158,6 +208,12 @@ class PreprocessingPanel(QWidget):
         # Phase 12: attempt auto-restore from disk
         if data is not None:
             self._try_restore_artifacts(data)
+            self._try_restore_exclusion_zones(data)
+        # When unloading a dataset, clear the zones table; the plot's
+        # own clear_overlays / clear_exclusion_zones (called by
+        # set_data) already dropped the regions.
+        if data is None:
+            self._refresh_zones_table()
 
     def _try_restore_artifacts(self, data: "InspectorData") -> None:
         """Look for {pid}_artifacts.yml for the active dataset; if found,
@@ -229,6 +285,115 @@ class PreprocessingPanel(QWidget):
         self._main_window.statusBar().showMessage(
             f"Restored {restored.total} artifacts for '{pid}' from disk", 4000
         )
+
+    # ------------------------------------------------------------------
+    # Phase 15 — Exclusion zones
+    # ------------------------------------------------------------------
+    def _try_restore_exclusion_zones(self, data: "InspectorData") -> None:
+        """Auto-restore zones from ``{pid}_exclusions.yml`` on dataset switch.
+
+        Silent on missing/unreadable files — the user's first interaction
+        with the panel is allowed to be a no-op restore that produces an
+        empty table.
+        """
+        active_idx = self._main_window._active_idx
+        if active_idx is None or active_idx >= len(self._main_window._datasets):
+            return
+        ds = self._main_window._datasets[active_idx]
+        pid = Path(ds.name).stem
+        proj = getattr(self._main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+        try:
+            zones = load_exclusion_zones(pid, project_path=project_path)
+        except Exception:
+            zones = []
+        plot = self._main_window._browse_tab._plot
+        # set_data already cleared, but be defensive in case of out-of-order
+        # init in tests.
+        plot.clear_exclusion_zones()
+        for z in zones:
+            # emit=False during restore — we don't want to fire the
+            # auto-save loop until the user actually mutates state.
+            plot.add_exclusion_zone(z, emit=False)
+        self._refresh_zones_table()
+
+    def _on_toggle_exclusion_mode(self, checked: bool) -> None:
+        plot = self._main_window._browse_tab._plot
+        plot.set_exclusion_mode(bool(checked))
+        if checked:
+            self._main_window.statusBar().showMessage(
+                "Exclusion mode ON — drag on the plot to mark a zone", 4000
+            )
+
+    def _on_zones_changed(self) -> None:
+        """Plot fired ``exclusion_zones_changed`` — refresh + auto-save."""
+        self._refresh_zones_table()
+        self._autosave_exclusion_zones()
+
+    def _refresh_zones_table(self) -> None:
+        plot = self._main_window._browse_tab._plot
+        zones = list(plot._exclusion_zones)
+        self._zones_table.setRowCount(0)
+        for i, z in enumerate(zones):
+            row = self._zones_table.rowCount()
+            self._zones_table.insertRow(row)
+            start_str = datetime.fromtimestamp(z.start_t).strftime("%H:%M:%S")
+            end_str = datetime.fromtimestamp(z.end_t).strftime("%H:%M:%S")
+            self._zones_table.setItem(row, 0, QTableWidgetItem(start_str))
+            self._zones_table.setItem(row, 1, QTableWidgetItem(end_str))
+            self._zones_table.setItem(row, 2, QTableWidgetItem(z.reason or ""))
+            actions = QWidget()
+            row_layout = QHBoxLayout(actions)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(2)
+            edit_btn = QPushButton("Edit")
+            edit_btn.setToolTip("Edit the reason for this exclusion zone")
+            edit_btn.clicked.connect(lambda _c, idx=i: self._on_edit_reason(idx))
+            del_btn = QPushButton("X")
+            del_btn.setToolTip("Delete this zone")
+            del_btn.clicked.connect(lambda _c, idx=i: self._on_delete_zone(idx))
+            row_layout.addWidget(edit_btn)
+            row_layout.addWidget(del_btn)
+            self._zones_table.setCellWidget(row, 3, actions)
+
+    def _on_edit_reason(self, index: int) -> None:
+        plot = self._main_window._browse_tab._plot
+        if not (0 <= index < len(plot._exclusion_zones)):
+            return
+        current = plot._exclusion_zones[index].reason or ""
+        if self._main_window.test_mode:
+            new = current + " (edited)"
+            ok = True
+        else:
+            new, ok = QInputDialog.getText(
+                self,
+                "Edit exclusion reason",
+                "Reason:",
+                text=current,
+            )
+        if not ok:
+            return
+        plot.update_exclusion_reason(index, new)
+
+    def _on_delete_zone(self, index: int) -> None:
+        plot = self._main_window._browse_tab._plot
+        plot.remove_exclusion_zone(index)
+
+    def _autosave_exclusion_zones(self) -> None:
+        """Persist current zones to disk; silent on failure."""
+        active_idx = self._main_window._active_idx
+        if active_idx is None or active_idx >= len(self._main_window._datasets):
+            return
+        ds = self._main_window._datasets[active_idx]
+        pid = Path(ds.name).stem
+        proj = getattr(self._main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+        plot = self._main_window._browse_tab._plot
+        zones = list(plot._exclusion_zones)
+        try:
+            save_exclusion_zones(pid, zones, project_path=project_path)
+        except Exception:  # pragma: no cover - autosave must not crash
+            pass
 
     # ------------------------------------------------------------------
     # Actions

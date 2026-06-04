@@ -178,3 +178,57 @@ class ArtifactOverlay(pg.ScatterPlotItem):
         c = QColor(color)
         self.setPen(pg.mkPen(c, width=1))
         self.setBrush(pg.mkBrush(c))
+
+
+# Visual constants for exclusion zones (Phase 15). The fill alpha is
+# deliberately higher than SectionRegion's so the user can spot a
+# narrow zone among section bands; the colour itself comes from
+# ColorScheme.exclusion so users can re-skin via Preferences.
+EXCLUSION_ALPHA = 90
+EXCLUSION_BORDER_ALPHA = 200
+
+
+class ExclusionRegion(pg.LinearRegionItem):
+    """A draggable, deletable time-range marking beats to exclude.
+
+    Phase 15 wraps PyQtGraph's ``LinearRegionItem`` so each zone is
+    independently movable along the X-axis - the user can fine-tune the
+    boundaries after the initial drag-create. Sits above section bands
+    (z=-10) but below event markers (z=0) so it visually reads as a
+    "veil" over the signal.
+
+    The zone carries a ``reason`` string + a back-reference to the
+    :class:`~rrational.inspector.exclusion_persistence.ExclusionZone`
+    dataclass it represents, so the PlotWidget can keep model + view
+    in sync without parallel bookkeeping.
+    """
+
+    def __init__(
+        self, t_start: float, t_end: float, reason: str, color: QColor
+    ) -> None:
+        fill = QColor(color)
+        fill.setAlpha(EXCLUSION_ALPHA)
+        border = QColor(color)
+        border.setAlpha(EXCLUSION_BORDER_ALPHA)
+        super().__init__(
+            values=(t_start, t_end),
+            orientation="vertical",
+            brush=fill,
+            pen=pg.mkPen(border, width=2),
+            movable=True,
+        )
+        self.reason = str(reason or "")
+        # Slightly above section bands so the exclusion band paints on top
+        # of them. Below EventMarker (z=0) and ArtifactOverlay (z=5).
+        self.setZValue(-5)
+
+    def apply_color(self, color: QColor) -> None:
+        """Re-paint fill + border from ``color`` (used by set_color_scheme)."""
+        fill = QColor(color)
+        fill.setAlpha(EXCLUSION_ALPHA)
+        border = QColor(color)
+        border.setAlpha(EXCLUSION_BORDER_ALPHA)
+        self.setBrush(fill)
+        border_pen = pg.mkPen(border, width=2)
+        for line in self.lines:
+            line.setPen(border_pen)
