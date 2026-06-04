@@ -437,9 +437,39 @@ class ResultsTab(InspectorTab):
         self._subtabs.addTab(self._group_tests_pane, "Group tests")
         self._subtabs.addTab(self._sequence_tests_pane, "Sequence tests")
 
+        # ---- Phase 13: cache toolbar (Save / Reload / Clear) -------------
+        cache_bar = QHBoxLayout()
+        cache_label = QLabel("<b>Cache:</b>")
+        cache_label.setStyleSheet("color: #555; padding-left: 6px;")
+        self._cache_status = QLabel("autosaves after every compute")
+        self._cache_status.setStyleSheet("color: #888;")
+        self._save_now_btn = QPushButton("Save now")
+        self._save_now_btn.setToolTip(
+            "Manually write inspector_results.yml. Autosave already runs "
+            "after every Compute — use this only if you want a forced flush."
+        )
+        self._save_now_btn.clicked.connect(self._on_save_now)
+        self._reload_btn = QPushButton("Reload from disk")
+        self._reload_btn.setToolTip(
+            "Discard the in-memory store and re-read inspector_results.yml. "
+            "Useful after editing the file externally or switching projects."
+        )
+        self._reload_btn.clicked.connect(self._on_reload_from_disk)
+        self._clear_cache_btn = QPushButton("Clear cache")
+        self._clear_cache_btn.setToolTip(
+            "Wipe both the in-memory store AND the on-disk cache file."
+        )
+        self._clear_cache_btn.clicked.connect(self._on_clear_cache)
+        cache_bar.addWidget(cache_label)
+        cache_bar.addWidget(self._cache_status, 1)
+        cache_bar.addWidget(self._save_now_btn)
+        cache_bar.addWidget(self._reload_btn)
+        cache_bar.addWidget(self._clear_cache_btn)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._subtabs)
+        layout.addLayout(cache_bar)
 
     # ------------------------------------------------------------------
     # Notification hooks — the Results tab refreshes itself whenever a
@@ -449,10 +479,60 @@ class ResultsTab(InspectorTab):
     # Clear/Export buttons correctly.
     # ------------------------------------------------------------------
     def refresh_results(self) -> None:
-        """Re-pull from the store. Called by Analysis after each Compute."""
+        """Re-pull from the store. Called by Analysis after each Compute.
+
+        Phase 13: also triggers an autosave so the cache stays current
+        without per-call-site sprinkling.
+        """
         self._metrics_pane.refresh()
         self._group_tests_pane.refresh()
         self._sequence_tests_pane.refresh()
+        autosave = getattr(self._main_window, "autosave_results", None)
+        if callable(autosave):
+            autosave()
+        self._refresh_cache_status()
+
+    # ------------------------------------------------------------------
+    # Phase 13: manual cache controls
+    # ------------------------------------------------------------------
+    def _refresh_cache_status(self) -> None:
+        from rrational.inspector.results_persistence import _resolve_path
+
+        proj_path = (
+            self._main_window._project.project_path
+            if getattr(self._main_window, "_project", None) is not None
+            else None
+        )
+        target = _resolve_path(proj_path)
+        if target.exists():
+            self._cache_status.setText(f"cache: <code>{target}</code>")
+        else:
+            self._cache_status.setText("no cache file yet")
+
+    def _on_save_now(self) -> None:
+        save = getattr(self._main_window, "save_results_cache", None)
+        if callable(save):
+            save()
+            self._main_window.statusBar().showMessage("Results cache written.", 3000)
+        self._refresh_cache_status()
+
+    def _on_reload_from_disk(self) -> None:
+        loader = getattr(self._main_window, "_load_results_cache", None)
+        if callable(loader):
+            loader()
+            self._main_window.statusBar().showMessage(
+                "Results reloaded from disk.", 3000
+            )
+
+    def _on_clear_cache(self) -> None:
+        clear = getattr(self._main_window, "clear_results_cache", None)
+        if callable(clear):
+            removed = clear()
+            self._main_window.statusBar().showMessage(
+                "Cache cleared" + (" (file deleted)" if removed else ""),
+                3000,
+            )
+        self._refresh_cache_status()
 
     def on_workspace_changed(self) -> None:
         # No-op: results are not tied to the workspace. Keeping a row

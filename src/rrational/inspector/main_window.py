@@ -644,6 +644,10 @@ class MainWindow(QMainWindow):
             analysis_seq_pane, "refresh_sequences"
         ):
             analysis_seq_pane.refresh_sequences()
+        # Auto-load the per-project results cache (Phase 13). The store
+        # is replaced wholesale so closing a project + reopening another
+        # never bleeds rows between them.
+        self._load_results_cache()
         self._update_window_title()
 
     def close_project(self) -> None:
@@ -918,6 +922,49 @@ class MainWindow(QMainWindow):
         pane = getattr(self._analysis_tab, "_group_pane", None)
         if pane is not None and hasattr(pane, "refresh_saved_groups"):
             pane.refresh_saved_groups()
+
+    # ------------------------------------------------------------------
+    # Phase 13: Results cache (autosave / autoload / clear)
+    # ------------------------------------------------------------------
+    def _project_path_for_cache(self):
+        return self._project.project_path if self._project is not None else None
+
+    def _load_results_cache(self) -> None:
+        """Replace the in-memory ResultsStore with whatever's on disk."""
+        from rrational.inspector.results_persistence import load_results
+
+        self._results_store = load_results(project_path=self._project_path_for_cache())
+        if hasattr(self, "_results_tab"):
+            self._results_tab.refresh_results()
+
+    def save_results_cache(self) -> None:
+        """Write the current ResultsStore to disk.
+
+        Called automatically after every Analysis-tab Compute via
+        :meth:`autosave_results`. Manual save is via the Results tab.
+        """
+        from rrational.inspector.results_persistence import save_results
+
+        save_results(
+            self._results_store,
+            project_path=self._project_path_for_cache(),
+        )
+
+    def autosave_results(self) -> None:
+        """Safe wrapper used by Analysis-tab callbacks — never raises."""
+        try:
+            self.save_results_cache()
+        except Exception:  # pragma: no cover - autosave must not crash compute
+            pass
+
+    def clear_results_cache(self) -> bool:
+        """Wipe the in-memory store AND delete the on-disk file."""
+        from rrational.inspector.results_persistence import clear_results
+
+        self._results_store.clear()
+        if hasattr(self, "_results_tab"):
+            self._results_tab.refresh_results()
+        return clear_results(project_path=self._project_path_for_cache())
 
     def _notify_tabs_active_changed(self) -> None:
         data = self._data  # None when no active dataset
