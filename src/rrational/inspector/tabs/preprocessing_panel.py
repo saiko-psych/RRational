@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QCheckBox,
@@ -56,6 +57,10 @@ _GRADE_COLOR = {
     "poor": "#d62728",  # red
     "unknown": "#888888",  # grey
 }
+
+# Phase 14: cap on the undo/redo stack size. 50 mirrors mne-qt-browser's
+# default annotation undo depth.
+_UNDO_DEPTH = 50
 
 
 class PreprocessingPanel(QWidget):
@@ -118,7 +123,37 @@ class PreprocessingPanel(QWidget):
         self._toggle_use_corrected.setEnabled(False)
         layout.addWidget(self._toggle_use_corrected)
 
-        # ----- Phase 15 — Exclusion zones -----------------------------------
+        # Phase 14 — Manual artifact marking (MNE-LAB-style).
+        self._toggle_manual_mark = QCheckBox("Manual mark mode")
+        self._toggle_manual_mark.setChecked(False)
+        self._toggle_manual_mark.setToolTip(
+            "Click on the timeline to mark a beat as an artifact, click an "
+            "existing algorithm artifact to exclude it, or click a manual "
+            "mark to remove it."
+        )
+        self._toggle_manual_mark.toggled.connect(self._on_toggle_manual_mark)
+        self._toggle_manual_mark.setEnabled(False)
+        layout.addWidget(self._toggle_manual_mark)
+
+        self._manual_help = QLabel(
+            "<small style='color:#666'>"
+            "Left-click near a beat: add manual mark<br>"
+            "Left-click on algorithm artifact: exclude<br>"
+            "Left-click on manual mark: remove<br>"
+            "Edit → Undo / Redo (Ctrl+Z / Ctrl+Y)"
+            "</small>"
+        )
+        self._manual_help.setWordWrap(True)
+        self._manual_help.setVisible(False)
+        layout.addWidget(self._manual_help)
+
+        # Undo/redo stacks. Each entry is a (action_tag, idx) tuple —
+        # replayed in reverse on undo, re-applied on redo. Capped at
+        # ``_UNDO_DEPTH`` so a long marathon session doesn't hoard memory.
+        self._undo_stack: list[tuple[str, int]] = []
+        self._redo_stack: list[tuple[str, int]] = []
+
+        # ----- Phase 15 - Exclusion zones -----------------------------------
         sep_excl = QFrame()
         sep_excl.setFrameShape(QFrame.HLine)
         sep_excl.setFrameShadow(QFrame.Sunken)
@@ -146,7 +181,7 @@ class PreprocessingPanel(QWidget):
         layout.addWidget(self._zones_table)
 
         # Listen for any zone mutation so we can refresh the table + auto-save.
-        # The plot is created inside BrowseTab BEFORE this panel — but the
+        # The plot is created inside BrowseTab BEFORE this panel - but the
         # BrowseTab hasn't published itself on ``main_window`` yet, so we
         # reach the plot through the panel's ``parent`` (the BrowseTab
         # instance). Guarded with getattr to keep the panel testable in
@@ -171,6 +206,16 @@ class PreprocessingPanel(QWidget):
 
         layout.addStretch()
 
+        # Phase 14: wire the plot's manual-click signal to our handler.
+        # BrowseTab constructs the plot then this panel inside the same
+        # ``_build`` call, so ``parent`` is the BrowseTab and ``_plot``
+        # is already live. Going through ``parent`` rather than
+        # ``main_window._browse_tab`` matters: the latter isn't assigned
+        # on MainWindow until BrowseTab.__init__ returns.
+        plot = parent._plot if parent is not None and hasattr(parent, "_plot") else None
+        if plot is not None:
+            plot.manual_artifact_changed.connect(self._on_manual_artifact_changed)
+
     # ------------------------------------------------------------------
     # State sync
     # ------------------------------------------------------------------
@@ -180,9 +225,13 @@ class PreprocessingPanel(QWidget):
         Phase 12: when a dataset is loaded, also try to auto-restore any
         previously-saved artifact corrections from
         ``{pid}_artifacts.yml`` (Streamlit-shared).
+        Phase 14: also reset the undo/redo stacks (per-dataset history)
+        and the plot's manual / excluded sets.
         Phase 15: same drill for exclusion zones from ``{pid}_exclusions.yml``.
         """
         self._last_result = None
+        self._undo_stack.clear()
+        self._redo_stack.clear()
         if data is None:
             self._summary.setText(
                 "<i>No dataset loaded.</i> Use File → Open to load a recording."
@@ -204,6 +253,19 @@ class PreprocessingPanel(QWidget):
         self._toggle_use_corrected.blockSignals(True)
         self._toggle_use_corrected.setChecked(False)
         self._toggle_use_corrected.blockSignals(False)
+        # Manual-mark mode resets to OFF whenever the dataset changes —
+        # otherwise the user could click into a stale dataset.
+        self._toggle_manual_mark.blockSignals(True)
+        self._toggle_manual_mark.setChecked(False)
+        self._toggle_manual_mark.blockSignals(False)
+        self._toggle_manual_mark.setEnabled(data is not None)
+        self._manual_help.setVisible(False)
+        # Reset the plot's manual sets too. The Phase-12 restore below
+        # will repopulate them if the dataset has prior corrections.
+        plot = self._main_window._browse_tab._plot
+        plot.set_manual_artifact_indices(added=set(), removed=set())
+        plot.set_manual_mark_mode(False)
+        self._update_undo_redo_actions()
 
         # Phase 12: attempt auto-restore from disk
         if data is not None:
@@ -242,7 +304,20 @@ class PreprocessingPanel(QWidget):
             return
 
         algo_indices = entry.get("algorithm_artifact_indices") or []
-        if not algo_indices:
+        # Phase 14: also restore manual + excluded sets.
+        manual_entries = entry.get("manual_artifacts") or []
+        manual_added = {
+            int(m["original_idx"])
+            for m in manual_entries
+            if isinstance(m, dict) and "original_idx" in m
+        }
+        manual_removed = {
+            int(i) for i in (entry.get("excluded_artifact_indices") or [])
+        }
+
+        # Bail only if there's literally nothing saved for this pid —
+        # otherwise we still want to restore manual / excluded marks.
+        if not algo_indices and not manual_added and not manual_removed:
             return
 
         # Rebuild a PreprocessingResult shell (we don't reload corrected_v
@@ -269,8 +344,18 @@ class PreprocessingPanel(QWidget):
         # Render exactly like a fresh detection
         plot = self._main_window._browse_tab._plot
         plot.set_artifacts(restored.indices)
+        # Phase 14: push manual sets BEFORE flipping visibility so the
+        # refresh paints them on the same overlay-show cycle.
+        plot.set_manual_artifact_indices(added=manual_added, removed=manual_removed)
         plot.set_artifacts_visible(self._toggle_show_artifacts.isChecked())
         color = _GRADE_COLOR.get(restored.grade, "#888888")
+        manual_suffix = ""
+        if manual_added or manual_removed:
+            manual_suffix = (
+                f"<br><small style='color:#666'>"
+                f"Restored manual marks: {len(manual_added)} added, "
+                f"{len(manual_removed)} excluded</small>"
+            )
         self._summary.setText(
             f"<b>Restored from disk:</b><br>"
             f"<b>{restored.total}</b> artifacts in {len(data.v)} beats<br>"
@@ -278,6 +363,7 @@ class PreprocessingPanel(QWidget):
             f"<b>Grade:</b> "
             f"<span style='color:{color};'><b>{restored.grade}</b></span><br>"
             f"<small style='color:#666'>{restored.recommendation}</small>"
+            f"{manual_suffix}"
         )
         self._toggle_show_artifacts.setEnabled(True)
         # Without corrected_v we can't enable the use-corrected toggle
@@ -449,6 +535,10 @@ class PreprocessingPanel(QWidget):
         section_key=`_full` — matches what Streamlit produces for a
         whole-recording detection. Silent on failure (autosave must not
         crash compute).
+
+        Phase 14: also preserves any pre-existing manual / excluded
+        marks the user already had on the plot — re-running Detect
+        doesn't wipe their hand-edits.
         """
         from rrational.gui.persistence import save_artifact_corrections
 
@@ -466,11 +556,27 @@ class PreprocessingPanel(QWidget):
         # provenance. Streamlit reads only the algorithm_artifact_indices
         # for actual analysis, so this is information-preserving.
         indices_by_type = {k: [] for k in (result.by_type or {}).keys()}
+
+        plot = self._main_window._browse_tab._plot
+        added = plot.manual_added_indices()
+        removed = plot.manual_removed_indices()
+        manual_artifacts = []
+        for i in sorted(added):
+            if 0 <= i < len(data.v):
+                rr_val = float(data.v[i]) if np.isfinite(data.v[i]) else None
+                ts_val = float(data.t[i]) if np.isfinite(data.t[i]) else None
+                manual_artifacts.append(
+                    {
+                        "original_idx": int(i),
+                        "rr_value": rr_val,
+                        "timestamp": ts_val,
+                    }
+                )
         try:
             save_artifact_corrections(
                 participant_id=pid,
-                manual_artifacts=[],
-                artifact_exclusions=[],
+                manual_artifacts=manual_artifacts,
+                artifact_exclusions=[int(i) for i in sorted(removed)],
                 algorithm_artifacts=[int(i) for i in result.indices],
                 algorithm_method="lipponen2019",
                 indices_by_type=indices_by_type,
@@ -495,6 +601,165 @@ class PreprocessingPanel(QWidget):
             plot._curve.setData(data.t, self._last_result.corrected_v)
         else:
             plot._curve.setData(data.t, data.v)
+
+    # ------------------------------------------------------------------
+    # Phase 14 — Manual artifact marking + undo / redo
+    # ------------------------------------------------------------------
+    def _on_toggle_manual_mark(self, checked: bool) -> None:
+        """Forward the checkbox state to the plot's interaction mode."""
+        plot = self._main_window._browse_tab._plot
+        plot.set_manual_mark_mode(checked)
+        self._manual_help.setVisible(checked)
+        if checked:
+            self._main_window.statusBar().showMessage(
+                "Manual mark mode ON — click a beat to mark / unmark", 3000
+            )
+        else:
+            self._main_window.statusBar().showMessage("Manual mark mode OFF", 1500)
+
+    def _on_manual_artifact_changed(self, idx: int, action: str) -> None:
+        """Plot tells us a beat-index was just marked / unmarked.
+
+        Push the action onto the undo stack (clearing redo), then
+        auto-save the new state to disk. Updates the menu enabledness.
+        """
+        self._push_undo((action, int(idx)))
+        self._redo_stack.clear()
+        self._autosave_full_state()
+        self._update_undo_redo_actions()
+
+    def _push_undo(self, entry: tuple[str, int]) -> None:
+        self._undo_stack.append(entry)
+        if len(self._undo_stack) > _UNDO_DEPTH:
+            # Drop the oldest entry — the user can't undo back that far.
+            del self._undo_stack[0]
+
+    def undo(self) -> bool:
+        """Reverse the last manual mark. Returns True if anything happened."""
+        if not self._undo_stack:
+            return False
+        action, idx = self._undo_stack.pop()
+        plot = self._main_window._browse_tab._plot
+        added = plot.manual_added_indices()
+        removed = plot.manual_removed_indices()
+        # Invert each action exactly. The inverse of "add" is removing
+        # from manual_added; inverse of "exclude_algo" is removing from
+        # manual_removed; etc.
+        if action == "add":
+            added.discard(idx)
+        elif action == "remove_manual":
+            added.add(idx)
+        elif action == "exclude_algo":
+            removed.discard(idx)
+        elif action == "include_algo":
+            removed.add(idx)
+        plot.set_manual_artifact_indices(added=added, removed=removed)
+        self._redo_stack.append((action, idx))
+        if len(self._redo_stack) > _UNDO_DEPTH:
+            del self._redo_stack[0]
+        self._autosave_full_state()
+        self._update_undo_redo_actions()
+        self._main_window.statusBar().showMessage(f"Undid: {action} @ {idx}", 2000)
+        return True
+
+    def redo(self) -> bool:
+        """Replay the last undone manual mark. Returns True if anything happened."""
+        if not self._redo_stack:
+            return False
+        action, idx = self._redo_stack.pop()
+        plot = self._main_window._browse_tab._plot
+        added = plot.manual_added_indices()
+        removed = plot.manual_removed_indices()
+        if action == "add":
+            added.add(idx)
+        elif action == "remove_manual":
+            added.discard(idx)
+        elif action == "exclude_algo":
+            removed.add(idx)
+        elif action == "include_algo":
+            removed.discard(idx)
+        plot.set_manual_artifact_indices(added=added, removed=removed)
+        self._undo_stack.append((action, idx))
+        if len(self._undo_stack) > _UNDO_DEPTH:
+            del self._undo_stack[0]
+        self._autosave_full_state()
+        self._update_undo_redo_actions()
+        self._main_window.statusBar().showMessage(f"Redid: {action} @ {idx}", 2000)
+        return True
+
+    def _update_undo_redo_actions(self) -> None:
+        """Sync the MainWindow Edit-menu actions to the stack contents."""
+        mw = self._main_window
+        if hasattr(mw, "_undo_action") and mw._undo_action is not None:
+            mw._undo_action.setEnabled(bool(self._undo_stack))
+        if hasattr(mw, "_redo_action") and mw._redo_action is not None:
+            mw._redo_action.setEnabled(bool(self._redo_stack))
+
+    def _autosave_full_state(self) -> None:
+        """Persist the FULL artifact state — algo + manual + excluded.
+
+        Called after every manual click (and undo / redo). Mirrors the
+        :meth:`_autosave_artifacts` schema so the Streamlit app reads back
+        a consistent v1.3 file regardless of which app produced it.
+        """
+        from rrational.gui.persistence import save_artifact_corrections
+
+        data = self._main_window._data
+        active_idx = self._main_window._active_idx
+        if (
+            data is None
+            or active_idx is None
+            or active_idx >= len(self._main_window._datasets)
+        ):
+            return
+        ds = self._main_window._datasets[active_idx]
+        pid = Path(ds.name).stem
+        proj = getattr(self._main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+
+        plot = self._main_window._browse_tab._plot
+        added = plot.manual_added_indices()
+        removed = plot.manual_removed_indices()
+
+        # Streamlit expects manual_artifacts entries to be dicts with at
+        # least original_idx, rr_value, timestamp. We synthesise these
+        # from the inspector's (t, v) cache.
+        manual_artifacts = []
+        for i in sorted(added):
+            if 0 <= i < len(data.v):
+                rr_val = float(data.v[i]) if np.isfinite(data.v[i]) else None
+                ts_val = float(data.t[i]) if np.isfinite(data.t[i]) else None
+                manual_artifacts.append(
+                    {
+                        "original_idx": int(i),
+                        "rr_value": rr_val,
+                        "timestamp": ts_val,
+                    }
+                )
+
+        algo_indices = (
+            [int(i) for i in self._last_result.indices]
+            if self._last_result is not None
+            else []
+        )
+        indices_by_type = (
+            {k: [] for k in (self._last_result.by_type or {}).keys()}
+            if self._last_result is not None
+            else {}
+        )
+        try:
+            save_artifact_corrections(
+                participant_id=pid,
+                manual_artifacts=manual_artifacts,
+                artifact_exclusions=[int(i) for i in sorted(removed)],
+                algorithm_artifacts=algo_indices,
+                algorithm_method="lipponen2019" if algo_indices else None,
+                indices_by_type=indices_by_type,
+                section_key="_full",
+                project_path=project_path,
+            )
+        except Exception:  # pragma: no cover - autosave must not crash UI
+            pass
 
     def _on_export_clicked(self) -> None:
         """Export the active dataset as a .rrational v2 file.

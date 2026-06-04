@@ -33,7 +33,9 @@ from rrational.inspector.exclusion_persistence import ExclusionZone
 from rrational.inspector.graphic_items import (
     ArtifactOverlay,
     EventMarker,
+    ExcludedArtifactOverlay,
     ExclusionRegion,
+    ManualArtifactOverlay,
     SectionRegion,
 )
 
@@ -127,6 +129,11 @@ class RRPlotWidget(pg.PlotWidget):
     cursor_moved = Signal(float, float)
     # Emitted when the mouse leaves the plot region — readout should clear.
     cursor_left = Signal()
+    # Phase 14: emitted after a successful manual mark / unmark click.
+    # The payload is the beat-index touched and a short string action
+    # tag ("add" | "remove_manual" | "exclude_algo" | "include_algo").
+    # PreprocessingPanel listens to auto-save + update the undo stack.
+    manual_artifact_changed = Signal(int, str)
     # Phase 15 — emitted after any zone create/edit/delete so the
     # PreprocessingPanel can refresh its sidebar list + auto-save to disk.
     exclusion_zones_changed = Signal()
@@ -191,6 +198,32 @@ class RRPlotWidget(pg.PlotWidget):
         self._artifact_overlay.setVisible(False)
         self.addItem(self._artifact_overlay)
 
+        # Phase 14: manual-mark mode (MNE-LAB-style).
+        # ``_manual_added_indices`` are beat-indices the user clicked to
+        # ADD as artifacts; ``_manual_removed_indices`` are algorithm-
+        # detected indices the user clicked to exclude from analysis.
+        # The disjoint sets keep the click logic simple — there's no
+        # state where the same index is in both.
+        self._manual_added_indices: set[int] = set()
+        self._manual_removed_indices: set[int] = set()
+        # Latest algorithm-detected indices (cached so the click handler
+        # can decide between "click on algo dot" vs "click on free
+        # beat"). Updated by ``set_artifacts``.
+        self._algorithm_indices: set[int] = set()
+        self._manual_overlay = ManualArtifactOverlay()
+        self._manual_overlay.setVisible(False)
+        self.addItem(self._manual_overlay)
+        self._excluded_overlay = ExcludedArtifactOverlay()
+        self._excluded_overlay.setVisible(False)
+        self.addItem(self._excluded_overlay)
+        # Flipped by PreprocessingPanel.manual-mark checkbox.
+        self._manual_mark_mode = False
+        # Click tolerance — within this many seconds of a beat, a click
+        # snaps to that beat. 2 s matches the resting RR period at the
+        # low end (bradycardia ~30 bpm) so single-beat snapping always
+        # works on real recordings.
+        self._click_tolerance_s = 2.0
+
         # Focus is required for mouse-wheel zoom to feel responsive even
         # before the user has clicked into the plot.
         self.setFocusPolicy(Qt.StrongFocus)
@@ -226,6 +259,8 @@ class RRPlotWidget(pg.PlotWidget):
         # The PyQtGraph scene exposes a mouse-moved signal that gives us
         # pixel coordinates; we'll convert to data coords in the handler.
         self.scene().sigMouseMoved.connect(self._on_scene_mouse_moved)
+        # Phase 14: left-clicks land here in manual-mark mode.
+        self.scene().sigMouseClicked.connect(self._on_scene_mouse_clicked)
 
         # ----- Phase 15 — exclusion zones -----------------------------------
         # ``_exclusion_zones`` is the model: a list of dataclasses kept in
@@ -338,6 +373,9 @@ class RRPlotWidget(pg.PlotWidget):
         Reads the (t, v) of each index from the data cache; pass an
         empty array to clear the overlay (or use ``clear_artifacts``).
         """
+        # Phase 14: keep a Python-set cache so click handler can answer
+        # "is this index an algorithm artifact?" in O(1).
+        self._algorithm_indices = {int(i) for i in indices} if len(indices) else set()
         if self._times is None or len(indices) == 0:
             self._artifact_overlay.clear_points()
             return
@@ -345,14 +383,175 @@ class RRPlotWidget(pg.PlotWidget):
         vs = self._values[indices].tolist()
         self._artifact_overlay.set_points(ts, vs)
         self._artifact_overlay.setVisible(True)
+        # Re-render Phase-14 overlays now that the algo set is known.
+        self._refresh_manual_overlays()
 
     def clear_artifacts(self) -> None:
         self._artifact_overlay.clear_points()
         self._artifact_overlay.setVisible(False)
+        self._algorithm_indices = set()
+        self._manual_added_indices.clear()
+        self._manual_removed_indices.clear()
+        self._refresh_manual_overlays()
 
     def set_artifacts_visible(self, visible: bool) -> None:
         """Toggle visibility of artifact overlay without dropping points."""
         self._artifact_overlay.setVisible(visible)
+        # The manual + excluded overlays follow the same toggle — they
+        # belong to the same "artifact markers" concept from the user's
+        # perspective. Keeping one master switch keeps the UI simple.
+        self._manual_overlay.setVisible(visible and bool(self._manual_added_indices))
+        self._excluded_overlay.setVisible(
+            visible and bool(self._manual_removed_indices)
+        )
+
+    # ------------------------------------------------------------------
+    # Phase 14 — Manual artifact marking (MNE-LAB-style)
+    # ------------------------------------------------------------------
+    def set_manual_mark_mode(self, enabled: bool) -> None:
+        """Enable/disable click-to-mark interaction on the plot.
+
+        When enabled, the ViewBox's default left-click "set range" is
+        suppressed so a single click adds (or toggles) an artifact at
+        the nearest beat. When disabled, left-click behaves normally.
+        """
+        self._manual_mark_mode = bool(enabled)
+
+    def manual_mark_mode(self) -> bool:
+        return self._manual_mark_mode
+
+    def set_manual_artifact_indices(
+        self,
+        added: set[int] | list[int] | None = None,
+        removed: set[int] | list[int] | None = None,
+    ) -> None:
+        """Programmatic API used by the panel for restore / undo / redo.
+
+        Replaces the manual-added / excluded sets wholesale and refreshes
+        the overlays. Does NOT emit ``manual_artifact_changed`` — callers
+        already know what they did.
+        """
+        if added is not None:
+            self._manual_added_indices = {int(i) for i in added}
+        if removed is not None:
+            self._manual_removed_indices = {int(i) for i in removed}
+        self._refresh_manual_overlays()
+
+    def manual_added_indices(self) -> set[int]:
+        return set(self._manual_added_indices)
+
+    def manual_removed_indices(self) -> set[int]:
+        return set(self._manual_removed_indices)
+
+    def _refresh_manual_overlays(self) -> None:
+        """Re-paint the manual + excluded scatter overlays from the sets."""
+        if self._times is None:
+            self._manual_overlay.clear_points()
+            self._excluded_overlay.clear_points()
+            return
+
+        n = len(self._times)
+        added_valid = sorted(i for i in self._manual_added_indices if 0 <= i < n)
+        removed_valid = sorted(i for i in self._manual_removed_indices if 0 <= i < n)
+        if added_valid:
+            ts = self._times[added_valid].tolist()
+            vs = self._values[added_valid].tolist()
+            self._manual_overlay.set_points(ts, vs)
+            self._manual_overlay.setVisible(self._artifact_overlay.isVisible())
+        else:
+            self._manual_overlay.clear_points()
+            self._manual_overlay.setVisible(False)
+
+        if removed_valid:
+            ts = self._times[removed_valid].tolist()
+            vs = self._values[removed_valid].tolist()
+            self._excluded_overlay.set_points(ts, vs)
+            self._excluded_overlay.setVisible(self._artifact_overlay.isVisible())
+        else:
+            self._excluded_overlay.clear_points()
+            self._excluded_overlay.setVisible(False)
+
+    def _nearest_finite_beat(self, t_click: float) -> int | None:
+        """Return the index of the finite beat closest to ``t_click``.
+
+        ``None`` if the click is further than ``_click_tolerance_s`` from
+        every finite beat (i.e. landed in a NaN gap or off the data
+        range entirely).
+        """
+        if self._times is None or len(self._times) == 0:
+            return None
+        finite_mask = np.isfinite(self._times) & np.isfinite(self._values)
+        if not np.any(finite_mask):
+            return None
+        finite_positions = np.nonzero(finite_mask)[0]
+        finite_times = self._times[finite_positions]
+        # Binary search for the bracketing beats and compare distances.
+        ins = int(np.searchsorted(finite_times, t_click))
+        candidates = []
+        if ins < len(finite_times):
+            candidates.append(int(finite_positions[ins]))
+        if ins > 0:
+            candidates.append(int(finite_positions[ins - 1]))
+        if not candidates:
+            return None
+        best = min(candidates, key=lambda idx: abs(self._times[idx] - t_click))
+        if abs(self._times[best] - t_click) > self._click_tolerance_s:
+            return None
+        return best
+
+    def _on_scene_mouse_clicked(self, ev) -> None:
+        """Phase 14: route left-clicks in manual-mark mode to the marker logic.
+
+        We deliberately ignore everything when manual-mark mode is off —
+        the default ViewBox click behaviour (pan, right-click menu) keeps
+        working for the other 99% of UX. When mode is ON we still let
+        right-click through (otherwise the user can't access the context
+        menu).
+        """
+        if not self._manual_mark_mode or self._times is None:
+            return
+        if ev.button() != Qt.LeftButton:
+            return
+        vb = self.getViewBox()
+        scene_pos = ev.scenePos()
+        if not self.sceneBoundingRect().contains(scene_pos):
+            return
+        data_pos = vb.mapSceneToView(scene_pos)
+        t_click = float(data_pos.x())
+        idx = self._nearest_finite_beat(t_click)
+        if idx is None:
+            return
+        # Eating the event prevents the ViewBox from also interpreting
+        # this click as the start of a rubber-band rectangle select.
+        ev.accept()
+        action = self._toggle_manual_at(idx)
+        if action is not None:
+            self.manual_artifact_changed.emit(int(idx), action)
+
+    def _toggle_manual_at(self, idx: int) -> str | None:
+        """State-machine for a click on beat ``idx``. Returns the action tag.
+
+        Rules (in order):
+        1. Click on a manual-added → REMOVE it from added (undo a prior add)
+        2. Click on a manual-removed (excluded algo) → REINSTATE algo
+        3. Click on an algorithm artifact → EXCLUDE it
+        4. Click on a free beat → ADD as manual artifact
+        """
+        if idx in self._manual_added_indices:
+            self._manual_added_indices.discard(idx)
+            self._refresh_manual_overlays()
+            return "remove_manual"
+        if idx in self._manual_removed_indices:
+            self._manual_removed_indices.discard(idx)
+            self._refresh_manual_overlays()
+            return "include_algo"
+        if idx in self._algorithm_indices:
+            self._manual_removed_indices.add(idx)
+            self._refresh_manual_overlays()
+            return "exclude_algo"
+        self._manual_added_indices.add(idx)
+        self._refresh_manual_overlays()
+        return "add"
 
     # ------------------------------------------------------------------
     # Phase 15 — Exclusion zones API
@@ -572,6 +771,9 @@ class RRPlotWidget(pg.PlotWidget):
         self._curve.setPen(pg.mkPen(scheme.rr_line, width=1))
         # Artifact dots
         self._artifact_overlay.apply_color(QColor(scheme.artifact))
+        # Phase 14: manual + excluded overlays share the artifact colour
+        self._manual_overlay.apply_color(QColor(scheme.artifact))
+        self._excluded_overlay.apply_color(QColor(scheme.artifact))
         # Section bands
         fill = QColor(scheme.section_border)
         border = QColor(scheme.section_border)

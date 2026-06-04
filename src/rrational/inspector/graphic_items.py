@@ -180,6 +180,74 @@ class ArtifactOverlay(pg.ScatterPlotItem):
         self.setBrush(pg.mkBrush(c))
 
 
+class ManualArtifactOverlay(pg.ScatterPlotItem):
+    """Scatter overlay for user-added manual artifact markers.
+
+    Phase 14: visually distinct from algorithm-detected artifacts —
+    rendered as filled squares (instead of circles) using the artifact
+    colour from the active ColorScheme. Behaviour is otherwise identical
+    to :class:`ArtifactOverlay` (replace-all on ``set_points``).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            size=_ARTIFACT_SIZE,
+            pen=pg.mkPen(_ARTIFACT_COLOR, width=1),
+            brush=pg.mkBrush(_ARTIFACT_COLOR),
+            symbol="s",  # square — distinguishes manual from algo (circles)
+            pxMode=True,
+        )
+        # Above algorithm artifacts so a manual mark overlaying an algo
+        # site is visible. Below the crosshair (z=20).
+        self.setZValue(6)
+
+    def set_points(self, ts: list[float], vs: list[float]) -> None:
+        self.setData(x=ts, y=vs)
+
+    def clear_points(self) -> None:
+        self.setData(x=[], y=[])
+
+    def apply_color(self, color: QColor) -> None:
+        c = QColor(color)
+        self.setPen(pg.mkPen(c, width=1))
+        self.setBrush(pg.mkBrush(c))
+
+
+class ExcludedArtifactOverlay(pg.ScatterPlotItem):
+    """Scatter overlay for algorithm artifacts the user has excluded.
+
+    Phase 14: when the user clicks an algorithm-detected artifact, it
+    becomes "excluded" — still visible but rendered hollow + dimmed so
+    the eye can tell which beats the analysis should ignore. Drawn as
+    an outline circle (no fill) with reduced opacity.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            size=_ARTIFACT_SIZE,
+            pen=pg.mkPen(_ARTIFACT_COLOR, width=1),
+            brush=pg.mkBrush(0, 0, 0, 0),  # transparent fill
+            symbol="o",
+            pxMode=True,
+        )
+        # Sits on top of ArtifactOverlay so excluded markers cover the
+        # filled dot beneath them.
+        self.setZValue(7)
+
+    def set_points(self, ts: list[float], vs: list[float]) -> None:
+        self.setData(x=ts, y=vs)
+
+    def clear_points(self) -> None:
+        self.setData(x=[], y=[])
+
+    def apply_color(self, color: QColor) -> None:
+        c = QColor(color)
+        c.setAlpha(120)  # dimmed so excluded reads as "muted"
+        self.setPen(pg.mkPen(c, width=1))
+        # Brush stays transparent — hollow appearance is the whole point.
+        self.setBrush(pg.mkBrush(0, 0, 0, 0))
+
+
 # Visual constants for exclusion zones (Phase 15). The fill alpha is
 # deliberately higher than SectionRegion's so the user can spot a
 # narrow zone among section bands; the colour itself comes from

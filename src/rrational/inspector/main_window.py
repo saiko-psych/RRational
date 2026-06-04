@@ -120,6 +120,12 @@ class MainWindow(QMainWindow):
         # opens, so we keep a handle on the submenu itself.
         self._recent_menu = None
 
+        # Phase 14: Edit-menu undo / redo for manual artifact marking.
+        # Populated by _build_menu; referenced by PreprocessingPanel to
+        # enable / disable as the stacks fill and drain.
+        self._undo_action = None
+        self._redo_action = None
+
         self._build_central_widget()
         # Apply the user's saved color scheme to the plot before the menu
         # / toolbar are built so any toolbar repaint uses the right pen.
@@ -369,6 +375,25 @@ class MainWindow(QMainWindow):
 
         # ----- Edit menu --------------------------------------------------
         edit_menu = menubar.addMenu("&Edit")
+
+        # Phase 14: undo / redo for manual artifact marking. Disabled
+        # until the PreprocessingPanel populates its undo stack.
+        self._undo_action = QAction("&Undo manual mark", self)
+        self._undo_action.setShortcut(QKeySequence.Undo)  # Ctrl+Z / Cmd+Z
+        self._undo_action.setStatusTip("Reverse the last manual artifact mark / unmark")
+        self._undo_action.setEnabled(False)
+        self._undo_action.triggered.connect(self._on_undo_clicked)
+        edit_menu.addAction(self._undo_action)
+
+        self._redo_action = QAction("&Redo manual mark", self)
+        self._redo_action.setShortcut(QKeySequence.Redo)  # Ctrl+Y / Cmd+Shift+Z
+        self._redo_action.setStatusTip("Re-apply the last undone manual artifact mark")
+        self._redo_action.setEnabled(False)
+        self._redo_action.triggered.connect(self._on_redo_clicked)
+        edit_menu.addAction(self._redo_action)
+
+        edit_menu.addSeparator()
+
         prefs_act = QAction("&Preferences…", self)
         prefs_act.setShortcut("Ctrl+,")
         prefs_act.setStatusTip("Inspector preferences (color scheme, etc.)")
@@ -471,6 +496,23 @@ class MainWindow(QMainWindow):
         self._color_preset = preset_name
         self._color_scheme = scheme
         self._plot.set_color_scheme(scheme)
+
+    # ------------------------------------------------------------------
+    # Phase 14: Undo / Redo wiring (delegated to the preprocessing panel)
+    # ------------------------------------------------------------------
+    def _on_undo_clicked(self) -> None:
+        panel = getattr(self._browse_tab, "_preprocessing_panel", None)
+        if panel is None:
+            return
+        if not panel.undo():
+            self.statusBar().showMessage("Nothing to undo", 1500)
+
+    def _on_redo_clicked(self) -> None:
+        panel = getattr(self._browse_tab, "_preprocessing_panel", None)
+        if panel is None:
+            return
+        if not panel.redo():
+            self.statusBar().showMessage("Nothing to redo", 1500)
 
     def _show_shortcuts_dialog(self) -> None:
         """Modeless dialog listing every shortcut the inspector binds."""
