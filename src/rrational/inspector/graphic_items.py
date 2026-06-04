@@ -74,6 +74,24 @@ class SectionRegion(pg.LinearRegionItem):
         fill.setAlpha(SECTION_ALPHA * 3 if highlighted else SECTION_ALPHA)
         self.setBrush(fill)
 
+    def apply_colors(self, fill_color: QColor, border_color: QColor) -> None:
+        """Re-paint this region with new fill + border colours.
+
+        Used by ``RRPlotWidget.set_color_scheme`` so a Preferences
+        change refreshes existing items without recreating them.
+        LinearRegionItem owns two ``InfiniteLine`` border instances on
+        ``self.lines`` — those carry the border pen, not the region
+        itself, so we update each in turn.
+        """
+        new_fill = QColor(fill_color)
+        new_fill.setAlpha(SECTION_ALPHA)
+        new_border = QColor(border_color)
+        new_border.setAlpha(SECTION_BORDER_ALPHA)
+        self.setBrush(new_fill)
+        border_pen = pg.mkPen(new_border, width=1)
+        for line in self.lines:
+            line.setPen(border_pen)
+
 
 class EventMarker(pg.InfiniteLine):
     """A vertical line at one event timestamp, with the event label.
@@ -109,6 +127,17 @@ class EventMarker(pg.InfiniteLine):
         # (which we'll add in Phase 3 at z=10).
         self.setZValue(0)
 
+    def apply_color(self, color: QColor) -> None:
+        """Re-paint the vertical line with a new colour (label included)."""
+        pen_color = QColor(color)
+        pen_color.setAlpha(EVENT_LINE_ALPHA)
+        self.setPen(pg.mkPen(pen_color, width=1, style=Qt.DashLine))
+        # InfiniteLine label is an InfLineLabel; setColor accepts a QColor.
+        try:
+            self.label.setColor(pen_color)
+        except (AttributeError, RuntimeError):  # pragma: no cover - defensive
+            pass
+
 
 # Visual constants for artifact overlay. Orange picked to contrast with
 # the blue tachogram and the cooler section-band palette.
@@ -143,3 +172,9 @@ class ArtifactOverlay(pg.ScatterPlotItem):
 
     def clear_points(self) -> None:
         self.setData(x=[], y=[])
+
+    def apply_color(self, color: QColor) -> None:
+        """Re-paint every artifact dot with a new pen + brush colour."""
+        c = QColor(color)
+        self.setPen(pg.mkPen(c, width=1))
+        self.setBrush(pg.mkBrush(c))

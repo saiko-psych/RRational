@@ -121,6 +121,13 @@ class MainWindow(QMainWindow):
         self._recent_menu = None
 
         self._build_central_widget()
+        # Apply the user's saved color scheme to the plot before the menu
+        # / toolbar are built so any toolbar repaint uses the right pen.
+        from rrational.inspector.color_scheme_persistence import load_color_scheme
+
+        self._color_preset, self._color_scheme = load_color_scheme()
+        self._plot.set_color_scheme(self._color_scheme)
+
         self._build_menu()
         self._build_toolbar()
         self.setStatusBar(QStatusBar())
@@ -343,7 +350,7 @@ class MainWindow(QMainWindow):
         edit_menu = menubar.addMenu("&Edit")
         prefs_act = QAction("&Preferences…", self)
         prefs_act.setShortcut("Ctrl+,")
-        prefs_act.setStatusTip("Inspector preferences (not yet implemented)")
+        prefs_act.setStatusTip("Inspector preferences (color scheme, etc.)")
         prefs_act.triggered.connect(self._on_preferences_clicked)
         edit_menu.addAction(prefs_act)
 
@@ -424,12 +431,25 @@ class MainWindow(QMainWindow):
             self._overview_bar.setVisible(False)
 
     def _on_preferences_clicked(self) -> None:
-        """Stub — real Preferences dialog lands in a later sub-phase."""
-        self._info(
-            "Preferences",
-            "A full Preferences dialog will be added in a follow-up.\n\n"
-            "For now, View-menu toggles persist automatically across runs.",
+        """Open the Preferences dialog (suppressed in test_mode)."""
+        if self.test_mode:
+            self.statusBar().showMessage("Preferences dialog (test_mode: suppressed)")
+            return
+        from rrational.inspector.preferences_dialog import PreferencesDialog
+
+        dlg = PreferencesDialog(
+            self,
+            current_preset=self._color_preset,
+            current_scheme=self._color_scheme,
+            apply_callback=self._apply_color_scheme,
         )
+        dlg.exec()
+
+    def _apply_color_scheme(self, preset_name: str, scheme) -> None:
+        """Persist preferences callback: cache + re-skin the plot."""
+        self._color_preset = preset_name
+        self._color_scheme = scheme
+        self._plot.set_color_scheme(scheme)
 
     def _show_shortcuts_dialog(self) -> None:
         """Modeless dialog listing every shortcut the inspector binds."""

@@ -370,6 +370,32 @@ class RRPlotWidget(pg.PlotWidget):
         for name, region in self._sections_by_label.items():
             region.set_highlighted(name == label)
 
+    def set_color_scheme(self, scheme) -> None:
+        """Re-skin every existing plot element from ``scheme``.
+
+        Iterates the live curve, artifact overlay, section regions and
+        event markers and asks each to re-paint with the matching colour
+        from the :class:`~rrational.gui.color_scheme.ColorScheme`.
+        Items added AFTER this call still use their own constructor
+        colours — :meth:`add_section_region` / :meth:`add_event_marker`
+        callers should stash the current scheme and re-apply if needed.
+        """
+        from rrational.gui.color_scheme import ColorScheme  # noqa: F401
+
+        # RR curve pen
+        self._curve.setPen(pg.mkPen(scheme.rr_line, width=1))
+        # Artifact dots
+        self._artifact_overlay.apply_color(QColor(scheme.artifact))
+        # Section bands
+        fill = QColor(scheme.section_border)
+        border = QColor(scheme.section_border)
+        for region in self._section_regions:
+            region.apply_colors(fill, border)
+        # Event markers
+        evt_color = QColor(scheme.event_marker)
+        for marker in self._event_markers:
+            marker.apply_color(evt_color)
+
     def zoom_to_range(
         self, t_start: float, t_end: float, padding_frac: float = 0.05
     ) -> None:

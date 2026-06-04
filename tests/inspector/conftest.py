@@ -14,6 +14,23 @@ import numpy as np
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_color_scheme_dir(tmp_path):
+    """Redirect ColorScheme persistence away from the user's real home.
+
+    MainWindow now loads the color scheme on __init__; without this
+    autouse override, every MainWindow-instantiating test would touch
+    (and possibly create) ``~/.rrational/inspector/`` on the developer's
+    machine. The fixture is autouse + cheap so individual tests don't
+    have to remember to set it.
+    """
+    from rrational.inspector import color_scheme_persistence as csp
+
+    csp.set_color_scheme_config_dir(tmp_path)
+    yield
+    csp.set_color_scheme_config_dir(None)
+
+
 # Anchor timestamp used by every synthetic fixture so tests don't drift
 # with the wall-clock. Picked to be far enough in the future that any
 # bug printing "current time" would stand out, and aligned to a minute
