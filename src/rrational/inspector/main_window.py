@@ -264,6 +264,20 @@ class MainWindow(QMainWindow):
         self._browse_tab._plot.cursor_moved.connect(self._update_cursor_readout)
         self._browse_tab._plot.cursor_left.connect(self._clear_cursor_readout)
 
+        # Phase 16: section-edit signal wiring. The plot emits each event
+        # from its SectionRegion children; MainWindow mutates the active
+        # dataset's SectionMeta + persists via gui.persistence.save_sections.
+        self._browse_tab._plot.sigSectionEdited.connect(self._on_section_edited)
+        self._browse_tab._plot.sigSectionRenameRequested.connect(
+            self._on_section_rename_requested
+        )
+        self._browse_tab._plot.sigSectionDeleteRequested.connect(
+            self._on_section_delete_requested
+        )
+        self._browse_tab._plot.sigSectionSplitRequested.connect(
+            self._on_section_split_requested
+        )
+
     # ------------------------------------------------------------------
     # Backward-compat proxies — tests + earlier-phase code still reach
     # for widgets that now live inside BrowseTab. Forward the access so
@@ -1488,3 +1502,175 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"{title}: {msg}")
             return
         QMessageBox.information(self, title, msg)
+
+    # ------------------------------------------------------------------
+    # Phase 16: Section boundary editing
+    # ------------------------------------------------------------------
+    def _project_path_for_sections(self):
+        return self._project.project_path if self._project is not None else None
+
+    def _persist_sections_yaml(self, sections_yaml: dict) -> None:
+        """Write the sections.yml back via gui.persistence.save_sections."""
+        from rrational.gui.persistence import save_sections
+
+        save_sections(sections_yaml, project_path=self._project_path_for_sections())
+
+    def _load_sections_yaml(self) -> dict:
+        from rrational.gui.persistence import load_sections
+
+        return load_sections(project_path=self._project_path_for_sections()) or {}
+
+    def _active_data(self):
+        """Return the active dataset's InspectorData or None."""
+        if self._active_idx is None:
+            return None
+        if not (0 <= self._active_idx < len(self._datasets)):
+            return None
+        return self._datasets[self._active_idx].data
+
+    def _on_section_edited(self, name: str, t_start: float, t_end: float) -> None:
+        """Drag finished on a region — update the in-memory SectionMeta
+        AND persist the new bounds into sections.yml."""
+        data = self._active_data()
+        if data is None:
+            return
+        # Mutate the in-memory section boundary.
+        for sec in data.sections:
+            if sec.name == name:
+                sec.t_start = float(t_start)
+                sec.t_end = float(t_end)
+                break
+        # Persist into sections.yml — preserve any existing definition
+        # fields (label, start_events, end_events, description) and only
+        # update t_start / t_end. Sections that were never defined in the
+        # YAML are created with just the boundary fields.
+        sections_yaml = self._load_sections_yaml()
+        entry = dict(sections_yaml.get(name) or {})
+        entry["t_start"] = float(t_start)
+        entry["t_end"] = float(t_end)
+        sections_yaml[name] = entry
+        self._persist_sections_yaml(sections_yaml)
+        self.statusBar().showMessage(f"Updated section '{name}' boundaries", 3000)
+
+    def _on_section_rename_requested(self, old_name: str) -> None:
+        """Right-click → Rename. Prompts for a new label + renames in-memory
+        + renames in sections.yml (preserving payload), then re-renders the
+        plot so the SectionRegion picks up the new label."""
+        from qtpy.QtWidgets import QInputDialog
+
+        data = self._active_data()
+        if data is None:
+            return
+        if self.test_mode:
+            # In test_mode the test installs its own monkeypatch for
+            # QInputDialog.getText; the dialog still executes but returns
+            # whatever the patched function says.
+            pass
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Rename section",
+            "New section name:",
+            text=old_name,
+        )
+        if not ok:
+            return
+        new_name = (new_name or "").strip()
+        if not new_name or new_name == old_name:
+            return
+        # Update in-memory SectionMeta.
+        for sec in data.sections:
+            if sec.name == old_name:
+                sec.name = new_name
+                break
+        # Update sections.yml — move the entry under the new key and
+        # also update its "label" field if it matches the old name.
+        sections_yaml = self._load_sections_yaml()
+        if old_name in sections_yaml:
+            entry = dict(sections_yaml.pop(old_name))
+        else:
+            # Section was only known via the .rrational; create an entry
+            # so the rename is preserved across reload.
+            entry = {}
+        # Mirror the new name onto the YAML's "label" field if the user
+        # had been keeping label == old_name (the most common case).
+        if entry.get("label", old_name) == old_name:
+            entry["label"] = new_name
+        sections_yaml[new_name] = entry
+        self._persist_sections_yaml(sections_yaml)
+        # Re-render so the plot's SectionRegion picks up the new name.
+        self._browse_tab.on_active_dataset_changed(data)
+        self.statusBar().showMessage(
+            f"Renamed section '{old_name}' to '{new_name}'", 3000
+        )
+
+    def _on_section_delete_requested(self, name: str) -> None:
+        """Right-click → Delete. Drops the section from the dataset AND
+        from sections.yml, then re-renders."""
+        data = self._active_data()
+        if data is None:
+            return
+        data.sections = [s for s in data.sections if s.name != name]
+        sections_yaml = self._load_sections_yaml()
+        sections_yaml.pop(name, None)
+        self._persist_sections_yaml(sections_yaml)
+        self._browse_tab.on_active_dataset_changed(data)
+        self.statusBar().showMessage(f"Deleted section '{name}'", 3000)
+
+    def _on_section_split_requested(self, name: str, t_split: float) -> None:
+        """Right-click → Split. Splits ``name`` at ``t_split`` into
+        ``{name}_a`` and ``{name}_b`` with the cursor as the new
+        boundary, then persists + re-renders."""
+        from rrational.inspector.data_loader import SectionMeta
+
+        data = self._active_data()
+        if data is None:
+            return
+        target = next((s for s in data.sections if s.name == name), None)
+        if target is None:
+            return
+        # Clamp the split point inside the section's range and snap to a beat.
+        snapped = float(self._browse_tab._plot._snap_to_beat(float(t_split)))
+        if snapped <= target.t_start or snapped >= target.t_end:
+            self.statusBar().showMessage(
+                f"Split point outside section '{name}' — ignored", 3000
+            )
+            return
+        name_a = f"{name}_a"
+        name_b = f"{name}_b"
+        # Estimate beat counts proportionally to time (cheap; the actual
+        # NN array isn't held by SectionMeta).
+        total_dur = target.t_end - target.t_start
+        frac_a = (snapped - target.t_start) / total_dur if total_dur > 0 else 0.5
+        n_a = max(1, int(round(target.beat_count * frac_a)))
+        n_b = max(1, target.beat_count - n_a)
+        new_a = SectionMeta(
+            name=name_a,
+            t_start=target.t_start,
+            t_end=snapped,
+            beat_count=n_a,
+        )
+        new_b = SectionMeta(
+            name=name_b,
+            t_start=snapped,
+            t_end=target.t_end,
+            beat_count=n_b,
+        )
+        # Replace the old section with the two halves at the same position.
+        idx = data.sections.index(target)
+        data.sections[idx : idx + 1] = [new_a, new_b]
+        # sections.yml update — keep any existing payload as a template.
+        sections_yaml = self._load_sections_yaml()
+        template = dict(sections_yaml.pop(name, {}))
+        a_entry = dict(template)
+        a_entry["t_start"] = target.t_start
+        a_entry["t_end"] = snapped
+        b_entry = dict(template)
+        b_entry["t_start"] = snapped
+        b_entry["t_end"] = target.t_end
+        sections_yaml[name_a] = a_entry
+        sections_yaml[name_b] = b_entry
+        self._persist_sections_yaml(sections_yaml)
+        self._browse_tab.on_active_dataset_changed(data)
+        self.statusBar().showMessage(
+            f"Split '{name}' into '{name_a}' / '{name_b}'", 3000
+        )

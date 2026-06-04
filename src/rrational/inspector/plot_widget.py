@@ -152,8 +152,22 @@ class RRPlotWidget(pg.PlotWidget):
     # panel can pop an edit / delete menu without coupling to QInfiniteLine.
     annotation_context = Signal(object, object)  # (AnnotationMarker, QPoint)
 
+    # Phase 16: section editing signals. Emitted by SectionRegion handles
+    # after a drag finishes or a context-menu action is chosen. MainWindow
+    # connects these to mutate the active dataset's SectionMeta + persist
+    # via gui.persistence.save_sections.
+    sigSectionEdited = Signal(str, float, float)  # label, new_t_start, new_t_end
+    sigSectionRenameRequested = Signal(str)
+    sigSectionDeleteRequested = Signal(str)
+    sigSectionSplitRequested = Signal(str, float)  # label, cursor_t
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent, viewBox=RRViewBox())
+        # Phase 16: flag controlling whether NEW SectionRegions spawn
+        # in edit mode. Toggled by MainWindow via ``set_section_edit_mode``.
+        # When True, each newly-added region accepts edge drags + right-
+        # click context menu (rename / delete / split).
+        self._section_edit_mode: bool = False
 
         # X-axis is a DateAxis so the user sees real wall-clock time, not
         # epoch milliseconds. PyQtGraph's built-in DateAxisItem handles
@@ -353,14 +367,89 @@ class RRPlotWidget(pg.PlotWidget):
     def add_section_region(
         self, meta: "SectionMeta", color: QColor | None = None
     ) -> SectionRegion:
-        """Add a coloured band for one section. Returns the created item."""
+        """Add a coloured band for one section. Returns the created item.
+
+        Phase 16: the region is spawned with ``editable=self._section_edit_mode``
+        so it honours whatever section-edit toggle is currently active, and
+        the snap_fn is installed so drags snap to the nearest beat in the
+        active dataset. The four ``sig*Requested`` signals from the region
+        are forwarded onto the widget-level signals so MainWindow can
+        connect once at construction.
+        """
         if color is None:
             color = self._color_for_index(len(self._section_regions))
-        region = SectionRegion(meta.t_start, meta.t_end, meta.name, color)
+        region = SectionRegion(
+            meta.t_start,
+            meta.t_end,
+            meta.name,
+            color,
+            editable=self._section_edit_mode,
+        )
+        region.set_snap_function(self._snap_to_beat)
+        # Forward the region's drag-end + context-menu signals onto the
+        # widget level. ``label`` is captured by default-argument so the
+        # closure binds the CURRENT region's label rather than a name
+        # that may change after rename.
+        region.sigRegionChangeFinished.connect(
+            lambda r=region: self._on_region_drag_finished(r)
+        )
+        region.sigRenameRequested.connect(self.sigSectionRenameRequested)
+        region.sigDeleteRequested.connect(self.sigSectionDeleteRequested)
+        region.sigSplitRequested.connect(self.sigSectionSplitRequested)
         self.addItem(region)
         self._section_regions.append(region)
         self._sections_by_label[meta.name] = region
         return region
+
+    # ------------------------------------------------------------------
+    # Phase 16: section edit mode + snap helper + forwarding
+    # ------------------------------------------------------------------
+    def set_section_edit_mode(self, enabled: bool) -> None:
+        """Toggle edit mode for every existing section region.
+
+        When ``True``, region edges become draggable and right-click opens
+        a context menu (rename / split / delete). New regions created via
+        ``add_section_region`` after this call will also spawn in the
+        requested mode.
+        """
+        self._section_edit_mode = bool(enabled)
+        for region in self._section_regions:
+            region.set_editable(self._section_edit_mode)
+            region.set_snap_function(self._snap_to_beat)
+
+    def _snap_to_beat(self, t: float) -> float:
+        """Snap ``t`` (seconds-since-epoch) to the nearest beat timestamp.
+
+        Returns ``t`` unchanged if no data is loaded. Ignores NaN samples
+        (inter-section gaps), so a drag that lands inside a gap snaps to
+        the closest real beat on either side instead of disappearing.
+        """
+        if self._times is None or len(self._times) == 0:
+            return float(t)
+        finite_mask = np.isfinite(self._times)
+        finite_times = self._times[finite_mask]
+        if len(finite_times) == 0:
+            return float(t)
+        idx = int(np.searchsorted(finite_times, t))
+        # Choose the closer of finite_times[idx-1] and finite_times[idx].
+        if idx <= 0:
+            return float(finite_times[0])
+        if idx >= len(finite_times):
+            return float(finite_times[-1])
+        before = finite_times[idx - 1]
+        after = finite_times[idx]
+        return float(before if (t - before) <= (after - t) else after)
+
+    def _on_region_drag_finished(self, region: SectionRegion) -> None:
+        """Emit ``sigSectionEdited`` with the region's CURRENT label + bounds.
+
+        We read ``region.section_label`` rather than a captured value so
+        a rename in between drags still emits under the correct label.
+        """
+        if not self._section_edit_mode:
+            return
+        lo, hi = region.getRegion()
+        self.sigSectionEdited.emit(region.section_label, float(lo), float(hi))
 
     def add_event_marker(
         self, meta: "EventMeta", color: QColor | None = None

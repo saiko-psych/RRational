@@ -16,13 +16,28 @@ a container to avoid the "wrapped C++ object deleted" bug
 (github.com/mne-tools/mne-qt-browser/issues/82). We follow the same
 discipline in ``plot_widget.py`` — the widget keeps lists of overlay
 items as attributes.
+
+Phase 16 adds **draggable boundaries** to ``SectionRegion``:
+``LinearRegionItem`` already exposes left+right edges as InfiniteLine
+children, so toggling ``setMovable(True)`` is most of the work. The
+extra plumbing here is:
+- a ``snap_fn`` callable (set externally) that snaps a raw drag value
+  to the nearest beat in the active dataset's ``t`` array
+- a ``sigRegionChangeFinished`` listener on the parent — connected by
+  the PlotWidget so MainWindow can persist the new bounds
+- right-click context menu via ``mouseClickEvent`` (rename / delete /
+  split at cursor)
+- hover cursors: ``SizeHorCursor`` on the edges (handled by the
+  InfiniteLine children once movable=True), ``SizeAllCursor`` on the
+  band body
 """
 
 from __future__ import annotations
 
 import pyqtgraph as pg
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor
+from qtpy.QtWidgets import QMenu
 
 # Default visual style — kept here so PlotWidget callers don't have to
 # repeat these constants. Section bands use a low alpha so the curve
@@ -36,14 +51,26 @@ class SectionRegion(pg.LinearRegionItem):
     """A coloured time-range band marking one named section.
 
     Wraps PyQtGraph's ``LinearRegionItem``. Default appearance:
-    semi-transparent fill (so the RR-tachogram beneath stays readable),
-    movable=False (Phase 2 doesn't allow edit-by-drag yet — that lands
-    in Phase 3 with the artifact editor).
+    semi-transparent fill (so the RR-tachogram beneath stays readable).
 
-    Click handling lives in the PlotWidget rather than the item: the
-    widget knows which section is selected in the sidebar and can do
-    the "click section → highlight in sidebar" handshake there.
+    When ``editable=True`` (Phase 16):
+    - the left+right edges become draggable handles
+    - the snap_fn (if set) snaps each new bound to the nearest beat
+    - ``sigRegionChangeFinished`` fires once per drag for persistence
+    - right-click opens a context menu (rename / delete / split)
+
+    Click handling (single-click selection) lives in the PlotWidget
+    rather than the item: the widget knows which section is selected in
+    the sidebar and can do the "click section → highlight in sidebar"
+    handshake there.
     """
+
+    # Emitted by the right-click context menu actions. The PlotWidget
+    # listens and forwards to MainWindow, which mutates SectionMeta and
+    # persists via gui.persistence.save_sections.
+    sigRenameRequested = Signal(str)  # current label
+    sigDeleteRequested = Signal(str)
+    sigSplitRequested = Signal(str, float)  # label, cursor_t
 
     def __init__(
         self,
@@ -51,6 +78,7 @@ class SectionRegion(pg.LinearRegionItem):
         t_end: float,
         label: str,
         color: QColor,
+        editable: bool = False,
     ) -> None:
         fill = QColor(color)
         fill.setAlpha(SECTION_ALPHA)
@@ -62,11 +90,133 @@ class SectionRegion(pg.LinearRegionItem):
             orientation="vertical",
             brush=fill,
             pen=pg.mkPen(border, width=1),
-            movable=False,  # Phase 3 will toggle this on for editing
+            movable=editable,
         )
         self.section_label = label  # plain attribute — read by MainWindow
         # Sit visually beneath event markers but above the gridlines.
         self.setZValue(-10)
+
+        # Snap function: takes a raw bound (seconds-since-epoch) and
+        # returns the nearest beat timestamp. Set externally by the
+        # PlotWidget when section edit mode is enabled.
+        self.snap_fn = None  # type: ignore[assignment]
+
+        # Hover cursor for the body of the band. The edge cursors come
+        # for free from LinearRegionItem's child InfiniteLine handles
+        # once movable=True. ``setAcceptHoverEvents`` ensures the cursor
+        # update fires; LinearRegionItem doesn't enable it by default.
+        self.setAcceptHoverEvents(True)
+        self._editable = editable
+
+        # Internal flag to prevent the snap-on-change from recursing
+        # into itself when ``setRegion`` is called from within the
+        # sigRegionChanged handler.
+        self._suppress_snap = False
+        # PyQtGraph fires sigRegionChanged while dragging; we only
+        # snap once the drag finishes so the user sees continuous
+        # feedback while moving.
+        self.sigRegionChangeFinished.connect(self._on_drag_finished)
+
+    def set_editable(self, editable: bool) -> None:
+        """Toggle drag-to-edit on the region edges + body."""
+        self._editable = editable
+        self.setMovable(editable)
+        # LinearRegionItem also has per-line movability — the ``movable``
+        # constructor flag sets both, but the runtime ``setMovable``
+        # only flips the parent flag in older pyqtgraph versions. Touch
+        # the child lines explicitly to be safe.
+        for line in self.lines:
+            line.setMovable(editable)
+
+    def set_snap_function(self, snap_fn) -> None:
+        """Install a ``(t: float) -> float`` snap callable.
+
+        ``None`` clears the snap. Called by PlotWidget whenever the
+        active dataset (and hence its beat array) changes.
+        """
+        self.snap_fn = snap_fn
+
+    # ------------------------------------------------------------------
+    # Drag-end handler — snap + emit
+    # ------------------------------------------------------------------
+    def _on_drag_finished(self) -> None:
+        if not self._editable:
+            return
+        if self._suppress_snap:
+            return
+        lo, hi = self.getRegion()
+        if self.snap_fn is not None:
+            try:
+                snapped_lo = float(self.snap_fn(float(lo)))
+                snapped_hi = float(self.snap_fn(float(hi)))
+            except Exception:
+                snapped_lo, snapped_hi = float(lo), float(hi)
+            if snapped_lo > snapped_hi:
+                snapped_lo, snapped_hi = snapped_hi, snapped_lo
+            if snapped_lo != lo or snapped_hi != hi:
+                self._suppress_snap = True
+                try:
+                    self.setRegion((snapped_lo, snapped_hi))
+                finally:
+                    self._suppress_snap = False
+
+    # ------------------------------------------------------------------
+    # Right-click context menu (only in edit mode)
+    # ------------------------------------------------------------------
+    def mouseClickEvent(self, ev) -> None:  # noqa: N802 — Qt API name
+        """Intercept right-clicks to open a context menu; leave left-
+        clicks to LinearRegionItem (which handles selection on body)."""
+        if self._editable and ev.button() == Qt.RightButton:
+            ev.accept()
+            # Use the scene position to derive the cursor's data x.
+            try:
+                view = self.getViewBox()
+                if view is not None:
+                    data_pt = view.mapSceneToView(ev.scenePos())
+                    cursor_t = float(data_pt.x())
+                else:
+                    cursor_t = float(self.getRegion()[0])
+            except Exception:
+                cursor_t = float(self.getRegion()[0])
+            self._show_context_menu(ev.screenPos(), cursor_t)
+            return
+        super().mouseClickEvent(ev)
+
+    def _show_context_menu(self, screen_pos, cursor_t: float) -> None:
+        menu = QMenu()
+        act_rename = menu.addAction("Rename section...")
+        act_split = menu.addAction("Split here...")
+        menu.addSeparator()
+        act_delete = menu.addAction("Delete section")
+
+        chosen = menu.exec(screen_pos.toPoint())
+        if chosen is act_rename:
+            self.sigRenameRequested.emit(self.section_label)
+        elif chosen is act_delete:
+            self.sigDeleteRequested.emit(self.section_label)
+        elif chosen is act_split:
+            self.sigSplitRequested.emit(self.section_label, cursor_t)
+
+    # ------------------------------------------------------------------
+    # Hover cursor on the body of the band (edges are handled by the
+    # child InfiniteLines, which switch to SizeHorCursor automatically
+    # when movable=True).
+    # ------------------------------------------------------------------
+    def hoverEvent(self, ev) -> None:  # noqa: N802 — Qt API name
+        if not self._editable or ev.isExit():
+            try:
+                self.setCursor(Qt.ArrowCursor)
+            except Exception:
+                pass
+            return
+        # SizeAllCursor signals "you can drag the whole band". The
+        # LinearRegionItem child InfiniteLines override this with
+        # SizeHorCursor when the hover lands on an edge, so the user
+        # still sees the right cursor over the handles.
+        try:
+            self.setCursor(Qt.SizeAllCursor)
+        except Exception:
+            pass
 
     def set_highlighted(self, highlighted: bool) -> None:
         """Bump alpha when this section is the one selected in the sidebar."""

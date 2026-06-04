@@ -196,6 +196,24 @@ class PreprocessingPanel(QWidget):
         sep2.setFrameShadow(QFrame.Sunken)
         layout.addWidget(sep2)
 
+        # Phase 16: section edit-mode toggle. When ON, section regions on
+        # the plot expose draggable edges + a right-click context menu
+        # (rename / split / delete). Off by default so the user can pan
+        # over section bands without accidentally dragging them.
+        self._toggle_section_edit = QCheckBox("Section edit mode")
+        self._toggle_section_edit.setChecked(False)
+        self._toggle_section_edit.setToolTip(
+            "Drag section edges to adjust boundaries (snaps to the nearest beat). "
+            "Right-click a band to rename, split, or delete it."
+        )
+        self._toggle_section_edit.toggled.connect(self._on_toggle_section_edit)
+        layout.addWidget(self._toggle_section_edit)
+
+        sep3 = QFrame()
+        sep3.setFrameShape(QFrame.HLine)
+        sep3.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(sep3)
+
         self._export_btn = QPushButton("Save as .rrational v2…")
         self._export_btn.setToolTip(
             "Export the current dataset (plus detected artifacts + "
@@ -635,6 +653,17 @@ class PreprocessingPanel(QWidget):
     def _on_toggle_show_artifacts(self, checked: bool) -> None:
         plot = self._main_window._browse_tab._plot
         plot.set_artifacts_visible(checked)
+
+    def _on_toggle_section_edit(self, checked: bool) -> None:
+        """Phase 16: flip the plot's section-edit mode."""
+        plot = self._main_window._browse_tab._plot
+        plot.set_section_edit_mode(bool(checked))
+        msg = (
+            "Section edit mode ON — drag edges or right-click a band"
+            if checked
+            else "Section edit mode OFF"
+        )
+        self._main_window.statusBar().showMessage(msg, 2500)
 
     def _on_toggle_use_corrected(self, checked: bool) -> None:
         if self._last_result is None or self._last_result.corrected_v is None:
