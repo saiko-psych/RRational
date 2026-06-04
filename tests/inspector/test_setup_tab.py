@@ -204,6 +204,111 @@ def test_groups_pane_survives_close_all_workspace(main_window):
 
 
 # ---------------------------------------------------------------------
+# Phase 10: Events pane editor
+# ---------------------------------------------------------------------
+def test_events_pane_definitions_start_empty(main_window):
+    pane = main_window._setup_tab._events_pane
+    assert pane._defs_table.rowCount() == 0
+    assert pane.events == {}
+
+
+def test_events_pane_add_persists_with_streamlit_schema(main_window):
+    """Direct save uses gui.persistence so Streamlit can read it back."""
+    from rrational.gui.persistence import load_events
+
+    pane = main_window._setup_tab._events_pane
+    pane._events["rest_pre_start"] = ["Rest_Pre", "Pre_Rest", "/^ruhe.vor/i"]
+    pane._persist()
+    pane._refresh_defs_table()
+
+    on_disk = load_events()
+    assert on_disk == {"rest_pre_start": ["Rest_Pre", "Pre_Rest", "/^ruhe.vor/i"]}
+    assert pane._defs_table.rowCount() == 1
+    # Columns: name, count, preview
+    assert pane._defs_table.item(0, 0).text() == "rest_pre_start"
+    assert pane._defs_table.item(0, 1).text() == "3"
+
+
+def test_events_pane_remove_clears_from_disk(main_window):
+    from rrational.gui.persistence import load_events
+
+    pane = main_window._setup_tab._events_pane
+    pane._events["x"] = ["foo"]
+    pane._persist()
+    assert "x" in load_events()
+    del pane._events["x"]
+    pane._persist()
+    pane._refresh_defs_table()
+    assert load_events() == {}
+    assert pane._defs_table.rowCount() == 0
+
+
+def test_events_pane_buttons_disabled_without_selection(main_window):
+    pane = main_window._setup_tab._events_pane
+    assert pane._edit_btn.isEnabled() is False
+    assert pane._remove_btn.isEnabled() is False
+    assert pane._add_btn.isEnabled() is True
+
+
+def test_events_pane_keeps_lower_table_for_found_events(main_window):
+    """The bottom (read-only) table still mirrors data.events."""
+    data = _make_data(n_events=4)
+    main_window.load_data(data)
+    pane = main_window._setup_tab._events_pane
+    # bottom table is _table (read-only); top is _defs_table (editor)
+    assert pane._table.rowCount() == 4
+    assert pane._defs_table.rowCount() == 0  # editor empty
+
+
+# ---------------------------------------------------------------------
+# Phase 10: Sections pane editor
+# ---------------------------------------------------------------------
+def test_sections_pane_definitions_start_empty(main_window):
+    pane = main_window._setup_tab._sections_pane
+    assert pane._defs_table.rowCount() == 0
+    assert pane.sections == {}
+
+
+def test_sections_pane_add_persists_with_streamlit_schema(main_window):
+    from rrational.gui.persistence import load_sections
+
+    pane = main_window._setup_tab._sections_pane
+    pane._sections["rest_pre"] = {
+        "label": "Rest Pre",
+        "description": "Baseline rest before music",
+        "start_events": ["rest_pre_start"],
+        "end_events": ["rest_pre_end", "music_start"],
+    }
+    pane._persist()
+    pane._refresh_defs_table()
+
+    on_disk = load_sections()
+    assert "rest_pre" in on_disk
+    assert on_disk["rest_pre"]["start_events"] == ["rest_pre_start"]
+    assert on_disk["rest_pre"]["end_events"] == ["rest_pre_end", "music_start"]
+    assert pane._defs_table.item(0, 2).text() == "rest_pre_start"
+
+
+def test_sections_pane_dialog_uses_events_from_events_pane(main_window):
+    """The SectionDialog should see events from the live EventsPane."""
+    events_pane = main_window._setup_tab._events_pane
+    events_pane._events["e1"] = ["alias1"]
+    events_pane._events["e2"] = ["alias2"]
+
+    sections_pane = main_window._setup_tab._sections_pane
+    available = sections_pane._available_events()
+    assert set(available) == {"e1", "e2"}
+
+
+def test_sections_pane_keeps_lower_table_for_found_sections(main_window):
+    """The bottom (read-only) table still mirrors data.sections."""
+    main_window.load_data(_make_data(n_sections=3))
+    pane = main_window._setup_tab._sections_pane
+    assert pane._table.rowCount() == 3
+    assert pane._defs_table.rowCount() == 0  # editor empty
+
+
+# ---------------------------------------------------------------------
 # Sequences pane
 # ---------------------------------------------------------------------
 def test_sequences_pane_starts_empty(main_window):

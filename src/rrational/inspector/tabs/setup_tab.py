@@ -77,17 +77,162 @@ class _ReadOnlyTable(QTableWidget):
         header.setSectionResizeMode(QHeaderView.ResizeToContents)
 
 
-class _EventsPane(QWidget):
-    """Lists every EventMeta from the active dataset."""
+class _EventDefinitionDialog(QDialog):
+    """Modal editor for one event definition.
 
-    def __init__(self, parent=None) -> None:
+    Schema (Streamlit-compatible): ``{canonical_name: [synonym1, synonym2, regex_pattern, ...]}``
+    Each line in the synonyms text-area becomes one entry. Lines starting
+    with ``/`` (e.g. ``/^rest_pre/i``) are stored verbatim as Streamlit's
+    regex convention; literal strings work too.
+    """
+
+    def __init__(
+        self,
+        existing_names: list[str],
+        initial_name: str | None = None,
+        initial_synonyms: list[str] | None = None,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        self.setWindowTitle("Edit event" if initial_name else "New event")
+        self.setMinimumWidth(520)
+        self._existing_names = [n for n in existing_names if n != (initial_name or "")]
+
+        outer = QVBoxLayout(self)
+        form = QFormLayout()
+        self._name_edit = QLineEdit(initial_name or "")
+        self._name_edit.setPlaceholderText("Canonical event name (e.g. rest_pre_start)")
+        form.addRow("Canonical name *:", self._name_edit)
+        outer.addLayout(form)
+
+        outer.addWidget(
+            QLabel(
+                "Synonyms / regex (one per line). Streamlit format: literal "
+                "string OR <code>/pattern/flags</code>."
+            )
+        )
+        from qtpy.QtWidgets import QPlainTextEdit
+
+        self._syn_edit = QPlainTextEdit()
+        if initial_synonyms:
+            self._syn_edit.setPlainText("\n".join(initial_synonyms))
+        self._syn_edit.setPlaceholderText("Rest_Pre\nPre_Rest\n/^ruhe.vor/i")
+        outer.addWidget(self._syn_edit)
+
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self._on_accept)
+        bb.rejected.connect(self.reject)
+        outer.addWidget(bb)
+
+    def _on_accept(self) -> None:
+        name = self._name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Missing name", "Canonical event name required.")
+            return
+        if name in self._existing_names:
+            QMessageBox.warning(self, "Duplicate", f"Event '{name}' already exists.")
+            return
+        self.accept()
+
+    def result_event(self) -> tuple[str, list[str]]:
+        name = self._name_edit.text().strip()
+        lines = [
+            line.strip()
+            for line in self._syn_edit.toPlainText().splitlines()
+            if line.strip()
+        ]
+        return name, lines
+
+
+class _EventsPane(QWidget):
+    """Two stacked sections:
+
+    1. **Defined events** (top) — project-/global-config editor backed by
+       ``gui.persistence.save_events``/``load_events``. Each event is a
+       canonical name plus a list of synonyms/regex patterns that match
+       against raw labels in loaded recordings.
+    2. **Found in active dataset** (bottom) — read-only list of the raw
+       EventMeta entries from whatever the user is currently looking at,
+       so they can see which definitions are actually firing.
+    """
+
+    def __init__(self, main_window, parent=None) -> None:
+        super().__init__(parent)
+        self._main_window = main_window
+        self._events: dict[str, list[str]] = self._load()
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+
+        info = QLabel(
+            "<b>Defined events</b> (saved to "
+            "<code>{project}/config/events.yml</code>, Streamlit-shared)"
+        )
+        info.setStyleSheet("color: #777;")
+        outer.addWidget(info)
+
+        btn_row = QHBoxLayout()
+        self._add_btn = QPushButton("Add event…")
+        self._add_btn.clicked.connect(self._on_add)
+        self._edit_btn = QPushButton("Edit…")
+        self._edit_btn.clicked.connect(self._on_edit)
+        self._remove_btn = QPushButton("Remove")
+        self._remove_btn.clicked.connect(self._on_remove)
+        for b in (self._add_btn, self._edit_btn, self._remove_btn):
+            btn_row.addWidget(b)
+        btn_row.addStretch()
+        outer.addLayout(btn_row)
+
+        self._defs_table = _ReadOnlyTable(
+            ["Canonical name", "# synonyms", "Synonyms (first 3)"]
+        )
+        self._defs_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._defs_table.itemSelectionChanged.connect(self._refresh_buttons)
+        outer.addWidget(self._defs_table)
+
+        outer.addSpacing(8)
+        outer.addWidget(QLabel("<b>Found in active dataset</b> (read-only)"))
         self._table = _ReadOnlyTable(["Label", "Time", "Epoch (s)"])
-        layout.addWidget(self._table)
+        outer.addWidget(self._table)
+
+        self._refresh_defs_table()
+        self._refresh_buttons()
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+    def _project_path(self):
+        proj = getattr(self._main_window, "_project", None)
+        return proj.project_path if proj is not None else None
+
+    def _load(self) -> dict[str, list[str]]:
+        from rrational.gui.persistence import load_events as _le
+
+        return _le(project_path=self._project_path()) or {}
+
+    def _persist(self) -> None:
+        from rrational.gui.persistence import save_events as _se
+
+        _se(self._events, project_path=self._project_path())
+        notify = getattr(self._main_window, "_on_events_changed", None)
+        if callable(notify):
+            notify()
+
+    # ------------------------------------------------------------------
+    # API used by SetupTab + tests
+    # ------------------------------------------------------------------
+    @property
+    def events(self) -> dict[str, list[str]]:
+        return dict(self._events)
+
+    def refresh_from_workspace(self) -> None:
+        """Re-read from disk; called after project open/close."""
+        self._events = self._load()
+        self._refresh_defs_table()
+        self._refresh_buttons()
 
     def update_from(self, data: "InspectorData | None") -> None:
+        """Refresh the bottom read-only table from the active dataset."""
         self._table.setRowCount(0)
         if data is None:
             return
@@ -98,16 +243,285 @@ class _EventsPane(QWidget):
             self._table.setItem(row, 1, QTableWidgetItem(_fmt_time(ev.t)))
             self._table.setItem(row, 2, QTableWidgetItem(f"{ev.t:.1f}"))
 
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _refresh_defs_table(self) -> None:
+        self._defs_table.setRowCount(0)
+        for name, synonyms in self._events.items():
+            row = self._defs_table.rowCount()
+            self._defs_table.insertRow(row)
+            self._defs_table.setItem(row, 0, QTableWidgetItem(name))
+            self._defs_table.setItem(row, 1, QTableWidgetItem(str(len(synonyms))))
+            preview = ", ".join((synonyms or [])[:3])
+            if len(synonyms or []) > 3:
+                preview += ", …"
+            self._defs_table.setItem(row, 2, QTableWidgetItem(preview))
+
+    def _refresh_buttons(self) -> None:
+        has_selection = self._defs_table.currentRow() >= 0
+        self._edit_btn.setEnabled(has_selection)
+        self._remove_btn.setEnabled(has_selection)
+
+    def _selected_name(self) -> str | None:
+        row = self._defs_table.currentRow()
+        if row < 0:
+            return None
+        item = self._defs_table.item(row, 0)
+        return item.text() if item is not None else None
+
+    def _on_add(self) -> None:
+        dlg = _EventDefinitionDialog(
+            existing_names=list(self._events.keys()), parent=self
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        name, syns = dlg.result_event()
+        self._events[name] = syns
+        self._persist()
+        self._refresh_defs_table()
+
+    def _on_edit(self) -> None:
+        name = self._selected_name()
+        if name is None:
+            return
+        dlg = _EventDefinitionDialog(
+            existing_names=list(self._events.keys()),
+            initial_name=name,
+            initial_synonyms=list(self._events.get(name, [])),
+            parent=self,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        new_name, syns = dlg.result_event()
+        if new_name != name:
+            del self._events[name]
+        self._events[new_name] = syns
+        self._persist()
+        self._refresh_defs_table()
+
+    def _on_remove(self) -> None:
+        name = self._selected_name()
+        if name is None:
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Remove event",
+                f"Delete event '{name}'? This cannot be undone.",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        del self._events[name]
+        self._persist()
+        self._refresh_defs_table()
+
+
+class _SectionDefinitionDialog(QDialog):
+    """Modal editor for one section definition.
+
+    Streamlit-compatible schema::
+
+        section_name:
+          label: str
+          description: str
+          start_events: list[str]   # picked from defined events
+          end_events: list[str]
+    """
+
+    def __init__(
+        self,
+        available_events: list[str],
+        existing_names: list[str],
+        initial_name: str | None = None,
+        initial: dict | None = None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Edit section" if initial_name else "New section")
+        self.setMinimumWidth(540)
+        self._existing_names = [n for n in existing_names if n != (initial_name or "")]
+
+        outer = QVBoxLayout(self)
+        form = QFormLayout()
+        self._name_edit = QLineEdit(initial_name or "")
+        self._name_edit.setPlaceholderText("e.g. rest_pre")
+        form.addRow("Section name *:", self._name_edit)
+        self._label_edit = QLineEdit(
+            (initial or {}).get("label", "") if initial else ""
+        )
+        form.addRow("Label:", self._label_edit)
+        self._desc_edit = QLineEdit(
+            (initial or {}).get("description", "") if initial else ""
+        )
+        form.addRow("Description:", self._desc_edit)
+        outer.addLayout(form)
+
+        # Start events
+        outer.addWidget(QLabel("<b>Start events</b> (any-of)"))
+        self._start_list = QListWidget()
+        self._start_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        for ev in available_events:
+            item = QListWidgetItem(ev)
+            self._start_list.addItem(item)
+        initial_starts = set((initial or {}).get("start_events", []) if initial else [])
+        for i in range(self._start_list.count()):
+            it = self._start_list.item(i)
+            if it.text() in initial_starts:
+                it.setSelected(True)
+        outer.addWidget(self._start_list)
+
+        # End events
+        outer.addWidget(QLabel("<b>End events</b> (any-of)"))
+        self._end_list = QListWidget()
+        self._end_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        for ev in available_events:
+            self._end_list.addItem(QListWidgetItem(ev))
+        initial_ends = set((initial or {}).get("end_events", []) if initial else [])
+        for i in range(self._end_list.count()):
+            it = self._end_list.item(i)
+            if it.text() in initial_ends:
+                it.setSelected(True)
+        outer.addWidget(self._end_list)
+
+        if not available_events:
+            note = QLabel(
+                "<i>No events defined yet. Add events first (top section of this pane), "
+                "then return to define which events bound this section.</i>"
+            )
+            note.setWordWrap(True)
+            note.setStyleSheet("color: #888;")
+            outer.addWidget(note)
+
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self._on_accept)
+        bb.rejected.connect(self.reject)
+        outer.addWidget(bb)
+
+    def _on_accept(self) -> None:
+        name = self._name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Missing name", "Section name required.")
+            return
+        if name in self._existing_names:
+            QMessageBox.warning(self, "Duplicate", f"Section '{name}' already exists.")
+            return
+        self.accept()
+
+    def result_section(self) -> tuple[str, dict]:
+        name = self._name_edit.text().strip()
+        payload = {
+            "label": self._label_edit.text().strip() or name,
+            "description": self._desc_edit.text().strip(),
+            "start_events": [
+                self._start_list.item(i).text()
+                for i in range(self._start_list.count())
+                if self._start_list.item(i).isSelected()
+            ],
+            "end_events": [
+                self._end_list.item(i).text()
+                for i in range(self._end_list.count())
+                if self._end_list.item(i).isSelected()
+            ],
+        }
+        return name, payload
+
 
 class _SectionsPane(QWidget):
-    """Lists every SectionMeta from the active dataset."""
+    """Two stacked sections (parallel to _EventsPane):
 
-    def __init__(self, parent=None) -> None:
+    1. **Defined sections** (top) — editor backed by
+       ``gui.persistence.save_sections``/``load_sections``. Each
+       section has a label, description, and lists of start/end events
+       (drawn from defined events in the Events pane).
+    2. **Found in active dataset** (bottom) — read-only.
+    """
+
+    def __init__(self, main_window, parent=None) -> None:
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        self._main_window = main_window
+        self._sections: dict[str, dict] = self._load()
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+
+        info = QLabel(
+            "<b>Defined sections</b> (saved to "
+            "<code>{project}/config/sections.yml</code>, Streamlit-shared)"
+        )
+        info.setStyleSheet("color: #777;")
+        outer.addWidget(info)
+
+        btn_row = QHBoxLayout()
+        self._add_btn = QPushButton("Add section…")
+        self._add_btn.clicked.connect(self._on_add)
+        self._edit_btn = QPushButton("Edit…")
+        self._edit_btn.clicked.connect(self._on_edit)
+        self._remove_btn = QPushButton("Remove")
+        self._remove_btn.clicked.connect(self._on_remove)
+        for b in (self._add_btn, self._edit_btn, self._remove_btn):
+            btn_row.addWidget(b)
+        btn_row.addStretch()
+        outer.addLayout(btn_row)
+
+        self._defs_table = _ReadOnlyTable(
+            ["Name", "Label", "Start events", "End events", "Description"]
+        )
+        self._defs_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._defs_table.itemSelectionChanged.connect(self._refresh_buttons)
+        outer.addWidget(self._defs_table)
+
+        outer.addSpacing(8)
+        outer.addWidget(QLabel("<b>Found in active dataset</b> (read-only)"))
         self._table = _ReadOnlyTable(["Name", "Start", "End", "Duration", "Beats"])
-        layout.addWidget(self._table)
+        outer.addWidget(self._table)
+
+        self._refresh_defs_table()
+        self._refresh_buttons()
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+    def _project_path(self):
+        proj = getattr(self._main_window, "_project", None)
+        return proj.project_path if proj is not None else None
+
+    def _load(self) -> dict[str, dict]:
+        from rrational.gui.persistence import load_sections as _ls
+
+        return _ls(project_path=self._project_path()) or {}
+
+    def _persist(self) -> None:
+        from rrational.gui.persistence import save_sections as _ss
+
+        _ss(self._sections, project_path=self._project_path())
+        notify = getattr(self._main_window, "_on_sections_changed", None)
+        if callable(notify):
+            notify()
+
+    def _available_events(self) -> list[str]:
+        """Prefer the live in-memory event list from the sibling EventsPane,
+        so unsaved edits propagate; fall back to disk read."""
+        setup_tab = getattr(self._main_window, "_setup_tab", None)
+        events_pane = getattr(setup_tab, "_events_pane", None) if setup_tab else None
+        if events_pane is not None and hasattr(events_pane, "events"):
+            return list(events_pane.events.keys())
+        from rrational.gui.persistence import load_events as _le
+
+        return list((_le(project_path=self._project_path()) or {}).keys())
+
+    # ------------------------------------------------------------------
+    # API
+    # ------------------------------------------------------------------
+    @property
+    def sections(self) -> dict[str, dict]:
+        return dict(self._sections)
+
+    def refresh_from_workspace(self) -> None:
+        self._sections = self._load()
+        self._refresh_defs_table()
+        self._refresh_buttons()
 
     def update_from(self, data: "InspectorData | None") -> None:
         self._table.setRowCount(0)
@@ -123,6 +537,88 @@ class _SectionsPane(QWidget):
                 row, 3, QTableWidgetItem(_fmt_duration(sec.t_end - sec.t_start))
             )
             self._table.setItem(row, 4, QTableWidgetItem(str(sec.beat_count)))
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _refresh_defs_table(self) -> None:
+        self._defs_table.setRowCount(0)
+        for name, data in self._sections.items():
+            row = self._defs_table.rowCount()
+            self._defs_table.insertRow(row)
+            self._defs_table.setItem(row, 0, QTableWidgetItem(name))
+            self._defs_table.setItem(row, 1, QTableWidgetItem(data.get("label", name)))
+            self._defs_table.setItem(
+                row, 2, QTableWidgetItem(", ".join(data.get("start_events") or []))
+            )
+            self._defs_table.setItem(
+                row, 3, QTableWidgetItem(", ".join(data.get("end_events") or []))
+            )
+            self._defs_table.setItem(
+                row, 4, QTableWidgetItem(data.get("description", ""))
+            )
+
+    def _refresh_buttons(self) -> None:
+        has_selection = self._defs_table.currentRow() >= 0
+        self._edit_btn.setEnabled(has_selection)
+        self._remove_btn.setEnabled(has_selection)
+
+    def _selected_name(self) -> str | None:
+        row = self._defs_table.currentRow()
+        if row < 0:
+            return None
+        item = self._defs_table.item(row, 0)
+        return item.text() if item is not None else None
+
+    def _on_add(self) -> None:
+        dlg = _SectionDefinitionDialog(
+            available_events=self._available_events(),
+            existing_names=list(self._sections.keys()),
+            parent=self,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        name, payload = dlg.result_section()
+        self._sections[name] = payload
+        self._persist()
+        self._refresh_defs_table()
+
+    def _on_edit(self) -> None:
+        name = self._selected_name()
+        if name is None:
+            return
+        dlg = _SectionDefinitionDialog(
+            available_events=self._available_events(),
+            existing_names=list(self._sections.keys()),
+            initial_name=name,
+            initial=self._sections[name],
+            parent=self,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        new_name, payload = dlg.result_section()
+        if new_name != name:
+            del self._sections[name]
+        self._sections[new_name] = payload
+        self._persist()
+        self._refresh_defs_table()
+
+    def _on_remove(self) -> None:
+        name = self._selected_name()
+        if name is None:
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Remove section",
+                f"Delete section '{name}'? This cannot be undone.",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        del self._sections[name]
+        self._persist()
+        self._refresh_defs_table()
 
 
 class _GroupEditDialog(QDialog):
@@ -730,8 +1226,8 @@ class SetupTab(InspectorTab):
         self._subtabs = QTabWidget(self)
         self._subtabs.setDocumentMode(True)
 
-        self._events_pane = _EventsPane(self)
-        self._sections_pane = _SectionsPane(self)
+        self._events_pane = _EventsPane(main_window, self)
+        self._sections_pane = _SectionsPane(main_window, self)
         self._groups_pane = _GroupsPane(main_window, self)
         self._sequences_pane = _SequencesPane(main_window, self)
 
