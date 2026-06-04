@@ -109,6 +109,7 @@ nav:
     - When to Use RRational: getting-started/use-cases.md
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
+    - Inspector Standalone App: getting-started/inspector.md
     - FAQ: getting-started/faq.md
   - User Guide:
     - Complete Workflow: user-guide/workflow.md

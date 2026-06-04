@@ -142,8 +142,151 @@ jobs:
           path: dist/${{ matrix.artifact_name }}${{ matrix.asset_ext }}
           retention-days: 30
 
+  # ------------------------------------------------------------------
+  # Inspector standalone build (PyInstaller + inspector.spec).
+  #
+  # Mirrors the Streamlit `build` job's matrix and runner pinning so a
+  # single tag push produces BOTH a Streamlit desktop bundle and a
+  # PyQt6 inspector bundle for every platform.
+  #
+  # Kept as a separate job (rather than added as a matrix include) so a
+  # transient PyInstaller failure on the inspector side does not block
+  # the Streamlit build, and vice versa. Both jobs feed the same release.
+  # ------------------------------------------------------------------
+  build-inspector:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            artifact_name: RRational-Inspector-Windows
+            asset_ext: .zip
+            arch_label: x86_64
+          - os: macos-13           # Last Intel runner (x86_64)
+            artifact_name: RRational-Inspector-macOS-Intel
+            asset_ext: .zip
+            arch_label: x86_64
+          - os: macos-14           # Apple Silicon (arm64)
+            artifact_name: RRational-Inspector-macOS-AppleSilicon
+            asset_ext: .zip
+            arch_label: arm64
+          - os: ubuntu-24.04
+            artifact_name: RRational-Inspector-Linux
+            asset_ext: .tar.gz
+            arch_label: x86_64
+
+    runs-on: ${{ matrix.os }}
+    name: Build Inspector (${{ matrix.os }} / ${{ matrix.arch_label }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies (inspector extras + PyInstaller)
+        # The inspector optional-dependencies group brings PySide6, pyqtgraph,
+        # qtpy. PyInstaller is pinned to the same range as the Streamlit job
+        # so both bundles ship with a known-good bootloader.
+        run: |
+          uv sync --extra inspector
+          uv pip install 'pyinstaller>=6.10,<7.0'
+        shell: bash
+
+      # Linux: Qt 6 needs the X11 / EGL libs at build AND run time. The
+      # offscreen QPA used in CI still loads libxcb on import.
+      - name: Install Linux Qt runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 \
+            libxkbcommon0 \
+            libxcb-cursor0 \
+            libdbus-1-3 \
+            libfontconfig1
+
+      - name: Build inspector standalone
+        # The spec file handles all PyInstaller knobs (hidden imports, data,
+        # one-file vs one-folder, optional icon). Keeping the CLI invocation
+        # minimal means the spec is the single source of truth for builds.
+        run: |
+          uv run pyinstaller inspector.spec --noconfirm --clean
+        shell: bash
+
+      # Sanity check: confirm the built artifact matches the matrix arch.
+      # Mirrors the equivalent check in the Streamlit build job.
+      - name: Verify inspector binary architecture (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          # Spec may produce one-file (single binary) or one-folder
+          # (binary inside folder) depending on RR_ONEFILE. Detect both.
+          if [ -f "dist/RRational-Inspector" ]; then
+            BIN="dist/RRational-Inspector"
+          else
+            BIN="dist/RRational-Inspector/RRational-Inspector"
+          fi
+          echo "=== file $BIN ==="
+          file "$BIN"
+          EXPECTED="${{ matrix.arch_label }}"
+          if ! file "$BIN" | grep -qi "$EXPECTED"; then
+            echo "::error::Architecture mismatch: expected $EXPECTED, file output above."
+            exit 1
+          fi
+          echo "OK: inspector binary is $EXPECTED"
+
+      # Package the inspector build output.
+      - name: Package inspector (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          # One-file mode produces RRational-Inspector.exe; one-folder mode
+          # produces RRational-Inspector/. Zip whichever exists.
+          if [ -f "RRational-Inspector.exe" ]; then
+            7z a -tzip ${{ matrix.artifact_name }}.zip RRational-Inspector.exe
+          else
+            7z a -tzip ${{ matrix.artifact_name }}.zip RRational-Inspector/
+          fi
+        shell: bash
+
+      - name: Package inspector (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          if [ -f "RRational-Inspector" ]; then
+            zip -r ${{ matrix.artifact_name }}.zip RRational-Inspector
+          else
+            zip -r ${{ matrix.artifact_name }}.zip RRational-Inspector/
+          fi
+
+      - name: Package inspector (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd dist
+          if [ -f "RRational-Inspector" ]; then
+            tar -czf ${{ matrix.artifact_name }}.tar.gz RRational-Inspector
+          else
+            tar -czf ${{ matrix.artifact_name }}.tar.gz RRational-Inspector/
+          fi
+
+      - name: Upload inspector artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}${{ matrix.asset_ext }}
+          retention-days: 30
+
   release:
-    needs: build
+    # Wait for BOTH the Streamlit desktop build and the inspector build
+    # before drafting a release so a single tag publishes all platforms +
+    # both apps in one go.
+    needs: [build, build-inspector]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -162,12 +305,23 @@ jobs:
 
             ### Downloads
 
+            **Streamlit desktop app** (full HRV workbench):
+
             | Platform | File | Architecture |
             |----------|------|--------------|
             | Windows 10/11 | `RRational-Windows.zip` | x86_64 |
             | macOS (Intel) | `RRational-macOS-Intel.zip` | x86_64 |
             | macOS (Apple Silicon M1/M2/M3/M4) | `RRational-macOS-AppleSilicon.zip` | arm64 |
             | Linux (Ubuntu 22.04+/Debian 12+) | `RRational-Linux.tar.gz` | x86_64 |
+
+            **Inspector** (lightweight PyQt6 signal browser):
+
+            | Platform | File | Architecture |
+            |----------|------|--------------|
+            | Windows 10/11 | `RRational-Inspector-Windows.zip` | x86_64 |
+            | macOS (Intel) | `RRational-Inspector-macOS-Intel.zip` | x86_64 |
+            | macOS (Apple Silicon M1/M2/M3/M4) | `RRational-Inspector-macOS-AppleSilicon.zip` | arm64 |
+            | Linux (Ubuntu 22.04+/Debian 12+) | `RRational-Inspector-Linux.tar.gz` | x86_64 |
 
             ### Which macOS build do I need?
 
@@ -182,11 +336,11 @@ jobs:
 
             1. Download the archive for your platform
             2. Extract the archive
-            3. Run `RRational` (or `RRational.exe` on Windows)
+            3. Run `RRational` / `RRational-Inspector` (or the `.exe` on Windows)
 
             **macOS note:** Because the app is not yet code-signed, macOS may
             block it on first launch ("cannot be opened because the developer
-            cannot be verified"). Right-click the `RRational` binary and choose
+            cannot be verified"). Right-click the binary and choose
             **Open**, or run once in Terminal:
             `xattr -dr com.apple.quarantine /path/to/RRational`
 
@@ -199,5 +353,9 @@ jobs:
             artifacts/RRational-macOS-Intel/RRational-macOS-Intel.zip
             artifacts/RRational-macOS-AppleSilicon/RRational-macOS-AppleSilicon.zip
             artifacts/RRational-Linux/RRational-Linux.tar.gz
+            artifacts/RRational-Inspector-Windows/RRational-Inspector-Windows.zip
+            artifacts/RRational-Inspector-macOS-Intel/RRational-Inspector-macOS-Intel.zip
+            artifacts/RRational-Inspector-macOS-AppleSilicon/RRational-Inspector-macOS-AppleSilicon.zip
+            artifacts/RRational-Inspector-Linux/RRational-Inspector-Linux.tar.gz
           draft: true  # Create as draft — review before publishing
           generate_release_notes: true

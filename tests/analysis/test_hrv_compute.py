@@ -69,13 +69,26 @@ class TestFrequencyMethod:
         assert kw["normalize"] is False, "Kubios mode must report absolute ms^2"
         assert kw["interpolation_rate"] == 4, "Kubios uses 4 Hz interpolation"
         assert kw["psd_method"] == "welch"
-        assert kw["vlf"] == (0.0, 0.04)
+        # Task Force (1996): VLF starts at 0.0033 Hz (~5 min cycle), not 0
+        assert kw["vlf"] == (0.0033, 0.04)
         assert kw["lf"] == (0.04, 0.15)
         assert kw["hf"] == (0.15, 0.40)
 
     def test_invalid_freq_method_raises(self):
         with pytest.raises(ValueError, match="freq_method"):
             calculate_hrv_metrics([800.0] * 100, freq_method="bogus")
+
+    def test_kubios_vlf_band_starts_above_zero(self):
+        """Task Force (1996): VLF lower bound is 0.0033 Hz, not 0 Hz.
+
+        Including 0-0.0033 Hz pulls DC/ULF noise into the VLF estimate.
+        """
+        from rrational.analysis.hrv_compute import KUBIOS_BAND_VLF
+
+        assert KUBIOS_BAND_VLF[0] >= 0.0033, (
+            "VLF must not include 0-0.0033 Hz (DC/ULF) per Task Force 1996"
+        )
+        assert KUBIOS_BAND_VLF == (0.0033, 0.04)
 
     def test_kubios_mode_produces_absolute_ms2(self):
         """Kubios mode returns LF/HF as absolute ms² (typically > 1, often 100s)

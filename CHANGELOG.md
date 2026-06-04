@@ -2,6 +2,69 @@
 
 All notable changes to RRational are documented here.
 
+## [Unreleased] — feature/pyqt-inspector branch
+
+### Added — PyQt Inspector (Phases 1–20)
+
+Standalone desktop counterpart to the Streamlit app. Mirrors MNE-LAB architecture (multi-tab QMainWindow, dockable panels, native menus, recent-files, project structure). Shares persistence formats with Streamlit so the same project folder works in both UIs.
+
+**Inspector architecture**
+- 5-tab shell: Browse · Setup · Participants · Analysis · Results
+- Multi-dataset workspace with sidebar tree + overview bar + scrollable timeline
+- QSettings-backed persistence (window geometry, recents, view toggles)
+- Project Management à la MNE-LAB (Phase 7): `project.rrational` manifest + `data/raw/` + `data/processed/` + `config/`; New / Open / Open recent / Close project menu actions; auto-load existing `.rrational` files on project open
+
+**Streamlit-shared persistence** (all reuse `gui.persistence` directly)
+- Phase 8 — Groups editor with members + persistence
+- Phase 10 — Events (with regex synonyms) + Sections editors
+- Phase 11 — Participants tab + Protocol sub-pane
+- Phase 12 — Artifact corrections autosave + restore
+- Phase 13 — Results cache (autosave + autoload, `inspector_results.yml`)
+
+**Analysis** (all four Streamlit modes)
+- Single Participant · Repeating Section · Group Comparison · Sequence Comparison
+- Sequence stats with Friedman + RM-ANOVA (Mauchly + Greenhouse-Geisser sphericity correction) + Holm-corrected post-hoc + Kendall's W / partial η²
+- Phase 14 — Manual artifact marking via click-to-mark (with Ctrl+Z/Ctrl+Y undo/redo)
+- Phase 15 — Exclusion zones via drag-select (filters beats out of downstream HRV compute)
+- Phase 16 — Section boundary editing via draggable LinearRegionItem handles + rename/delete/split context menu
+
+**Visualizations** (Phase 17, native pyqtgraph — no Plotly)
+- Tachogram with mean ± SD bands + artifact markers
+- Poincaré plot with SD1/SD2 ellipse
+- PSD (Welch) with VLF/LF/HF band shading
+- HR distribution histogram + KDE
+- Group bar chart with error bars (SEM/SD/CI95/None) + individual-points overlay + auto log-y for log-normal metrics
+- Group box / violin / SD1-SD2 scatter
+
+**MNE-LAB extras** (Phase 20)
+- Free-text annotations on the plot timeline
+- QDockWidget layout for Browse tab (tear-off panels, saveState/restoreState)
+- BIDS-style folder detection (`participants.tsv` + `sub-*/` subdirs auto-load)
+
+**Reports** (Phase 18)
+- HTML and Markdown report generation from accumulated `ResultsStore`
+- Inline base64-PNG plot embedding · TOC + anchor links · color-coded p-values · print-friendly CSS · DOI-linked references
+
+**Color schemes** (Phase 19)
+- ColorScheme reuse from Streamlit (5 preset themes + custom)
+- Preferences dialog with per-element QColorDialog swatches
+- Persisted in `~/.rrational/inspector/color_scheme.yml`
+
+**Standalone build** (Phase 9)
+- PyInstaller spec for Windows / macOS Intel / macOS Apple Silicon / Linux
+- Extended `.github/workflows/build-release.yml` with Inspector-Windows / -macOS-Intel / -macOS-AppleSilicon / -Linux artifacts
+
+### Fixed — HRV methodology cleanup
+- Sequence post-hoc now log-transforms LF/HF/VLF/TP/LF_HF for parametric paths (Task Force 1996)
+- Artifact indices sourced from NeuroKit2's `info` output instead of float-diff recovery (Lipponen & Tarvainen 2019)
+- RM-ANOVA gains Mauchly sphericity check + Greenhouse-Geisser ε correction
+- Group test note correctly distinguishes "n<3 silent fallback" from "non-normal"
+- `adjust_pvalues` preserves raw p-value (`p_value_raw` field) and is idempotent via `is_corrected` flag
+- Kubios VLF band lower bound corrected from 0 Hz to 0.0033 Hz (Task Force 1996)
+
+### Tests
+~241 new inspector tests + 121 analysis tests + adjacent regression suites — all green at the merge tip.
+
 ## [0.9.3] - 2026-06-01
 
 ### Added

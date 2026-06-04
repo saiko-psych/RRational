@@ -46,6 +46,13 @@ class GroupComparisonResult:
     is_parametric: bool = True
     significance: str = "ns"
     note: str | None = None
+    # The original uncorrected p-value. Populated by ``adjust_pvalues`` before
+    # it overwrites ``p_value`` with the family-wise adjusted value, so the
+    # raw test result remains accessible after correction.
+    p_value_raw: float | None = None
+    # True iff ``adjust_pvalues`` has run on this result. Prevents accidental
+    # double-correction (which would silently re-multiply the adjusted p).
+    is_corrected: bool = False
 
 
 def compute_stars(p_value: float) -> str:
@@ -239,8 +246,17 @@ def compare_groups(
     min_n = min(n_per_group.values())
     if min_n < 5:
         notes.append(f"Small sample (min n={min_n}): statistical power limited")
-    if not is_parametric and not any_too_small:
-        notes.append("Non-parametric test used due to non-normal distribution")
+    if not is_parametric:
+        if any_too_small:
+            # Shapiro-Wilk requires n >= 3; with n<3 in any group we cannot
+            # verify normality, so we conservatively fall back to non-parametric
+            # WITHOUT claiming the distribution is non-normal.
+            notes.append(
+                "n<3 in at least one group; non-parametric used as "
+                "Shapiro-Wilk could not run."
+            )
+        else:
+            notes.append("Non-parametric test used due to non-normal distribution")
     if log_transform:
         notes.append(
             f"Values log-transformed before testing ({metric} is typically log-normal)"
@@ -391,6 +407,15 @@ def adjust_pvalues(
     """
     if not results:
         return results
+    # Guard against double-correction: if any result was already corrected,
+    # re-running would silently re-multiply the adjusted p. Refuse loudly.
+    already_corrected = [r for r in results if r.is_corrected]
+    if already_corrected:
+        raise ValueError(
+            f"adjust_pvalues called on {len(already_corrected)} already-corrected "
+            "result(s). Re-running would compound the correction; reset p_value "
+            "from p_value_raw first if you want to switch methods."
+        )
     n = len(results)
     if n == 1:
         return results
@@ -427,8 +452,13 @@ def adjust_pvalues(
 
     for result, new_p in zip(results, adj_p):
         raw = result.p_value
+        # Preserve the raw p so downstream code (CSV export, reports) can
+        # still report both. Only set p_value_raw if it wasn't pre-populated.
+        if result.p_value_raw is None:
+            result.p_value_raw = float(raw)
         result.p_value = float(new_p)
         result.significance = compute_stars(float(new_p))
+        result.is_corrected = True
         correction_note = f"Adjusted for {n} comparisons ({method}); raw p={raw:.4g}"
         result.note = (
             f"{result.note}; {correction_note}" if result.note else correction_note
