@@ -72,3 +72,10 @@ nul
 
 # Personal notes (never delete)
 rrational.md
+
+# Internal / non-published docs (not in RTD nav)
+docs/development/inspector-plan.md
+docs/development/inspector-research.md
+docs/reference/HRV_project_spec.md
+docs/reference/PLAN_rrational_v2.md
+docs/reference/hrv_tools_summary.md
