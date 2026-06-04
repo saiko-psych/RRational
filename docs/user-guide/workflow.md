@@ -433,11 +433,15 @@ Group Analysis reads each participant's `.rrational` file once and aggregates th
 
 When several metrics are tested together, p-values are adjusted for multiple comparisons (**Holm** by default; **Bonferroni** and **Benjamini-Hochberg FDR** are also available). Frequency-domain metrics (LF, HF, VLF, Total Power) are log-transformed before parametric testing because their distributions are log-normal.
 
+![Group Analysis Statistics tab — descriptive statistics and automatic hypothesis tests with effect sizes](../assets/screenshots/group-analysis-statistics.png)
+
 **Chart tab** — bar charts, box plots, violin plots, raincloud plots and SD1/SD2 scatter, with options to:
 
 - choose the error-bar type (**SEM** default, **SD**, **CI95**, or **None**),
 - overlay **individual data points** behind the summary statistics,
 - use a **log Y-axis** (enabled automatically for log-normal metrics such as LF/HF).
+
+![Group Analysis bar chart with SEM error bars and individual data points overlaid](../assets/screenshots/group-analysis-chart.png)
 
 **Cached results.** A completed analysis can be saved to the project (`data/processed/group_analysis_results.yml`). When a cache exists, a *"Cached results available"* banner offers **Load** (instant) or **Delete**, with the last-saved timestamp; the analysis can also be exported as an **HTML report**. Because each `.rrational` file is read only once per participant, a fresh run is substantially faster than per-metric loading.
 
