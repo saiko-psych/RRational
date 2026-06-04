@@ -412,6 +412,39 @@ class MainWindow(QMainWindow):
             act.setStatusTip(status)
             tools_menu.addAction(act)
 
+        # ----- Tools: visualisation submenu (Phase 17) -------------------
+        # All four actions are dataset-aware; toggled by
+        # ``_refresh_visualisation_actions`` on workspace changes.
+        tools_menu.addSeparator()
+        self._tachogram_act = QAction("&Tachogram…", self)
+        self._tachogram_act.setStatusTip(
+            "Open a tachogram (RR vs beat) of the active dataset's first section"
+        )
+        self._tachogram_act.triggered.connect(self._on_tachogram_clicked)
+        tools_menu.addAction(self._tachogram_act)
+
+        self._poincare_act = QAction("&Poincare plot…", self)
+        self._poincare_act.setStatusTip("Open a Poincare plot of the active dataset")
+        self._poincare_act.triggered.connect(self._on_poincare_clicked)
+        tools_menu.addAction(self._poincare_act)
+
+        self._psd_act = QAction("&PSD plot…", self)
+        self._psd_act.setStatusTip("Open a power spectral density plot")
+        self._psd_act.triggered.connect(self._on_psd_clicked)
+        tools_menu.addAction(self._psd_act)
+
+        self._hr_dist_act = QAction("&HR distribution…", self)
+        self._hr_dist_act.setStatusTip("Open a heart rate distribution histogram + KDE")
+        self._hr_dist_act.triggered.connect(self._on_hr_distribution_clicked)
+        tools_menu.addAction(self._hr_dist_act)
+        self._visualisation_actions = [
+            self._tachogram_act,
+            self._poincare_act,
+            self._psd_act,
+            self._hr_dist_act,
+        ]
+        self._refresh_visualisation_actions()
+
         # ----- Help menu --------------------------------------------------
         help_menu = menubar.addMenu("&Help")
         shortcuts_act = QAction("Keyboard &shortcuts", self)
@@ -985,6 +1018,102 @@ class MainWindow(QMainWindow):
     def _notify_tabs_workspace_changed(self) -> None:
         for tab in self._tabs:
             tab.on_workspace_changed()
+        self._refresh_visualisation_actions()
+
+    # ------------------------------------------------------------------
+    # Phase 17: visualisation dialogs (Tachogram / Poincare / PSD / HR)
+    # ------------------------------------------------------------------
+    def _refresh_visualisation_actions(self) -> None:
+        """Enable plot menu entries only when a dataset is loaded."""
+        actions = getattr(self, "_visualisation_actions", None)
+        if not actions:
+            return
+        enabled = self._data is not None
+        for act in actions:
+            act.setEnabled(enabled)
+
+    def _active_first_section_rr(self) -> tuple[list[float], str] | None:
+        """Helper: RR (ms) for the first finite-data section of active dataset."""
+        import numpy as np
+
+        if self._data is None:
+            return None
+        data = self._data
+        for sec in data.sections:
+            in_section = (data.t >= sec.t_start) & (data.t <= sec.t_end)
+            finite = np.isfinite(data.v)
+            rr = data.v[in_section & finite]
+            if len(rr) > 0:
+                return list(map(float, rr)), sec.name
+        return None
+
+    def _on_tachogram_clicked(self) -> None:
+        from rrational.inspector.plot_dialogs import show_tachogram_dialog
+
+        slice_ = self._active_first_section_rr()
+        if slice_ is None:
+            self._info("Tachogram", "No data available in active dataset.")
+            return
+        rr, section_label = slice_
+        dlg = show_tachogram_dialog(
+            self,
+            rr,
+            section_label=section_label,
+            color_scheme=self._color_scheme,
+            test_mode=self.test_mode,
+        )
+        self._latest_visualisation_dialog = dlg
+
+    def _on_poincare_clicked(self) -> None:
+        from rrational.inspector.plot_dialogs import show_poincare_dialog
+
+        slice_ = self._active_first_section_rr()
+        if slice_ is None:
+            self._info("Poincare", "No data available in active dataset.")
+            return
+        rr, section_label = slice_
+        dlg = show_poincare_dialog(
+            self,
+            rr,
+            section_label=section_label,
+            color_scheme=self._color_scheme,
+            test_mode=self.test_mode,
+        )
+        self._latest_visualisation_dialog = dlg
+
+    def _on_psd_clicked(self) -> None:
+        from rrational.inspector.plot_dialogs import show_psd_dialog
+
+        slice_ = self._active_first_section_rr()
+        if slice_ is None:
+            self._info("PSD", "No data available in active dataset.")
+            return
+        rr, section_label = slice_
+        dlg = show_psd_dialog(
+            self,
+            rr,
+            section_label=section_label,
+            color_scheme=self._color_scheme,
+            test_mode=self.test_mode,
+        )
+        self._latest_visualisation_dialog = dlg
+
+    def _on_hr_distribution_clicked(self) -> None:
+        from rrational.inspector.plot_dialogs import show_hr_distribution_dialog
+
+        slice_ = self._active_first_section_rr()
+        if slice_ is None:
+            self._info("HR distribution", "No data available in active dataset.")
+            return
+        rr, section_label = slice_
+        dlg = show_hr_distribution_dialog(
+            self,
+            rr,
+            section_label=section_label,
+            color_scheme=self._color_scheme,
+            test_mode=self.test_mode,
+        )
+        self._latest_visualisation_dialog = dlg
 
     def _on_sequences_changed(self) -> None:
         """Called by Setup tab after persisting a sequence edit.
