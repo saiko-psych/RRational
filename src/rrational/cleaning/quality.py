@@ -12,6 +12,7 @@ def _get_neurokit():
     """Lazy import NeuroKit2. Returns (nk_module, available_bool)."""
     try:
         import neurokit2 as nk
+
         return nk, True
     except ImportError:
         return None, False
@@ -31,7 +32,12 @@ def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") 
         dict with changepoint_indices, n_segments, segment_stats, quality_score.
     """
     nk, available = _get_neurokit()
-    empty = {"changepoint_indices": [], "n_segments": 1, "segment_stats": [], "quality_score": 100}
+    empty = {
+        "changepoint_indices": [],
+        "n_segments": 1,
+        "segment_stats": [],
+        "quality_score": 100,
+    }
 
     if not available or len(rr_values) < 10:
         return empty
@@ -43,17 +49,19 @@ def detect_quality_changepoints(rr_values: list[int], change_type: str = "var") 
         segment_stats = []
         all_indices = [0] + list(changepoints) + [len(rr_array)]
         for i in range(len(all_indices) - 1):
-            segment = rr_array[all_indices[i]:all_indices[i + 1]]
+            segment = rr_array[all_indices[i] : all_indices[i + 1]]
             if len(segment) > 0:
                 mean = float(np.mean(segment))
-                segment_stats.append({
-                    "start_idx": all_indices[i],
-                    "end_idx": all_indices[i + 1],
-                    "n_beats": len(segment),
-                    "mean_rr": mean,
-                    "std_rr": float(np.std(segment)),
-                    "cv": float(np.std(segment) / mean) if mean > 0 else 0,
-                })
+                segment_stats.append(
+                    {
+                        "start_idx": all_indices[i],
+                        "end_idx": all_indices[i + 1],
+                        "n_beats": len(segment),
+                        "mean_rr": mean,
+                        "std_rr": float(np.std(segment)),
+                        "cv": float(np.std(segment) / mean) if mean > 0 else 0,
+                    }
+                )
 
         n = len(changepoints)
         if n == 0:
@@ -94,7 +102,9 @@ def get_quality_badge(quality_score: float, artifact_ratio: float) -> str:
     return "[X]"
 
 
-def detect_time_gaps(timestamps: list, rr_values: list = None, gap_threshold_s: float = 2.0) -> dict:
+def detect_time_gaps(
+    timestamps: list, rr_values: list = None, gap_threshold_s: float = 2.0
+) -> dict:
     """Detect time gaps (missing data) between consecutive RR intervals.
 
     HRV Logger timestamps are per-packet (~1s), not per-beat. A real gap is
@@ -135,18 +145,24 @@ def detect_time_gaps(timestamps: list, rr_values: list = None, gap_threshold_s: 
         gaps = []
         total_gap_duration = 0.0
         for idx in gap_indices:
-            gap_duration = float(unexplained_time[idx]) if rr_values else float(ts_diff[idx])
-            gaps.append({
-                "start_idx": int(idx),
-                "end_idx": int(idx + 1),
-                "start_time": timestamps[idx],
-                "end_time": timestamps[idx + 1],
-                "duration_s": gap_duration,
-                "timestamp_diff_s": float(ts_diff[idx]),
-            })
+            gap_duration = (
+                float(unexplained_time[idx]) if rr_values else float(ts_diff[idx])
+            )
+            gaps.append(
+                {
+                    "start_idx": int(idx),
+                    "end_idx": int(idx + 1),
+                    "start_time": timestamps[idx],
+                    "end_time": timestamps[idx + 1],
+                    "duration_s": gap_duration,
+                    "timestamp_diff_s": float(ts_diff[idx]),
+                }
+            )
             total_gap_duration += gap_duration
 
-        total_duration = ts_seconds[-1] - ts_seconds[0] if not np.isnan(ts_seconds[0]) else 0
+        total_duration = (
+            ts_seconds[-1] - ts_seconds[0] if not np.isnan(ts_seconds[0]) else 0
+        )
         gap_ratio = total_gap_duration / total_duration if total_duration > 0 else 0
 
         return {
@@ -170,13 +186,26 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
         sampling_rate: Sampling rate (1000 for ms intervals).
 
     Returns:
-        dict with artifacts, total_artifacts, artifact_ratio, corrected_rr, correction_applied.
+        dict with the following keys:
+            - artifacts: per-type counts (ectopic/missed/extra/longshort)
+            - total_artifacts: sum of per-type counts
+            - artifact_ratio: total_artifacts / len(rr_values)
+            - artifact_indices: sorted list of int indices into ``rr_values``
+              where NK2 flagged at least one artifact. Consumers (e.g. the
+              inspector overlay) should use this set rather than diffing
+              ``corrected_rr - rr_values``, which can miss artifacts that
+              happen to interpolate to themselves.
+            - corrected_rr: list of in-place interpolated RR values
+            - correction_applied: bool
     """
     nk, available = _get_neurokit()
     empty = {
         "artifacts": {"ectopic": 0, "missed": 0, "extra": 0, "longshort": 0},
-        "total_artifacts": 0, "artifact_ratio": 0.0,
-        "corrected_rr": rr_values, "correction_applied": False,
+        "total_artifacts": 0,
+        "artifact_ratio": 0.0,
+        "artifact_indices": [],
+        "corrected_rr": rr_values,
+        "correction_applied": False,
     }
 
     if not available or len(rr_values) < 10:
@@ -189,12 +218,15 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
 
         # Detection: iterative=False finds ALL artifacts
         info, _ = nk.signal_fixpeaks(
-            peak_indices, sampling_rate=sampling_rate,
-            iterative=False, method="Kubios", show=False,
+            peak_indices,
+            sampling_rate=sampling_rate,
+            iterative=False,
+            method="Kubios",
+            show=False,
         )
 
         artifacts = {}
-        artifact_indices = set()
+        artifact_indices: set[int] = set()
         for key in ["ectopic", "missed", "extra", "longshort"]:
             indices = info.get(key, [])
             if isinstance(indices, np.ndarray):
@@ -202,7 +234,14 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
             elif not isinstance(indices, list):
                 indices = []
             artifacts[key] = len(indices)
-            artifact_indices.update(indices)
+            # Keep only indices that are valid positions in rr_values.
+            for raw_idx in indices:
+                try:
+                    idx_int = int(raw_idx)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= idx_int < len(rr_values):
+                    artifact_indices.add(idx_int)
 
         total_artifacts = sum(artifacts.values())
         artifact_ratio = total_artifacts / len(rr_values) if rr_values else 0
@@ -217,12 +256,15 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
                 elif idx == len(corrected_rr) - 1:
                     corrected_rr[idx] = corrected_rr[idx - 1]
                 else:
-                    corrected_rr[idx] = (corrected_rr[idx - 1] + corrected_rr[idx + 1]) / 2
+                    corrected_rr[idx] = (
+                        corrected_rr[idx - 1] + corrected_rr[idx + 1]
+                    ) / 2
 
         return {
             "artifacts": artifacts,
             "total_artifacts": total_artifacts,
             "artifact_ratio": artifact_ratio,
+            "artifact_indices": sorted(artifact_indices),
             "corrected_rr": corrected_rr,
             "correction_applied": total_artifacts > 0,
         }
@@ -230,7 +272,9 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
         return empty
 
 
-def filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[list, dict]:
+def filter_exclusion_zones(
+    rr_intervals, exclusion_zones: list[dict]
+) -> tuple[list, dict]:
     """Filter RR intervals to exclude specified time zones.
 
     Args:
@@ -245,14 +289,17 @@ def filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[l
     if not exclusion_zones or not rr_intervals:
         n = len(rr_intervals) if rr_intervals else 0
         return rr_intervals, {
-            "n_original": n, "n_excluded": 0, "n_remaining": n,
-            "excluded_duration_ms": 0, "zones_applied": 0,
+            "n_original": n,
+            "n_excluded": 0,
+            "n_remaining": n,
+            "excluded_duration_ms": 0,
+            "zones_applied": 0,
         }
 
     parsed_zones = []
     for zone in exclusion_zones:
         try:
-            start, end = zone.get('start'), zone.get('end')
+            start, end = zone.get("start"), zone.get("end")
             if isinstance(start, str):
                 start = pd.to_datetime(start)
             if isinstance(end, str):
@@ -264,9 +311,11 @@ def filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[l
 
     if not parsed_zones:
         return rr_intervals, {
-            "n_original": len(rr_intervals), "n_excluded": 0,
+            "n_original": len(rr_intervals),
+            "n_excluded": 0,
             "n_remaining": len(rr_intervals),
-            "excluded_duration_ms": 0, "zones_applied": 0,
+            "excluded_duration_ms": 0,
+            "zones_applied": 0,
         }
 
     filtered = []
@@ -279,13 +328,17 @@ def filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[l
             filtered.append(rr)
             continue
 
-        ts_naive = ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo is not None else ts
+        ts_naive = (
+            ts.replace(tzinfo=None)
+            if hasattr(ts, "tzinfo") and ts.tzinfo is not None
+            else ts
+        )
 
         is_excluded = False
         for zone_start, zone_end in parsed_zones:
-            if hasattr(zone_start, 'tzinfo') and zone_start.tzinfo is not None:
+            if hasattr(zone_start, "tzinfo") and zone_start.tzinfo is not None:
                 zone_start = zone_start.replace(tzinfo=None)
-            if hasattr(zone_end, 'tzinfo') and zone_end.tzinfo is not None:
+            if hasattr(zone_end, "tzinfo") and zone_end.tzinfo is not None:
                 zone_end = zone_end.replace(tzinfo=None)
             if zone_start <= ts_naive <= zone_end:
                 is_excluded = True
@@ -297,7 +350,9 @@ def filter_exclusion_zones(rr_intervals, exclusion_zones: list[dict]) -> tuple[l
             filtered.append(rr)
 
     return filtered, {
-        "n_original": len(rr_intervals), "n_excluded": n_excluded,
-        "n_remaining": len(filtered), "excluded_duration_ms": excluded_duration_ms,
+        "n_original": len(rr_intervals),
+        "n_excluded": n_excluded,
+        "n_remaining": len(filtered),
+        "excluded_duration_ms": excluded_duration_ms,
         "zones_applied": len(parsed_zones),
     }

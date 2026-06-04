@@ -300,3 +300,56 @@ class TestMultipleComparisonCorrection:
         results = self._make_results([0.01, 0.02])
         with pytest.raises(ValueError, match="Unknown correction"):
             adjust_pvalues(results, method="invalid")
+
+    def test_raw_p_preserved_after_correction(self):
+        """After adjust_pvalues runs, p_value_raw must hold the original p."""
+        results = self._make_results([0.01, 0.02, 0.04])
+        adjust_pvalues(results, method="holm")
+        # Raw p preserved
+        assert results[0].p_value_raw == pytest.approx(0.01)
+        assert results[1].p_value_raw == pytest.approx(0.02)
+        assert results[2].p_value_raw == pytest.approx(0.04)
+        # And p_value now holds the adjusted value (>= raw)
+        for r in results:
+            assert r.p_value >= r.p_value_raw - 1e-12
+        # is_corrected flag set
+        assert all(r.is_corrected for r in results)
+
+    def test_double_correction_raises(self):
+        """Re-running adjust_pvalues on already-corrected results must error."""
+        results = self._make_results([0.01, 0.02, 0.04])
+        adjust_pvalues(results, method="holm")
+        with pytest.raises(ValueError, match="already-corrected"):
+            adjust_pvalues(results, method="holm")
+
+    def test_default_uncorrected_flags(self):
+        """Fresh results from compare_groups must have is_corrected=False
+        and p_value_raw=None."""
+        rng = np.random.default_rng(42)
+        g1 = rng.normal(50, 10, 30).tolist()
+        g2 = rng.normal(50, 10, 30).tolist()
+        r = compare_groups({"A": g1, "B": g2})
+        assert r.is_corrected is False
+        assert r.p_value_raw is None
+
+
+class TestShortSampleNote:
+    """Fix 4: the fallback note should explain WHY non-parametric was picked."""
+
+    def test_small_n_note_mentions_shapiro_could_not_run(self):
+        # n=2 per group -> Shapiro-Wilk cannot run, fallback to MW
+        result = compare_groups({"A": [1.0, 2.0], "B": [3.0, 4.0]})
+        assert result.note is not None
+        assert "shapiro" in result.note.lower()
+        assert "could not run" in result.note.lower()
+        # Must NOT misleadingly say "non-normal"
+        assert "non-normal distribution" not in result.note.lower()
+
+    def test_normal_sized_skewed_note_says_non_normal(self):
+        rng = np.random.default_rng(42)
+        # Skewed but n>=5 per group: Shapiro CAN run, and rejects normality
+        g1 = rng.exponential(20, 25).tolist()
+        g2 = rng.exponential(40, 25).tolist()
+        result = compare_groups({"A": g1, "B": g2})
+        assert result.note is not None
+        assert "non-normal distribution" in result.note.lower()

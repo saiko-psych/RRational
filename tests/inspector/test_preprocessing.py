@@ -78,6 +78,61 @@ def test_grade_thresholds_match_quigley_2024():
     assert _grade_for_rate(0.15)[0] == "poor"
 
 
+def test_cleaning_quality_returns_artifact_indices_key():
+    """Fix 2: detect_artifacts_fixpeaks's result dict must include
+    'artifact_indices', even when zero artifacts are found."""
+    from rrational.cleaning.quality import detect_artifacts_fixpeaks
+
+    rr = [800] * 200
+    result = detect_artifacts_fixpeaks(rr_values=rr)
+    assert "artifact_indices" in result
+    assert isinstance(result["artifact_indices"], list)
+    # On a flat input no artifacts should be flagged
+    assert len(result["artifact_indices"]) == result["total_artifacts"]
+
+
+def test_cleaning_quality_artifact_indices_sorted_unique_inbounds():
+    """Indices returned by detect_artifacts_fixpeaks must be sorted,
+    unique, and lie inside [0, len(rr_values))."""
+    from rrational.cleaning.quality import detect_artifacts_fixpeaks
+
+    # Realistic RR series with clear extra/missed spikes
+    rng = np.random.default_rng(42)
+    rr = [int(round(x)) for x in (800 + 20 * rng.standard_normal(400))]
+    # Inject several flagrant artifacts
+    for idx in (60, 180, 300):
+        rr[idx] = 200  # impossibly short -> "extra" / "longshort"
+
+    result = detect_artifacts_fixpeaks(rr_values=rr)
+    indices = result["artifact_indices"]
+
+    assert list(indices) == sorted(set(int(i) for i in indices))
+    for idx in indices:
+        assert 0 <= idx < len(rr)
+    # Index count equals total per-type artifact count (per docstring).
+    assert len(indices) == result["total_artifacts"]
+
+
+def test_detect_artifacts_inspector_indices_use_nk2_set_not_diff():
+    """Fix 2: inspector should consume the NK2 artifact_indices set
+    rather than diffing corrected vs original — the index count must
+    match what cleaning.quality returns one-to-one."""
+    from rrational.cleaning.quality import detect_artifacts_fixpeaks
+    from rrational.inspector.preprocessing import detect_artifacts
+
+    rng = np.random.default_rng(42)
+    rr_floats = 800 + 20 * rng.standard_normal(400)
+    for idx in (60, 180, 300):
+        rr_floats[idx] = 200.0
+    rr_ints = [int(round(x)) for x in rr_floats]
+
+    raw_result = detect_artifacts_fixpeaks(rr_values=rr_ints)
+    insp_result = detect_artifacts(rr_floats)
+
+    assert insp_result.total == raw_result["total_artifacts"]
+    assert len(insp_result.indices) == len(raw_result["artifact_indices"])
+
+
 # ---------------------------------------------------------------------
 # Panel integration (Qt needed)
 # ---------------------------------------------------------------------

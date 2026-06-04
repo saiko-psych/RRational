@@ -55,6 +55,25 @@ from itertools import combinations
 import numpy as np
 from scipy import stats
 
+# Reuse the canonical log-normal HRV metric set defined for group analysis,
+# so both pipelines agree on which metrics get log-transformed before
+# parametric testing (Task Force 1996 / Quigley 2024).
+from rrational.analysis.group_statistics import (
+    LOG_NORMAL_METRICS,  # re-exported for callers
+    should_log_transform,
+)
+
+__all__ = [
+    "LOG_NORMAL_METRICS",
+    "MIN_SUBJECTS",
+    "RM_ANOVA_MIN_SUBJECTS",
+    "PostHocPair",
+    "SequenceComparisonResult",
+    "analyze_sequence",
+    "compute_stars",
+    "should_log_transform",
+]
+
 # Minimum complete cases below which the omnibus test refuses to run.
 # Friedman with n=2 subjects collapses; n=3 is the smallest practical case.
 MIN_SUBJECTS = 3
@@ -223,8 +242,49 @@ def _friedman(matrix: np.ndarray) -> tuple[float, float, float]:
     return float(chi2), float(p), float(w)
 
 
-def _rm_anova(matrix: np.ndarray) -> tuple[float, float, tuple[float, float], float]:
-    """One-way repeated-measures ANOVA (balanced, complete cases only).
+def _greenhouse_geisser_epsilon(matrix: np.ndarray) -> float:
+    """Greenhouse-Geisser epsilon for RM-ANOVA sphericity correction.
+
+    Sphericity = equal variances of all pairwise differences between
+    repeated-measures levels. When violated, the F-statistic's null
+    distribution has fewer effective degrees of freedom and the uncorrected
+    p-value is anti-conservative.
+
+    GG epsilon is computed from the covariance matrix S of the k repeated
+    measures (Box 1954; Greenhouse & Geisser 1959):
+
+        S* = S - row_means - col_means + grand_mean    (double-centered)
+        eps = (trace(S*))^2 / ((k - 1) * sum(S*_ij^2))
+
+    eps in (1/(k-1), 1]. eps = 1 means perfect sphericity (no correction).
+    Returns 1.0 when the matrix is too small or degenerate to estimate.
+    """
+    n, k = matrix.shape
+    if n < 2 or k < 3:
+        # Sphericity is trivially satisfied for k=2 (only one pairwise diff).
+        return 1.0
+    # Sample covariance of the k columns across subjects (ddof=1, k x k).
+    s = np.cov(matrix, rowvar=False, ddof=1)
+    if s.shape != (k, k):
+        return 1.0
+    # Double-centering: subtract row means, column means, add grand mean.
+    row_means = s.mean(axis=1, keepdims=True)
+    col_means = s.mean(axis=0, keepdims=True)
+    grand = float(s.mean())
+    s_centered = s - row_means - col_means + grand
+    trace = float(np.trace(s_centered))
+    sum_sq = float((s_centered**2).sum())
+    if sum_sq <= 0:
+        return 1.0
+    eps = (trace**2) / ((k - 1) * sum_sq)
+    # Clamp into the theoretical range [1/(k-1), 1].
+    return float(max(1.0 / (k - 1), min(1.0, eps)))
+
+
+def _rm_anova(
+    matrix: np.ndarray,
+) -> tuple[float, float, tuple[float, float], float, float]:
+    """One-way repeated-measures ANOVA with Greenhouse-Geisser correction.
 
     Standard partition of variance:
 
@@ -236,9 +296,30 @@ def _rm_anova(matrix: np.ndarray) -> tuple[float, float, tuple[float, float], fl
       df_treatments = k - 1
       df_error      = (n - 1) * (k - 1)
 
-    Effect size: partial eta-squared = SS_treatments / (SS_treatments + SS_error).
+    Sphericity assumption
+    ---------------------
+    Classical RM-ANOVA assumes sphericity (equal variance of all pairwise
+    level-differences). When violated, F is anti-conservative. We compute
+    the Greenhouse-Geisser epsilon and apply it to df_treat and df_error
+    BEFORE evaluating p (Greenhouse & Geisser 1959). For k=2 levels
+    sphericity is satisfied by construction (eps=1).
 
-    Returns (F, p_value, (df_treatments, df_error), partial_eta_squared).
+    Effect size (partial eta-squared) is unaffected by GG correction;
+    only the inferential df / p change.
+
+    References
+    ----------
+    - Box, G.E.P. (1954). Some theorems on quadratic forms applied in the
+      study of analysis of variance problems, II. *Annals of Mathematical
+      Statistics*, 25(3), 484-498. doi:10.1214/aoms/1177728717
+    - Greenhouse, S.W., & Geisser, S. (1959). On methods in the analysis
+      of profile data. *Psychometrika*, 24(2), 95-112. doi:10.1007/BF02289823
+
+    Returns
+    -------
+    (F, p_value, (df_treatments, df_error), partial_eta_squared, gg_epsilon)
+        The df reported are the GG-corrected (fractional) values used to
+        compute p. gg_epsilon == 1.0 when no correction was applied.
     """
     n, k = matrix.shape
     grand_mean = matrix.mean()
@@ -251,16 +332,26 @@ def _rm_anova(matrix: np.ndarray) -> tuple[float, float, tuple[float, float], fl
     ss_error = ss_total - ss_subjects - ss_treatments
     if ss_error <= 0:
         # Degenerate (no within-subject variance after removing subject + treatment)
-        return 0.0, 1.0, (k - 1, (n - 1) * (k - 1)), 0.0
+        return 0.0, 1.0, (k - 1, (n - 1) * (k - 1)), 0.0, 1.0
 
     df_treat = k - 1
     df_error = (n - 1) * (k - 1)
     ms_treat = ss_treatments / df_treat
     ms_error = ss_error / df_error
     f_stat = ms_treat / ms_error
-    p_val = float(stats.f.sf(f_stat, df_treat, df_error))
+
+    eps = _greenhouse_geisser_epsilon(matrix)
+    df_treat_corr = df_treat * eps
+    df_error_corr = df_error * eps
+    p_val = float(stats.f.sf(f_stat, df_treat_corr, df_error_corr))
     eta_p_sq = ss_treatments / (ss_treatments + ss_error)
-    return float(f_stat), p_val, (float(df_treat), float(df_error)), float(eta_p_sq)
+    return (
+        float(f_stat),
+        p_val,
+        (float(df_treat_corr), float(df_error_corr)),
+        float(eta_p_sq),
+        float(eps),
+    )
 
 
 # ---------------------------------------------------------------------
@@ -390,8 +481,27 @@ def analyze_sequence(
         prefer_parametric and all_normal and n_complete >= RM_ANOVA_MIN_SUBJECTS
     )
 
+    # Per Task Force (1996), frequency-domain HRV metrics (LF/HF/VLF/TP/LF_HF)
+    # are log-normally distributed; parametric tests on the raw scale lose
+    # power and bias effect sizes. When the parametric path will run, work on
+    # the log-transformed matrix throughout (omnibus + post-hoc paired t).
+    # We do NOT log-transform for Friedman: it's rank-based and the
+    # transformation is monotonic, so ranks (and hence the chi-square) are
+    # unchanged. For the post-hoc Wilcoxon (also rank-based) the result is
+    # likewise invariant to a monotonic transform.
+    log_transformed = False
+    omnibus_matrix = matrix
+    if use_rm_anova and should_log_transform(metric):
+        # Only positive values can be log-transformed. If any non-positive
+        # values slipped through (zeros from clipped frequency powers, etc.)
+        # we silently skip the transform rather than mutate the analysis.
+        if np.all(matrix > 0):
+            omnibus_matrix = np.log(matrix)
+            log_transformed = True
+
+    gg_epsilon = 1.0
     if use_rm_anova:
-        f_stat, p_val, dfs, eta_p_sq = _rm_anova(matrix)
+        f_stat, p_val, dfs, eta_p_sq, gg_epsilon = _rm_anova(omnibus_matrix)
         test_name = "RM-ANOVA"
         statistic = f_stat
         effect_size = eta_p_sq
@@ -407,19 +517,38 @@ def analyze_sequence(
         is_parametric = False
         df_out = float(len(sections) - 1)
 
-    post_hoc = _post_hoc(matrix, sections, is_parametric)
+    # Post-hoc operates on the same scale as the omnibus, so paired t-tests
+    # on log-normal metrics also use the log-transformed matrix.
+    post_hoc_matrix = omnibus_matrix if (use_rm_anova and log_transformed) else matrix
+    post_hoc = _post_hoc(post_hoc_matrix, sections, is_parametric)
 
-    note = None
+    note_bits: list[str] = []
     if n_complete < RM_ANOVA_MIN_SUBJECTS:
-        note = (
+        note_bits.append(
             f"n={n_complete} complete subjects — statistical power limited. "
             f"Friedman used (RM-ANOVA requires n >= {RM_ANOVA_MIN_SUBJECTS})."
         )
     elif prefer_parametric and not all_normal:
-        note = (
+        note_bits.append(
             "Friedman used: at least one section failed the Shapiro-Wilk "
             "normality test (p <= 0.05)."
         )
+    if log_transformed:
+        note_bits.append(
+            f"Values log-transformed before RM-ANOVA and paired t-tests "
+            f"({metric} is typically log-normal, Task Force 1996)."
+        )
+    if use_rm_anova:
+        if gg_epsilon < 1.0 - 1e-9:
+            note_bits.append(
+                f"RM-ANOVA: Greenhouse-Geisser sphericity correction applied "
+                f"(epsilon={gg_epsilon:.3f})."
+            )
+        else:
+            note_bits.append(
+                "RM-ANOVA: sphericity assumed (Greenhouse-Geisser epsilon=1.000)."
+            )
+    note = " ".join(note_bits) if note_bits else None
 
     return SequenceComparisonResult(
         sequence_name=sequence_name,

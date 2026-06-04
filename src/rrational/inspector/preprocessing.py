@@ -83,31 +83,22 @@ def detect_artifacts(v: np.ndarray) -> PreprocessingResult:
         rr_values=[int(round(x)) for x in finite_v.tolist()],
     )
 
-    # Map artifact indices (positions in the finite-only sub-array)
-    # back to indices in the FULL array.
+    # Map artifact indices (positions in the finite-only sub-array) back to
+    # indices in the FULL array. ``detect_artifacts_fixpeaks`` now returns
+    # the merged set from NK2's info dict directly, so we no longer have to
+    # reconstruct it by diffing corrected vs original (which silently lost
+    # artifacts that happened to interpolate to the same value).
     finite_positions = np.nonzero(finite_mask)[0]
-    artifact_finite_indices = sorted(
-        set(
-            idx
-            for indices_list in (
-                # detect_artifacts_fixpeaks aggregates everything into
-                # the corrected array; the per-type counts come from
-                # ``artifacts``, but we recover the actual index set by
-                # diffing corrected vs original.
-                [],
-            )
-            for idx in indices_list
-        )
+    artifact_finite_indices = np.asarray(
+        result.get("artifact_indices", []), dtype=np.int64
     )
-
-    # The wrapper returns aggregated counts but not the per-position
-    # indices. We recover them by comparing corrected_rr vs the input —
-    # anything that changed is an artifact site.
-    corrected_finite = np.array(result["corrected_rr"], dtype=np.float64)
-    diffs = np.flatnonzero(np.abs(corrected_finite - finite_v) > 1e-9)
-    full_artifact_indices = finite_positions[diffs]
+    if artifact_finite_indices.size > 0:
+        full_artifact_indices = finite_positions[artifact_finite_indices]
+    else:
+        full_artifact_indices = np.array([], dtype=np.int64)
 
     # Rebuild corrected array at full length (NaNs preserved at gaps).
+    corrected_finite = np.array(result["corrected_rr"], dtype=np.float64)
     corrected_full = v.copy()
     corrected_full[finite_positions] = corrected_finite
 

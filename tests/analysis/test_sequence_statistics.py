@@ -191,10 +191,11 @@ def test_rm_anova_used_when_normal_and_n_large_and_prefer_parametric():
     assert result.effect_size_name == "partial eta-squared"
     # Strong systematic trend → significant
     assert result.p_value < 0.001
-    # df is (k-1, (n-1)*(k-1)) tuple for ANOVA
+    # df is (k-1, (n-1)*(k-1)) tuple for ANOVA, scaled by Greenhouse-Geisser
+    # epsilon in [1/(k-1), 1]. With k=3, epsilon >= 0.5, so:
     assert isinstance(result.df, tuple)
-    assert result.df[0] == 2
-    assert result.df[1] == (n_subjects - 1) * 2
+    assert 1.0 <= result.df[0] <= 2.0  # k - 1 = 2, GG-scaled
+    assert result.df[1] == pytest.approx(result.df[0] * (n_subjects - 1), rel=1e-6)
 
 
 def test_friedman_used_when_below_n_threshold_even_if_normal():
@@ -222,6 +223,125 @@ def test_friedman_used_when_normality_fails_even_if_prefer_parametric():
         data, "seq", "RMSSD", ["a", "b", "c"], prefer_parametric=True
     )
     assert result.test_name == "Friedman"
+
+
+# ---------------------------------------------------------------------
+# Fix 1: log-transform for log-normal frequency-domain metrics (RM-ANOVA)
+# ---------------------------------------------------------------------
+def test_rm_anova_log_transforms_hf_metric():
+    """When metric is log-normal (HF) and RM-ANOVA runs, the omnibus must
+    be computed on the log-transformed matrix and the note must say so."""
+    rng = np.random.default_rng(123)
+    n = RM_ANOVA_MIN_SUBJECTS + 5
+    # Construct positive log-normal columns with a real effect on the LOG scale.
+    # Need per-column noise so SS_error > 0.
+    base = rng.normal(0, 0.2, n)  # log-scale subject baseline
+    data = {
+        "rest": list(np.exp(base + 5.0 + 0.1 * rng.standard_normal(n))),
+        "music": list(np.exp(base + 5.5 + 0.1 * rng.standard_normal(n))),
+        "recover": list(np.exp(base + 6.0 + 0.1 * rng.standard_normal(n))),
+    }
+    result = analyze_sequence(
+        data, "seq", "HF", ["rest", "music", "recover"], prefer_parametric=True
+    )
+    assert result.test_name == "RM-ANOVA"
+    assert result.note is not None
+    assert "log-transformed" in result.note.lower()
+    # And the test is significant on the log scale
+    assert result.p_value < 0.01
+
+    # Cross-check: an analyzer that DID NOT log-transform would see hugely
+    # skewed residuals; the log-scale test should be tighter. We verify the
+    # statistic differs from the same data run as RMSSD (no log).
+    result_no_log = analyze_sequence(
+        data, "seq", "RMSSD", ["rest", "music", "recover"], prefer_parametric=True
+    )
+    assert result.statistic != pytest.approx(result_no_log.statistic, rel=1e-3)
+
+
+def test_rm_anova_does_not_log_transform_rmssd():
+    """RMSSD is not in LOG_NORMAL_METRICS — the note must not mention log."""
+    rng = np.random.default_rng(7)
+    n = RM_ANOVA_MIN_SUBJECTS + 5
+    base = 50 + 5 * rng.standard_normal(n)
+    data = {"a": list(base), "b": list(base + 5), "c": list(base + 10)}
+    result = analyze_sequence(
+        data, "seq", "RMSSD", ["a", "b", "c"], prefer_parametric=True
+    )
+    assert result.test_name == "RM-ANOVA"
+    assert result.note is not None
+    assert "log-transformed" not in result.note.lower()
+
+
+def test_friedman_does_not_log_transform_even_for_hf():
+    """Friedman is rank-based: monotonic log-transform leaves ranks (and
+    hence the chi² and p) unchanged, so we don't apply it."""
+    rng = np.random.default_rng(11)
+    n = MIN_SUBJECTS + 2  # below RM-ANOVA threshold -> Friedman
+    base = rng.normal(0, 0.2, n)
+    data = {
+        "a": list(np.exp(base + 5.0)),
+        "b": list(np.exp(base + 5.5)),
+        "c": list(np.exp(base + 6.0)),
+    }
+    result = analyze_sequence(data, "seq", "HF", ["a", "b", "c"])
+    assert result.test_name == "Friedman"
+    # No log-note even though metric is HF
+    assert result.note is None or "log-transformed" not in result.note.lower()
+
+
+# ---------------------------------------------------------------------
+# Fix 3: Greenhouse-Geisser sphericity correction in RM-ANOVA
+# ---------------------------------------------------------------------
+def test_rm_anova_reports_gg_epsilon_in_note():
+    """Every RM-ANOVA result must document the sphericity assumption."""
+    rng = np.random.default_rng(55)
+    n = RM_ANOVA_MIN_SUBJECTS + 5
+    base = 50 + 5 * rng.standard_normal(n)
+    data = {
+        "a": list(base + 0.1 * rng.standard_normal(n)),
+        "b": list(base + 5 + 0.1 * rng.standard_normal(n)),
+        "c": list(base + 10 + 0.1 * rng.standard_normal(n)),
+    }
+    result = analyze_sequence(
+        data, "seq", "RMSSD", ["a", "b", "c"], prefer_parametric=True
+    )
+    assert result.note is not None
+    # Either "sphericity assumed" (epsilon=1) or "GG correction applied".
+    note_lower = result.note.lower()
+    assert "sphericity" in note_lower or "greenhouse-geisser" in note_lower
+
+
+def test_rm_anova_gg_epsilon_within_theoretical_bounds():
+    """GG epsilon must be in [1/(k-1), 1]. With k=3, [0.5, 1]."""
+    from rrational.analysis.sequence_statistics import _greenhouse_geisser_epsilon
+
+    rng = np.random.default_rng(100)
+    # Construct a matrix with strongly heterogeneous within-section variances.
+    n, k = 20, 3
+    matrix = np.column_stack(
+        [
+            rng.normal(50, 1, n),  # tiny variance
+            rng.normal(50, 5, n),  # medium
+            rng.normal(50, 20, n),  # huge
+        ]
+    )
+    eps = _greenhouse_geisser_epsilon(matrix)
+    assert 1.0 / (k - 1) <= eps <= 1.0
+
+
+def test_rm_anova_gg_epsilon_one_for_spherical_data():
+    """Perfectly spherical data (identical column variances + zero covariance)
+    should yield epsilon very close to 1."""
+    from rrational.analysis.sequence_statistics import _greenhouse_geisser_epsilon
+
+    rng = np.random.default_rng(200)
+    n, k = 50, 3
+    # i.i.d. normal columns: variance equal, covariance ~0
+    matrix = rng.normal(0, 1, (n, k))
+    eps = _greenhouse_geisser_epsilon(matrix)
+    # Should be near 1 (allowing sampling slack)
+    assert eps > 0.7
 
 
 # ---------------------------------------------------------------------

@@ -32,7 +32,10 @@ VALID_FREQ_METHODS = (FREQ_METHOD_NEUROKIT, FREQ_METHOD_KUBIOS)
 KUBIOS_INTERP_FS = 4.0
 KUBIOS_SP_LAMBDA = 500
 KUBIOS_WELCH_WINDOW_S = 180
-KUBIOS_BAND_VLF = (0.0, 0.04)
+# Task Force (1996) standard VLF band starts at 0.0033 Hz (~5 min cycle);
+# anything below that is ULF/DC and should not contribute to VLF power.
+# Kubios HRV Scientific (Tarvainen et al. 2014) follows the same convention.
+KUBIOS_BAND_VLF = (0.0033, 0.04)
 KUBIOS_BAND_LF = (0.04, 0.15)
 KUBIOS_BAND_HF = (0.15, 0.40)
 
