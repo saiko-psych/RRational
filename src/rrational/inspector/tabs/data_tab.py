@@ -428,15 +428,22 @@ class DataTab(InspectorTab):
         self._participants_summary.setStyleSheet("color: #666;")
         layout.addWidget(self._participants_summary)
 
-        self._participants_table = QTableWidget(0, 6, self)
+        # 10 columns — mirrors what Streamlit's participant table shows
+        # via PreparationSummary (beats / duration / RR / events) plus
+        # the Inspector-specific group/sequence/correction columns.
+        self._participants_table = QTableWidget(0, 10, self)
         self._participants_table.setHorizontalHeaderLabels(
             [
                 "ID",
                 "Group",
                 "Sequence",
-                "Section count",
+                "Beats",
+                "Duration (min)",
+                "RR mean (ms)",
+                "Events",
+                "Sections",
                 "Has artifacts",
-                "Has NN intervals",
+                "Has NN",
             ]
         )
         self._participants_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -617,15 +624,38 @@ class DataTab(InspectorTab):
     def _refresh_participants_table(self) -> None:
         # Disable sorting during populate — otherwise inserting cells
         # while sorting is on shuffles rows mid-fill.
+        import numpy as np
+
         self._participants_table.setSortingEnabled(False)
         self._participants_table.setRowCount(0)
         participants = self._collect_participants()
+        n_with_metrics = 0
         for pid in sorted(participants.keys()):
             data = participants[pid] or {}
             dataset = self._find_dataset_for(pid)
             section_count = len(dataset.data.sections) if dataset is not None else 0
             has_artifacts = self._dataset_has_artifacts(dataset)
             has_nn = self._dataset_has_nn(dataset)
+
+            # Streamlit-parity metrics: only computable when the dataset is
+            # actually loaded in the workspace (we don't pre-scan raw files
+            # to keep the table fast — user loads what they want from the
+            # Raw-data tree, then metrics appear here).
+            beats_str = "-"
+            duration_str = "-"
+            rr_mean_str = "-"
+            events_str = "-"
+            if dataset is not None:
+                d = dataset.data
+                finite = np.isfinite(d.v) if d.v is not None else None
+                if finite is not None and finite.any():
+                    beats = int(finite.sum())
+                    beats_str = str(beats)
+                    duration_min = (d.t_end - d.t_start) / 60.0
+                    duration_str = f"{duration_min:.1f}"
+                    rr_mean_str = f"{float(d.v[finite].mean()):.0f}"
+                    n_with_metrics += 1
+                events_str = str(len(d.events))
 
             r = self._participants_table.rowCount()
             self._participants_table.insertRow(r)
@@ -636,22 +666,37 @@ class DataTab(InspectorTab):
             self._participants_table.setItem(
                 r, 2, QTableWidgetItem(str(data.get("sequence") or ""))
             )
-            count_item = QTableWidgetItem(str(section_count))
-            count_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self._participants_table.setItem(r, 3, count_item)
+            for col, txt in (
+                (3, beats_str),
+                (4, duration_str),
+                (5, rr_mean_str),
+                (6, events_str),
+                (7, str(section_count)),
+            ):
+                it = QTableWidgetItem(txt)
+                it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self._participants_table.setItem(r, col, it)
             self._participants_table.setItem(
-                r, 4, QTableWidgetItem("Yes" if has_artifacts else "No")
+                r, 8, QTableWidgetItem("Yes" if has_artifacts else "No")
             )
             self._participants_table.setItem(
-                r, 5, QTableWidgetItem("Yes" if has_nn else "No")
+                r, 9, QTableWidgetItem("Yes" if has_nn else "No")
             )
         self._participants_table.setSortingEnabled(True)
 
         n_participants = len(participants)
         n_datasets = len(self._main_window._datasets)
+        suffix = ""
+        if n_datasets > 0 and n_with_metrics < n_datasets:
+            # Highlight that some loaded datasets had no usable RR data.
+            suffix = f" · {n_with_metrics} with usable metrics"
+        elif n_datasets > 0:
+            suffix = " · metrics from loaded datasets"
         self._participants_summary.setText(
             f"{n_participants} participant(s) registered · "
-            f"{n_datasets} dataset(s) loaded in workspace."
+            f"{n_datasets} dataset(s) loaded{suffix}. "
+            "<i>Beats / Duration / RR mean populate as you load files from "
+            "the Raw-data tree above.</i>"
         )
 
     def _refresh_bulk_buttons(self) -> None:

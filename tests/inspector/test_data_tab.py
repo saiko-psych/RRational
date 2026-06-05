@@ -96,9 +96,13 @@ def test_participants_table_columns(data_tab):
         "ID",
         "Group",
         "Sequence",
-        "Section count",
+        "Beats",
+        "Duration (min)",
+        "RR mean (ms)",
+        "Events",
+        "Sections",
         "Has artifacts",
-        "Has NN intervals",
+        "Has NN",
     ]
 
 
@@ -231,9 +235,13 @@ def test_participants_table_section_count_uses_loaded_dataset(main_window, data_
             row_for_pid = r
             break
     assert row_for_pid is not None
-    assert data_tab._participants_table.item(row_for_pid, 3).text() == "3"
-    # Has NN intervals → yes (the synthetic data has a non-empty t array)
-    assert data_tab._participants_table.item(row_for_pid, 5).text() == "Yes"
+    # Column 7 = Sections (after the new Beats/Duration/RR mean/Events cols)
+    assert data_tab._participants_table.item(row_for_pid, 7).text() == "3"
+    # Column 9 = Has NN — synthetic data has non-empty t array → "Yes"
+    assert data_tab._participants_table.item(row_for_pid, 9).text() == "Yes"
+    # Streamlit-parity columns populate when dataset is loaded
+    assert data_tab._participants_table.item(row_for_pid, 3).text() != "-"  # Beats
+    assert data_tab._participants_table.item(row_for_pid, 4).text() != "-"  # Duration
 
 
 # ---------------------------------------------------------------------
