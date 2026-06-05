@@ -322,27 +322,23 @@ class DataTab(InspectorTab):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(12)
 
+        # Phase 25b: single consolidated help button instead of two
+        # stacked "ⓘ Help" buttons that looked orphaned.
         outer.addWidget(
             HelpExpander(
-                "What is this tab for?",
+                "Data tab — overview & column reference",
                 (
-                    "<p>The <b>Data</b> tab is your workspace overview. It shows the "
-                    "active project, the raw data sources detected under "
-                    "<code>data/raw/</code>, every <code>.rrational</code> export under "
-                    "<code>data/processed/</code>, and a per-participant summary "
-                    "table.</p>"
-                    "<p>Start by opening a project (<i>File &rarr; Open project</i>), "
-                    "then double-click any raw file or use <i>Load selected source</i> "
-                    "to bulk-load all files from a folder.</p>"
-                ),
-            )
-        )
-        outer.addWidget(
-            HelpExpander(
-                "What do the columns mean?",
-                (
-                    "<p>Each row of the participants table summarises one loaded "
-                    "recording.</p>"
+                    "<h3>What is this tab for?</h3>"
+                    "<p>The <b>Data</b> tab is your workspace overview. It shows "
+                    "the active project, the raw data sources detected under "
+                    "<code>data/raw/</code>, every <code>.rrational</code> export "
+                    "under <code>data/processed/</code>, and a per-participant "
+                    "summary table.</p>"
+                    "<p>Start by opening a project (<i>File &rarr; Open "
+                    "project</i>), then double-click any raw file or use "
+                    "<i>Load selected source</i> to bulk-load all files from a "
+                    "folder.</p>"
+                    "<h3>What do the columns mean?</h3>"
                     "<ul>"
                     "<li><b>Beats / Duration / RR mean</b> — basic counts and "
                     "averages after duplicate removal.</li>"
@@ -350,10 +346,11 @@ class DataTab(InspectorTab):
                     "min/max RR window above.</li>"
                     "<li><b>Artifacts %</b> — fraction flagged as ectopic / "
                     "extra / missed by the Lipponen 2019 (Kubios) algorithm.</li>"
-                    "<li><b>Duplicates</b> — repeated timestamps from the recorder.</li>"
-                    "<li><b>Quality</b> — green &lt;5%, yellow &lt;15%, red otherwise. "
-                    "Use this to triage which recordings deserve manual review on "
-                    "the <i>Participant</i> tab.</li>"
+                    "<li><b>Duplicates</b> — repeated timestamps from the "
+                    "recorder.</li>"
+                    "<li><b>Quality</b> — green &lt;5%, yellow &lt;15%, red "
+                    "otherwise. Use this to triage which recordings deserve "
+                    "manual review on the <i>Participant</i> tab.</li>"
                     "</ul>"
                 ),
             )

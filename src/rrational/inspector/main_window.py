@@ -144,20 +144,22 @@ class MainWindow(QMainWindow):
         self._undo_action = None
         self._redo_action = None
 
+        # Phase 25b: build the navigation toolbar BEFORE constructing
+        # the tabs. ParticipantTab/BrowseTab embed the toolbar via
+        # take_nav_toolbar() inside their __init__, so it must exist
+        # by then. (Previously _build_toolbar ran after _build_central_widget,
+        # leaving the embed call a silent no-op.)
+        self._build_toolbar()
+
         self._build_central_widget()
         # Apply the user's saved color scheme to the plot before the menu
-        # / toolbar are built so any toolbar repaint uses the right pen.
+        # is built so any color-dependent menu items are correct.
         from rrational.inspector.color_scheme_persistence import load_color_scheme
 
         self._color_preset, self._color_scheme = load_color_scheme()
         self._plot.set_color_scheme(self._color_scheme)
 
         self._build_menu()
-        self._build_toolbar()
-        # Phase 25: nav toolbar exists now — re-fire the tab-change hook
-        # so its visibility matches the current tab. (The hook also ran
-        # during _apply_layout_mode but _nav_toolbar wasn't built yet.)
-        self._on_tab_changed_hint(self._tabs_widget.currentIndex())
         self.setStatusBar(QStatusBar())
         # UX1: a permanent project badge on the left of the status bar.
         # Always visible so the user can tell at a glance which project
@@ -882,14 +884,19 @@ class MainWindow(QMainWindow):
         )
 
     def _build_toolbar(self) -> None:
-        """Toolbar with discoverable navigation buttons."""
+        """Toolbar with discoverable navigation buttons.
+
+        Phase 25b: the toolbar is no longer attached to the QMainWindow's
+        top toolbar area (where it floated above ALL tabs). Instead it's
+        kept as a free widget; tabs that need it (ParticipantTab,
+        BrowseTab) embed it at the top of their own layout via
+        :meth:`take_nav_toolbar`.
+        """
         tb = QToolBar("Navigation", self)
         tb.setMovable(False)
-        self.addToolBar(tb)
-        # Phase 25: navigation toolbar only makes sense in tabs that
-        # actually host a timeline plot (Browse in MNE-LAB mode,
-        # Participant in Streamlit mode). Hide elsewhere — keeps
-        # Data/Setup/Analysis/Results visually clean.
+        tb.setOrientation(Qt.Horizontal)
+        # NOTE: deliberately NOT calling self.addToolBar(tb) — that would
+        # park it above the QTabWidget, which is what the user objected to.
         self._nav_toolbar = tb
 
         home_act = QAction("Start (Home)", self)
@@ -1581,9 +1588,12 @@ class MainWindow(QMainWindow):
     }
 
     def _on_tab_changed_hint(self, idx: int) -> None:
-        """Post a 5-second status-bar hint when the user switches tabs +
-        toggle the navigation toolbar visibility (only timeline-tabs
-        need Pan / Zoom / Fit-all)."""
+        """Post a 5-second status-bar hint when the user switches tabs.
+
+        Phase 25b: the nav-toolbar visibility-toggle was removed — the
+        toolbar is now embedded inside ParticipantTab/BrowseTab directly,
+        so it appears only where it belongs without a global toggle.
+        """
         if idx < 0 or idx >= self._tabs_widget.count():
             return
         widget = self._tabs_widget.widget(idx)
@@ -1592,10 +1602,17 @@ class MainWindow(QMainWindow):
         hint = self._TAB_HINTS.get(type(widget).__name__)
         if hint:
             self.statusBar().showMessage(hint, 5000)
-        # Navigation toolbar only on tabs that host the timeline plot.
-        tb = getattr(self, "_nav_toolbar", None)
-        if tb is not None:
-            tb.setVisible(type(widget).__name__ in {"BrowseTab", "ParticipantTab"})
+
+    def take_nav_toolbar(self):
+        """Return the navigation toolbar widget for embedding in a tab.
+
+        A tab calls this in its __init__ to insert the toolbar at the
+        top of its own layout. Multiple tabs can call this — but only
+        ONE owner at a time (Qt parent semantics). In practice
+        ParticipantTab takes it in Streamlit mode; BrowseTab takes it
+        in MNE-LAB mode.
+        """
+        return getattr(self, "_nav_toolbar", None)
 
     def _refresh_tab_labels(self) -> None:
         """UX4: refresh top-tab labels with live state badges so the user

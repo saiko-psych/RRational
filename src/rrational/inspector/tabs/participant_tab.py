@@ -399,13 +399,21 @@ class ParticipantTab(InspectorTab):
         self._preprocessing_dock.setWidget(self._preprocessing_panel)
         self._dock_host.addDockWidget(Qt.RightDockWidgetArea, self._preprocessing_dock)
 
-        # ----- Outer layout: just hosts the dock-host --------------------
-        # Phase 24A: a top-of-tab help expander explains the per-participant
-        # workflow so the user doesn't have to guess what to click first.
+        # ----- Outer layout --------------------
+        # Phase 25b: the navigation toolbar (Start/End/Pan/Zoom/Fit) is
+        # embedded HERE at the top of the participant tab instead of
+        # the QMainWindow's global toolbar area. User feedback: 'diese
+        # zeile soll UNTER den haupt tabs sein (in participant)'.
         from rrational.inspector.help_widgets import HelpExpander
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+
+        # Embed the global nav toolbar at the top of THIS tab.
+        nav_tb = self._main_window.take_nav_toolbar()
+        if nav_tb is not None:
+            outer.addWidget(nav_tb)
+
         outer.addWidget(
             HelpExpander(
                 "Per-participant workflow",

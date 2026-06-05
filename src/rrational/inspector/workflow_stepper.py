@@ -99,6 +99,11 @@ class WorkflowStepper(QWidget):
             btn = QPushButton(STEP_LABELS[step], self)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            # Phase 25b: in the narrow preprocessing dock, button text
+            # gets ellipsised ('. Load r' instead of '1. Load raw').
+            # Force a minimum width so the full label is always visible.
+            btn.setMinimumWidth(110)
+            btn.setToolTip(STEP_LABELS[step])
             # Use lambda default-arg trick to capture the step index.
             btn.clicked.connect(lambda _checked, s=step: self.step_clicked.emit(s))
             self._buttons[step] = btn
