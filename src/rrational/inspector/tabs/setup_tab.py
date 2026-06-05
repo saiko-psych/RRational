@@ -1418,6 +1418,21 @@ class SetupTab(InspectorTab):
         layout.addWidget(self._subtabs)
 
     # ------------------------------------------------------------------
+    # UX4: tab-label state badge — groups + sequences counts
+    # ------------------------------------------------------------------
+    def tab_label_state(self) -> str:
+        n_groups = len(self._groups_pane.groups)
+        n_seqs = len(self._sequences_pane.sequences)
+        parts = []
+        if n_groups:
+            parts.append(f"{n_groups} group{'s' if n_groups != 1 else ''}")
+        if n_seqs:
+            parts.append(f"{n_seqs} seq{'s' if n_seqs != 1 else ''}")
+        if not parts:
+            return ""
+        return "(" + ", ".join(parts) + ")"
+
+    # ------------------------------------------------------------------
     # Notification hooks
     # ------------------------------------------------------------------
     def on_workspace_changed(self) -> None:

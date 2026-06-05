@@ -252,6 +252,10 @@ class ParticipantsTab(InspectorTab):
     # ------------------------------------------------------------------
     # Notifications
     # ------------------------------------------------------------------
+    def tab_label_state(self) -> str:
+        n = len(self._participants)
+        return f"({n})" if n else ""
+
     def on_workspace_changed(self) -> None:
         # Re-read in case the project changed
         self._participants = self._load()

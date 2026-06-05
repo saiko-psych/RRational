@@ -43,3 +43,14 @@ class InspectorTab(QWidget):
 
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
         """A different dataset is now active; re-render UI as needed."""
+
+    # ------------------------------------------------------------------
+    # UX4: live tab-label state badge
+    # ------------------------------------------------------------------
+    def tab_label_state(self) -> str:
+        """Return a short parenthesised state suffix appended to the tab label.
+
+        Default returns empty string (no badge). Subclasses override to
+        surface live state (e.g. ``"(3 datasets)"`` on the Browse tab).
+        """
+        return ""

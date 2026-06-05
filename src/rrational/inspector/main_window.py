@@ -137,6 +137,19 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self._build_toolbar()
         self.setStatusBar(QStatusBar())
+        # UX1: a permanent project badge on the left of the status bar.
+        # Always visible so the user can tell at a glance which project
+        # is active (window title alone gets lost in tab clutter).
+        # Built BEFORE the cursor readout so it sits to its LEFT.
+        self._project_badge = QLabel("")
+        self._project_badge.setObjectName("projectBadge")
+        self._project_badge.setCursor(Qt.PointingHandCursor)
+        self._project_badge.setToolTip(
+            "Click to open a project (or manage the current one)"
+        )
+        self._project_badge.mousePressEvent = self._on_project_badge_clicked
+        self.statusBar().addPermanentWidget(self._project_badge)
+        self._refresh_project_badge()
         # Permanent (always-visible) widget on the right side of the
         # status bar. addPermanentWidget keeps it visible even when
         # showMessage() displays a transient message on the left.
@@ -148,6 +161,19 @@ class MainWindow(QMainWindow):
         # Phase 20: restore window + BrowseTab dock layout from QSettings
         # so user-adjusted geometry survives across runs.
         self._restore_window_state()
+
+        # UX4: initial tab-label refresh once everything is wired up.
+        self._refresh_tab_labels()
+
+        # UX5: first-run onboarding dialog (non-blocking, skipped in test_mode).
+        if not self.test_mode:
+            from rrational.inspector.onboarding import (
+                is_onboarded,
+                show_welcome_dialog,
+            )
+
+            if not is_onboarded():
+                show_welcome_dialog(self)
 
         if initial_path is not None:
             self.open_path(initial_path)
@@ -252,6 +278,8 @@ class MainWindow(QMainWindow):
         ]
         for tab in self._tabs:
             self._tabs_widget.addTab(tab, tab.TAB_LABEL)
+        # UX4: deferred — _refresh_tab_labels called below once everything
+        # else (results store, project, etc.) is initialised.
 
         self.setCentralWidget(self._tabs_widget)
 
@@ -336,17 +364,28 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        open_act = QAction("&Open .rrational…", self)
+        # UX2: "Open recording..." catch-all is the PRIMARY entry point.
+        # Polar / Empatica / Kubios / Elite HRV / plain text / .rrational
+        # all selectable through the dialog's file-type filter.
+        open_act = QAction("&Open recording…", self)
         open_act.setShortcut(QKeySequence.Open)  # Ctrl+O / Cmd+O
-        open_act.setStatusTip("Open one or more .rrational v2.0 files")
+        open_act.setStatusTip(
+            "Open a recording — .rrational v2 or raw (Polar/Empatica/Kubios/Elite HRV/plain text)"
+        )
         open_act.triggered.connect(self._on_open_clicked)
         file_menu.addAction(open_act)
 
+        open_v2_act = QAction("Open .rrational v2 only…", self)
+        open_v2_act.setShortcut("Ctrl+Shift+R")
+        open_v2_act.setStatusTip(
+            "Open only RRational v2 exports (filtered file dialog)"
+        )
+        open_v2_act.triggered.connect(self._on_open_rrational_only_clicked)
+        file_menu.addAction(open_v2_act)
+
         open_folder_act = QAction("Open &folder…", self)
         open_folder_act.setShortcut("Ctrl+Shift+O")
-        open_folder_act.setStatusTip(
-            "Load every .rrational file inside a chosen folder"
-        )
+        open_folder_act.setStatusTip("Load every recording inside a chosen folder")
         open_folder_act.triggered.connect(self._on_open_folder_clicked)
         file_menu.addAction(open_folder_act)
 
@@ -490,17 +529,24 @@ class MainWindow(QMainWindow):
         prefs_act.triggered.connect(self._on_preferences_clicked)
         edit_menu.addAction(prefs_act)
 
-        # ----- Tools menu — stubs for upcoming Phase 4 features ----------
         tools_menu = menubar.addMenu("&Tools")
-        for label, status in [
-            ("Compute &HRV metrics…", "Coming in Phase 4"),
-            ("Detect &artifacts…", "Coming in Phase 4"),
-            ("&Crop section…", "Coming in Phase 4"),
+
+        # ----- UX2: Import from <source>... submenu ---------------------
+        import_menu = tools_menu.addMenu("&Import from")
+        for label, source_filter in [
+            ("Polar (CSV)…", "Polar (*.csv)"),
+            ("Empatica (CSV)…", "Empatica (*.csv)"),
+            ("Kubios (TXT)…", "Kubios (*.txt)"),
+            ("Elite HRV (CSV)…", "Elite HRV (*.csv)"),
+            ("Plain text (TXT/DAT)…", "Plain text (*.txt *.dat)"),
         ]:
             act = QAction(label, self)
-            act.setEnabled(False)
-            act.setStatusTip(status)
-            tools_menu.addAction(act)
+            act.setStatusTip(f"Open a recording with the {label} file filter")
+            act.triggered.connect(
+                lambda _checked=False, f=source_filter: self._on_import_clicked(f)
+            )
+            import_menu.addAction(act)
+        tools_menu.addSeparator()
 
         # ----- Tools: visualisation submenu (Phase 17) -------------------
         # All four actions are dataset-aware; toggled by
@@ -537,6 +583,23 @@ class MainWindow(QMainWindow):
 
         # ----- Help menu --------------------------------------------------
         help_menu = menubar.addMenu("&Help")
+        # UX5: workflow-walkthrough is the FIRST help entry — most useful for new users.
+        walkthrough_act = QAction("&Workflow walkthrough…", self)
+        walkthrough_act.setStatusTip(
+            "Show the end-to-end workflow (raw → detect → review → save → setup → analyze → export)"
+        )
+        walkthrough_act.triggered.connect(self._show_workflow_walkthrough)
+        help_menu.addAction(walkthrough_act)
+
+        reshow_welcome_act = QAction("Show &welcome dialog again", self)
+        reshow_welcome_act.setStatusTip(
+            "Reopen the first-run welcome dialog (5-tab overview)"
+        )
+        reshow_welcome_act.triggered.connect(self._reshow_welcome_dialog)
+        help_menu.addAction(reshow_welcome_act)
+
+        help_menu.addSeparator()
+
         shortcuts_act = QAction("Keyboard &shortcuts", self)
         shortcuts_act.setShortcut("F1")
         shortcuts_act.triggered.connect(self._show_shortcuts_dialog)
@@ -636,6 +699,48 @@ class MainWindow(QMainWindow):
             return
         if not panel.redo():
             self.statusBar().showMessage("Nothing to redo", 1500)
+
+    def _show_workflow_walkthrough(self) -> None:
+        """UX5: end-to-end workflow help (modeless)."""
+        if self.test_mode:
+            self.statusBar().showMessage("Workflow walkthrough (test_mode: suppressed)")
+            return
+        text = (
+            "<h3>RRational Inspector — typical workflow</h3>"
+            "<ol>"
+            "<li><b>Open a recording</b> via <i>File → Open recording</i> "
+            "(or the welcome screen). Accepts .rrational, Polar/Empatica CSV, "
+            "Kubios/Elite HRV/plain text.</li>"
+            "<li><b>Detect artifacts</b> in the right-side Preprocessing panel "
+            "(Browse tab). NK2 Kubios algorithm; results are persisted automatically.</li>"
+            "<li><b>Review &amp; correct</b>: enable <i>Use corrected RR values</i>, "
+            "or use <i>Manual mark mode</i> to click directly on beats. "
+            "<i>Exclusion mode</i> drags out time ranges to skip.</li>"
+            "<li><b>Save as .rrational v2</b> with the right-panel button — "
+            "open-exchange format with all the corrections preserved.</li>"
+            "<li><b>Setup tab</b>: define your groups, sections, sequences, protocol.</li>"
+            "<li><b>Participants tab</b>: link datasets to groups + sequences "
+            "(or import-from-workspace for a quick start).</li>"
+            "<li><b>Analysis tab</b>: pick a mode (Single / Repeating / Group / "
+            "Sequence) and Compute.</li>"
+            "<li><b>Results tab</b>: every metric in a sortable table. "
+            "Export as CSV, or generate a full HTML/Markdown report via "
+            "<i>File → Export report</i>.</li>"
+            "</ol>"
+            "<p><i>Tip: open a Project (File → Open project) to persist groups, "
+            "events, sequences, etc. across sessions and share state with the "
+            "Streamlit app.</i></p>"
+        )
+        QMessageBox.information(self, "Workflow walkthrough", text)
+
+    def _reshow_welcome_dialog(self) -> None:
+        """UX5: re-open the first-run welcome dialog on demand."""
+        if self.test_mode:
+            self.statusBar().showMessage("Welcome dialog (test_mode: suppressed)")
+            return
+        from rrational.inspector.onboarding import show_welcome_dialog
+
+        show_welcome_dialog(self)
 
     def _show_shortcuts_dialog(self) -> None:
         """Modeless dialog listing every shortcut the inspector binds."""
@@ -855,6 +960,7 @@ class MainWindow(QMainWindow):
         # never bleeds rows between them.
         self._load_results_cache()
         self._update_window_title()
+        self._refresh_project_badge()
 
     def close_project(self) -> None:
         """Close the current project (datasets stay loaded)."""
@@ -894,6 +1000,76 @@ class MainWindow(QMainWindow):
             self._rebuild_recent_project_menu()
             return
         self.open_project_path(path)
+
+    # ------------------------------------------------------------------
+    # UX1: project badge in the status bar
+    # ------------------------------------------------------------------
+    def _refresh_project_badge(self) -> None:
+        """Update the permanent status-bar badge to reflect ``self._project``."""
+        badge = getattr(self, "_project_badge", None)
+        if badge is None:
+            return
+        if self._project is None:
+            badge.setText("No project active — using global config")
+            badge.setStyleSheet(
+                "QLabel#projectBadge { "
+                "color: #777; font-style: italic; padding: 0 8px; "
+                "}"
+            )
+        else:
+            name = (
+                self._project.metadata.name
+                if self._project.metadata is not None
+                else "(unnamed)"
+            )
+            badge.setText(f"Project: {name}")
+            badge.setStyleSheet(
+                "QLabel#projectBadge { "
+                "color: #1f6feb; font-weight: bold; padding: 0 8px; "
+                "}"
+            )
+
+    def _on_project_badge_clicked(self, event) -> None:
+        """Click handler for the permanent project badge.
+
+        - No project active → open the Open Project dialog.
+        - Project active → pop a small menu (close / open folder / info).
+        """
+        from qtpy.QtWidgets import QMenu
+
+        if self._project is None:
+            self._on_open_project_clicked()
+            return
+        menu = QMenu(self)
+        close_act = menu.addAction("Close project")
+        open_folder_act = menu.addAction("Open project folder in explorer")
+        info_act = menu.addAction("Show project info")
+        chosen = menu.exec(event.globalPos()) if not self.test_mode else None
+        if chosen is close_act:
+            self.close_project()
+        elif chosen is open_folder_act:
+            self._open_project_folder_in_explorer()
+        elif chosen is info_act:
+            self._show_project_info_dialog()
+
+    def _open_project_folder_in_explorer(self) -> None:
+        if self._project is None:
+            return
+        from qtpy.QtCore import QUrl
+        from qtpy.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._project.project_path)))
+
+    def _show_project_info_dialog(self) -> None:
+        if self._project is None:
+            return
+        meta = self._project.metadata
+        name = meta.name if meta is not None else "(unnamed)"
+        desc = (meta.description if meta is not None else "") or ""
+        text = (
+            f"<b>{name}</b><br><i>{desc}</i><br><br>Path: {self._project.project_path}"
+        )
+        self._info("Project info", text)
 
     def _update_window_title(self) -> None:
         """Title format: 'project_name — dataset_name' or 'dataset_name' alone."""
@@ -968,6 +1144,30 @@ class MainWindow(QMainWindow):
         )
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Open recording", last_dir, file_filter
+        )
+        for path_str in paths:
+            self.open_path(Path(path_str))
+
+    def _on_open_rrational_only_clicked(self) -> None:
+        """UX2: filtered-only RRational v2 dialog (still accessible via main Open)."""
+        last_dir = self._open_dialog_default_dir()
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Open RRational v2 file", last_dir, "RRational v2.0 (*.rrational)"
+        )
+        for path_str in paths:
+            self.open_path(Path(path_str))
+
+    def _on_import_clicked(self, source_filter: str) -> None:
+        """UX2: source-specific Import-from submenu entries.
+
+        Opens a QFileDialog pre-selecting the given file-type filter
+        (e.g. ``"Polar (*.csv)"``) so the user sees only matching files.
+        Falls back to the same ``open_path`` loader once a file is chosen
+        (which auto-detects the actual format via ``generic_rr``).
+        """
+        last_dir = self._open_dialog_default_dir()
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Import recording", last_dir, source_filter
         )
         for path_str in paths:
             self.open_path(Path(path_str))
@@ -1247,6 +1447,22 @@ class MainWindow(QMainWindow):
         for tab in self._tabs:
             tab.on_workspace_changed()
         self._refresh_visualisation_actions()
+        self._refresh_tab_labels()
+
+    def _refresh_tab_labels(self) -> None:
+        """UX4: refresh top-tab labels with live state badges so the user
+        can SEE what's in each tab without clicking through them."""
+        for i, tab in enumerate(self._tabs):
+            base = tab.TAB_LABEL
+            state = ""
+            if hasattr(tab, "tab_label_state"):
+                try:
+                    s = tab.tab_label_state()
+                    if s:
+                        state = f"  {s}"
+                except Exception:  # pragma: no cover - defensive
+                    state = ""
+            self._tabs_widget.setTabText(i, f"{base}{state}")
 
     # ------------------------------------------------------------------
     # Phase 17: visualisation dialogs (Tachogram / Poincare / PSD / HR)

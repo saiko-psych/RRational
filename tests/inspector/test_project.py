@@ -225,3 +225,30 @@ def test_recent_project_menu_shows_placeholder_when_empty(main_window):
     actions = main_window._recent_project_menu.actions()
     assert len(actions) == 1
     assert "(no recent projects)" in actions[0].text()
+
+
+# ---------------------------------------------------------------------
+# UX1: permanent project badge in the status bar
+# ---------------------------------------------------------------------
+def test_project_badge_text_when_no_project(main_window):
+    """Default state: badge tells the user no project is active."""
+    assert main_window._project is None
+    assert "No project active" in main_window._project_badge.text()
+
+
+def test_project_badge_updates_on_set_active_project(main_window, tmp_path):
+    """Setting an active project should put its name in the badge."""
+    pm = _make_project(tmp_path, name="BadgeStudy")
+    main_window.set_active_project(pm)
+    text = main_window._project_badge.text()
+    assert "Project:" in text
+    assert "BadgeStudy" in text
+
+
+def test_project_badge_clears_on_close_project(main_window, tmp_path):
+    """Closing the project should revert the badge to the default text."""
+    pm = _make_project(tmp_path, name="TempStudy")
+    main_window.set_active_project(pm)
+    main_window.close_project()
+    assert "No project active" in main_window._project_badge.text()
+    assert "TempStudy" not in main_window._project_badge.text()

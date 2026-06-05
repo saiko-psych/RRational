@@ -154,6 +154,15 @@ class BrowseTab(InspectorTab):
             return False
 
     # ------------------------------------------------------------------
+    # UX4: tab-label state badge
+    # ------------------------------------------------------------------
+    def tab_label_state(self) -> str:
+        n = len(self._main_window._datasets)
+        if n == 0:
+            return "(empty)"
+        return f"({n} dataset{'s' if n != 1 else ''})"
+
+    # ------------------------------------------------------------------
     # Notification hooks from MainWindow
     # ------------------------------------------------------------------
     def on_workspace_changed(self) -> None:

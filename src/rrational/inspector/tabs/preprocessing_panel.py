@@ -80,6 +80,14 @@ class PreprocessingPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
+        # UX3: workflow stepper at the very top so users see the linear
+        # 4-step path (Load → Detect → Review → Save) before anything else.
+        from rrational.inspector.workflow_stepper import WorkflowStepper
+
+        self._stepper = WorkflowStepper(self)
+        self._stepper.step_clicked.connect(self._on_workflow_step_clicked)
+        layout.addWidget(self._stepper)
+
         header = QLabel("<b>Preprocessing</b>")
         header.setAlignment(Qt.AlignLeft)
         layout.addWidget(header)
@@ -271,6 +279,55 @@ class PreprocessingPanel(QWidget):
     # ------------------------------------------------------------------
     # State sync
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # UX3: workflow-stepper helpers
+    # ------------------------------------------------------------------
+    def _refresh_workflow_steps(self) -> None:
+        """Recompute the 1-2-3-4 step states from current panel state."""
+        stepper = getattr(self, "_stepper", None)
+        if stepper is None:
+            return
+        has_data = self._main_window._data is not None
+        has_detection = self._last_result is not None
+        has_correction = bool(
+            has_detection
+            and (
+                self._toggle_use_corrected.isChecked()
+                or getattr(self, "_export_done_once", False)
+                or self._undo_stack
+            )
+        )
+        exported = getattr(self, "_export_done_once", False)
+
+        # State transitions: done → active → locked, in order.
+        states: dict[int, str] = {}
+        states[1] = "done" if has_data else "active"
+        states[2] = "done" if has_detection else ("active" if has_data else "locked")
+        states[3] = (
+            "done" if has_correction else ("active" if has_detection else "locked")
+        )
+        states[4] = "done" if exported else ("active" if has_detection else "locked")
+        stepper.set_step_states(states)
+
+    def _on_workflow_step_clicked(self, step: int) -> None:
+        """Click handler for any of the 4 stepper buttons."""
+        stepper = self._stepper
+        state = stepper.state_for(step)
+        if state == "locked":
+            self._main_window.statusBar().showMessage(
+                "Complete the previous step first.", 3000
+            )
+            return
+        if step == 1:
+            self._main_window._on_open_clicked()
+        elif step == 2:
+            self._on_detect_clicked()
+        elif step == 3:
+            # Focus the use-corrected checkbox so user knows where to act.
+            self._toggle_use_corrected.setFocus()
+        elif step == 4:
+            self._on_export_clicked()
+
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
         """Reset the panel when the user switches/unloads a dataset.
 
@@ -280,10 +337,12 @@ class PreprocessingPanel(QWidget):
         Phase 14: also reset the undo/redo stacks (per-dataset history)
         and the plot's manual / excluded sets.
         Phase 15: same drill for exclusion zones from ``{pid}_exclusions.yml``.
+        UX3: update workflow-stepper state.
         """
         self._last_result = None
         self._undo_stack.clear()
         self._redo_stack.clear()
+        self._export_done_once = False
         if data is None:
             self._summary.setText(
                 "<i>No dataset loaded.</i> Use File → Open to load a recording."
@@ -340,6 +399,7 @@ class PreprocessingPanel(QWidget):
         # set_data) already dropped the regions.
         if data is None:
             self._refresh_zones_table()
+        self._refresh_workflow_steps()
 
     def _try_restore_artifacts(self, data: "InspectorData") -> None:
         """Look for {pid}_artifacts.yml for the active dataset; if found,
@@ -590,6 +650,7 @@ class PreprocessingPanel(QWidget):
             f"({result.rate * 100:.2f}%, {result.grade})",
             4000,
         )
+        self._refresh_workflow_steps()
 
     def _autosave_artifacts(self, result, data: "InspectorData") -> None:
         """Phase 12: persist the freshly-detected artifacts to disk.
@@ -676,6 +737,7 @@ class PreprocessingPanel(QWidget):
             plot._curve.setData(data.t, self._last_result.corrected_v)
         else:
             plot._curve.setData(data.t, data.v)
+        self._refresh_workflow_steps()
 
     # ------------------------------------------------------------------
     # Phase 14 — Manual artifact marking + undo / redo
@@ -904,6 +966,8 @@ class PreprocessingPanel(QWidget):
             f"{n_corrected} corrected interval(s) → {out_path.name}",
             5000,
         )
+        self._export_done_once = True
+        self._refresh_workflow_steps()
 
     # ------------------------------------------------------------------
     # Phase 20: Free-text annotations
