@@ -604,3 +604,72 @@ def test_project_open_redirects_groups_yml(main_window, tmp_path):
     # Project yaml does
     project_groups = load_groups(project_path=pm.project_path)
     assert "ProjOnly" in project_groups
+
+
+# ---------------------------------------------------------------------
+# Phase 24C-retry: HRV reference-band overlay on result tables
+# ---------------------------------------------------------------------
+def test_resolve_reference_band_assigns_correct_brush():
+    """Each of the four bands (excellent / normal / borderline / poor)
+    maps to the documented QColor pattern for an in-catalogue metric."""
+    from rrational.inspector.tabs.analysis_tab import (
+        _REF_BORDERLINE_BRUSH,
+        _REF_EXCELLENT_BRUSH,
+        _REF_NORMAL_BRUSH,
+        _REF_POOR_BRUSH,
+        _resolve_reference_band,
+    )
+
+    # RMSSD reference: low=20, normal=42, high=70 (ms).
+    assert _resolve_reference_band("RMSSD", 100.0)[0] == _REF_EXCELLENT_BRUSH
+    assert _resolve_reference_band("RMSSD", 50.0)[0] == _REF_NORMAL_BRUSH
+    assert _resolve_reference_band("RMSSD", 30.0)[0] == _REF_BORDERLINE_BRUSH
+    assert _resolve_reference_band("RMSSD", 5.0)[0] == _REF_POOR_BRUSH
+    # Missing-from-catalogue metric returns None (no overlay applied).
+    assert _resolve_reference_band("definitely_not_a_metric", 1.0) is None
+    # NaN / None inputs return None.
+    assert _resolve_reference_band("RMSSD", float("nan")) is None
+    assert _resolve_reference_band("RMSSD", None) is None
+
+
+def test_single_compute_applies_reference_overlay_when_catalogue_has_metric(
+    main_window,
+):
+    """After Compute runs, RMSSD's value cell carries a reference brush
+    + tooltip (assuming RMSSD survived the active preset, which "Basic"
+    includes by default)."""
+    from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.tabs.analysis_tab import (
+        _REF_BORDERLINE_BRUSH,
+        _REF_EXCELLENT_BRUSH,
+        _REF_NORMAL_BRUSH,
+        _REF_POOR_BRUSH,
+    )
+
+    main_window.add_dataset(Dataset(name="A", data=_make_data(["rest_pre"])))
+    main_window.set_active_dataset(0)
+    pane = main_window._analysis_tab._single_pane
+    pane._on_compute()
+
+    table = pane._result_table
+    # Find the RMSSD row by scanning the metric column.
+    rmssd_row = None
+    for r in range(table.rowCount()):
+        item = table.item(r, 0)
+        if item is not None and item.text() == "RMSSD":
+            rmssd_row = r
+            break
+    if rmssd_row is None:
+        pytest.skip("RMSSD not in the active preset; overlay path not exercised")
+    value_item = table.item(rmssd_row, 1)
+    assert value_item is not None
+    brush_color = value_item.background().color()
+    # Brush must be one of the four documented reference colours.
+    expected = [
+        _REF_EXCELLENT_BRUSH,
+        _REF_NORMAL_BRUSH,
+        _REF_BORDERLINE_BRUSH,
+        _REF_POOR_BRUSH,
+    ]
+    assert any(brush_color == c for c in expected)
+    assert "reference" in value_item.toolTip().lower()

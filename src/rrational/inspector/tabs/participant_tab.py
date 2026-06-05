@@ -41,6 +41,7 @@ from qtpy.QtWidgets import (
     QComboBox,
     QDockWidget,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -63,10 +64,122 @@ if TYPE_CHECKING:
 # leaning on row index (which is brittle if rows are ever reordered).
 _ROLE_SECTION_NAME = Qt.UserRole + 1
 
+# UserRole tag carrying the (t_start, t_end) tuple for a quality-issue
+# row, so double-clicking zooms the plot to the offending segment.
+_ROLE_QUALITY_RANGE = Qt.UserRole + 2
+
 # Unicode check mark used to flag validated sections in the list. NOT
 # an emoji — a plain U+2713 glyph that renders in any font that ships
 # with a basic Latin/Symbols subset.
 _VALIDATED_PREFIX = "✓ "
+
+# Quality-issue detection thresholds (Phase 24C-retry).
+# - Time gap: 5 s between consecutive beats is well past any plausible
+#   RR interval (HR < 12 bpm) — almost certainly a sensor dropout or a
+#   cross-section join.
+# - Rolling CV: 30-beat window, 0.30 CV threshold mirrors the Streamlit
+#   gui/diagnostics' "high variability" highlight band.
+_QUALITY_GAP_THRESHOLD_S = 5.0
+_QUALITY_CV_WINDOW = 30
+_QUALITY_CV_THRESHOLD = 0.30
+
+
+def _detect_time_gaps(
+    t: np.ndarray, threshold_s: float
+) -> list[tuple[float, float, float]]:
+    """Return (gap_duration_s, t_start, t_end) for every consecutive pair
+    of finite timestamps whose difference is >= ``threshold_s``.
+
+    NaN-valued timestamps are skipped so inter-section gap markers
+    (data_loader inserts NaNs there) don't generate false positives.
+    """
+    if t.size < 2:
+        return []
+    finite = np.isfinite(t)
+    if not finite.any():
+        return []
+    t_clean = t[finite]
+    if t_clean.size < 2:
+        return []
+    diffs = np.diff(t_clean)
+    flagged = np.where(diffs >= threshold_s)[0]
+    out: list[tuple[float, float, float]] = []
+    for idx in flagged:
+        gap_t_start = float(t_clean[idx])
+        gap_t_end = float(t_clean[idx + 1])
+        gap_s = float(diffs[idx])
+        out.append((gap_s, gap_t_start, gap_t_end))
+    return out
+
+
+def _detect_high_variability_segments(
+    t: np.ndarray,
+    v: np.ndarray,
+    window: int,
+    cv_threshold: float,
+) -> list[tuple[float, float, float]]:
+    """Sliding rolling-CV detector: return list of (t_start, t_end, cv)
+    for merged segments whose ``window``-beat CV (std/|mean|) exceeds
+    ``cv_threshold``.
+
+    Adjacent flagged windows are coalesced into one segment whose CV is
+    the max across the constituent windows — keeps the UI list short
+    when the recording has long noisy stretches.
+    """
+    if v.size < window or t.size != v.size:
+        return []
+    finite_mask = np.isfinite(v) & np.isfinite(t)
+    if not finite_mask.any():
+        return []
+    t_clean = t[finite_mask]
+    v_clean = v[finite_mask]
+    n = v_clean.size
+    if n < window:
+        return []
+
+    # Vectorised rolling stats via cumulative sums — keeps this fast on
+    # the multi-hour recordings the inspector occasionally loads.
+    csum = np.concatenate(([0.0], np.cumsum(v_clean)))
+    csum_sq = np.concatenate(([0.0], np.cumsum(v_clean.astype(np.float64) ** 2)))
+    n_windows = n - window + 1
+    sums = csum[window:] - csum[:n_windows]
+    sums_sq = csum_sq[window:] - csum_sq[:n_windows]
+    means = sums / window
+    # Population variance (matches np.std(...,ddof=0)) — close enough to
+    # std/mean for "is this stretch noisy?" gating.
+    var = np.maximum(0.0, sums_sq / window - means**2)
+    stds = np.sqrt(var)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cvs = np.where(np.abs(means) > 1e-9, stds / np.abs(means), 0.0)
+
+    flagged = cvs > cv_threshold
+    if not flagged.any():
+        return []
+
+    # Merge adjacent True window indices into contiguous runs.
+    segments: list[tuple[float, float, float]] = []
+    in_run = False
+    run_start = 0
+    run_max_cv = 0.0
+    for i, hit in enumerate(flagged):
+        if hit and not in_run:
+            in_run = True
+            run_start = i
+            run_max_cv = float(cvs[i])
+        elif hit and in_run:
+            run_max_cv = max(run_max_cv, float(cvs[i]))
+        elif not hit and in_run:
+            run_end = i - 1
+            seg_t_start = float(t_clean[run_start])
+            seg_t_end = float(t_clean[min(run_end + window - 1, n - 1)])
+            segments.append((seg_t_start, seg_t_end, run_max_cv))
+            in_run = False
+    if in_run:
+        run_end = len(flagged) - 1
+        seg_t_start = float(t_clean[run_start])
+        seg_t_end = float(t_clean[min(run_end + window - 1, n - 1)])
+        segments.append((seg_t_start, seg_t_end, run_max_cv))
+    return segments
 
 
 class ParticipantTab(InspectorTab):
@@ -191,6 +304,60 @@ class ParticipantTab(InspectorTab):
         sections_layout.setContentsMargins(4, 4, 4, 4)
         sections_layout.addWidget(QLabel("<b>Sections</b>"))
         sections_layout.addWidget(self._sections_list)
+
+        # ----- Quality issues group (Phase 24C-retry) -------------------
+        # Collapsible QGroupBox sitting below the section list. Holds
+        # three short QListWidgets (time gaps, high-variability segments,
+        # exact-duplicate count). Each list row carries a (t_start, t_end)
+        # range in its UserRole so double-click zooms the plot to it.
+        self._quality_box = QGroupBox("Quality issues")
+        self._quality_box.setCheckable(True)
+        self._quality_box.setChecked(False)  # start collapsed
+        quality_layout = QVBoxLayout(self._quality_box)
+        quality_layout.setContentsMargins(6, 6, 6, 6)
+        quality_layout.setSpacing(4)
+
+        quality_layout.addWidget(QLabel("<b>Time gaps (>= 5 s)</b>"))
+        self._quality_gaps_list = QListWidget()
+        self._quality_gaps_list.setMaximumHeight(80)
+        self._quality_gaps_list.setToolTip(
+            "Consecutive beats whose timestamp difference exceeds 5 s. "
+            "Double-click a row to zoom the plot to the gap."
+        )
+        self._quality_gaps_list.itemDoubleClicked.connect(
+            self._on_quality_item_activated
+        )
+        quality_layout.addWidget(self._quality_gaps_list)
+
+        quality_layout.addWidget(
+            QLabel("<b>High variability (CV > 0.30, 30-beat window)</b>")
+        )
+        self._quality_var_list = QListWidget()
+        self._quality_var_list.setMaximumHeight(80)
+        self._quality_var_list.setToolTip(
+            "Sliding 30-beat windows where coefficient of variation "
+            "(std/mean) exceeds 0.30. Adjacent flagged windows are merged. "
+            "Double-click to zoom the plot to the segment."
+        )
+        self._quality_var_list.itemDoubleClicked.connect(
+            self._on_quality_item_activated
+        )
+        quality_layout.addWidget(self._quality_var_list)
+
+        quality_layout.addWidget(QLabel("<b>Duplicates</b>"))
+        self._quality_dup_list = QListWidget()
+        self._quality_dup_list.setMaximumHeight(80)
+        self._quality_dup_list.setToolTip(
+            "Count of exact-duplicate RR values across the recording."
+        )
+        quality_layout.addWidget(self._quality_dup_list)
+
+        # Collapse-toggle wired to hide the inner widgets so the group
+        # box shrinks to just its title bar when unchecked.
+        self._quality_box.toggled.connect(self._on_quality_box_toggled)
+        # Sync the initial collapsed state once.
+        self._on_quality_box_toggled(False)
+        sections_layout.addWidget(self._quality_box)
 
         self._sections_dock = QDockWidget("Sections", self._dock_host)
         self._sections_dock.setObjectName("ParticipantTab.SectionsDock")
@@ -373,6 +540,7 @@ class ParticipantTab(InspectorTab):
         for ev in ds.data.events:
             self._plot.add_event_marker(ev)
         self._rebuild_sections_list(ds)
+        self._rebuild_quality_lists(ds)
         self._plot.setFocus()
 
     def _rebuild_sections_list(self, ds: "Dataset") -> None:
@@ -421,6 +589,9 @@ class ParticipantTab(InspectorTab):
         self._plot._times = None
         self._plot._values = None
         self._sections_list.clear()
+        self._quality_gaps_list.clear()
+        self._quality_var_list.clear()
+        self._quality_dup_list.clear()
         self._nn_summary.setText("No artifact detection run yet on this participant.")
         self._section_validations = {}
         # Reset the metrics row to placeholder dashes so the user can
@@ -585,6 +756,84 @@ class ParticipantTab(InspectorTab):
             section_validations=self._section_validations,
             project_path=self._project_path(),
         )
+
+    # ------------------------------------------------------------------
+    # Quality issues (Phase 24C-retry)
+    # ------------------------------------------------------------------
+    def _on_quality_box_toggled(self, checked: bool) -> None:
+        """Show/hide the quality lists when the group box is toggled."""
+        for w in (
+            self._quality_gaps_list,
+            self._quality_var_list,
+            self._quality_dup_list,
+        ):
+            w.setVisible(checked)
+        # Also hide the inline section labels — find children with the
+        # matching <b> heading text. Cheapest path: walk the group box's
+        # immediate children.
+        for child in self._quality_box.findChildren(QLabel):
+            child.setVisible(checked)
+
+    def _rebuild_quality_lists(self, ds: "Dataset") -> None:
+        """Recompute + repopulate the three quality QListWidgets."""
+        self._quality_gaps_list.clear()
+        self._quality_var_list.clear()
+        self._quality_dup_list.clear()
+
+        t = np.asarray(ds.data.t, dtype=np.float64)
+        v = np.asarray(ds.data.v, dtype=np.float64)
+        if t.size == 0:
+            return
+        # Use the first finite timestamp as t_start so relative offsets
+        # don't get thrown off by leading NaNs (data_loader inserts those
+        # between sections).
+        finite_t_mask = np.isfinite(t)
+        if not finite_t_mask.any():
+            return
+        t_origin = float(t[finite_t_mask][0])
+
+        # ---- Time gaps ----
+        gaps = _detect_time_gaps(t, _QUALITY_GAP_THRESHOLD_S)
+        for i, (gap_s, gap_t_start, gap_t_end) in enumerate(gaps, start=1):
+            rel = gap_t_start - t_origin
+            mm = int(rel // 60)
+            ss = int(rel % 60)
+            label = f"Gap {i}: {gap_s:.1f}s at {mm:02d}:{ss:02d}"
+            item = QListWidgetItem(label)
+            item.setData(_ROLE_QUALITY_RANGE, (float(gap_t_start), float(gap_t_end)))
+            self._quality_gaps_list.addItem(item)
+
+        # ---- High-variability segments ----
+        segments = _detect_high_variability_segments(
+            t, v, window=_QUALITY_CV_WINDOW, cv_threshold=_QUALITY_CV_THRESHOLD
+        )
+        for i, (seg_t_start, seg_t_end, cv) in enumerate(segments, start=1):
+            duration = seg_t_end - seg_t_start
+            label = f"Segment {i}: {duration:.1f}s, CV {cv:.2f}"
+            item = QListWidgetItem(label)
+            item.setData(_ROLE_QUALITY_RANGE, (float(seg_t_start), float(seg_t_end)))
+            self._quality_var_list.addItem(item)
+
+        # ---- Duplicates ----
+        finite_v = v[np.isfinite(v)]
+        if finite_v.size:
+            dup_count = int(finite_v.size - len(set(finite_v.tolist())))
+            if dup_count > 0:
+                self._quality_dup_list.addItem(
+                    QListWidgetItem(f"{dup_count} exact duplicate RR values")
+                )
+
+    def _on_quality_item_activated(self, item: QListWidgetItem) -> None:
+        """Double-click handler: zoom the plot to the offending range."""
+        rng = item.data(_ROLE_QUALITY_RANGE)
+        if not rng:
+            return
+        t_start, t_end = float(rng[0]), float(rng[1])
+        # padding=0.1 mirrors the task spec; using setXRange directly
+        # (RRPlotWidget IS a pg.PlotWidget) keeps the call cheap and the
+        # zoom symmetric on both sides of the segment.
+        self._plot.setXRange(t_start, t_end, padding=0.1)
+        self._plot.setFocus()
 
     # ------------------------------------------------------------------
     # Event handlers
