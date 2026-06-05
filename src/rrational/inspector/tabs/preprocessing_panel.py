@@ -19,11 +19,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QCheckBox,
     QFileDialog,
-    QFrame,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -72,13 +70,16 @@ class PreprocessingPanel(QWidget):
         self._main_window = main_window
         self._last_result: "PreprocessingResult | None" = None
 
-        self.setMaximumWidth(280)
-        self.setMinimumWidth(220)
+        # Phase 27: wider so the workflow-stepper buttons aren't truncated.
+        self.setMaximumWidth(340)
+        self.setMinimumWidth(280)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+
+        from qtpy.QtWidgets import QGroupBox
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
 
         # UX3: workflow stepper at the very top so users see the linear
         # 4-step path (Load → Detect → Review → Save) before anything else.
@@ -88,39 +89,32 @@ class PreprocessingPanel(QWidget):
         self._stepper.step_clicked.connect(self._on_workflow_step_clicked)
         layout.addWidget(self._stepper)
 
-        header = QLabel("<b>Preprocessing</b>")
-        header.setAlignment(Qt.AlignLeft)
-        layout.addWidget(header)
+        # --- Group 1: Artifact detection ------------------------------------
+        detect_box = QGroupBox("Artifact detection")
+        detect_layout = QVBoxLayout(detect_box)
+        detect_layout.setSpacing(4)
 
         self._detect_btn = QPushButton("Detect artifacts")
         self._detect_btn.setToolTip(
             "Run NeuroKit2 Kubios algorithm on the active dataset's RR series"
         )
         self._detect_btn.clicked.connect(self._on_detect_clicked)
-        # Disabled until on_active_dataset_changed fires with real data.
         self._detect_btn.setEnabled(False)
-        layout.addWidget(self._detect_btn)
+        detect_layout.addWidget(self._detect_btn)
 
-        # Quality summary (multi-line label).
         self._summary = QLabel(
             "No artifact detection run yet.\n\nLoad a recording, then "
             "click <i>Detect artifacts</i>."
         )
         self._summary.setWordWrap(True)
-        self._summary.setStyleSheet("color: #555; padding: 4px 0;")
-        layout.addWidget(self._summary)
-
-        # Divider so the toggle group reads as a separate block.
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(sep)
+        self._summary.setStyleSheet("color: #555; padding: 2px 0;")
+        detect_layout.addWidget(self._summary)
 
         self._toggle_show_artifacts = QCheckBox("Show artifact markers")
         self._toggle_show_artifacts.setChecked(True)
         self._toggle_show_artifacts.toggled.connect(self._on_toggle_show_artifacts)
         self._toggle_show_artifacts.setEnabled(False)
-        layout.addWidget(self._toggle_show_artifacts)
+        detect_layout.addWidget(self._toggle_show_artifacts)
 
         self._toggle_use_corrected = QCheckBox("Use corrected RR values")
         self._toggle_use_corrected.setChecked(False)
@@ -130,9 +124,8 @@ class PreprocessingPanel(QWidget):
         )
         self._toggle_use_corrected.toggled.connect(self._on_toggle_use_corrected)
         self._toggle_use_corrected.setEnabled(False)
-        layout.addWidget(self._toggle_use_corrected)
+        detect_layout.addWidget(self._toggle_use_corrected)
 
-        # Phase 14 — Manual artifact marking (MNE-LAB-style).
         self._toggle_manual_mark = QCheckBox("Manual mark mode")
         self._toggle_manual_mark.setChecked(False)
         self._toggle_manual_mark.setToolTip(
@@ -142,7 +135,7 @@ class PreprocessingPanel(QWidget):
         )
         self._toggle_manual_mark.toggled.connect(self._on_toggle_manual_mark)
         self._toggle_manual_mark.setEnabled(False)
-        layout.addWidget(self._toggle_manual_mark)
+        detect_layout.addWidget(self._toggle_manual_mark)
 
         self._manual_help = QLabel(
             "<small style='color:#666'>"
@@ -154,7 +147,9 @@ class PreprocessingPanel(QWidget):
         )
         self._manual_help.setWordWrap(True)
         self._manual_help.setVisible(False)
-        layout.addWidget(self._manual_help)
+        detect_layout.addWidget(self._manual_help)
+
+        layout.addWidget(detect_box)
 
         # Undo/redo stacks. Each entry is a (action_tag, idx) tuple —
         # replayed in reverse on undo, re-applied on redo. Capped at
@@ -162,14 +157,10 @@ class PreprocessingPanel(QWidget):
         self._undo_stack: list[tuple[str, int]] = []
         self._redo_stack: list[tuple[str, int]] = []
 
-        # ----- Phase 15 - Exclusion zones -----------------------------------
-        sep_excl = QFrame()
-        sep_excl.setFrameShape(QFrame.HLine)
-        sep_excl.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(sep_excl)
-
-        excl_header = QLabel("<b>Exclusion zones</b>")
-        layout.addWidget(excl_header)
+        # --- Group 2: Exclusion zones (Phase 15) ----------------------------
+        excl_box = QGroupBox("Exclusion zones")
+        excl_layout = QVBoxLayout(excl_box)
+        excl_layout.setSpacing(4)
 
         self._toggle_exclusion_mode = QCheckBox("Exclusion mode (drag-select)")
         self._toggle_exclusion_mode.setToolTip(
@@ -177,7 +168,7 @@ class PreprocessingPanel(QWidget):
             "Beats inside a zone are filtered out of every HRV analysis."
         )
         self._toggle_exclusion_mode.toggled.connect(self._on_toggle_exclusion_mode)
-        layout.addWidget(self._toggle_exclusion_mode)
+        excl_layout.addWidget(self._toggle_exclusion_mode)
 
         self._zones_table = QTableWidget(0, 4, self)
         self._zones_table.setHorizontalHeaderLabels(["Start", "End", "Reason", ""])
@@ -186,28 +177,18 @@ class PreprocessingPanel(QWidget):
         self._zones_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeToContents
         )
-        self._zones_table.setMaximumHeight(160)
-        layout.addWidget(self._zones_table)
+        self._zones_table.setMaximumHeight(140)
+        excl_layout.addWidget(self._zones_table)
+        layout.addWidget(excl_box)
 
-        # Listen for any zone mutation so we can refresh the table + auto-save.
-        # The plot is created inside BrowseTab BEFORE this panel - but the
-        # BrowseTab hasn't published itself on ``main_window`` yet, so we
-        # reach the plot through the panel's ``parent`` (the BrowseTab
-        # instance). Guarded with getattr to keep the panel testable in
-        # isolation.
         plot = getattr(parent, "_plot", None)
         if plot is not None:
             plot.exclusion_zones_changed.connect(self._on_zones_changed)
 
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.HLine)
-        sep2.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(sep2)
-
-        # Phase 16: section edit-mode toggle. When ON, section regions on
-        # the plot expose draggable edges + a right-click context menu
-        # (rename / split / delete). Off by default so the user can pan
-        # over section bands without accidentally dragging them.
+        # --- Group 3: Section editing (Phase 16) ----------------------------
+        section_box = QGroupBox("Section editing")
+        section_layout = QVBoxLayout(section_box)
+        section_layout.setSpacing(4)
         self._toggle_section_edit = QCheckBox("Section edit mode")
         self._toggle_section_edit.setChecked(False)
         self._toggle_section_edit.setToolTip(
@@ -215,12 +196,13 @@ class PreprocessingPanel(QWidget):
             "Right-click a band to rename, split, or delete it."
         )
         self._toggle_section_edit.toggled.connect(self._on_toggle_section_edit)
-        layout.addWidget(self._toggle_section_edit)
+        section_layout.addWidget(self._toggle_section_edit)
+        layout.addWidget(section_box)
 
-        sep3 = QFrame()
-        sep3.setFrameShape(QFrame.HLine)
-        sep3.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(sep3)
+        # --- Group 4: Export + Annotations (Phase 20) -----------------------
+        export_box = QGroupBox("Export & annotations")
+        export_layout = QVBoxLayout(export_box)
+        export_layout.setSpacing(4)
 
         self._export_btn = QPushButton("Save as .rrational v2…")
         self._export_btn.setToolTip(
@@ -229,13 +211,7 @@ class PreprocessingPanel(QWidget):
         )
         self._export_btn.clicked.connect(self._on_export_clicked)
         self._export_btn.setEnabled(False)
-        layout.addWidget(self._export_btn)
-
-        # Phase 20: annotation mode -------------------------------------------
-        sep3 = QFrame()
-        sep3.setFrameShape(QFrame.HLine)
-        sep3.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(sep3)
+        export_layout.addWidget(self._export_btn)
 
         self._toggle_annotation_mode = QCheckBox("Annotation mode")
         self._toggle_annotation_mode.setToolTip(
@@ -243,13 +219,16 @@ class PreprocessingPanel(QWidget):
         )
         self._toggle_annotation_mode.toggled.connect(self._on_toggle_annotation_mode)
         self._toggle_annotation_mode.setEnabled(False)
-        layout.addWidget(self._toggle_annotation_mode)
+        export_layout.addWidget(self._toggle_annotation_mode)
 
         self._annotation_count_label = QLabel(
             "<small style='color:#888;'>No annotations.</small>"
         )
         self._annotation_count_label.setWordWrap(True)
-        layout.addWidget(self._annotation_count_label)
+        export_layout.addWidget(self._annotation_count_label)
+        layout.addWidget(export_box)
+
+        layout.addStretch()
 
         # Plumb plot signals — the plot fires plot_clicked / annotation_context
         # only when our mode is on / a marker is under the cursor. The

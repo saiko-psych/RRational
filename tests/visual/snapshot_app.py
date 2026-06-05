@@ -71,7 +71,9 @@ def snapshot_all_tabs() -> list[Path]:
 
     win = MainWindow()
     win.test_mode = True
-    win.resize(1600, 900)
+    # Keep resolution under 2000px so the Read tool can display the PNGs
+    # without rejecting them as too large.
+    win.resize(1280, 800)
     win.show()
     app.processEvents()
 
@@ -93,6 +95,11 @@ def snapshot_all_tabs() -> list[Path]:
         widget_name = type(tabs.widget(i)).__name__
         path = _OUT_DIR / f"tab_{i:02d}_{widget_name}.png"
         pix = win.grab()
+        # Force max-1600-wide so the Read tool can display the result.
+        if pix.width() > 1600:
+            from qtpy.QtCore import Qt as _Qt
+
+            pix = pix.scaledToWidth(1600, mode=_Qt.SmoothTransformation)
         pix.save(str(path), "PNG")
         written.append(path)
         print(f"wrote {path}")
@@ -110,6 +117,10 @@ def snapshot_all_tabs() -> list[Path]:
         widget_name = type(tabs.widget(i)).__name__
         path = _OUT_DIR / f"mnelab_{i:02d}_{widget_name}.png"
         pix = win.grab()
+        if pix.width() > 1600:
+            from qtpy.QtCore import Qt as _Qt
+
+            pix = pix.scaledToWidth(1600, mode=_Qt.SmoothTransformation)
         pix.save(str(path), "PNG")
         written.append(path)
         print(f"wrote {path}")
