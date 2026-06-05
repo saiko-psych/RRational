@@ -34,7 +34,6 @@ from qtpy.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -295,7 +294,17 @@ class DataTab(InspectorTab):
         return box
 
     def _build_sources_block(self) -> QGroupBox:
-        box = QGroupBox("Data sources (data/raw/)")
+        """Raw-data block, mirrors Streamlit's Data tab "Detected Data Sources"
+        + "Folder Structure" expander.
+
+        QTreeWidget: each source folder is a top-level row showing
+        "subfolder -> detected app (N files)"; expanding shows the actual
+        files. Double-click a file to open it. Each top-level row has a
+        context-menu action "Load all from this source".
+        """
+        from qtpy.QtWidgets import QTreeWidget
+
+        box = QGroupBox("Raw data (data/raw/)")
         layout = QVBoxLayout(box)
         layout.setSpacing(6)
 
@@ -304,24 +313,33 @@ class DataTab(InspectorTab):
         self._sources_label.setWordWrap(True)
         layout.addWidget(self._sources_label)
 
-        self._sources_table = QTableWidget(0, 3, self)
-        self._sources_table.setHorizontalHeaderLabels(
-            ["Subfolder", "Detected as", "Raw files"]
+        self._sources_tree = QTreeWidget()
+        self._sources_tree.setHeaderLabels(["Folder / File", "Type", "Size"])
+        self._sources_tree.setRootIsDecorated(True)
+        self._sources_tree.setAlternatingRowColors(True)
+        self._sources_tree.setUniformRowHeights(True)
+        self._sources_tree.itemDoubleClicked.connect(
+            self._on_source_item_double_clicked
         )
-        self._sources_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._sources_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self._sources_table.setAlternatingRowColors(True)
-        self._sources_table.verticalHeader().setVisible(False)
-        hdr = self._sources_table.horizontalHeader()
-        hdr.setSectionResizeMode(QHeaderView.ResizeToContents)
-        hdr.setStretchLastSection(True)
-        # Keep the sources table compact — it's an overview, not the
-        # main attraction. Cap its height to ~5 rows of content.
-        self._sources_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self._sources_table.setMaximumHeight(160)
-        layout.addWidget(self._sources_table)
+        self._sources_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._sources_tree.customContextMenuRequested.connect(
+            self._on_source_context_menu
+        )
+        hdr = self._sources_tree.header()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(0, hdr.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, hdr.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(2, hdr.ResizeMode.ResizeToContents)
+        layout.addWidget(self._sources_tree, stretch=1)
 
         btn_row = QHBoxLayout()
+        self._load_selected_source_btn = QPushButton("Load selected source")
+        self._load_selected_source_btn.setToolTip(
+            "Bulk-load every raw file from the highlighted source folder"
+        )
+        self._load_selected_source_btn.clicked.connect(self._on_load_selected_source)
+        btn_row.addWidget(self._load_selected_source_btn)
+
         self._open_recording_btn = QPushButton("Open recording...")
         self._open_recording_btn.clicked.connect(self._on_open_recording_clicked)
         btn_row.addWidget(self._open_recording_btn)
@@ -333,6 +351,73 @@ class DataTab(InspectorTab):
         btn_row.addStretch()
         layout.addLayout(btn_row)
         return box
+
+    # ------------------------------------------------------------------
+    # Sources tree handlers
+    # ------------------------------------------------------------------
+    def _on_source_item_double_clicked(self, item, _column) -> None:
+        path_str = item.data(0, Qt.UserRole)
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.is_file():
+            self._main_window.open_path(path)
+        elif path.is_dir():
+            item.setExpanded(not item.isExpanded())
+
+    def _on_source_context_menu(self, pos) -> None:
+        item = self._sources_tree.itemAt(pos)
+        if item is None:
+            return
+        path_str = item.data(0, Qt.UserRole)
+        if not path_str:
+            return
+        path = Path(path_str)
+        from qtpy.QtWidgets import QMenu
+
+        menu = QMenu(self._sources_tree)
+        if path.is_dir():
+            menu.addAction(
+                "Load all from this source",
+                lambda: self._load_folder_recursively(path),
+            )
+        else:
+            menu.addAction("Open this file", lambda: self._main_window.open_path(path))
+        menu.exec(self._sources_tree.viewport().mapToGlobal(pos))
+
+    def _on_load_selected_source(self) -> None:
+        item = self._sources_tree.currentItem()
+        if item is None:
+            return
+        path_str = item.data(0, Qt.UserRole)
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.is_dir():
+            self._load_folder_recursively(path)
+        elif path.is_file():
+            self._main_window.open_path(path)
+
+    def _load_folder_recursively(self, folder: Path) -> None:
+        """Open every raw file under ``folder`` (one level deep).
+
+        Mirrors Streamlit's "Load Selected Sources" bulk action.
+        """
+        if not folder.is_dir():
+            return
+        files = [p for p in sorted(folder.iterdir()) if p.is_file()]
+        loaded = 0
+        for fp in files:
+            try:
+                self._main_window.open_path(fp)
+                loaded += 1
+            except Exception:
+                # Skip unreadable files — open_path already shows an error
+                # for the first failure; keep going for the rest.
+                continue
+        self._main_window.statusBar().showMessage(
+            f"Loaded {loaded} / {len(files)} files from {folder.name}", 5000
+        )
 
     def _build_participants_block(self) -> QGroupBox:
         box = QGroupBox("Participants")
@@ -452,32 +537,82 @@ class DataTab(InspectorTab):
             self._close_project_btn.setEnabled(True)
 
     def _refresh_sources_block(self) -> None:
+        """Re-scan data/raw/ and rebuild the QTreeWidget.
+
+        Top level = source folder ("hrv_logger -> HRV Logger  22 files").
+        Children  = individual files with detected type + size.
+        """
+        from qtpy.QtWidgets import QTreeWidgetItem
+
         raw_dir = self._project_raw_dir()
-        self._sources_table.setRowCount(0)
+        self._sources_tree.clear()
         if raw_dir is None:
             self._sources_label.setText(
-                "Open a project to scan its <code>data/raw/</code> tree."
+                "<i>Open a project to scan its <code>data/raw/</code> tree.</i>"
             )
+            self._load_selected_source_btn.setEnabled(False)
             return
         if not raw_dir.exists():
             self._sources_label.setText(
-                f"<i>data/raw/ does not exist at {raw_dir}.</i>"
+                f"<i>data/raw/ does not exist at <code>{raw_dir}</code>.</i>"
             )
+            self._load_selected_source_btn.setEnabled(False)
             return
 
         rows = _scan_data_sources(raw_dir)
-        self._sources_label.setText(f"Scanning <code>{raw_dir}</code>")
         if not rows:
-            # Still show the path label, just an empty table.
+            self._sources_label.setText(
+                f"<i>No raw data found under <code>{raw_dir}</code>. "
+                "Drop your Polar/Empatica/Kubios/HRV-Logger files into "
+                "subfolders here and reopen the project.</i>"
+            )
+            self._load_selected_source_btn.setEnabled(False)
             return
+
+        total = sum(r["count"] for r in rows)
+        self._sources_label.setText(
+            f"<b>{total}</b> raw file(s) across <b>{len(rows)}</b> source(s) "
+            f"in <code>{raw_dir}</code>. Double-click a file to open, "
+            "right-click a folder for bulk-load."
+        )
         for row in rows:
-            r = self._sources_table.rowCount()
-            self._sources_table.insertRow(r)
-            self._sources_table.setItem(r, 0, QTableWidgetItem(str(row["folder"])))
-            self._sources_table.setItem(r, 1, QTableWidgetItem(str(row["label"])))
-            count_item = QTableWidgetItem(str(row["count"]))
-            count_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self._sources_table.setItem(r, 2, count_item)
+            folder_path = row.get("path", raw_dir / row["folder"])
+            top = QTreeWidgetItem(
+                [
+                    f"{row['folder']}/",
+                    str(row["label"]),
+                    f"{row['count']} file(s)",
+                ]
+            )
+            top.setData(0, Qt.UserRole, str(folder_path))
+            top.setToolTip(0, str(folder_path))
+            # Children: actual files (best-effort, skip on permission errors).
+            try:
+                files = sorted(p for p in folder_path.iterdir() if p.is_file())
+            except OSError:
+                files = []
+            for fp in files:
+                try:
+                    size = fp.stat().st_size
+                except OSError:
+                    size = 0
+                size_str = (
+                    f"{size:,} B"
+                    if size < 1024
+                    else f"{size / 1024:,.1f} KB"
+                    if size < 1024 * 1024
+                    else f"{size / (1024 * 1024):,.1f} MB"
+                )
+                child = QTreeWidgetItem(
+                    [fp.name, fp.suffix.lstrip(".") or "-", size_str]
+                )
+                child.setData(0, Qt.UserRole, str(fp))
+                child.setToolTip(0, str(fp))
+                top.addChild(child)
+            self._sources_tree.addTopLevelItem(top)
+        # Expand all sources by default so the user sees the files.
+        self._sources_tree.expandAll()
+        self._load_selected_source_btn.setEnabled(True)
 
     def _refresh_participants_table(self) -> None:
         # Disable sorting during populate — otherwise inserting cells

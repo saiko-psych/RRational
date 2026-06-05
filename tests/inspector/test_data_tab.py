@@ -80,7 +80,7 @@ def test_data_tab_instantiates(data_tab):
     assert data_tab.TAB_LABEL == "Data"
     # Core widgets exist
     assert data_tab._project_label is not None
-    assert data_tab._sources_table is not None
+    assert data_tab._sources_tree is not None
     assert data_tab._participants_table is not None
     assert data_tab._bulk_import_btn is not None
     assert data_tab._bulk_assign_btn is not None
@@ -129,7 +129,7 @@ def test_project_block_shows_name_and_path_when_open(main_window, tmp_path):
 # Data sources block
 # ---------------------------------------------------------------------
 def test_sources_block_empty_without_project(data_tab):
-    assert data_tab._sources_table.rowCount() == 0
+    assert data_tab._sources_tree.topLevelItemCount() == 0
     assert "Open a project" in data_tab._sources_label.text()
 
 
@@ -149,18 +149,31 @@ def test_sources_block_lists_raw_subfolders(main_window, tmp_path):
     main_window.set_active_project(pm)
     tab = DataTab(main_window)
 
-    # Two source rows present, in sorted order
-    assert tab._sources_table.rowCount() == 2
+    # Two top-level source rows present, in sorted order.
+    assert tab._sources_tree.topLevelItemCount() == 2
     folders = {
-        tab._sources_table.item(r, 0).text()
-        for r in range(tab._sources_table.rowCount())
+        tab._sources_tree.topLevelItem(r).text(0).rstrip("/")
+        for r in range(tab._sources_tree.topLevelItemCount())
     }
     assert folders == {"hrv_logger", "vns"}
+    # Each source folder lists its files as children.
+    hrv_item = next(
+        tab._sources_tree.topLevelItem(r)
+        for r in range(tab._sources_tree.topLevelItemCount())
+        if tab._sources_tree.topLevelItem(r).text(0).startswith("hrv_logger")
+    )
+    assert hrv_item.childCount() == 2
+    child_names = {hrv_item.child(i).text(0) for i in range(hrv_item.childCount())}
+    assert child_names == {"RR_0001TEST.csv", "RR_0002TEST.csv"}
 
-    # File counts populated
+    # File counts populated via the child-count of each top-level row
+    # (the third column also shows "N file(s)" but the source of truth
+    # is the actual children we attached).
     counts_by_folder = {
-        tab._sources_table.item(r, 0).text(): int(tab._sources_table.item(r, 2).text())
-        for r in range(tab._sources_table.rowCount())
+        tab._sources_tree.topLevelItem(r)
+        .text(0)
+        .rstrip("/"): tab._sources_tree.topLevelItem(r).childCount()
+        for r in range(tab._sources_tree.topLevelItemCount())
     }
     assert counts_by_folder["hrv_logger"] == 2
     assert counts_by_folder["vns"] == 1
