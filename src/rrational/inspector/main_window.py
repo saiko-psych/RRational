@@ -29,7 +29,6 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QStatusBar,
     QTabWidget,
-    QToolBar,
 )
 
 from rrational.gui.project import (
@@ -157,7 +156,20 @@ class MainWindow(QMainWindow):
         from rrational.inspector.color_scheme_persistence import load_color_scheme
 
         self._color_preset, self._color_scheme = load_color_scheme()
-        self._plot.set_color_scheme(self._color_scheme)
+        # Apply to EVERY plot widget the inspector hosts — not just the
+        # BrowseTab proxy. Otherwise ParticipantTab.plot stays at default
+        # white background in Streamlit mode where it's the active view.
+        for plot_attr_path in (
+            ("_browse_tab", "_plot"),
+            ("_participant_tab", "_plot"),
+        ):
+            obj = self
+            for attr in plot_attr_path:
+                obj = getattr(obj, attr, None)
+                if obj is None:
+                    break
+            if obj is not None and hasattr(obj, "set_color_scheme"):
+                obj.set_color_scheme(self._color_scheme)
 
         self._build_menu()
         self.setStatusBar(QStatusBar())
@@ -799,10 +811,20 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _apply_color_scheme(self, preset_name: str, scheme) -> None:
-        """Persist preferences callback: cache + re-skin the plot."""
+        """Persist preferences callback: cache + re-skin every plot."""
         self._color_preset = preset_name
         self._color_scheme = scheme
-        self._plot.set_color_scheme(scheme)
+        for plot_attr_path in (
+            ("_browse_tab", "_plot"),
+            ("_participant_tab", "_plot"),
+        ):
+            obj = self
+            for attr in plot_attr_path:
+                obj = getattr(obj, attr, None)
+                if obj is None:
+                    break
+            if obj is not None and hasattr(obj, "set_color_scheme"):
+                obj.set_color_scheme(scheme)
 
     # ------------------------------------------------------------------
     # Phase 14: Undo / Redo wiring (delegated to the preprocessing panel)
@@ -884,69 +906,71 @@ class MainWindow(QMainWindow):
         )
 
     def _build_toolbar(self) -> None:
-        """Toolbar with discoverable navigation buttons.
+        """Plain QWidget navigation bar — embedded by tabs that need it.
 
-        Phase 25b: the toolbar is no longer attached to the QMainWindow's
-        top toolbar area (where it floated above ALL tabs). Instead it's
-        kept as a free widget; tabs that need it (ParticipantTab,
-        BrowseTab) embed it at the top of their own layout via
-        :meth:`take_nav_toolbar`.
+        Phase 25c: switched from QToolBar (which carries QMainWindow
+        toolbar-area baggage and produced layout-overlap bugs in
+        certain window sizes) to a plain QWidget + QHBoxLayout +
+        QPushButtons. Cleaner Z-order, no special QMainWindow
+        interaction.
         """
-        tb = QToolBar("Navigation", self)
-        tb.setMovable(False)
-        tb.setOrientation(Qt.Horizontal)
-        # NOTE: deliberately NOT calling self.addToolBar(tb) — that would
-        # park it above the QTabWidget, which is what the user objected to.
-        self._nav_toolbar = tb
+        from qtpy.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
-        home_act = QAction("Start (Home)", self)
-        home_act.setToolTip("Jump to beginning of signal (Home)")
-        home_act.triggered.connect(self.jump_to_start)
-        tb.addAction(home_act)
+        bar = QWidget(self)
+        from qtpy.QtWidgets import QSizePolicy
 
-        end_act = QAction("End (End)", self)
-        end_act.setToolTip("Jump to end of signal (End)")
-        end_act.triggered.connect(self.jump_to_end)
-        tb.addAction(end_act)
+        bar.setObjectName("navigationBar")
+        bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        bar.setMaximumHeight(36)
 
-        tb.addSeparator()
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(4)
 
-        pan_l = QAction("Pan left", self)
-        pan_l.setToolTip("Pan left (Left arrow)")
-        pan_l.triggered.connect(
-            lambda: self._with_feedback(self._plot.pan_left, "Pan left")
+        def _add_button(label: str, tooltip: str, callback) -> None:
+            btn = QPushButton(label, bar)
+            btn.setToolTip(tooltip)
+            btn.setFlat(True)
+            btn.clicked.connect(callback)
+            layout.addWidget(btn)
+
+        def _add_sep() -> None:
+            from qtpy.QtWidgets import QFrame
+
+            sep = QFrame(bar)
+            sep.setFrameShape(QFrame.VLine)
+            sep.setFrameShadow(QFrame.Sunken)
+            layout.addWidget(sep)
+
+        _add_button("Start (Home)", "Jump to beginning (Home)", self.jump_to_start)
+        _add_button("End (End)", "Jump to end (End)", self.jump_to_end)
+        _add_sep()
+        _add_button(
+            "Pan left",
+            "Pan left (Left arrow)",
+            lambda: self._with_feedback(self._plot.pan_left, "Pan left"),
         )
-        tb.addAction(pan_l)
-
-        pan_r = QAction("Pan right", self)
-        pan_r.setToolTip("Pan right (Right arrow)")
-        pan_r.triggered.connect(
-            lambda: self._with_feedback(self._plot.pan_right, "Pan right")
+        _add_button(
+            "Pan right",
+            "Pan right (Right arrow)",
+            lambda: self._with_feedback(self._plot.pan_right, "Pan right"),
         )
-        tb.addAction(pan_r)
-
-        tb.addSeparator()
-
-        zoom_in = QAction("Zoom in", self)
-        zoom_in.setToolTip("Zoom in (Down arrow)")
-        zoom_in.triggered.connect(
-            lambda: self._with_feedback(self._plot.zoom_in, "Zoom in")
+        _add_sep()
+        _add_button(
+            "Zoom in",
+            "Zoom in (Down arrow)",
+            lambda: self._with_feedback(self._plot.zoom_in, "Zoom in"),
         )
-        tb.addAction(zoom_in)
-
-        zoom_out = QAction("Zoom out", self)
-        zoom_out.setToolTip("Zoom out (Up arrow)")
-        zoom_out.triggered.connect(
-            lambda: self._with_feedback(self._plot.zoom_out, "Zoom out")
+        _add_button(
+            "Zoom out",
+            "Zoom out (Up arrow)",
+            lambda: self._with_feedback(self._plot.zoom_out, "Zoom out"),
         )
-        tb.addAction(zoom_out)
+        _add_sep()
+        _add_button("Fit all", "Zoom out to show entire recording", self.fit_all)
+        layout.addStretch()
 
-        tb.addSeparator()
-
-        fit_all = QAction("Fit all", self)
-        fit_all.setToolTip("Zoom out to show the entire recording")
-        fit_all.triggered.connect(self.fit_all)
-        tb.addAction(fit_all)
+        self._nav_toolbar = bar
 
     # ------------------------------------------------------------------
     # Recent files submenu (rebuilt on every File-menu open)

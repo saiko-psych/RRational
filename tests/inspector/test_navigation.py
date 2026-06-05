@@ -173,14 +173,16 @@ def test_toolbar_start_button_triggers_jump_to_start(
     main_window, qtbot, synthetic_inspector_data
 ):
     """Clicking the toolbar Start button must do the same as Home key."""
-    from qtpy.QtWidgets import QToolBar
+    from qtpy.QtWidgets import QPushButton
 
     t0, t1 = synthetic_inspector_data.t_start, synthetic_inspector_data.t_end
     main_window._plot.getViewBox().setXRange(t1 - 30, t1, padding=0)
 
-    toolbar = main_window.findChild(QToolBar)
-    start_action = next(a for a in toolbar.actions() if "Start" in a.text())
-    start_action.trigger()
+    # Phase 25c: toolbar is now a plain QWidget with QPushButtons (not
+    # QToolBar/QAction). Find the button by visible text.
+    bar = main_window._nav_toolbar
+    btn = next(b for b in bar.findChildren(QPushButton) if "Start" in b.text())
+    btn.click()
 
     xmin, _ = _x_range(main_window)
     assert xmin == pytest.approx(t0, abs=0.5)
@@ -188,15 +190,15 @@ def test_toolbar_start_button_triggers_jump_to_start(
 
 def test_toolbar_fit_all_button(main_window, synthetic_inspector_data):
     """Fit all must restore the full-recording view after any zoom."""
-    from qtpy.QtWidgets import QToolBar
+    from qtpy.QtWidgets import QPushButton
 
     # Zoom into a tiny window first
     t0 = synthetic_inspector_data.t_start
     main_window._plot.getViewBox().setXRange(t0, t0 + 10, padding=0)
 
-    toolbar = main_window.findChild(QToolBar)
-    fit_action = next(a for a in toolbar.actions() if "Fit all" in a.text())
-    fit_action.trigger()
+    bar = main_window._nav_toolbar
+    btn = next(b for b in bar.findChildren(QPushButton) if "Fit all" in b.text())
+    btn.click()
 
     xmin, xmax = _x_range(main_window)
     data = synthetic_inspector_data
