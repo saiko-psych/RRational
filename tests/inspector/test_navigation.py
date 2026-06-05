@@ -19,6 +19,14 @@ pytest.importorskip("pytestqt")
 pytest.importorskip("pyqtgraph")
 
 
+@pytest.fixture(autouse=True)
+def isolated_settings(qapp, tmp_path):
+    from rrational.inspector import settings
+
+    settings.enable_test_mode(tmp_path)
+    yield
+
+
 @pytest.fixture
 def main_window(qtbot, synthetic_inspector_data):
     """Construct a MainWindow with synthetic InspectorData pre-loaded."""
@@ -26,6 +34,9 @@ def main_window(qtbot, synthetic_inspector_data):
 
     win = MainWindow()
     win.test_mode = True  # silence modal dialogs
+    # Phase 22.3: navigation keypresses act on the BrowseTab plot, which
+    # is only visible (and focus-receptive) in MNE-LAB mode.
+    win.set_ui_layout("mnelab")
     qtbot.addWidget(win)
 
     win.load_data(synthetic_inspector_data)

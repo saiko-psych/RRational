@@ -47,6 +47,9 @@ def main_window(qtbot):
 
     win = MainWindow()
     win.test_mode = True
+    # Phase 22.3: BrowseTab + its docks are only visible in MNE-LAB
+    # mode; this whole test module is about dock behaviour, so opt in.
+    win.set_ui_layout("mnelab")
     qtbot.addWidget(win)
     win.show()
     qtbot.waitExposed(win)

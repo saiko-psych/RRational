@@ -53,6 +53,10 @@ def main_window(qtbot):
 
     win = MainWindow()
     win.test_mode = True
+    # Phase 22.3: this file's assertions were written before the layout
+    # switcher existed and assume BrowseTab is visible as the first tab.
+    # Force MNE-LAB mode so the existing expectations still hold.
+    win.set_ui_layout("mnelab")
     qtbot.addWidget(win)
     win.show()
     qtbot.waitExposed(win)

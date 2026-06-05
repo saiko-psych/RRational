@@ -36,6 +36,10 @@ def main_window(qtbot):
 
     win = MainWindow()
     win.test_mode = True
+    # Phase 22.3: BrowseTab (and therefore its sidebar) is hidden in
+    # Streamlit mode (the new default). The sidebar-toggle assertions
+    # here predate the switcher, so force MNE-LAB mode to keep them valid.
+    win.set_ui_layout("mnelab")
     qtbot.addWidget(win)
     win.show()
     qtbot.waitExposed(win)
