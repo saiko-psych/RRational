@@ -67,6 +67,14 @@ from rrational.analysis.hrv_metrics import (
     MIN_BEATS_FREQUENCY_DOMAIN,
     MIN_BEATS_TIME_DOMAIN,
 )
+
+# Optional reference catalogue (Phase 24C-retry). Imported defensively so
+# the Analysis tab keeps loading if the constant is removed or renamed
+# upstream — _resolve_reference_band() then short-circuits to "no overlay".
+try:
+    from rrational.analysis.hrv_metrics import HRV_REFERENCE_VALUES
+except ImportError:  # pragma: no cover - defensive
+    HRV_REFERENCE_VALUES = {}
 from rrational.inspector.exclusion_persistence import ExclusionZone
 from rrational.inspector.tabs.base import InspectorTab
 
@@ -127,6 +135,66 @@ _SETTING_OVERLAP_STEP = "analysis_overlap_step"
 # below the recommended beat/duration minimum. Chosen to read on both
 # light and dark themes.
 _WARN_BRUSH = QColor(255, 247, 200)
+
+# Phase 24C-retry: HRV reference-band tints. Soft pastels so they read
+# on top of the alternating-row stripes without overwhelming the value
+# text. Mapping rule (see _resolve_reference_band):
+#   value >= high                  -> Excellent
+#   normal  <= value <  high       -> Normal
+#   low     <= value <  normal     -> Borderline
+#   value < low                    -> Poor
+_REF_EXCELLENT_BRUSH = QColor(200, 255, 200)
+_REF_NORMAL_BRUSH = QColor(220, 255, 220)
+_REF_BORDERLINE_BRUSH = QColor(255, 240, 200)
+_REF_POOR_BRUSH = QColor(255, 210, 210)
+
+
+def _resolve_reference_band(metric: str, value: float) -> tuple[QColor, str] | None:
+    """Look up ``metric`` in HRV_REFERENCE_VALUES and return (brush, tooltip).
+
+    Returns ``None`` when the metric isn't in the catalogue, when the
+    catalogue entry is missing the expected ``low`` / ``normal`` / ``high``
+    keys, or when the value isn't a finite number. Centralised here so
+    every result-table populator can stay one line: just ``apply if
+    not None``.
+    """
+    if not HRV_REFERENCE_VALUES:
+        return None
+    entry = HRV_REFERENCE_VALUES.get(metric)
+    if not entry or not all(k in entry for k in ("low", "normal", "high")):
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(v) or math.isinf(v):
+        return None
+    low = float(entry["low"])
+    normal = float(entry["normal"])
+    high = float(entry["high"])
+    unit = str(entry.get("unit", "") or "")
+    unit_suffix = f" {unit}" if unit else ""
+    if v >= high:
+        brush = _REF_EXCELLENT_BRUSH
+        band = "Excellent"
+    elif v >= normal:
+        brush = _REF_NORMAL_BRUSH
+        band = "Normal"
+    elif v >= low:
+        brush = _REF_BORDERLINE_BRUSH
+        band = "Borderline"
+    else:
+        brush = _REF_POOR_BRUSH
+        band = "Poor"
+    tooltip = (
+        f"{metric} reference (Shaffer & Ginsberg 2017, Nunan et al. 2010):\n"
+        f"  Poor:       < {low}{unit_suffix}\n"
+        f"  Borderline: {low}-{normal}{unit_suffix}\n"
+        f"  Normal:     {normal}-{high}{unit_suffix}\n"
+        f"  Excellent:  >= {high}{unit_suffix}\n"
+        f"Current value: {v:.2f}{unit_suffix} ({band})"
+    )
+    return brush, tooltip
 
 
 def _format_metric(value) -> str:
@@ -717,9 +785,16 @@ class _SingleParticipantPane(QWidget):
             row = self._result_table.rowCount()
             self._result_table.insertRow(row)
             self._result_table.setItem(row, 0, QTableWidgetItem(m))
-            self._result_table.setItem(
-                row, 1, QTableWidgetItem(_format_metric(metrics.get(m)))
-            )
+            value_item = QTableWidgetItem(_format_metric(metrics.get(m)))
+            self._result_table.setItem(row, 1, value_item)
+            # Phase 24C-retry: overlay reference-band colour + tooltip
+            # before the warning-tint pass so the too-few-beats yellow
+            # always wins on undersampled segments.
+            band = _resolve_reference_band(m, metrics.get(m))
+            if band is not None:
+                brush, tooltip = band
+                value_item.setBackground(brush)
+                value_item.setToolTip(tooltip)
             # Tint frequency-metric rows yellow when the segment is too
             # short for reliable PSD analysis.
             if m in freq_set and n_beats < MIN_BEATS_FREQUENCY_DOMAIN:
@@ -844,9 +919,17 @@ class _RepeatingSectionPane(QWidget):
             self._result_table.insertRow(row)
             self._result_table.setItem(row, 0, QTableWidgetItem(ds_name))
             for col, m in enumerate(metric_cols, start=1):
-                self._result_table.setItem(
-                    row, col, QTableWidgetItem(_format_metric(metrics.get(m)))
-                )
+                value_item = QTableWidgetItem(_format_metric(metrics.get(m)))
+                self._result_table.setItem(row, col, value_item)
+                # Phase 24C-retry: per-cell reference-band overlay. The
+                # warning-tint below intentionally clobbers this when the
+                # segment is too short — incomplete data trumps "where
+                # does it fall on the band?".
+                band = _resolve_reference_band(m, metrics.get(m))
+                if band is not None:
+                    brush, tooltip = band
+                    value_item.setBackground(brush)
+                    value_item.setToolTip(tooltip)
             warning = _segment_warning(n_beats, None, selected_metrics)
             if warning:
                 _tint_row(self._result_table, row, warning)

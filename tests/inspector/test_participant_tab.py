@@ -495,3 +495,66 @@ def test_clear_validation_removes_from_yaml(main_window, participant_tab):
     payload = yaml.safe_load(target.read_text(encoding="utf-8"))
     assert "sec0" not in payload["sections"]
     assert "sec1" in payload["sections"]
+
+
+# ---------------------------------------------------------------------
+# Phase 24C-retry: quality-issue detectors + listings
+# ---------------------------------------------------------------------
+def test_detect_time_gaps_finds_synthetic_gap():
+    """A 10-second gap inserted into an otherwise-uniform timestamp
+    series surfaces as exactly one entry, with the correct duration."""
+    from rrational.inspector.tabs.participant_tab import _detect_time_gaps
+
+    t = np.arange(0, 200, 1.0, dtype=np.float64)
+    # Push everything from index 100 onward 10 s into the future so the
+    # diff at index 99 jumps from 1.0 s to 11.0 s.
+    t[100:] += 10.0
+    gaps = _detect_time_gaps(t, threshold_s=5.0)
+    assert len(gaps) == 1
+    gap_s, gap_t_start, gap_t_end = gaps[0]
+    assert gap_s == pytest.approx(11.0)
+    assert gap_t_start == pytest.approx(99.0)
+    assert gap_t_end == pytest.approx(110.0)
+
+
+def test_detect_high_variability_segments_flags_spiky_data():
+    """A synthetic recording that's calm for the first half and very
+    spiky in the second half should produce at least one CV segment."""
+    from rrational.inspector.tabs.participant_tab import (
+        _detect_high_variability_segments,
+    )
+
+    rng = np.random.default_rng(seed=7)
+    n = 200
+    t = np.arange(n, dtype=np.float64)
+    # Calm half: tight RR around 800 ms. Spiky half: huge swings that
+    # push the rolling CV well past 0.30.
+    calm = 800.0 + 5.0 * rng.standard_normal(n // 2)
+    spiky = 800.0 + 600.0 * rng.standard_normal(n // 2)
+    v = np.concatenate([calm, spiky])
+    segments = _detect_high_variability_segments(t, v, window=30, cv_threshold=0.30)
+    assert len(segments) >= 1
+    # Every reported segment's CV must clear the threshold.
+    for _t_start, _t_end, cv in segments:
+        assert cv > 0.30
+
+
+def test_quality_lists_populate_on_dataset_load(participant_tab, main_window):
+    """Loading a dataset with a manufactured gap fills the gaps list."""
+    from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.tabs.participant_tab import _ROLE_QUALITY_RANGE
+
+    data = _make_data(n_sections=2)
+    # Inject a 7-second gap so the gap detector has something to find.
+    data.t[150:] += 7.0
+    main_window.add_dataset(Dataset(name="quality_demo", data=data))
+    main_window.set_active_dataset(0)
+    # Force a render path so the lists get rebuilt.
+    participant_tab.on_active_dataset_changed(data)
+
+    assert participant_tab._quality_gaps_list.count() >= 1
+    first = participant_tab._quality_gaps_list.item(0)
+    assert first.text().startswith("Gap")
+    rng = first.data(_ROLE_QUALITY_RANGE)
+    assert rng is not None
+    assert len(rng) == 2
