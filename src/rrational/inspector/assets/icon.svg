@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!--
+    RRational Inspector app icon.
+    Concept: a clinical ECG waveform on a dark rounded-square chip.
+    A flat baseline runs across the chip; a single PQRST pulse breaks
+    the baseline near the centre. The red pulse stays recognisable
+    even at 16x16 because it's the only off-axis stroke.
+  -->
+
+  <!-- Rounded-square background: deep slate so the waveform pops. -->
+  <rect x="8" y="8" width="240" height="240" rx="44" ry="44"
+        fill="#1f2937" stroke="#ffffff" stroke-width="6"/>
+
+  <!--
+    ECG trace. Drawn as a single path so the stroke is continuous.
+    Coordinates were chosen so the QRS spike sits dead-centre and
+    occupies ~40% of the chip height — visible at taskbar size.
+
+    Trace breakdown (left to right):
+      M 36 130                           : start on baseline, left edge
+      L 96 130                           : flat baseline before pulse
+      L 108 122                          : P wave (small bump up)
+      L 116 130                          : back to baseline
+      L 124 150                          : Q wave (small dip down)
+      L 132 60                           : R wave (sharp tall spike up)
+      L 140 196                          : S wave (sharp drop below baseline)
+      L 148 130                          : return to baseline
+      L 160 118                          : T wave (broader bump up)
+      L 172 130                          : back to baseline
+      L 220 130                          : flat baseline after pulse
+  -->
+  <path d="M 36 130 L 96 130 L 108 122 L 116 130 L 124 150 L 132 60 L 140 196 L 148 130 L 160 118 L 172 130 L 220 130"
+        fill="none"
+        stroke="#dc2626"
+        stroke-width="10"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>

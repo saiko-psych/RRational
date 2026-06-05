@@ -36,6 +36,18 @@ inspector = [
 requires = ["uv_build>=0.9.9,<0.10.0"]
 build-backend = "uv_build"
 
+# Ship the inspector's static assets (SVG / PNG / ICO app icon) in the
+# wheel so a `pip install rrational[inspector]` user gets the icon at
+# runtime. uv_build includes everything under src/<package>/ by default
+# but we whitelist explicitly here as documentation + insurance against
+# the default ever tightening. The setuptools-style key is kept too so
+# if the project ever swaps to a setuptools backend nothing regresses.
+[tool.uv.build-backend]
+source-include = ["src/rrational/inspector/assets/*"]
+
+[tool.setuptools.package-data]
+"rrational.inspector" = ["assets/*"]
+
 [tool.black]
 line-length = 88
 target-version = ["py311"]
