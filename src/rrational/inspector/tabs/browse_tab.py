@@ -73,13 +73,16 @@ class BrowseTab(InspectorTab):
         self._overview_bar = OverviewBar()
         self._overview_bar.link_to(self._plot)
 
-        self._empty_label = QLabel(
-            "No .rrational file loaded.\n\n"
-            "Use File → Open .rrational… (Ctrl+O) to load a v2.0 export,\n"
-            "or File → Open folder… to load every .rrational in a directory."
-        )
-        self._empty_label.setAlignment(Qt.AlignCenter)
-        self._empty_label.setStyleSheet("color: #666; font-size: 14px;")
+        # UX2: replace the bare empty-state QLabel with an actionable
+        # WelcomeWidget — 4 large action buttons + recent-files list.
+        # The label is kept as a hidden fallback for any code path that
+        # might still toggle it (paranoia for downstream tests).
+        from rrational.inspector.welcome_widget import WelcomeWidget
+
+        self._welcome_widget = WelcomeWidget(self._main_window, parent=self)
+
+        self._empty_label = QLabel("")
+        self._empty_label.setVisible(False)
 
         # Right-side preprocessing panel (artifact detection + summary).
         # Defer the import so importing browse_tab.py at module load
@@ -89,10 +92,11 @@ class BrowseTab(InspectorTab):
 
         self._preprocessing_panel = PreprocessingPanel(self._main_window, self)
 
-        # ----- Central widget: plot + overview + empty-state label --------
+        # ----- Central widget: welcome / plot / overview ----------------
         middle_pane = QWidget()
         middle_layout = QVBoxLayout(middle_pane)
         middle_layout.setContentsMargins(0, 0, 0, 0)
+        middle_layout.addWidget(self._welcome_widget)
         middle_layout.addWidget(self._empty_label)
         middle_layout.addWidget(self._overview_bar)
         middle_layout.addWidget(self._plot)
@@ -196,6 +200,8 @@ class BrowseTab(InspectorTab):
     # Rendering
     # ------------------------------------------------------------------
     def _render_dataset(self, ds: "Dataset") -> None:
+        # UX2: hide welcome widget when actual data is shown.
+        self._welcome_widget.setVisible(False)
         self._empty_label.setVisible(False)
         self._plot.setVisible(True)
         self._plot.set_data(ds.data)
@@ -228,7 +234,9 @@ class BrowseTab(InspectorTab):
         self._plot.setVisible(False)
         self._overview_bar.clear_data()
         self._overview_bar.setVisible(False)
-        self._empty_label.setVisible(True)
+        # UX2: welcome widget replaces the bare empty label.
+        self._welcome_widget.setVisible(True)
+        self._welcome_widget.refresh()  # refresh recent-files list
 
     # ------------------------------------------------------------------
     # Sidebar tree management
