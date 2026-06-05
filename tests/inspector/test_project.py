@@ -155,9 +155,10 @@ def test_open_project_path_rejects_invalid_folder(main_window, tmp_path):
     assert main_window._project is None
 
 
-def test_open_project_path_loads_existing_rrational_files(main_window, tmp_path, qtbot):
-    """When the project's data/processed/ already holds .rrational files,
-    set_active_project auto-loads them."""
+def test_open_project_does_NOT_auto_load_rrational_files(main_window, tmp_path, qtbot):
+    """Phase 22 behaviour change: opening a project should NOT silently
+    open every .rrational file from data/processed/ — overwhelms the
+    user. They explicitly pick files from the DataTab overview instead."""
     from rrational.gui.rrational_export import (
         EventChoiceV2,
         FinalArtifactsV2,
@@ -211,10 +212,19 @@ def test_open_project_path_loads_existing_rrational_files(main_window, tmp_path,
         )
 
     main_window.set_active_project(pm)
-    # Both files should now be loaded as datasets
-    assert len(main_window._datasets) == 2
-    names = {ds.name for ds in main_window._datasets}
-    assert names == {"alpha.rrational", "beta.rrational"}
+    # NOT auto-loaded — workspace stays empty until user explicitly opens
+    # files via the DataTab overview (or File → Open recording).
+    assert len(main_window._datasets) == 0
+    assert main_window._project is pm
+    data_tab = getattr(main_window, "_data_tab", None)
+    if data_tab is not None:
+        data_tab.refresh_from_workspace()
+        items = [
+            data_tab._processed_list.item(i).text()
+            for i in range(data_tab._processed_list.count())
+        ]
+        assert "alpha.rrational" in items
+        assert "beta.rrational" in items
 
 
 # ---------------------------------------------------------------------

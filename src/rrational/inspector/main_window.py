@@ -1027,12 +1027,12 @@ class MainWindow(QMainWindow):
             if not self.test_mode:
                 add_recent_project(pm.project_path, pm.metadata.name)
                 settings.write_setting("last_dir", str(pm.project_path))
-            # Auto-load existing .rrational files from the project's
-            # processed folder, so opening a project gives the user
-            # immediate access to their previously-saved exports.
-            processed = pm.get_processed_dir()
-            for fp in sorted(processed.glob("*.rrational")):
-                self.open_path(fp)
+            # NOTE: do NOT auto-load every .rrational from data/processed/
+            # on project open — overwhelms the user with random files.
+            # The DataTab shows a clear overview of available raw +
+            # processed files; user picks what to open. (Previous behaviour
+            # caused "loaded a project and it instantly opened a random
+            # .rrational file" complaint.)
         # Tell every persistence-aware tab to re-read.
         sequences_pane = getattr(self._setup_tab, "_sequences_pane", None)
         if sequences_pane is not None:
@@ -1051,6 +1051,19 @@ class MainWindow(QMainWindow):
         self._load_results_cache()
         self._update_window_title()
         self._refresh_project_badge()
+        # After opening a project, jump to the Data tab (Streamlit mode)
+        # or Browse tab (MNE-LAB mode) so the user sees the project
+        # overview immediately. Also refresh DataTab so its raw +
+        # processed lists reflect the just-opened project.
+        if pm is not None:
+            data_tab = getattr(self, "_data_tab", None)
+            if data_tab is not None and hasattr(data_tab, "refresh_from_workspace"):
+                data_tab.refresh_from_workspace()
+            target = data_tab or getattr(self, "_browse_tab", None)
+            if target is not None:
+                idx = self._tabs_widget.indexOf(target)
+                if idx >= 0 and self._tabs_widget.isTabVisible(idx):
+                    self._tabs_widget.setCurrentIndex(idx)
 
     def close_project(self) -> None:
         """Close the current project (datasets stay loaded)."""
