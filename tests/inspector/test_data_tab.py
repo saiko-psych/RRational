@@ -395,6 +395,170 @@ def test_retained_column_populates_after_load(main_window, data_tab):
     assert data_tab._participants_table.item(row, COL_DUPLICATES).text() == "0"
 
 
+# ---------------------------------------------------------------------
+# Phase 24B — CSV import / export, ID pattern picker, Issues summary
+# ---------------------------------------------------------------------
+def test_phase24b_export_participants_csv_writes_expected_columns(
+    main_window, data_tab, tmp_path
+):
+    """Filling the participants store then writing the CSV produces the
+    expected headers + one row per participant."""
+    pt = main_window._participants_tab
+    pt._participants["S001"] = {
+        "label": "",
+        "group": "Music",
+        "sequence": "Pre-Post",
+        "event_order": [],
+        "manual_events": [],
+    }
+    pt._participants["S002"] = {
+        "label": "",
+        "group": "Control",
+        "sequence": "Pre-Post",
+        "event_order": [],
+        "manual_events": [],
+    }
+    data_tab.on_workspace_changed()
+
+    out = tmp_path / "participants_test.csv"
+    n = data_tab.export_participants_csv(out)
+    assert n == 2
+    text = out.read_text(encoding="utf-8")
+    header = text.splitlines()[0]
+    for col in (
+        "ID",
+        "Group",
+        "Sequence",
+        "Beats",
+        "Duration (min)",
+        "Artifacts %",
+        "Duplicates",
+        "Quality",
+    ):
+        assert col in header
+    assert "S001" in text
+    assert "S002" in text
+    assert "Music" in text
+    assert "Control" in text
+
+
+def test_phase24b_id_pattern_extracts_participant_group():
+    """The pattern picker's helper applies the regex and returns the
+    captured 'participant' group."""
+    from pathlib import Path
+
+    from rrational.inspector.tabs.data_tab import extract_participant_id
+
+    # Default HRV-Logger pattern: 4 digits + 4 uppercase letters
+    assert extract_participant_id(Path("RR_0012MEBE_2024-01-01.csv")) == "0012MEBE"
+    # Custom pattern — letters + digits like "P001"
+    custom = r"(?P<participant>P\d{3})"
+    assert extract_participant_id(Path("export_P017.csv"), pattern=custom) == "P017"
+    # Pattern doesn't match -> fall back to stem
+    fallback = extract_participant_id(Path("noid.csv"), pattern=custom)
+    assert fallback == "noid"
+    # Invalid regex -> safe fallback to stem
+    assert (
+        extract_participant_id(Path("anything.csv"), pattern="(?P<participant>[")
+        == "anything"
+    )
+
+
+def test_phase24b_id_pattern_persists_to_qsettings(main_window, data_tab):
+    """Typing into the pattern edit field writes the regex to QSettings."""
+    from rrational.inspector.settings import read_setting
+
+    new_pattern = r"(?P<participant>P\d{3})"
+    data_tab._id_pattern_edit.setText(new_pattern)
+    # Reading back should match
+    assert read_setting("participant_id_pattern") == new_pattern
+
+
+def test_phase24b_import_mapping_dialog_applies_assignments(
+    main_window, tmp_path, monkeypatch
+):
+    """Running the import dialog merges group + sequence into participants.yml,
+    auto-creating missing groups + sequences along the way."""
+    from rrational.gui.project import ProjectManager
+    from rrational.inspector.tabs.import_mapping_dialog import (
+        ImportParticipantMappingDialog,
+    )
+
+    pm = ProjectManager.create_project(tmp_path / "MapProj", name="MapProj")
+    main_window.set_active_project(pm)
+
+    # Seed two participants in participants.yml first
+    pt = main_window._participants_tab
+    pt._participants = {
+        "0001AAAA": {
+            "label": "",
+            "event_order": [],
+            "manual_events": [],
+        },
+        "0002BBBB": {
+            "label": "",
+            "event_order": [],
+            "manual_events": [],
+        },
+    }
+    pt._persist()
+
+    # Write a CSV with the mapping
+    csv_path = tmp_path / "mapping.csv"
+    csv_path.write_text(
+        "code,group,sequence\n0001AAAA,Music,S1\n0002BBBB,Control,S2\n",
+        encoding="utf-8",
+    )
+
+    dlg = ImportParticipantMappingDialog(main_window)
+    dlg.set_csv_for_test(csv_path)
+    # Sanity: the column combos auto-detected "code" / "group" / "sequence"
+    assert dlg._id_combo.currentText() == "code"
+    assert dlg._group_combo.currentText() == "group"
+    assert dlg._sequence_combo.currentText() == "sequence"
+
+    result = dlg._apply_mapping()
+    assert result.updated_participants == 2
+    assert "Music" in result.created_groups
+    assert "Control" in result.created_groups
+    assert {"S1", "S2"} <= set(result.created_sequences)
+
+    # Reload from disk to confirm persistence
+    from rrational.gui.persistence import load_groups, load_participants
+
+    saved = load_participants(project_path=pm.project_path)
+    assert saved["0001AAAA"]["group"] == "Music"
+    assert saved["0001AAAA"]["sequence"] == "S1"
+    assert saved["0002BBBB"]["group"] == "Control"
+    groups = load_groups(project_path=pm.project_path)
+    assert "Music" in groups
+    assert "Control" in groups
+
+
+def test_phase24b_issues_summary_filter_hides_rows(main_window, data_tab):
+    """The Issues summary tags + filter hide non-matching rows."""
+    pt = main_window._participants_tab
+    pt._participants["S001"] = {
+        "label": "",
+        "event_order": [],
+        "manual_events": [],
+    }
+    data_tab.on_workspace_changed()
+    # Synthetic seeding: pretend S001 has a high-artifact tag.
+    data_tab._row_issue_tags = [{"high_artifact"}]
+    data_tab._on_issues_link("high_artifact")
+    assert data_tab._issues_filter == "high_artifact"
+    # That row stays visible
+    assert data_tab._participants_table.isRowHidden(0) is False
+    # Now flip to a tag the row doesn't carry — row should hide.
+    data_tab._on_issues_link("no_events")
+    assert data_tab._participants_table.isRowHidden(0) is True
+    # Clearing the filter restores visibility.
+    data_tab._on_issues_link("clear")
+    assert data_tab._issues_filter is None
+    assert data_tab._participants_table.isRowHidden(0) is False
+
+
 def test_quality_badge_colour_matches_artifact_ratio(main_window, data_tab):
     """Quality colour reflects the helper's Good / OK / Poor mapping."""
     from qtpy.QtGui import QColor

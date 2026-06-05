@@ -360,9 +360,18 @@ class ParticipantsTab(InspectorTab):
         in participants. Skips conflicts silently."""
         from pathlib import Path as _Path
 
+        # Phase 24B — honour the user's ID-pattern picker from the Data tab.
+        try:
+            from rrational.inspector.tabs.data_tab import extract_participant_id
+        except ImportError:  # pragma: no cover - defensive
+            extract_participant_id = None
+
         added = 0
         for ds in self._main_window._datasets:
-            pid = _Path(ds.name).stem
+            if extract_participant_id is not None:
+                pid = extract_participant_id(_Path(ds.name))
+            else:
+                pid = _Path(ds.name).stem
             if pid in self._participants:
                 continue
             self._participants[pid] = {

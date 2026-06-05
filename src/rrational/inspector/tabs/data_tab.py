@@ -56,6 +56,9 @@ from rrational.inspector.prep_summary import (
 )
 from rrational.inspector.settings import read_setting, write_setting
 from rrational.inspector.tabs.base import InspectorTab
+from rrational.inspector.tabs.import_mapping_dialog import (
+    ImportParticipantMappingDialog,
+)
 
 if TYPE_CHECKING:
     from rrational.inspector.data_loader import InspectorData
@@ -105,6 +108,46 @@ def _persist_cleaning_config(min_ms: float, max_ms: float, sudden_pct: float) ->
     write_setting("cleaning_min_rr_ms", float(min_ms))
     write_setting("cleaning_max_rr_ms", float(max_ms))
     write_setting("cleaning_sudden_change_pct", float(sudden_pct))
+
+
+# ----------------------------------------------------------------------
+# Phase 24B — participant ID pattern picker helpers
+# ----------------------------------------------------------------------
+def _read_id_pattern() -> str:
+    """Return the persisted participant ID regex, or the DEFAULT."""
+    from rrational.io import DEFAULT_ID_PATTERN as _DEFAULT
+
+    raw = read_setting("participant_id_pattern")
+    if raw is None or raw == "":
+        return _DEFAULT
+    return str(raw)
+
+
+def extract_participant_id(file_path: Path, pattern: str | None = None) -> str:
+    """Apply the configured regex to ``file_path.stem`` and return the
+    captured ``participant`` group.
+
+    Falls back to ``Path.stem`` if the pattern doesn't match or is
+    invalid — keeps the inspector usable even when the user types
+    nonsense into the picker.
+    """
+    import re as _re
+
+    if pattern is None:
+        pattern = _read_id_pattern()
+    if not pattern:
+        return file_path.stem
+    try:
+        compiled = _re.compile(pattern)
+    except _re.error:
+        return file_path.stem
+    m = compiled.search(file_path.name)
+    if m is None:
+        return file_path.stem
+    try:
+        return m.group("participant")
+    except IndexError:
+        return m.group(0)
 
 
 # ----------------------------------------------------------------------
@@ -341,13 +384,26 @@ class DataTab(InspectorTab):
         outer.addWidget(self._build_bulk_actions_block())
 
     def _build_cleaning_block(self) -> QGroupBox:
-        """Tiny form for ``CleaningConfig`` thresholds (Phase 23A).
+        """Tiny form for ``CleaningConfig`` thresholds (Phase 23A) + a
+        Phase 24B ID-pattern picker sub-group.
 
         Two min/max RR spin-boxes + one sudden-change-% spin-box +
         Apply button. Values persist to QSettings; Apply invalidates the
         per-dataset summary cache and refreshes the participants table.
+        The ID-pattern picker writes its choice to QSettings under
+        ``participant_id_pattern``.
         """
-        box = QGroupBox("Cleaning thresholds")
+        from qtpy.QtWidgets import QComboBox as _Combo
+        from qtpy.QtWidgets import QLineEdit as _LineEdit
+
+        from rrational.io import (
+            DEFAULT_ID_PATTERN as _DEFAULT_ID,
+        )
+        from rrational.io import (
+            PREDEFINED_PATTERNS as _PATTERNS,
+        )
+
+        box = QGroupBox("Cleaning thresholds & participant ID")
         outer = QVBoxLayout(box)
         outer.setSpacing(6)
 
@@ -386,6 +442,48 @@ class DataTab(InspectorTab):
         )
         form.addRow("Sudden change:", self._cleaning_sudden_spin)
 
+        # Phase 24B: participant ID regex picker. The combo lists the
+        # canned PREDEFINED_PATTERNS + "Custom"; switching to Custom
+        # enables the regex line edit so the user can type their own.
+        self._id_pattern_combo = _Combo()
+        self._pattern_names: list[str] = list(_PATTERNS.keys())
+        for name in self._pattern_names:
+            self._id_pattern_combo.addItem(name, _PATTERNS[name])
+        self._id_pattern_combo.addItem("Custom pattern...", None)
+        self._id_pattern_combo.setToolTip(
+            "Pick a canned regex or 'Custom' to type your own. The captured "
+            "'participant' group becomes the participant ID for new files."
+        )
+        form.addRow("ID pattern preset:", self._id_pattern_combo)
+
+        self._id_pattern_edit = _LineEdit()
+        self._id_pattern_edit.setPlaceholderText(_DEFAULT_ID)
+        self._id_pattern_edit.setToolTip(
+            "Regex with a (?P<participant>...) named group. Falls back to "
+            "Path.stem when the pattern doesn't match a filename."
+        )
+        current_pattern = _read_id_pattern()
+        self._id_pattern_edit.setText(current_pattern)
+        # Pick the matching preset in the combo, falling back to Custom.
+        sel_idx = self._id_pattern_combo.count() - 1
+        for i, name in enumerate(self._pattern_names):
+            if _PATTERNS[name] == current_pattern:
+                sel_idx = i
+                break
+        self._id_pattern_combo.setCurrentIndex(sel_idx)
+        form.addRow("ID pattern:", self._id_pattern_edit)
+
+        self._id_pattern_status = QLabel("")
+        self._id_pattern_status.setStyleSheet("color: #555;")
+        form.addRow("", self._id_pattern_status)
+
+        self._id_pattern_combo.currentIndexChanged.connect(
+            self._on_id_pattern_preset_changed
+        )
+        self._id_pattern_edit.textChanged.connect(self._on_id_pattern_text_changed)
+        # Initial enable + validation
+        self._on_id_pattern_preset_changed(self._id_pattern_combo.currentIndex())
+
         outer.addLayout(form)
 
         btn_row = QHBoxLayout()
@@ -399,6 +497,70 @@ class DataTab(InspectorTab):
         btn_row.addStretch()
         outer.addLayout(btn_row)
         return box
+
+    # ------------------------------------------------------------------
+    # Phase 24B — ID pattern picker callbacks
+    # ------------------------------------------------------------------
+    def _on_id_pattern_preset_changed(self, idx: int) -> None:
+        """When the user picks a preset, copy the regex into the edit
+        field; when they pick Custom, leave the edit field editable."""
+        data = self._id_pattern_combo.itemData(idx)
+        is_custom = data is None
+        self._id_pattern_edit.setEnabled(True)  # always editable
+        if not is_custom:
+            self._id_pattern_edit.blockSignals(True)
+            self._id_pattern_edit.setText(str(data))
+            self._id_pattern_edit.blockSignals(False)
+        # Persist + validate
+        self._on_id_pattern_text_changed(self._id_pattern_edit.text())
+
+    def _on_id_pattern_text_changed(self, text: str) -> None:
+        """Persist the regex and update the live-match counter."""
+        import re as _re
+
+        text = (text or "").strip()
+        write_setting("participant_id_pattern", text or "")
+        # Validate + count matches against raw filenames in the project.
+        try:
+            compiled = _re.compile(text) if text else None
+        except _re.error as e:
+            self._id_pattern_status.setText(
+                f"<span style='color:#b22222'>Invalid regex: {e}</span>"
+            )
+            return
+        files = self._collect_raw_filenames()
+        if not files:
+            self._id_pattern_status.setText(
+                "<i>No raw files in project — pattern saved.</i>"
+            )
+            return
+        if compiled is None:
+            self._id_pattern_status.setText("<i>(empty pattern — fallback to stem)</i>")
+            return
+        matched = sum(1 for fn in files if compiled.search(fn) is not None)
+        self._id_pattern_status.setText(f"Matches {matched} / {len(files)} files")
+
+    def _collect_raw_filenames(self) -> list[str]:
+        """List every raw filename under the project's data/raw/ tree.
+
+        Used for live regex validation. Returns the bare name (no path)
+        so the regex can target the same string we'd use at load time.
+        """
+        raw_dir = self._project_raw_dir()
+        if raw_dir is None or not raw_dir.exists():
+            return []
+        names: list[str] = []
+        for sub in raw_dir.iterdir():
+            if sub.is_file() and sub.suffix.lower() in _RAW_FILE_EXTS:
+                names.append(sub.name)
+            elif sub.is_dir():
+                try:
+                    for fp in sub.iterdir():
+                        if fp.is_file() and fp.suffix.lower() in _RAW_FILE_EXTS:
+                            names.append(fp.name)
+                except OSError:
+                    continue
+        return names
 
     def _on_apply_cleaning_clicked(self) -> None:
         """Persist the spin-box values, drop the cache, refresh table."""
@@ -685,6 +847,23 @@ class DataTab(InspectorTab):
         self._participants_summary.setStyleSheet("color: #666;")
         layout.addWidget(self._participants_summary)
 
+        # Phase 24B — Issues Summary row sits above the table. Each
+        # metric is a clickable link that filters the table to those
+        # rows; clicking the "show all" link resets the filter.
+        self._issues_label = QLabel("")
+        self._issues_label.setStyleSheet("color: #555;")
+        self._issues_label.setTextFormat(Qt.RichText)
+        self._issues_label.setOpenExternalLinks(False)
+        self._issues_label.linkActivated.connect(self._on_issues_link)
+        self._issues_label.setToolTip(
+            "Counts mirror the Streamlit Data tab. Click a link to filter the "
+            "table; click 'show all' to reset."
+        )
+        layout.addWidget(self._issues_label)
+
+        # The active filter, applied after every refresh. None == show all.
+        self._issues_filter: str | None = None
+
         # 15 columns — Streamlit-parity metrics from PreparationSummary
         # (Phase 23A added Retained / Artifacts % / Duplicates / RR
         # range + a trailing Quality badge).
@@ -735,6 +914,26 @@ class DataTab(InspectorTab):
         )
         self._bulk_export_btn.clicked.connect(self._on_bulk_export_clicked)
         layout.addWidget(self._bulk_export_btn)
+
+        # Phase 24B — participants CSV export
+        self._export_participants_csv_btn = QPushButton("Export participants CSV...")
+        self._export_participants_csv_btn.setToolTip(
+            "Write the live participants table (ID / Group / Sequence / Beats / "
+            "Duration / Artifacts % / Duplicates / Quality) to a CSV file."
+        )
+        self._export_participants_csv_btn.clicked.connect(
+            self._on_export_participants_csv_clicked
+        )
+        layout.addWidget(self._export_participants_csv_btn)
+
+        # Phase 24B — Group / Sequence CSV importer
+        self._import_mapping_btn = QPushButton("Import Group/Sequence CSV...")
+        self._import_mapping_btn.setToolTip(
+            "Open a CSV with one row per participant and map its columns to "
+            "Group / Sequence. Missing groups + sequences are auto-created."
+        )
+        self._import_mapping_btn.clicked.connect(self._on_import_mapping_clicked)
+        layout.addWidget(self._import_mapping_btn)
 
         layout.addStretch()
         return frame
@@ -879,6 +1078,8 @@ class DataTab(InspectorTab):
         participants = self._collect_participants()
         cleaning_cfg = _current_cleaning_config()
         n_with_metrics = 0
+        # Phase 24B — per-row issue tags so we can filter + count issues
+        self._row_issue_tags: list[set[str]] = []
         for pid in sorted(participants.keys()):
             data = participants[pid] or {}
             dataset = self._find_dataset_for(pid)
@@ -900,6 +1101,10 @@ class DataTab(InspectorTab):
             rr_range_str = "-"
             quality_label = "-"
             quality_colour: QColor | None = None
+            # Phase 24B — per-participant issue tags, kept in sync with
+            # the table row order so the filter / link counters work.
+            row_tags: set[str] = set()
+            n_events_int = 0
 
             if dataset is not None:
                 d = dataset.data
@@ -911,7 +1116,10 @@ class DataTab(InspectorTab):
                     duration_str = f"{duration_min:.1f}"
                     rr_mean_str = f"{float(d.v[finite].mean()):.0f}"
                     n_with_metrics += 1
-                events_str = str(len(d.events))
+                n_events_int = len(d.events)
+                events_str = str(n_events_int)
+                if n_events_int == 0:
+                    row_tags.add("no_events")
 
                 # Pull PreparationSummary (cached per id(dataset) +
                 # cleaning-config signature). Returns None when the
@@ -925,7 +1133,12 @@ class DataTab(InspectorTab):
                         f"{int(summary.rr_min_ms)}-{int(summary.rr_max_ms)} ms"
                     )
                     quality_label, quality_colour = _quality_for(summary.artifact_ratio)
+                    if summary.artifact_ratio > 0.15:
+                        row_tags.add("high_artifact")
+                    if summary.duplicate_rr_intervals > 0:
+                        row_tags.add("duplicates")
 
+            self._row_issue_tags.append(row_tags)
             r = self._participants_table.rowCount()
             self._participants_table.insertRow(r)
             self._participants_table.setItem(r, COL_ID, QTableWidgetItem(pid))
@@ -979,6 +1192,55 @@ class DataTab(InspectorTab):
             "as you load files from the Raw-data tree above. Adjust "
             "thresholds and click Apply &amp; refresh to recompute.</i>"
         )
+
+        # Phase 24B — issues summary banner + active-filter application.
+        self._refresh_issues_label()
+        self._apply_issues_filter()
+
+    def _refresh_issues_label(self) -> None:
+        """Mirror Streamlit Data tab lines 810-839: count rows per issue."""
+        n_high_artifact = sum(
+            1 for tags in self._row_issue_tags if "high_artifact" in tags
+        )
+        n_duplicates = sum(1 for tags in self._row_issue_tags if "duplicates" in tags)
+        n_no_events = sum(1 for tags in self._row_issue_tags if "no_events" in tags)
+        bits: list[str] = []
+        if n_high_artifact:
+            bits.append(
+                f"<a href='high_artifact'>{n_high_artifact} with &gt;15% artifacts</a>"
+            )
+        if n_duplicates:
+            bits.append(f"<a href='duplicates'>{n_duplicates} with duplicates</a>")
+        if n_no_events:
+            bits.append(f"<a href='no_events'>{n_no_events} with no events</a>")
+        if not bits:
+            self._issues_label.setText(
+                "<b>Issues:</b> <span style='color:#1a7a1a'>none detected</span>"
+            )
+        else:
+            text = "<b>Issues:</b> " + " | ".join(bits)
+            if self._issues_filter is not None:
+                text += " &middot; <a href='clear'>show all</a>"
+            self._issues_label.setText(text)
+
+    def _apply_issues_filter(self) -> None:
+        """Hide rows that don't carry the active filter tag."""
+        if self._issues_filter is None:
+            for r in range(self._participants_table.rowCount()):
+                self._participants_table.setRowHidden(r, False)
+            return
+        for r, tags in enumerate(self._row_issue_tags):
+            self._participants_table.setRowHidden(r, self._issues_filter not in tags)
+
+    def _on_issues_link(self, href: str) -> None:
+        """A filter link was clicked — apply it (or clear)."""
+        if href == "clear":
+            self._issues_filter = None
+        else:
+            self._issues_filter = href
+        # Refresh summary so the "show all" hint toggles.
+        self._refresh_issues_label()
+        self._apply_issues_filter()
 
     def _refresh_bulk_buttons(self) -> None:
         raw_dir = self._project_raw_dir()
@@ -1182,3 +1444,92 @@ class DataTab(InspectorTab):
         self._main_window.statusBar().showMessage(
             f"Exported {written} dataset(s) to {out_dir}.", 4000
         )
+
+    # ------------------------------------------------------------------
+    # Phase 24B — participants CSV download
+    # ------------------------------------------------------------------
+    def _suggested_participants_csv_name(self) -> str:
+        proj = getattr(self._main_window, "_project", None)
+        if proj is not None and proj.metadata is not None:
+            stem = proj.metadata.name
+        elif proj is not None:
+            stem = proj.project_path.name
+        else:
+            stem = "workspace"
+        return f"participants_{stem}.csv"
+
+    # Public hook the tests use to bypass QFileDialog.
+    def export_participants_csv(self, out_path: Path) -> int:
+        """Write the live participants table as a CSV. Returns row count.
+
+        Includes a fixed column set inspired by the Streamlit
+        download_button: ID / Group / Sequence / Beats / Duration /
+        Artifacts % / Duplicates / Quality. We pull cell text directly
+        so the file matches what the user sees.
+        """
+        import csv as _csv
+
+        cols = [
+            (COL_ID, "ID"),
+            (COL_GROUP, "Group"),
+            (COL_SEQUENCE, "Sequence"),
+            (COL_BEATS, "Beats"),
+            (COL_DURATION, "Duration (min)"),
+            (COL_ARTIFACT_PCT, "Artifacts %"),
+            (COL_DUPLICATES, "Duplicates"),
+            (COL_QUALITY, "Quality"),
+        ]
+        rows_written = 0
+        with out_path.open("w", newline="", encoding="utf-8") as fh:
+            writer = _csv.writer(fh)
+            writer.writerow([h for _i, h in cols])
+            for r in range(self._participants_table.rowCount()):
+                row_cells: list[str] = []
+                for col_idx, _h in cols:
+                    item = self._participants_table.item(r, col_idx)
+                    row_cells.append(item.text() if item is not None else "")
+                writer.writerow(row_cells)
+                rows_written += 1
+        return rows_written
+
+    def _on_export_participants_csv_clicked(self) -> None:
+        suggested = self._suggested_participants_csv_name()
+        if getattr(self._main_window, "test_mode", False):
+            # In test mode just emit a status — tests call
+            # export_participants_csv directly to verify the writer.
+            self._main_window.statusBar().showMessage(
+                f"Participants CSV: would write {suggested}", 3000
+            )
+            return
+        from rrational.inspector import settings as _settings
+
+        start_dir = _settings.read_setting("last_dir") or str(Path.cwd())
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export participants CSV",
+            str(Path(start_dir) / suggested),
+            "CSV files (*.csv)",
+        )
+        if not path_str:
+            return
+        try:
+            n = self.export_participants_csv(Path(path_str))
+        except OSError as e:
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        self._main_window.statusBar().showMessage(
+            f"Exported {n} participant(s) to {path_str}", 4000
+        )
+
+    # ------------------------------------------------------------------
+    # Phase 24B — Group / Sequence mapping CSV importer
+    # ------------------------------------------------------------------
+    def _on_import_mapping_clicked(self) -> None:
+        dlg = ImportParticipantMappingDialog(self._main_window, parent=self)
+        if dlg.exec() != dlg.Accepted:
+            return
+        result = dlg.result
+        if result is None:
+            return
+        self.on_workspace_changed()
+        self._main_window.statusBar().showMessage(result.summary(), 5000)

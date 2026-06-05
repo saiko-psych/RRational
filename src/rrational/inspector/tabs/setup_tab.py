@@ -1540,6 +1540,18 @@ class SetupTab(InspectorTab):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._subtabs)
 
+        # Phase 24B — codebook export.
+        action_row = QHBoxLayout()
+        self._export_codebook_btn = QPushButton("Export codebook...")
+        self._export_codebook_btn.setToolTip(
+            "Write a Markdown codebook listing every defined event, section, "
+            "group and sequence. Useful as a study-protocol appendix."
+        )
+        self._export_codebook_btn.clicked.connect(self._on_export_codebook)
+        action_row.addWidget(self._export_codebook_btn)
+        action_row.addStretch()
+        layout.addLayout(action_row)
+
     # ------------------------------------------------------------------
     # UX4: tab-label state badge — groups + sequences counts
     # ------------------------------------------------------------------
@@ -1572,3 +1584,118 @@ class SetupTab(InspectorTab):
         # case the active change came alongside a workspace change.
         self._groups_pane.refresh_from_workspace()
         self._sequences_pane.refresh_workspace()
+
+    # ------------------------------------------------------------------
+    # Phase 24B — Markdown codebook export
+    # ------------------------------------------------------------------
+    def build_codebook_markdown(self) -> str:
+        """Return a Markdown codebook of every defined event / section /
+        group / sequence. Sections appear even when empty so the user
+        sees a complete template."""
+        events = self._events_pane.events
+        sections = self._sections_pane.sections
+        groups = self._groups_pane.groups
+        sequences = self._sequences_pane.sequences
+
+        lines: list[str] = []
+        lines.append("# Study Codebook")
+        lines.append("")
+        proj = getattr(self._main_window, "_project", None)
+        if proj is not None and proj.metadata is not None:
+            lines.append(f"**Project:** {proj.metadata.name}")
+            lines.append("")
+
+        # Events
+        lines.append("## Events")
+        lines.append("")
+        if events:
+            lines.append("| Canonical name | # synonyms | Synonyms |")
+            lines.append("|----------------|-----------:|----------|")
+            for name, syns in events.items():
+                syn_str = ", ".join(syns) if syns else "-"
+                lines.append(f"| {name} | {len(syns)} | {syn_str} |")
+        else:
+            lines.append("_No events defined._")
+        lines.append("")
+
+        # Sections
+        lines.append("## Sections")
+        lines.append("")
+        if sections:
+            lines.append("| Name | Label | Start events | End events | Description |")
+            lines.append("|------|-------|--------------|------------|-------------|")
+            for name, data in sections.items():
+                start = ", ".join(data.get("start_events") or []) or "-"
+                end = ", ".join(data.get("end_events") or []) or "-"
+                lines.append(
+                    f"| {name} | {data.get('label', name)} | {start} | {end} | "
+                    f"{data.get('description', '')} |"
+                )
+        else:
+            lines.append("_No sections defined._")
+        lines.append("")
+
+        # Groups
+        lines.append("## Groups")
+        lines.append("")
+        if groups:
+            lines.append("| Name | Label | Members | Description |")
+            lines.append("|------|-------|--------:|-------------|")
+            for name, data in groups.items():
+                members = data.get("members") or []
+                lines.append(
+                    f"| {name} | {data.get('label', name)} | {len(members)} | "
+                    f"{data.get('description', '')} |"
+                )
+        else:
+            lines.append("_No groups defined._")
+        lines.append("")
+
+        # Sequences
+        lines.append("## Sequences")
+        lines.append("")
+        if sequences:
+            lines.append("| Name | Length | Sections (ordered) |")
+            lines.append("|------|-------:|---------------------|")
+            for seq in sequences:
+                lines.append(
+                    f"| {seq.name} | {len(seq.sections)} | "
+                    f"{' -> '.join(seq.sections)} |"
+                )
+        else:
+            lines.append("_No sequences defined._")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def _on_export_codebook(self) -> None:
+        from pathlib import Path
+
+        from qtpy.QtWidgets import QFileDialog as _QFD
+
+        from rrational.inspector import settings as _settings
+
+        text = self.build_codebook_markdown()
+        if getattr(self._main_window, "test_mode", False):
+            self._main_window.statusBar().showMessage(
+                f"Codebook ready ({len(text)} chars).", 3000
+            )
+            return
+        start_dir = _settings.read_setting("last_dir") or str(Path.cwd())
+        suggested = str(Path(start_dir) / "codebook.md")
+        path_str, _ = _QFD.getSaveFileName(
+            self,
+            "Export codebook",
+            suggested,
+            "Markdown (*.md);;All files (*)",
+        )
+        if not path_str:
+            return
+        try:
+            Path(path_str).write_text(text, encoding="utf-8")
+        except OSError as e:
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        self._main_window.statusBar().showMessage(
+            f"Exported codebook to {path_str}", 4000
+        )

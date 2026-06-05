@@ -99,10 +99,23 @@ class _MetricsPane(QWidget):
         bar.addWidget(self._info)
         bar.addStretch()
         self._export_btn = QPushButton("Export CSV…")
-        self._export_btn.setToolTip("Save the current table as a CSV file.")
+        self._export_btn.setToolTip(
+            "Export the current long-format table (one row per dataset/section) to CSV."
+        )
         self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
         bar.addWidget(self._export_btn)
+        # Phase 24B — wide-format export (one row per participant,
+        # columns pivoted by section_metric).
+        self._export_wide_btn = QPushButton("Export wide format…")
+        self._export_wide_btn.setToolTip(
+            "Export the same metrics in wide format (one row per participant, "
+            "columns named '<section>_<metric>'). Mirrors the Streamlit Group "
+            "Analysis download."
+        )
+        self._export_wide_btn.clicked.connect(self._on_export_wide)
+        self._export_wide_btn.setEnabled(False)
+        bar.addWidget(self._export_wide_btn)
         self._clear_btn = QPushButton("Clear")
         self._clear_btn.setToolTip("Remove every row from this table.")
         self._clear_btn.clicked.connect(self._on_clear)
@@ -142,7 +155,74 @@ class _MetricsPane(QWidget):
         self._info.setText(f"{len(rows)} row(s)")
         has_rows = len(rows) > 0
         self._export_btn.setEnabled(has_rows)
+        self._export_wide_btn.setEnabled(has_rows)
         self._clear_btn.setEnabled(has_rows)
+
+    # Phase 24B — wide-format export. Public helper so tests can drive
+    # it without dialog mocking; ``_on_export_wide`` wraps it with a
+    # file-picker.
+    def build_wide_rows(self) -> tuple[list[str], list[list]]:
+        """Return ``(headers, rows)`` for the wide CSV.
+
+        One row per (mode, dataset) pair. Columns are ordered as
+        participant_id, mode, then ``<section>_<metric>`` for every
+        observed (section, metric) combination. Mirrors
+        :func:`rrational.analysis.hrv_compute.results_to_wide_df` but
+        sources data from the inspector's own ``ResultsStore``.
+        """
+        rows = self._main_window._results_store.metric_rows
+        # Track keys in insertion order so the CSV columns are stable.
+        section_metrics: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        per_row: dict[tuple[str, str], dict[tuple[str, str], object]] = {}
+        for r in rows:
+            key = (r.mode, r.dataset)
+            row_dict = per_row.setdefault(key, {})
+            section = (r.section or "").replace(" ", "_").lower()
+            for metric, value in r.metrics.items():
+                col_key = (section, metric.lower())
+                if col_key not in seen:
+                    seen.add(col_key)
+                    section_metrics.append(col_key)
+                row_dict[col_key] = value
+            # Always include n_beats per section so users can re-derive
+            # quality on the consumer side.
+            beats_key = (section, "n_beats")
+            if beats_key not in seen:
+                seen.add(beats_key)
+                section_metrics.append(beats_key)
+            row_dict[beats_key] = r.n_beats
+        headers = ["participant_id", "mode"] + [
+            f"{sec}_{met}" for sec, met in section_metrics
+        ]
+        out_rows: list[list] = []
+        for (mode, dataset), payload in per_row.items():
+            row = [dataset, mode]
+            for key in section_metrics:
+                value = payload.get(key, "")
+                row.append("" if value is None else value)
+            out_rows.append(row)
+        return headers, out_rows
+
+    def _on_export_wide(self) -> None:
+        if not self._main_window._results_store.metric_rows:
+            return
+        path = _ask_csv_path(self, "hrv_wide")
+        if path is None:
+            return
+        headers, rows = self.build_wide_rows()
+        try:
+            with path.open("w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(headers)
+                for row in rows:
+                    w.writerow(row)
+        except OSError as e:
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        self._main_window.statusBar().showMessage(
+            f"Exported {len(rows)} wide-format row(s) to {path}", 4000
+        )
 
     def _on_export(self) -> None:
         rows = self._main_window._results_store.metric_rows
@@ -604,3 +684,7 @@ class ResultsTab(InspectorTab):
     @property
     def _export_group_btn(self):
         return self._group_tests_pane._export_btn
+
+    @property
+    def _export_metrics_wide_btn(self):
+        return self._metrics_pane._export_wide_btn

@@ -49,6 +49,9 @@ _DEFAULTS: dict[str, object] = {
     "cleaning_min_rr_ms": 300,
     "cleaning_max_rr_ms": 2000,
     "cleaning_sudden_change_pct": 20,
+    # Phase 24B: participant ID regex used when extracting an ID from
+    # raw-file stems. Default mirrors ``rrational.io.DEFAULT_ID_PATTERN``.
+    "participant_id_pattern": r"(?P<participant>\d{4}[A-Z]{4})",
 }
 
 

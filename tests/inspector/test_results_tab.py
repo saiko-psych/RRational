@@ -260,6 +260,77 @@ def test_metric_column_sorts_numerically_not_lexically(main_window):
 # ---------------------------------------------------------------------
 # CSV export
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Phase 24B — wide-format export
+# ---------------------------------------------------------------------
+def test_phase24b_wide_format_export_columns_and_rows(
+    main_window, tmp_path, monkeypatch
+):
+    """Wide export pivots one row per dataset, columns '<section>_<metric>'."""
+    from rrational.inspector.results_store import MetricRow
+    from rrational.inspector.tabs import results_tab as rt
+
+    store = main_window._results_store
+    store.add_metric_row(
+        MetricRow(
+            mode="repeating",
+            dataset="A",
+            section="rest_pre",
+            n_beats=300,
+            metrics={"RMSSD": 40.0, "SDNN": 50.0},
+        )
+    )
+    store.add_metric_row(
+        MetricRow(
+            mode="repeating",
+            dataset="A",
+            section="music",
+            n_beats=900,
+            metrics={"RMSSD": 38.0, "SDNN": 52.0},
+        )
+    )
+    store.add_metric_row(
+        MetricRow(
+            mode="repeating",
+            dataset="B",
+            section="rest_pre",
+            n_beats=310,
+            metrics={"RMSSD": 42.0, "SDNN": 49.0},
+        )
+    )
+    results = main_window._results_tab
+    results.refresh_results()
+
+    # Verify the wide-format export button is now enabled
+    assert results._export_metrics_wide_btn.isEnabled() is True
+
+    # Verify build_wide_rows produces the expected shape
+    headers, rows = results._metrics_pane.build_wide_rows()
+    assert headers[0] == "participant_id"
+    assert headers[1] == "mode"
+    expected_cols = {
+        "rest_pre_rmssd",
+        "rest_pre_sdnn",
+        "rest_pre_n_beats",
+        "music_rmssd",
+        "music_sdnn",
+        "music_n_beats",
+    }
+    assert expected_cols <= set(headers)
+    assert len(rows) == 2  # one row per dataset (A, B)
+    by_dataset = {row[0]: row for row in rows}
+    assert set(by_dataset.keys()) == {"A", "B"}
+
+    # End-to-end export — patch the file dialog and confirm content
+    out_path = tmp_path / "wide.csv"
+    monkeypatch.setattr(rt, "_ask_csv_path", lambda *_a, **_k: out_path)
+    results._metrics_pane._on_export_wide()
+    assert out_path.exists()
+    text = out_path.read_text(encoding="utf-8")
+    assert "participant_id,mode" in text
+    assert "rest_pre_rmssd" in text
+
+
 def test_csv_export_writes_header_and_rows(main_window, tmp_path, monkeypatch):
     """Patch the file-dialog so the export goes to a known path; verify content."""
     from rrational.inspector.data_loader import Dataset
