@@ -91,23 +91,24 @@ def test_walkthrough_try_button_switches_tab(qtbot, main_window):
 # ---------------------------------------------------------------------
 # HelpExpander
 # ---------------------------------------------------------------------
-def test_help_expander_default_collapsed_and_toggle(qtbot):
-    """Default-collapsed, toggles via setChecked, body visibility flips."""
+def test_help_expander_renders_info_button(qtbot):
+    """Phase 25 redesign: HelpExpander is now a thin info-button row that
+    opens a popup on click — body label stays hidden until the popup
+    opens. is_open() always returns False since popups are transient."""
     from rrational.inspector.help_widgets import HelpExpander
 
     exp = HelpExpander("Test topic", "<p>Body text.</p>")
     qtbot.addWidget(exp)
     exp.show()
     qtbot.waitExposed(exp)
-    # Default collapsed: checkbox unchecked AND body invisible.
-    assert exp.isChecked() is False
+    # The inline body label is hidden — popup-style help, not inline.
     assert exp.body_label().isVisible() is False
-    # Programmatic open.
-    exp.setChecked(True)
-    assert exp.body_label().isVisible() is True
-    # Programmatic close.
-    exp.setChecked(False)
-    assert exp.body_label().isVisible() is False
+    assert exp.is_open() is False
+    # Title accessor available.
+    assert exp.title() == "Test topic"
+    # The InfoButton child is rendered + clickable.
+    assert exp._button is not None
+    assert exp._button.isEnabled() is True
 
 
 # ---------------------------------------------------------------------

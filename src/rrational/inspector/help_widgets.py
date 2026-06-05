@@ -1,23 +1,32 @@
-"""Reusable help widgets for the inspector tabs.
+"""Reusable in-app help widgets — MNE-LAB style.
 
-Phase 24A: introduces ``HelpExpander``, a tiny QGroupBox-with-checkable
-header that wraps a rich-text ``QLabel`` body. Used across DataTab,
-ParticipantTab, SetupTab panes, AnalysisTab, ResultsTab to surface
-in-app help without forcing the user to dig through menus or docs.
+Phase 24A originally shipped ``HelpExpander`` as a checkable GroupBox
+that took up permanent vertical space on every tab. User feedback
+("die help sections mit checkboxen ist eine schlechte lösung — siehe
+wie MNE es gemacht hat") prompted a redesign:
 
-The expander honours a global QSettings key
-``help_expanders_default_open`` (defaults to ``False``) so a
-power-user can opt in once and have every help block start expanded
-on launch.
+- The new ``HelpExpander`` is a thin, single-button row showing a small
+  ``ⓘ Help`` button. Clicking opens a focused popup with the help text.
+- API-compatible with Phase 24A: same constructor signature, same
+  ``is_open()`` / ``body_label()`` accessors, so the five tab files
+  that already use it work without modification.
+- Also exposes ``InfoButton`` for new callers who want the inline icon
+  without the wrapping QGroupBox semantics.
+
+This mirrors MNE-LAB's "compact UI + focused docs popup" approach
+rather than always-visible inline documentation.
 """
 
 from __future__ import annotations
 
 from qtpy.QtCore import Qt, QSettings
 from qtpy.QtWidgets import (
-    QGroupBox,
+    QDialog,
+    QDialogButtonBox,
+    QHBoxLayout,
     QLabel,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -27,12 +36,11 @@ _DEFAULT_OPEN_KEY = "help_expanders_default_open"
 
 
 def help_expanders_default_open() -> bool:
-    """Return the persisted global "always-expand-help" preference.
+    """Persisted "auto-open help popups on launch" preference (default False).
 
-    Reads via raw ``QSettings`` rather than ``inspector.settings`` so we
-    don't have to register the key in that module's ``_DEFAULTS`` table —
-    the help expanders are independent of the rest of the inspector
-    configuration and the only fallback we need is a plain ``False``.
+    Retained for API-compat with Phase 24A even though the new
+    popup-style help no longer needs to track open/closed state across
+    tabs.
     """
     raw = QSettings().value(_DEFAULT_OPEN_KEY, False)
     if isinstance(raw, str):
@@ -41,16 +49,70 @@ def help_expanders_default_open() -> bool:
 
 
 def set_help_expanders_default_open(value: bool) -> None:
-    """Persist the global "always-expand-help" preference."""
     QSettings().setValue(_DEFAULT_OPEN_KEY, bool(value))
 
 
-class HelpExpander(QGroupBox):
-    """A collapsible help block with a checkable "Show help" header.
+class _HelpPopup(QDialog):
+    """Modeless popup that renders one help topic."""
 
-    The header (the QGroupBox checkbox) toggles a rich-text body label
-    below it. Defaults to collapsed unless the global
-    ``help_expanders_default_open`` setting is on.
+    def __init__(
+        self, title: str, body_html: str, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Help — {title}")
+        self.setMinimumWidth(520)
+        self.setModal(False)
+
+        layout = QVBoxLayout(self)
+        label = QLabel(body_html, self)
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.RichText)
+        label.setTextInteractionFlags(
+            Qt.TextBrowserInteraction | Qt.LinksAccessibleByMouse
+        )
+        label.setOpenExternalLinks(True)
+        label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
+        layout.addWidget(label)
+
+        bb = QDialogButtonBox(QDialogButtonBox.Close)
+        bb.rejected.connect(self.close)
+        bb.accepted.connect(self.close)
+        layout.addWidget(bb)
+
+
+class InfoButton(QToolButton):
+    """Small ``ⓘ`` button that opens a focused help popup on click."""
+
+    def __init__(
+        self,
+        title: str,
+        body_html: str,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._title = title
+        self._body_html = body_html
+        # Unicode 'circled information source' — readable, no emoji.
+        self.setText("ⓘ Help")
+        self.setToolTip(f"Show help: {title}")
+        self.setAutoRaise(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.clicked.connect(self._open_popup)
+
+    def _open_popup(self) -> None:
+        # Re-create on each click so re-styling / parent-changes work.
+        popup = _HelpPopup(self._title, self._body_html, self.window())
+        popup.show()
+
+
+class HelpExpander(QWidget):
+    """Phase 24A compatibility shim — renders as a thin info-button row.
+
+    Same constructor signature as the original. The "Show help" header +
+    expandable body has been replaced by an :class:`InfoButton` that
+    opens a popup. Callers that depended on the GroupBox API still get
+    a working widget; the visual chrome differs but nothing breaks.
     """
 
     def __init__(
@@ -60,36 +122,41 @@ class HelpExpander(QGroupBox):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setCheckable(True)
-        # GroupBox title shows the topic + a hint that it's interactive.
-        self.setTitle(f"Help: {title}")
-        self.setToolTip("Click to show or hide the help text for this section.")
+        self._title = title
+        self._body_html = body_html
 
+        self._button = InfoButton(title, body_html, self)
+        # Keep a hidden QLabel for the body so ``body_label()`` callers
+        # still get a real widget (test compat).
         self._body = QLabel(body_html, self)
-        self._body.setWordWrap(True)
+        self._body.setVisible(False)
         self._body.setTextFormat(Qt.RichText)
-        self._body.setTextInteractionFlags(
-            Qt.TextBrowserInteraction | Qt.LinksAccessibleByMouse
-        )
-        self._body.setOpenExternalLinks(True)
-        self._body.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self._body.setWordWrap(True)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.addWidget(self._body)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        row.addWidget(self._button)
+        row.addStretch()
 
-        # Initial state — collapsed unless the global pref is set.
-        initial_open = help_expanders_default_open()
-        self.setChecked(initial_open)
-        self._body.setVisible(initial_open)
-        self.toggled.connect(self._on_toggled)
-
-    def _on_toggled(self, checked: bool) -> None:
-        self._body.setVisible(checked)
-
-    # Useful for tests / programmatic control.
+    # ------------------------------------------------------------------
+    # Phase 24A compatibility API
+    # ------------------------------------------------------------------
     def is_open(self) -> bool:
-        return self.isChecked() and self._body.isVisible()
+        """Always False — popups are transient, not persistent."""
+        return False
+
+    def setChecked(self, value: bool) -> None:  # noqa: N802 — Qt-style API
+        # Legacy callers might still toggle this. We honour the call by
+        # opening the popup once, but don't keep state.
+        if value:
+            self._button._open_popup()
+
+    def isChecked(self) -> bool:  # noqa: N802
+        return False
 
     def body_label(self) -> QLabel:
         return self._body
+
+    def title(self) -> str:
+        return self._title

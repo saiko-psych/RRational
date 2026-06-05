@@ -403,7 +403,7 @@ class DataTab(InspectorTab):
             PREDEFINED_PATTERNS as _PATTERNS,
         )
 
-        box = QGroupBox("Cleaning thresholds & participant ID")
+        box = QGroupBox("Cleaning thresholds && participant ID")
         outer = QVBoxLayout(box)
         outer.setSpacing(6)
 

@@ -154,6 +154,10 @@ class MainWindow(QMainWindow):
 
         self._build_menu()
         self._build_toolbar()
+        # Phase 25: nav toolbar exists now — re-fire the tab-change hook
+        # so its visibility matches the current tab. (The hook also ran
+        # during _apply_layout_mode but _nav_toolbar wasn't built yet.)
+        self._on_tab_changed_hint(self._tabs_widget.currentIndex())
         self.setStatusBar(QStatusBar())
         # UX1: a permanent project badge on the left of the status bar.
         # Always visible so the user can tell at a glance which project
@@ -183,25 +187,37 @@ class MainWindow(QMainWindow):
         # UX4: initial tab-label refresh once everything is wired up.
         self._refresh_tab_labels()
 
-        # Phase 24A: first-run dialog. The legacy onboarded-marker logic
-        # gates the auto-open; we now show the new multi-page workflow
-        # walkthrough instead of the bare 5-tab summary.
+        # Phase 24A: first-run walkthrough. Use a deferred QTimer + a
+        # NON-MODAL show() so __init__ never blocks (the modal exec()
+        # path hung headless tests + snapshot tooling indefinitely).
+        # mark_onboarded() runs when the user dismisses the dialog.
         if not self.test_mode:
             from rrational.inspector.onboarding import (
                 is_onboarded,
                 mark_onboarded,
             )
             from rrational.inspector.walkthrough import WalkthroughDialog
+            from qtpy.QtCore import QTimer
 
             if not is_onboarded():
-                dlg = WalkthroughDialog(self, self)
-                dlg.exec()
-                # Mark the user as onboarded so subsequent launches skip
-                # the auto-open; the dialog stays available via Help.
-                try:
-                    mark_onboarded()
-                except OSError:  # pragma: no cover - defensive
-                    pass
+
+                def _show_walkthrough() -> None:
+                    dlg = WalkthroughDialog(self, self)
+                    self._walkthrough_dlg = dlg  # keep ref alive
+
+                    def _on_close(_result=None) -> None:
+                        try:
+                            mark_onboarded()
+                        except OSError:  # pragma: no cover - defensive
+                            pass
+
+                    dlg.finished.connect(_on_close)
+                    dlg.show()
+                    dlg.raise_()
+                    dlg.activateWindow()
+
+                # Defer to after MainWindow is fully constructed + shown.
+                QTimer.singleShot(0, _show_walkthrough)
 
         if initial_path is not None:
             self.open_path(initial_path)
@@ -870,6 +886,11 @@ class MainWindow(QMainWindow):
         tb = QToolBar("Navigation", self)
         tb.setMovable(False)
         self.addToolBar(tb)
+        # Phase 25: navigation toolbar only makes sense in tabs that
+        # actually host a timeline plot (Browse in MNE-LAB mode,
+        # Participant in Streamlit mode). Hide elsewhere — keeps
+        # Data/Setup/Analysis/Results visually clean.
+        self._nav_toolbar = tb
 
         home_act = QAction("Start (Home)", self)
         home_act.setToolTip("Jump to beginning of signal (Home)")
@@ -1560,7 +1581,9 @@ class MainWindow(QMainWindow):
     }
 
     def _on_tab_changed_hint(self, idx: int) -> None:
-        """Post a 5-second status-bar hint when the user switches tabs."""
+        """Post a 5-second status-bar hint when the user switches tabs +
+        toggle the navigation toolbar visibility (only timeline-tabs
+        need Pan / Zoom / Fit-all)."""
         if idx < 0 or idx >= self._tabs_widget.count():
             return
         widget = self._tabs_widget.widget(idx)
@@ -1569,6 +1592,10 @@ class MainWindow(QMainWindow):
         hint = self._TAB_HINTS.get(type(widget).__name__)
         if hint:
             self.statusBar().showMessage(hint, 5000)
+        # Navigation toolbar only on tabs that host the timeline plot.
+        tb = getattr(self, "_nav_toolbar", None)
+        if tb is not None:
+            tb.setVisible(type(widget).__name__ in {"BrowseTab", "ParticipantTab"})
 
     def _refresh_tab_labels(self) -> None:
         """UX4: refresh top-tab labels with live state badges so the user
@@ -1646,6 +1673,10 @@ class MainWindow(QMainWindow):
         # initial construction AND after a live mode switch.
         if first_visible_idx is not None:
             self._tabs_widget.setCurrentIndex(first_visible_idx)
+            # Fire the toolbar visibility logic on this initial selection
+            # too — currentChanged doesn't always fire on a programmatic
+            # setCurrentIndex when the index is already the current one.
+            self._on_tab_changed_hint(first_visible_idx)
 
     def set_ui_layout(self, mode: str) -> None:
         """Public entry point — switch layout, persist, sync menu state.
