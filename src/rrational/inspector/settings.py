@@ -44,6 +44,11 @@ _DEFAULTS: dict[str, object] = {
     # "streamlit" — Data / Participant / Setup / Analysis / Results tabs (Browse hidden)
     # "mnelab"    — Browse / Setup / Participants / Analysis / Results (dock-heavy)
     "ui_layout": "streamlit",
+    # Phase 23A: per-user RR cleaning thresholds surfaced on the Data tab.
+    # Defaults match what the Streamlit prep wizard shows by default.
+    "cleaning_min_rr_ms": 300,
+    "cleaning_max_rr_ms": 2000,
+    "cleaning_sudden_change_pct": 20,
 }
 
 

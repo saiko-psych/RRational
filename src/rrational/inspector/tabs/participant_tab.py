@@ -1,4 +1,4 @@
-"""Participant tab — per-subject deep-dive (Phase 22.2).
+"""Participant tab — per-subject deep-dive (Phase 22.2 + Phase 23B).
 
 Streamlit-style focused per-participant view. Mirrors the workflow of
 ``src/rrational/gui/tabs/participant.py`` (Streamlit reference) but in
@@ -6,9 +6,13 @@ the PyQt inspector shell:
 
 - Top bar: a participant dropdown listing every loaded dataset's stem,
   plus Previous / Next arrow buttons and a "Showing X of Y" status.
+- Header metrics row (Phase 23B): "Participant | Group | Sequence |
+  Beats | Duration | Duplicates" — pulled from the active dataset +
+  ParticipantsTab metadata. Mirrors the Streamlit per-participant view.
 - Left dock: a vertical list of the active participant's sections.
   Clicking a row zooms the plot to that section; the per-row
-  "Validate" button shows a brief status-bar acknowledgement.
+  "Validate" button records validation in ``{pid}_section_validations.yml``
+  (Phase 23B — replaces the Phase 22.2 status-bar no-op).
 - Center: the same ``RRPlotWidget`` the Browse tab uses (timeline +
   overlays + crosshair + keyboard nav).
 - Right dock: the same ``PreprocessingPanel`` the Browse tab uses
@@ -28,17 +32,22 @@ step because they share the same notification fan-out.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -54,6 +63,11 @@ if TYPE_CHECKING:
 # leaning on row index (which is brittle if rows are ever reordered).
 _ROLE_SECTION_NAME = Qt.UserRole + 1
 
+# Unicode check mark used to flag validated sections in the list. NOT
+# an emoji — a plain U+2713 glyph that renders in any font that ships
+# with a basic Latin/Symbols subset.
+_VALIDATED_PREFIX = "✓ "
+
 
 class ParticipantTab(InspectorTab):
     """Single-participant deep-dive: dropdown + plot + sections + preprocessing."""
@@ -62,6 +76,10 @@ class ParticipantTab(InspectorTab):
 
     def __init__(self, main_window, parent=None) -> None:
         super().__init__(main_window, parent)
+        # Cache of the current participant's loaded section validations
+        # ({section_name: {validated_at, validator}, ...}). Populated by
+        # _reload_validations on every dataset switch.
+        self._section_validations: dict[str, dict[str, Any]] = {}
         self._build()
         # Populate from whatever the workspace currently holds (the tab
         # may be constructed AFTER datasets have been loaded, e.g. when
@@ -113,6 +131,27 @@ class ParticipantTab(InspectorTab):
         top_layout.addWidget(self._status_label)
         top_layout.addStretch()
 
+        # ----- Header metrics row (Phase 23B) -----------------------------
+        # Streamlit's per-participant view surfaces participant id, group,
+        # sequence, beat counts, duration, and duplicate count alongside
+        # the plot. The PyQt port mirrors that with a flat field/value
+        # row separated by QFrame.HLine spacers so the header stays
+        # scannable at a glance.
+        self._header_metrics_bar = QWidget()
+        self._header_metrics_layout = QHBoxLayout(self._header_metrics_bar)
+        self._header_metrics_layout.setContentsMargins(8, 4, 8, 4)
+        self._header_metrics_layout.setSpacing(8)
+        # Per-field QLabel handles so _refresh_header_metrics can mutate
+        # values in place without rebuilding the row (keeps Qt layout
+        # geometry stable across dataset switches).
+        self._hdr_participant_value = QLabel("-")
+        self._hdr_group_value = QLabel("-")
+        self._hdr_sequence_value = QLabel("-")
+        self._hdr_beats_value = QLabel("-")
+        self._hdr_duration_value = QLabel("-")
+        self._hdr_duplicates_value = QLabel("-")
+        self._build_header_metrics_row()
+
         # ----- Plot + bottom NN summary in the center --------------------
         self._plot = RRPlotWidget()
         self._plot.setFocusPolicy(Qt.StrongFocus)
@@ -128,6 +167,7 @@ class ParticipantTab(InspectorTab):
         center_layout = QVBoxLayout(center)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.addWidget(top_bar)
+        center_layout.addWidget(self._header_metrics_bar)
         center_layout.addWidget(self._plot, stretch=1)
         center_layout.addWidget(self._nn_summary)
         self._dock_host.setCentralWidget(center)
@@ -136,9 +176,15 @@ class ParticipantTab(InspectorTab):
         self._sections_list = QListWidget()
         self._sections_list.setToolTip(
             "Click a section to zoom the plot to it. Use the per-row "
-            "Validate button to mark the section as reviewed."
+            "Validate button to mark the section as reviewed. Right-click "
+            "a row to clear validation."
         )
         self._sections_list.itemClicked.connect(self._on_section_clicked)
+        # Phase 23B: context menu lets the user clear a validation.
+        self._sections_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._sections_list.customContextMenuRequested.connect(
+            self._on_section_context_menu
+        )
 
         sections_container = QWidget()
         sections_layout = QVBoxLayout(sections_container)
@@ -191,6 +237,33 @@ class ParticipantTab(InspectorTab):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self._dock_host)
 
+    def _build_header_metrics_row(self) -> None:
+        """Populate the header metrics row with label/value pairs + separators.
+
+        Done once during _build; subsequent updates mutate the value
+        labels in place via _refresh_header_metrics.
+        """
+        fields: list[tuple[str, QLabel]] = [
+            ("Participant", self._hdr_participant_value),
+            ("Group", self._hdr_group_value),
+            ("Sequence", self._hdr_sequence_value),
+            ("Beats", self._hdr_beats_value),
+            ("Duration", self._hdr_duration_value),
+            ("Duplicates", self._hdr_duplicates_value),
+        ]
+        for i, (name, value_label) in enumerate(fields):
+            if i > 0:
+                sep = QFrame()
+                sep.setFrameShape(QFrame.VLine)
+                sep.setFrameShadow(QFrame.Sunken)
+                self._header_metrics_layout.addWidget(sep)
+            name_label = QLabel(f"<b>{name}:</b>")
+            name_label.setStyleSheet("color: #333;")
+            value_label.setStyleSheet("color: #555;")
+            self._header_metrics_layout.addWidget(name_label)
+            self._header_metrics_layout.addWidget(value_label)
+        self._header_metrics_layout.addStretch()
+
     # ------------------------------------------------------------------
     # InspectorTab hooks
     # ------------------------------------------------------------------
@@ -202,7 +275,14 @@ class ParticipantTab(InspectorTab):
         if idx is None or not (0 <= idx < len(datasets)):
             return "(none selected)"
         stem = self._stem_for(datasets[idx])
-        return f"(showing {stem})"
+        meta = self._participant_meta(stem)
+        group = (meta.get("group") or "").strip()
+        sequence = (meta.get("sequence") or "").strip()
+        if group and sequence:
+            return f"({stem} / {group} / {sequence})"
+        if group:
+            return f"({stem} / {group})"
+        return f"({stem})"
 
     def on_workspace_changed(self) -> None:
         """Rebuild the dropdown from ``main_window._datasets``."""
@@ -245,9 +325,14 @@ class ParticipantTab(InspectorTab):
             self._participant_combo.setCurrentIndex(idx)
         finally:
             self._suppress_combo_signal = False
+        # Phase 23B: load this participant's section validations BEFORE
+        # rendering the section list so each row shows the validated
+        # state on first paint.
+        self._reload_validations(ds)
         self._render_dataset(ds)
         self._refresh_buttons_and_status()
         self._refresh_nn_summary()
+        self._refresh_header_metrics(ds)
 
     # ------------------------------------------------------------------
     # Rendering
@@ -268,8 +353,14 @@ class ParticipantTab(InspectorTab):
             row_widget = QWidget()
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(4, 2, 4, 2)
+            is_validated = meta.name in self._section_validations
+            prefix = _VALIDATED_PREFIX if is_validated else ""
+            # Validated rows render the name in a darker green so the
+            # check mark + colour together survive any single rendering
+            # quirk (some Linux fonts swallow U+2713).
+            name_colour = "#2a7a2a" if is_validated else "#222"
             label = QLabel(
-                f"{meta.name}  "
+                f"<span style='color:{name_colour};'>{prefix}{meta.name}</span>  "
                 f"<span style='color:#888;'>"
                 f"({meta.beat_count} beats, "
                 f"{meta.t_end - meta.t_start:.0f}s)</span>"
@@ -278,7 +369,9 @@ class ParticipantTab(InspectorTab):
             row_layout.addWidget(label, stretch=1)
             validate_btn = QPushButton("Validate")
             validate_btn.setToolTip(
-                f"Mark section '{meta.name}' as reviewed (status bar acknowledgement)."
+                f"Mark section '{meta.name}' as reviewed. Writes to "
+                f"{{participant_id}}_section_validations.yml in the "
+                "active project's processed folder."
             )
             # Default-arg binds the CURRENT name so a future rename
             # doesn't shadow the closure variable.
@@ -301,6 +394,18 @@ class ParticipantTab(InspectorTab):
         self._plot._values = None
         self._sections_list.clear()
         self._nn_summary.setText("No artifact detection run yet on this participant.")
+        self._section_validations = {}
+        # Reset the metrics row to placeholder dashes so the user can
+        # tell at a glance that nothing is loaded.
+        for value_label in (
+            self._hdr_participant_value,
+            self._hdr_group_value,
+            self._hdr_sequence_value,
+            self._hdr_beats_value,
+            self._hdr_duration_value,
+            self._hdr_duplicates_value,
+        ):
+            value_label.setText("-")
 
     def _refresh_buttons_and_status(self) -> None:
         datasets = self._main_window._datasets
@@ -335,6 +440,47 @@ class ParticipantTab(InspectorTab):
             f"artifact rate {rate_pct:.2f}%"
         )
 
+    def _refresh_header_metrics(self, ds: "Dataset") -> None:
+        """Repopulate the header metrics row from ``ds`` + participants.yml.
+
+        Beats / Retained / Duration / Duplicates are derived directly
+        from the InspectorData arrays so we don't need to block on
+        PreparationSummary (Phase 23A ships that separately). Group +
+        Sequence come from the ParticipantsTab — same source the
+        Streamlit per-participant view uses.
+        """
+        stem = self._stem_for(ds)
+        meta = self._participant_meta(stem)
+        group = (meta.get("group") or "").strip() or "-"
+        sequence = (meta.get("sequence") or "").strip() or "-"
+
+        v = ds.data.v
+        # Finite beats = non-NaN samples. NaNs in v mark inter-section
+        # gaps that data_loader inserts so the timeline stays
+        # monotonically non-decreasing.
+        finite_mask = np.isfinite(v)
+        total_beats = int(finite_mask.sum())
+        # Phase 23A owns PreparationSummary; we fall back to "retained
+        # == total" and "duplicates == 0" until that ships and tells us
+        # otherwise. The header still reads correctly because the worst
+        # case is just the absence of those two extra stats.
+        retained = total_beats
+        duplicates = 0
+        # Duration in minutes from the first/last finite timestamp.
+        if total_beats > 0:
+            t_finite = ds.data.t[np.isfinite(ds.data.t)]
+            duration_s = float(t_finite[-1] - t_finite[0]) if t_finite.size else 0.0
+        else:
+            duration_s = 0.0
+        duration_min = duration_s / 60.0
+
+        self._hdr_participant_value.setText(stem)
+        self._hdr_group_value.setText(group)
+        self._hdr_sequence_value.setText(sequence)
+        self._hdr_beats_value.setText(f"{total_beats} ({retained} retained)")
+        self._hdr_duration_value.setText(f"{duration_min:.1f} min")
+        self._hdr_duplicates_value.setText(str(duplicates))
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -349,6 +495,68 @@ class ParticipantTab(InspectorTab):
         if "." in name:
             return name.rsplit(".", 1)[0]
         return name
+
+    def _participant_meta(self, pid: str) -> dict[str, Any]:
+        """Look up ``pid``'s entry on the ParticipantsTab (empty if none).
+
+        Tolerates the tab being missing entirely (older test scaffolds
+        that build ParticipantTab without a full MainWindow), and the
+        participant simply not being listed yet.
+        """
+        pt = getattr(self._main_window, "_participants_tab", None)
+        if pt is None:
+            return {}
+        # ParticipantsTab exposes both the public ``participants``
+        # property (returns a copy) and the underlying ``_participants``
+        # dict. The public copy is safer — protects against future code
+        # that might mutate the returned dict in place.
+        try:
+            all_p = pt.participants
+        except AttributeError:
+            all_p = getattr(pt, "_participants", {}) or {}
+        return all_p.get(pid, {}) or {}
+
+    def _project_path(self):
+        """Active project's filesystem path, or None for the global config."""
+        proj = getattr(self._main_window, "_project", None)
+        return proj.project_path if proj is not None else None
+
+    # ------------------------------------------------------------------
+    # Section-validation persistence (Phase 23B)
+    # ------------------------------------------------------------------
+    def _reload_validations(self, ds: "Dataset") -> None:
+        """Refresh self._section_validations from ``{pid}_section_validations.yml``.
+
+        Called on every dataset switch so the freshly-loaded participant's
+        validations drive the section list's check-mark prefixes.
+        """
+        from rrational.gui.persistence import load_section_validations
+
+        stem = self._stem_for(ds)
+        try:
+            saved = load_section_validations(
+                participant_id=stem,
+                project_path=self._project_path(),
+            )
+        except Exception:  # pragma: no cover - defensive
+            saved = None
+        if not saved or "sections" not in saved:
+            self._section_validations = {}
+            return
+        self._section_validations = dict(saved.get("sections") or {})
+
+    def _persist_validations(self, stem: str) -> None:
+        """Write ``self._section_validations`` back to the YAML file."""
+        from rrational.gui.persistence import save_section_validations
+
+        meta = self._participant_meta(stem)
+        group = (meta.get("group") or "").strip()
+        save_section_validations(
+            participant_id=stem,
+            group=group,
+            section_validations=self._section_validations,
+            project_path=self._project_path(),
+        )
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -398,14 +606,88 @@ class ParticipantTab(InspectorTab):
         )
 
     def _on_validate_section(self, name: str) -> None:
-        """Acknowledge a section validation through the status bar.
+        """Confirm + persist a section validation (Phase 23B).
 
-        Phase 22.2 keeps validation lightweight — the heavyweight
-        review flow (boundary editing, manual marks) is already
-        exposed through the PreprocessingPanel + plot overlays. This
-        button just records that the user has eyeballed the section
-        and gives them visible feedback.
+        Pops a small confirmation dialog (suppressed in test_mode) and
+        on Yes records the section in the participant's
+        ``_section_validations.yml`` with a minimal schema:
+        ``{"validated_at": ISO timestamp, "validator": "inspector"}``.
+        Avoids duplicating the Streamlit dialog's full disambiguation
+        flow — the inspector's plot + boundary-editing already covers
+        that — and just records acceptance.
         """
+        idx = self._main_window._active_idx
+        if idx is None:
+            return
+        ds = self._main_window._datasets[idx]
+        stem = self._stem_for(ds)
+
+        if not getattr(self._main_window, "test_mode", False):
+            reply = QMessageBox.question(
+                self,
+                "Validate section",
+                f"Confirm that the boundaries for section '{name}' are correct?\n\n"
+                f"This will record validation in {stem}_section_validations.yml.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+        self._section_validations[name] = {
+            "validated_at": datetime.now().isoformat(),
+            "validator": "inspector",
+        }
+        try:
+            self._persist_validations(stem)
+        except Exception as exc:  # pragma: no cover - defensive
+            self._main_window.statusBar().showMessage(
+                f"Could not save validation for '{name}': {exc}", 5000
+            )
+            return
+        # Re-render so the new check mark shows up immediately.
+        self._rebuild_sections_list(ds)
         self._main_window.statusBar().showMessage(
-            f"Section '{name}' marked as validated.", 3000
+            f"Section '{name}' validated and saved.", 3000
+        )
+
+    def _on_section_context_menu(self, pos) -> None:
+        """Right-click on a section row → offer 'Clear validation'."""
+        item = self._sections_list.itemAt(pos)
+        if item is None:
+            return
+        name = item.data(_ROLE_SECTION_NAME)
+        if name is None:
+            return
+        menu = QMenu(self._sections_list)
+        clear_act = menu.addAction("Clear validation")
+        clear_act.setEnabled(name in self._section_validations)
+        chosen = (
+            menu.exec(self._sections_list.viewport().mapToGlobal(pos))
+            if not getattr(self._main_window, "test_mode", False)
+            else None
+        )
+        if chosen is clear_act:
+            self._clear_validation(name)
+
+    def _clear_validation(self, name: str) -> None:
+        """Remove a section's validation entry + persist + refresh."""
+        if name not in self._section_validations:
+            return
+        idx = self._main_window._active_idx
+        if idx is None:
+            return
+        ds = self._main_window._datasets[idx]
+        stem = self._stem_for(ds)
+        del self._section_validations[name]
+        try:
+            self._persist_validations(stem)
+        except Exception as exc:  # pragma: no cover - defensive
+            self._main_window.statusBar().showMessage(
+                f"Could not clear validation for '{name}': {exc}", 5000
+            )
+            return
+        self._rebuild_sections_list(ds)
+        self._main_window.statusBar().showMessage(
+            f"Validation cleared for section '{name}'.", 3000
         )

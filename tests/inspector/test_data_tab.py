@@ -92,6 +92,8 @@ def test_participants_table_columns(data_tab):
         data_tab._participants_table.horizontalHeaderItem(i).text()
         for i in range(data_tab._participants_table.columnCount())
     ]
+    # Phase 23A: 4 PreparationSummary columns inserted after "RR mean (ms)"
+    # plus a trailing Quality badge column.
     assert headers == [
         "ID",
         "Group",
@@ -99,10 +101,15 @@ def test_participants_table_columns(data_tab):
         "Beats",
         "Duration (min)",
         "RR mean (ms)",
+        "Retained",
+        "Artifacts %",
+        "Duplicates",
+        "RR range",
         "Events",
         "Sections",
         "Has artifacts",
         "Has NN",
+        "Quality",
     ]
 
 
@@ -235,13 +242,21 @@ def test_participants_table_section_count_uses_loaded_dataset(main_window, data_
             row_for_pid = r
             break
     assert row_for_pid is not None
-    # Column 7 = Sections (after the new Beats/Duration/RR mean/Events cols)
-    assert data_tab._participants_table.item(row_for_pid, 7).text() == "3"
-    # Column 9 = Has NN — synthetic data has non-empty t array → "Yes"
-    assert data_tab._participants_table.item(row_for_pid, 9).text() == "Yes"
+    # Phase 23A: 15-column layout. Use COL_* constants to avoid hard-coded
+    # indices that drift when columns get added.
+    from rrational.inspector.tabs.data_tab import (
+        COL_BEATS,
+        COL_DURATION,
+        COL_HAS_NN,
+        COL_SECTIONS,
+    )
+
+    assert data_tab._participants_table.item(row_for_pid, COL_SECTIONS).text() == "3"
+    # Has NN — synthetic data has non-empty t array → "Yes"
+    assert data_tab._participants_table.item(row_for_pid, COL_HAS_NN).text() == "Yes"
     # Streamlit-parity columns populate when dataset is loaded
-    assert data_tab._participants_table.item(row_for_pid, 3).text() != "-"  # Beats
-    assert data_tab._participants_table.item(row_for_pid, 4).text() != "-"  # Duration
+    assert data_tab._participants_table.item(row_for_pid, COL_BEATS).text() != "-"
+    assert data_tab._participants_table.item(row_for_pid, COL_DURATION).text() != "-"
 
 
 # ---------------------------------------------------------------------
@@ -320,3 +335,103 @@ def test_on_active_dataset_changed_is_a_noop(data_tab):
     before = data_tab._participants_table.rowCount()
     data_tab.on_active_dataset_changed(None)
     assert data_tab._participants_table.rowCount() == before
+
+
+# ---------------------------------------------------------------------
+# Phase 23A — Cleaning thresholds + PreparationSummary columns
+# ---------------------------------------------------------------------
+def test_cleaning_thresholds_persist_across_apply(main_window, data_tab):
+    """The Apply button writes the spin-box values to QSettings."""
+    from rrational.inspector.settings import read_setting
+
+    data_tab._cleaning_min_spin.setValue(350)
+    data_tab._cleaning_max_spin.setValue(1800)
+    data_tab._cleaning_sudden_spin.setValue(25)
+    data_tab._on_apply_cleaning_clicked()
+
+    assert float(read_setting("cleaning_min_rr_ms")) == 350.0
+    assert float(read_setting("cleaning_max_rr_ms")) == 1800.0
+    assert float(read_setting("cleaning_sudden_change_pct")) == 25.0
+
+
+def test_retained_column_populates_after_load(main_window, data_tab):
+    """Loading a dataset fills the Retained / Artifacts % / RR range cols."""
+    from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.tabs.data_tab import (
+        COL_ARTIFACT_PCT,
+        COL_DUPLICATES,
+        COL_RETAINED,
+        COL_RR_RANGE,
+    )
+
+    main_window.add_dataset(
+        Dataset(name="0099AAAA.rrational", data=_make_data(n_sections=2))
+    )
+    main_window.set_active_dataset(0)
+    pt = main_window._participants_tab
+    pt._participants["0099AAAA"] = {
+        "label": "",
+        "event_order": [],
+        "manual_events": [],
+    }
+    data_tab.on_workspace_changed()
+
+    row = None
+    for r in range(data_tab._participants_table.rowCount()):
+        if data_tab._participants_table.item(r, 0).text() == "0099AAAA":
+            row = r
+            break
+    assert row is not None
+    # All four PreparationSummary columns should hold real values, not "-".
+    retained = data_tab._participants_table.item(row, COL_RETAINED).text()
+    assert retained != "-"
+    assert retained.isdigit() and int(retained) > 0
+    artifact_pct = data_tab._participants_table.item(row, COL_ARTIFACT_PCT).text()
+    assert artifact_pct != "-"
+    assert artifact_pct.endswith("%")
+    rr_range = data_tab._participants_table.item(row, COL_RR_RANGE).text()
+    assert rr_range != "-"
+    assert " ms" in rr_range and "-" in rr_range  # "<min>-<max> ms"
+    assert data_tab._participants_table.item(row, COL_DUPLICATES).text() == "0"
+
+
+def test_quality_badge_colour_matches_artifact_ratio(main_window, data_tab):
+    """Quality colour reflects the helper's Good / OK / Poor mapping."""
+    from qtpy.QtGui import QColor
+
+    from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.tabs.data_tab import (
+        COL_QUALITY,
+        _QUALITY_COLOURS,
+        _quality_for,
+    )
+
+    # Synthetic data with RR ~800 ms — well inside the default 300/2000
+    # range, so the artifact ratio is 0 and Quality is "Good".
+    main_window.add_dataset(
+        Dataset(name="0042GOOD.rrational", data=_make_data(n_sections=2))
+    )
+    main_window.set_active_dataset(0)
+    pt = main_window._participants_tab
+    pt._participants["0042GOOD"] = {
+        "label": "",
+        "event_order": [],
+        "manual_events": [],
+    }
+    data_tab.on_workspace_changed()
+
+    row = None
+    for r in range(data_tab._participants_table.rowCount()):
+        if data_tab._participants_table.item(r, 0).text() == "0042GOOD":
+            row = r
+            break
+    assert row is not None
+    item = data_tab._participants_table.item(row, COL_QUALITY)
+    assert item.text() == "Good"
+    expected_colour: QColor = _QUALITY_COLOURS["Good"]
+    assert item.foreground().color().rgb() == expected_colour.rgb()
+
+    # Also exercise the pure helper across all 3 buckets.
+    assert _quality_for(0.0)[0] == "Good"
+    assert _quality_for(0.10)[0] == "OK"
+    assert _quality_for(0.50)[0] == "Poor"

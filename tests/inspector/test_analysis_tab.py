@@ -120,13 +120,15 @@ def test_single_compute_populates_result_table(main_window):
     pane._on_compute()
 
     table = pane._result_table
-    # 2 meta rows + len(_DEFAULT_METRICS) metric rows
-    from rrational.inspector.tabs.analysis_tab import _DEFAULT_METRICS
-
-    assert table.rowCount() == 2 + len(_DEFAULT_METRICS)
+    # Phase 23C: result table now respects the AnalysisSettingsBar's
+    # active preset (default "Basic" = 5 metrics) instead of the old
+    # hardcoded _DEFAULT_METRICS (7). 2 meta rows + N metric rows.
+    selected = pane._settings_bar.selected_metrics()
+    assert len(selected) > 0, "Settings bar should have at least one metric selected"
+    assert table.rowCount() == 2 + len(selected)
     # First column of last row should be a metric name; second col not "—"
     last_metric = table.item(table.rowCount() - 1, 0).text()
-    assert last_metric in _DEFAULT_METRICS
+    assert last_metric in selected
 
 
 def test_single_compute_button_disabled_when_no_data(main_window):

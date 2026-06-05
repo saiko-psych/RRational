@@ -117,7 +117,8 @@ def test_tab_label_state_with_active_dataset(main_window, participant_tab):
     # MainWindow doesn't know about this tab, so notify it manually:
     participant_tab.on_workspace_changed()
     participant_tab.on_active_dataset_changed(main_window._data)
-    assert participant_tab.tab_label_state() == "(showing 0012MEBE)"
+    # Phase 23B: no group assigned → just the stem in parens.
+    assert participant_tab.tab_label_state() == "(0012MEBE)"
 
 
 # ---------------------------------------------------------------------
@@ -333,3 +334,164 @@ def test_nn_summary_updates_after_preprocessing_result(main_window, participant_
     assert "4 corrected" in text
     assert "200 total" in text
     assert "2.00%" in text
+
+
+# ---------------------------------------------------------------------
+# Phase 23B — header metrics + section validation persistence
+# ---------------------------------------------------------------------
+def _seed_participant_meta(main_window, pid: str, **overrides):
+    """Populate ParticipantsTab._participants with one entry."""
+    pt = main_window._participants_tab
+    pt._participants[pid] = {
+        "label": overrides.get("label", ""),
+        "group": overrides.get("group", ""),
+        "sequence": overrides.get("sequence", ""),
+        "event_order": [],
+        "manual_events": [],
+    }
+
+
+def test_header_metrics_show_group_and_sequence(main_window, participant_tab):
+    """Header row pulls group + sequence from the ParticipantsTab."""
+    from rrational.inspector.data_loader import Dataset
+
+    pid = "0012MEBE"
+    main_window.add_dataset(
+        Dataset(name=f"{pid}.rrational", data=_make_data(n_sections=2))
+    )
+    _seed_participant_meta(main_window, pid, group="MAR", sequence="R1")
+    main_window.set_active_dataset(0)
+    participant_tab.on_workspace_changed()
+    participant_tab.on_active_dataset_changed(main_window._data)
+
+    assert participant_tab._hdr_participant_value.text() == pid
+    assert participant_tab._hdr_group_value.text() == "MAR"
+    assert participant_tab._hdr_sequence_value.text() == "R1"
+    # Beats / duration / duplicates derive from the dataset arrays.
+    beats_text = participant_tab._hdr_beats_value.text()
+    assert "retained" in beats_text
+    assert participant_tab._hdr_duration_value.text().endswith("min")
+    assert participant_tab._hdr_duplicates_value.text() == "0"
+
+
+def test_tab_label_state_shows_group_and_sequence(main_window, participant_tab):
+    """tab_label_state composes stem / group / sequence when all present."""
+    from rrational.inspector.data_loader import Dataset
+
+    pid = "0012MEBE"
+    main_window.add_dataset(
+        Dataset(name=f"{pid}.rrational", data=_make_data(n_sections=2))
+    )
+    _seed_participant_meta(main_window, pid, group="MAR", sequence="R1")
+    main_window.set_active_dataset(0)
+    participant_tab.on_workspace_changed()
+    participant_tab.on_active_dataset_changed(main_window._data)
+    assert participant_tab.tab_label_state() == f"({pid} / MAR / R1)"
+
+
+def test_validate_section_writes_yaml(main_window, participant_tab, tmp_path):
+    """_on_validate_section persists to {pid}_section_validations.yml."""
+    import yaml
+    from rrational.inspector.data_loader import Dataset
+
+    pid = "0012MEBE"
+    main_window.add_dataset(
+        Dataset(name=f"{pid}.rrational", data=_make_data(n_sections=2))
+    )
+    _seed_participant_meta(main_window, pid, group="MAR", sequence="R1")
+    main_window.set_active_dataset(0)
+    participant_tab.on_workspace_changed()
+    participant_tab.on_active_dataset_changed(main_window._data)
+
+    # Drive the validate handler directly — test_mode skips the modal.
+    participant_tab._on_validate_section("sec0")
+
+    # The persistence layer writes to ~/.rrational/exports/ when no
+    # project is open (CONFIG_DIR / "exports"). We isolated CONFIG_DIR
+    # via the autouse fixture so the file lives under tmp_path.
+    from rrational.gui import persistence as gui_persistence
+
+    target = gui_persistence.CONFIG_DIR / "exports" / f"{pid}_section_validations.yml"
+    assert target.exists(), f"Expected {target} to exist after validation"
+    payload = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert payload["participant_id"] == pid
+    assert payload["group"] == "MAR"
+    assert "sec0" in payload["sections"]
+    assert payload["sections"]["sec0"]["validator"] == "inspector"
+    assert "validated_at" in payload["sections"]["sec0"]
+
+
+def test_validations_reload_on_dataset_switch(main_window, participant_tab, tmp_path):
+    """Switching datasets reloads {pid}_section_validations.yml for the new pid."""
+    from rrational.gui.persistence import save_section_validations
+    from rrational.inspector.data_loader import Dataset
+
+    pid_a = "AAA"
+    pid_b = "BBB"
+    main_window.add_dataset(
+        Dataset(name=f"{pid_a}.rrational", data=_make_data(n_sections=2))
+    )
+    main_window.add_dataset(
+        Dataset(name=f"{pid_b}.rrational", data=_make_data(n_sections=2))
+    )
+    _seed_participant_meta(main_window, pid_a, group="G1")
+    _seed_participant_meta(main_window, pid_b, group="G2")
+
+    # Pre-seed pid_b's YAML on disk; pid_a has nothing.
+    save_section_validations(
+        participant_id=pid_b,
+        group="G2",
+        section_validations={
+            "sec1": {"validated_at": "2026-01-01T00:00:00", "validator": "inspector"}
+        },
+    )
+
+    main_window.set_active_dataset(0)
+    participant_tab.on_workspace_changed()
+    participant_tab.on_active_dataset_changed(main_window._data)
+    assert participant_tab._section_validations == {}
+
+    main_window.set_active_dataset(1)
+    participant_tab.on_active_dataset_changed(main_window._data)
+    assert "sec1" in participant_tab._section_validations
+    # And the section list row reflects the validated state via the
+    # check-mark prefix in the visible widget.
+    item = participant_tab._sections_list.item(1)
+    row_widget = participant_tab._sections_list.itemWidget(item)
+    # The first child of the row layout is the QLabel with the name.
+    from qtpy.QtWidgets import QLabel as _QLabel
+
+    label = row_widget.findChild(_QLabel)
+    assert "✓" in label.text()
+
+
+def test_clear_validation_removes_from_yaml(main_window, participant_tab):
+    """_clear_validation drops the section from the YAML payload."""
+    import yaml
+    from rrational.inspector.data_loader import Dataset
+
+    pid = "PXYZ"
+    main_window.add_dataset(
+        Dataset(name=f"{pid}.rrational", data=_make_data(n_sections=2))
+    )
+    _seed_participant_meta(main_window, pid, group="GZ")
+    main_window.set_active_dataset(0)
+    participant_tab.on_workspace_changed()
+    participant_tab.on_active_dataset_changed(main_window._data)
+
+    # Validate two sections, then clear one and confirm the file no
+    # longer mentions it.
+    participant_tab._on_validate_section("sec0")
+    participant_tab._on_validate_section("sec1")
+    assert set(participant_tab._section_validations.keys()) == {"sec0", "sec1"}
+
+    participant_tab._clear_validation("sec0")
+    assert "sec0" not in participant_tab._section_validations
+    assert "sec1" in participant_tab._section_validations
+
+    from rrational.gui import persistence as gui_persistence
+
+    target = gui_persistence.CONFIG_DIR / "exports" / f"{pid}_section_validations.yml"
+    payload = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert "sec0" not in payload["sections"]
+    assert "sec1" in payload["sections"]

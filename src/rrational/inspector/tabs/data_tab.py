@@ -1,4 +1,4 @@
-"""Data tab - workspace overview (Phase 22.1).
+"""Data tab - workspace overview (Phase 22.1 + Phase 23A).
 
 Streamlit-style "Data" tab that mirrors ``rrational.gui.tabs.data``. The
 goal is a single landing pane where the user can see:
@@ -7,10 +7,17 @@ goal is a single landing pane where the user can see:
 2. The data-source subfolders detected under ``project/data/raw/`` plus
    raw-file counts per source (hrv_logger, vns, etc.).
 3. A read-only participant table — one row per ``participants.yml``
-   entry, columns: ID / Group / Sequence / Section count / Has
-   artifacts / Has NN intervals.
+   entry, columns: ID / Group / Sequence / Beats / Duration / RR mean /
+   Retained / Artifacts % / Duplicates / RR range / Events / Sections /
+   Has artifacts / Has NN / Quality.
 4. Bulk-action buttons (Import all from raw, Auto-assign from
    workspace, Export all to .rrational v2).
+
+Phase 23A adds a "Cleaning thresholds" block between the Project block
+and the side-by-side raw/processed blocks. The user can tune
+``rr_min_ms`` / ``rr_max_ms`` / ``sudden_change_pct`` and the
+participants table updates with retained/artifact stats from the
+shared ``rrational.prep.summaries.PreparationSummary`` pipeline.
 
 The tab is workspace-level: ``on_active_dataset_changed`` is a no-op.
 ``on_workspace_changed`` rebuilds the participants table + the
@@ -24,9 +31,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QDoubleSpinBox,
     QFileDialog,
+    QFormLayout,
     QFrame,
     QGroupBox,
     QHBoxLayout,
@@ -39,11 +49,129 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
 )
 
+from rrational.cleaning.rr import CleaningConfig
+from rrational.inspector.prep_summary import (
+    compute_inspector_summary,
+    invalidate_cache,
+)
+from rrational.inspector.settings import read_setting, write_setting
 from rrational.inspector.tabs.base import InspectorTab
 
 if TYPE_CHECKING:
     from rrational.inspector.data_loader import InspectorData
 
+
+# ----------------------------------------------------------------------
+# Phase 23A — Cleaning thresholds form defaults + helpers
+# ----------------------------------------------------------------------
+# Defaults match what ``rrational.inspector.settings`` registers for
+# the new keys (cleaning_min_rr_ms / cleaning_max_rr_ms /
+# cleaning_sudden_change_pct). Keep these in sync.
+_CLEANING_DEFAULT_MIN_MS = 300.0
+_CLEANING_DEFAULT_MAX_MS = 2000.0
+_CLEANING_DEFAULT_SUDDEN_PCT = 20.0
+
+
+def _read_cleaning_setting(key: str, default: float) -> float:
+    """Read a cleaning threshold from QSettings as a float.
+
+    QSettings returns strings on some platforms — coerce safely.
+    """
+    raw = read_setting(key)
+    if raw is None or raw == "":
+        return float(default)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _current_cleaning_config() -> CleaningConfig:
+    """Build a ``CleaningConfig`` from the persisted QSettings values."""
+    min_ms = _read_cleaning_setting("cleaning_min_rr_ms", _CLEANING_DEFAULT_MIN_MS)
+    max_ms = _read_cleaning_setting("cleaning_max_rr_ms", _CLEANING_DEFAULT_MAX_MS)
+    sudden_pct = _read_cleaning_setting(
+        "cleaning_sudden_change_pct", _CLEANING_DEFAULT_SUDDEN_PCT
+    )
+    return CleaningConfig(
+        rr_min_ms=int(min_ms),
+        rr_max_ms=int(max_ms),
+        sudden_change_pct=float(sudden_pct) / 100.0,
+    )
+
+
+def _persist_cleaning_config(min_ms: float, max_ms: float, sudden_pct: float) -> None:
+    """Write the user's cleaning thresholds back to QSettings."""
+    write_setting("cleaning_min_rr_ms", float(min_ms))
+    write_setting("cleaning_max_rr_ms", float(max_ms))
+    write_setting("cleaning_sudden_change_pct", float(sudden_pct))
+
+
+# ----------------------------------------------------------------------
+# Participants-table column layout — single source of truth
+# ----------------------------------------------------------------------
+_PARTICIPANTS_TABLE_HEADERS: tuple[str, ...] = (
+    "ID",
+    "Group",
+    "Sequence",
+    "Beats",
+    "Duration (min)",
+    "RR mean (ms)",
+    "Retained",
+    "Artifacts %",
+    "Duplicates",
+    "RR range",
+    "Events",
+    "Sections",
+    "Has artifacts",
+    "Has NN",
+    "Quality",
+)
+COL_ID = 0
+COL_GROUP = 1
+COL_SEQUENCE = 2
+COL_BEATS = 3
+COL_DURATION = 4
+COL_RR_MEAN = 5
+COL_RETAINED = 6
+COL_ARTIFACT_PCT = 7
+COL_DUPLICATES = 8
+COL_RR_RANGE = 9
+COL_EVENTS = 10
+COL_SECTIONS = 11
+COL_HAS_ARTIFACTS = 12
+COL_HAS_NN = 13
+COL_QUALITY = 14
+
+
+# Phase 23A Quality-badge thresholds (artifact_ratio). Mirrors the
+# Streamlit colour coding: green <5%, yellow <15%, red otherwise.
+_QUALITY_GOOD_MAX = 0.05
+_QUALITY_OK_MAX = 0.15
+
+# Quality badge colours: chosen to remain readable on alternating-row
+# backgrounds (avoid super-pale shades that wash out).
+_QUALITY_COLOURS: dict[str, QColor] = {
+    "Good": QColor(0, 128, 0),
+    "OK": QColor(184, 134, 11),
+    "Poor": QColor(178, 34, 34),
+}
+
+
+def _quality_for(artifact_ratio: float) -> tuple[str, QColor]:
+    """Map a 0-1 artifact ratio to a (label, colour) badge."""
+    if artifact_ratio < _QUALITY_GOOD_MAX:
+        label = "Good"
+    elif artifact_ratio < _QUALITY_OK_MAX:
+        label = "OK"
+    else:
+        label = "Poor"
+    return label, _QUALITY_COLOURS[label]
+
+
+# ----------------------------------------------------------------------
+# Raw-data-source detection (unchanged from Phase 22.1)
+# ----------------------------------------------------------------------
 # Folder-name → recording-app label. Mirrors the Streamlit detection
 # table in ``rrational.gui.tabs.data.RECORDING_APP_DETECTION`` but kept
 # inline here so the inspector tab has no Streamlit import dependency.
@@ -128,7 +256,7 @@ class DataTab(InspectorTab):
 
     Replaces the bare empty-state of the Browse tab with a richer
     landing view inspired by the Streamlit ``Data`` tab — project info,
-    data sources, participants table, bulk actions.
+    cleaning thresholds, data sources, participants table, bulk actions.
     """
 
     TAB_LABEL = "Data"
@@ -148,6 +276,12 @@ class DataTab(InspectorTab):
 
         outer.addWidget(self._build_project_block())
 
+        # Phase 23A: cleaning thresholds form sits between Project and
+        # the raw/processed file lists so the user sees what the
+        # downstream metrics are computed against before they look at
+        # the participants table.
+        outer.addWidget(self._build_cleaning_block())
+
         # Two side-by-side blocks: Raw data (left) + Processed data (right).
         # Both list the actual files in the project so the user sees the
         # state at a glance and clicks any file to open it.
@@ -163,6 +297,76 @@ class DataTab(InspectorTab):
         outer.addWidget(self._participants_group, stretch=1)
 
         outer.addWidget(self._build_bulk_actions_block())
+
+    def _build_cleaning_block(self) -> QGroupBox:
+        """Tiny form for ``CleaningConfig`` thresholds (Phase 23A).
+
+        Two min/max RR spin-boxes + one sudden-change-% spin-box +
+        Apply button. Values persist to QSettings; Apply invalidates the
+        per-dataset summary cache and refreshes the participants table.
+        """
+        box = QGroupBox("Cleaning thresholds")
+        outer = QVBoxLayout(box)
+        outer.setSpacing(6)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+
+        self._cleaning_min_spin = QDoubleSpinBox()
+        self._cleaning_min_spin.setRange(0.0, 5000.0)
+        self._cleaning_min_spin.setDecimals(0)
+        self._cleaning_min_spin.setSingleStep(10.0)
+        self._cleaning_min_spin.setSuffix(" ms")
+        self._cleaning_min_spin.setValue(
+            _read_cleaning_setting("cleaning_min_rr_ms", _CLEANING_DEFAULT_MIN_MS)
+        )
+        form.addRow("Min RR:", self._cleaning_min_spin)
+
+        self._cleaning_max_spin = QDoubleSpinBox()
+        self._cleaning_max_spin.setRange(0.0, 5000.0)
+        self._cleaning_max_spin.setDecimals(0)
+        self._cleaning_max_spin.setSingleStep(10.0)
+        self._cleaning_max_spin.setSuffix(" ms")
+        self._cleaning_max_spin.setValue(
+            _read_cleaning_setting("cleaning_max_rr_ms", _CLEANING_DEFAULT_MAX_MS)
+        )
+        form.addRow("Max RR:", self._cleaning_max_spin)
+
+        self._cleaning_sudden_spin = QDoubleSpinBox()
+        self._cleaning_sudden_spin.setRange(0.0, 100.0)
+        self._cleaning_sudden_spin.setDecimals(1)
+        self._cleaning_sudden_spin.setSingleStep(1.0)
+        self._cleaning_sudden_spin.setSuffix(" %")
+        self._cleaning_sudden_spin.setValue(
+            _read_cleaning_setting(
+                "cleaning_sudden_change_pct", _CLEANING_DEFAULT_SUDDEN_PCT
+            )
+        )
+        form.addRow("Sudden change:", self._cleaning_sudden_spin)
+
+        outer.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        self._cleaning_apply_btn = QPushButton("Apply & refresh")
+        self._cleaning_apply_btn.setToolTip(
+            "Persist these thresholds and re-compute the per-participant "
+            "summary metrics (Retained / Artifacts % / RR range / Quality)."
+        )
+        self._cleaning_apply_btn.clicked.connect(self._on_apply_cleaning_clicked)
+        btn_row.addWidget(self._cleaning_apply_btn)
+        btn_row.addStretch()
+        outer.addLayout(btn_row)
+        return box
+
+    def _on_apply_cleaning_clicked(self) -> None:
+        """Persist the spin-box values, drop the cache, refresh table."""
+        _persist_cleaning_config(
+            self._cleaning_min_spin.value(),
+            self._cleaning_max_spin.value(),
+            self._cleaning_sudden_spin.value(),
+        )
+        invalidate_cache()
+        self._refresh_participants_table()
 
     def _build_processed_block(self) -> QGroupBox:
         """List every .rrational v2 file in the project's data/processed/.
@@ -428,23 +632,14 @@ class DataTab(InspectorTab):
         self._participants_summary.setStyleSheet("color: #666;")
         layout.addWidget(self._participants_summary)
 
-        # 10 columns — mirrors what Streamlit's participant table shows
-        # via PreparationSummary (beats / duration / RR / events) plus
-        # the Inspector-specific group/sequence/correction columns.
-        self._participants_table = QTableWidget(0, 10, self)
+        # 15 columns — Streamlit-parity metrics from PreparationSummary
+        # (Phase 23A added Retained / Artifacts % / Duplicates / RR
+        # range + a trailing Quality badge).
+        self._participants_table = QTableWidget(
+            0, len(_PARTICIPANTS_TABLE_HEADERS), self
+        )
         self._participants_table.setHorizontalHeaderLabels(
-            [
-                "ID",
-                "Group",
-                "Sequence",
-                "Beats",
-                "Duration (min)",
-                "RR mean (ms)",
-                "Events",
-                "Sections",
-                "Has artifacts",
-                "Has NN",
-            ]
+            list(_PARTICIPANTS_TABLE_HEADERS)
         )
         self._participants_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._participants_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -629,6 +824,7 @@ class DataTab(InspectorTab):
         self._participants_table.setSortingEnabled(False)
         self._participants_table.setRowCount(0)
         participants = self._collect_participants()
+        cleaning_cfg = _current_cleaning_config()
         n_with_metrics = 0
         for pid in sorted(participants.keys()):
             data = participants[pid] or {}
@@ -637,14 +833,21 @@ class DataTab(InspectorTab):
             has_artifacts = self._dataset_has_artifacts(dataset)
             has_nn = self._dataset_has_nn(dataset)
 
-            # Streamlit-parity metrics: only computable when the dataset is
-            # actually loaded in the workspace (we don't pre-scan raw files
-            # to keep the table fast — user loads what they want from the
-            # Raw-data tree, then metrics appear here).
+            # Streamlit-parity metrics: only computable when the dataset
+            # is actually loaded in the workspace (we don't pre-scan raw
+            # files to keep the table fast — user loads what they want
+            # from the Raw-data tree, then metrics appear here).
             beats_str = "-"
             duration_str = "-"
             rr_mean_str = "-"
             events_str = "-"
+            retained_str = "-"
+            artifact_pct_str = "-"
+            duplicates_str = "-"
+            rr_range_str = "-"
+            quality_label = "-"
+            quality_colour: QColor | None = None
+
             if dataset is not None:
                 d = dataset.data
                 finite = np.isfinite(d.v) if d.v is not None else None
@@ -657,31 +860,55 @@ class DataTab(InspectorTab):
                     n_with_metrics += 1
                 events_str = str(len(d.events))
 
+                # Pull PreparationSummary (cached per id(dataset) +
+                # cleaning-config signature). Returns None when the
+                # dataset has nothing finite to clean.
+                summary = compute_inspector_summary(dataset, cleaning_cfg)
+                if summary is not None:
+                    retained_str = str(summary.retained_beats)
+                    artifact_pct_str = f"{summary.artifact_ratio * 100:.1f}%"
+                    duplicates_str = str(summary.duplicate_rr_intervals)
+                    rr_range_str = (
+                        f"{int(summary.rr_min_ms)}-{int(summary.rr_max_ms)} ms"
+                    )
+                    quality_label, quality_colour = _quality_for(summary.artifact_ratio)
+
             r = self._participants_table.rowCount()
             self._participants_table.insertRow(r)
-            self._participants_table.setItem(r, 0, QTableWidgetItem(pid))
+            self._participants_table.setItem(r, COL_ID, QTableWidgetItem(pid))
             self._participants_table.setItem(
-                r, 1, QTableWidgetItem(str(data.get("group") or ""))
+                r, COL_GROUP, QTableWidgetItem(str(data.get("group") or ""))
             )
             self._participants_table.setItem(
-                r, 2, QTableWidgetItem(str(data.get("sequence") or ""))
+                r, COL_SEQUENCE, QTableWidgetItem(str(data.get("sequence") or ""))
             )
             for col, txt in (
-                (3, beats_str),
-                (4, duration_str),
-                (5, rr_mean_str),
-                (6, events_str),
-                (7, str(section_count)),
+                (COL_BEATS, beats_str),
+                (COL_DURATION, duration_str),
+                (COL_RR_MEAN, rr_mean_str),
+                (COL_RETAINED, retained_str),
+                (COL_ARTIFACT_PCT, artifact_pct_str),
+                (COL_DUPLICATES, duplicates_str),
+                (COL_RR_RANGE, rr_range_str),
+                (COL_EVENTS, events_str),
+                (COL_SECTIONS, str(section_count)),
             ):
                 it = QTableWidgetItem(txt)
                 it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self._participants_table.setItem(r, col, it)
             self._participants_table.setItem(
-                r, 8, QTableWidgetItem("Yes" if has_artifacts else "No")
+                r,
+                COL_HAS_ARTIFACTS,
+                QTableWidgetItem("Yes" if has_artifacts else "No"),
             )
             self._participants_table.setItem(
-                r, 9, QTableWidgetItem("Yes" if has_nn else "No")
+                r, COL_HAS_NN, QTableWidgetItem("Yes" if has_nn else "No")
             )
+            quality_item = QTableWidgetItem(quality_label)
+            quality_item.setTextAlignment(Qt.AlignCenter)
+            if quality_colour is not None:
+                quality_item.setForeground(quality_colour)
+            self._participants_table.setItem(r, COL_QUALITY, quality_item)
         self._participants_table.setSortingEnabled(True)
 
         n_participants = len(participants)
@@ -695,8 +922,9 @@ class DataTab(InspectorTab):
         self._participants_summary.setText(
             f"{n_participants} participant(s) registered · "
             f"{n_datasets} dataset(s) loaded{suffix}. "
-            "<i>Beats / Duration / RR mean populate as you load files from "
-            "the Raw-data tree above.</i>"
+            "<i>Beats / Duration / RR mean / Retained / Artifacts % populate "
+            "as you load files from the Raw-data tree above. Adjust "
+            "thresholds and click Apply &amp; refresh to recompute.</i>"
         )
 
     def _refresh_bulk_buttons(self) -> None:
