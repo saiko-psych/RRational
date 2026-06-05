@@ -148,7 +148,15 @@ class DataTab(InspectorTab):
         outer.setSpacing(12)
 
         outer.addWidget(self._build_project_block())
-        outer.addWidget(self._build_sources_block())
+
+        # Two side-by-side blocks: Raw data (left) + Processed data (right).
+        # Both are file listings so the user sees the project state at a
+        # glance and clicks any file to open it.
+        files_row = QHBoxLayout()
+        files_row.setSpacing(8)
+        files_row.addWidget(self._build_sources_block(), stretch=1)
+        files_row.addWidget(self._build_processed_block(), stretch=1)
+        outer.addLayout(files_row, stretch=1)
 
         # Participants block stretches to consume vertical space — it's
         # the centerpiece of the tab.
@@ -156,6 +164,102 @@ class DataTab(InspectorTab):
         outer.addWidget(self._participants_group, stretch=1)
 
         outer.addWidget(self._build_bulk_actions_block())
+
+    def _build_processed_block(self) -> QGroupBox:
+        """List every .rrational v2 file in the project's data/processed/.
+
+        Each entry is a clickable button that opens the file. Without a
+        project, shows an info text.
+        """
+        box = QGroupBox("Processed data (data/processed/*.rrational)")
+        layout = QVBoxLayout(box)
+        layout.setSpacing(4)
+
+        self._processed_info = QLabel()
+        self._processed_info.setStyleSheet("color: #666;")
+        self._processed_info.setWordWrap(True)
+        layout.addWidget(self._processed_info)
+
+        from qtpy.QtWidgets import QListWidget
+
+        self._processed_list = QListWidget()
+        self._processed_list.itemDoubleClicked.connect(
+            self._on_processed_file_double_clicked
+        )
+        self._processed_list.setAlternatingRowColors(True)
+        layout.addWidget(self._processed_list, stretch=1)
+
+        btn_row = QHBoxLayout()
+        self._open_selected_btn = QPushButton("Open selected")
+        self._open_selected_btn.setToolTip(
+            "Open the highlighted .rrational file in the Browse/Participant tab"
+        )
+        self._open_selected_btn.clicked.connect(self._on_open_selected_processed)
+        self._open_all_btn = QPushButton("Open all")
+        self._open_all_btn.setToolTip(
+            "Open every .rrational file from data/processed/ at once"
+        )
+        self._open_all_btn.clicked.connect(self._on_open_all_processed)
+        btn_row.addWidget(self._open_selected_btn)
+        btn_row.addWidget(self._open_all_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+        return box
+
+    def _on_processed_file_double_clicked(self, item) -> None:
+        path = item.data(Qt.UserRole)
+        if path:
+            self._main_window.open_path(Path(path))
+
+    def _on_open_selected_processed(self) -> None:
+        for item in self._processed_list.selectedItems():
+            path = item.data(Qt.UserRole)
+            if path:
+                self._main_window.open_path(Path(path))
+
+    def _on_open_all_processed(self) -> None:
+        for i in range(self._processed_list.count()):
+            item = self._processed_list.item(i)
+            path = item.data(Qt.UserRole)
+            if path:
+                self._main_window.open_path(Path(path))
+
+    def _refresh_processed_list(self) -> None:
+        """Re-scan data/processed/ for the active project."""
+        self._processed_list.clear()
+        pm = getattr(self._main_window, "_project", None)
+        if pm is None:
+            self._processed_info.setText(
+                "<i>No project active. Open or create a project to see "
+                "its processed files here.</i>"
+            )
+            self._open_selected_btn.setEnabled(False)
+            self._open_all_btn.setEnabled(False)
+            return
+        processed_dir = pm.get_processed_dir()
+        files = sorted(processed_dir.glob("*.rrational"))
+        if not files:
+            self._processed_info.setText(
+                f"<i>No .rrational v2 exports yet in <code>{processed_dir}</code>. "
+                "Use the Browse / Participant tab to load raw data, run "
+                "preprocessing, then Save as .rrational.</i>"
+            )
+            self._open_selected_btn.setEnabled(False)
+            self._open_all_btn.setEnabled(False)
+            return
+        from qtpy.QtWidgets import QListWidgetItem
+
+        self._processed_info.setText(
+            f"<b>{len(files)}</b> processed file(s) in "
+            f"<code>{processed_dir}</code>. Double-click to open."
+        )
+        for fp in files:
+            it = QListWidgetItem(fp.name)
+            it.setData(Qt.UserRole, str(fp))
+            it.setToolTip(str(fp))
+            self._processed_list.addItem(it)
+        self._open_selected_btn.setEnabled(True)
+        self._open_all_btn.setEnabled(True)
 
     def _build_project_block(self) -> QGroupBox:
         box = QGroupBox("Project")
@@ -299,11 +403,16 @@ class DataTab(InspectorTab):
     # InspectorTab hooks
     # ------------------------------------------------------------------
     def on_workspace_changed(self) -> None:
-        """Refresh everything: project info, sources, participants table."""
+        """Refresh everything: project info, sources, processed list,
+        participants table."""
         self._refresh_project_block()
         self._refresh_sources_block()
+        self._refresh_processed_list()
         self._refresh_participants_table()
         self._refresh_bulk_buttons()
+
+    # MainWindow.set_active_project calls this name; provide it as alias.
+    refresh_from_workspace = on_workspace_changed
 
     def on_active_dataset_changed(self, _data: "InspectorData | None") -> None:
         # Workspace-level tab — the active selection doesn't matter here.

@@ -51,8 +51,6 @@ def main_window(qtbot):
 
     win = MainWindow()
     win.test_mode = True
-    # Phase 22.3: manual-artifact panel lives inside BrowseTab (MNE-LAB).
-    win.set_ui_layout("mnelab")
     qtbot.addWidget(win)
     win.show()
     qtbot.waitExposed(win)

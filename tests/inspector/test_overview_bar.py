@@ -57,8 +57,6 @@ def main_window(qtbot):
 
     win = MainWindow()
     win.test_mode = True
-    # Phase 22.3: overview bar lives inside BrowseTab (MNE-LAB mode).
-    win.set_ui_layout("mnelab")
     qtbot.addWidget(win)
     win.show()
     qtbot.waitExposed(win)
