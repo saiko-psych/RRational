@@ -233,8 +233,36 @@ class ParticipantTab(InspectorTab):
         self._dock_host.addDockWidget(Qt.RightDockWidgetArea, self._preprocessing_dock)
 
         # ----- Outer layout: just hosts the dock-host --------------------
+        # Phase 24A: a top-of-tab help expander explains the per-participant
+        # workflow so the user doesn't have to guess what to click first.
+        from rrational.inspector.help_widgets import HelpExpander
+
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(
+            HelpExpander(
+                "Per-participant workflow",
+                (
+                    "<p>Use this tab to inspect and clean one recording at a "
+                    "time.</p>"
+                    "<ol>"
+                    "<li>Pick a recording from the <b>Participant</b> dropdown "
+                    "above, or step through with the arrow buttons.</li>"
+                    "<li>On the right, the <b>Preprocessing</b> panel runs the "
+                    "Lipponen 2019 (Kubios) detector when you click "
+                    "<i>Detect</i>. Orange X markers are flagged beats.</li>"
+                    "<li>Switch the panel to <b>Manual mark mode</b> to click "
+                    "individual beats, or <b>Add Exclusions</b> mode to drag "
+                    "out time ranges to skip entirely.</li>"
+                    "<li>Click <i>Save as .rrational</i> to write a v2 export "
+                    "with the corrections baked in.</li>"
+                    "</ol>"
+                    "<p>Sections on the left zoom the plot when clicked. Use "
+                    "the Validate button on a row to mark a section as "
+                    "reviewed.</p>"
+                ),
+            )
+        )
         outer.addWidget(self._dock_host)
 
     def _build_header_metrics_row(self) -> None:

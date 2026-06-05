@@ -183,15 +183,25 @@ class MainWindow(QMainWindow):
         # UX4: initial tab-label refresh once everything is wired up.
         self._refresh_tab_labels()
 
-        # UX5: first-run onboarding dialog (non-blocking, skipped in test_mode).
+        # Phase 24A: first-run dialog. The legacy onboarded-marker logic
+        # gates the auto-open; we now show the new multi-page workflow
+        # walkthrough instead of the bare 5-tab summary.
         if not self.test_mode:
             from rrational.inspector.onboarding import (
                 is_onboarded,
-                show_welcome_dialog,
+                mark_onboarded,
             )
+            from rrational.inspector.walkthrough import WalkthroughDialog
 
             if not is_onboarded():
-                show_welcome_dialog(self)
+                dlg = WalkthroughDialog(self, self)
+                dlg.exec()
+                # Mark the user as onboarded so subsequent launches skip
+                # the auto-open; the dialog stays available via Help.
+                try:
+                    mark_onboarded()
+                except OSError:  # pragma: no cover - defensive
+                    pass
 
         if initial_path is not None:
             self.open_path(initial_path)
@@ -329,6 +339,9 @@ class MainWindow(QMainWindow):
             stored = LAYOUT_STREAMLIT
         self._ui_layout: str = stored
         self._apply_layout_mode(self._ui_layout)
+
+        # Phase 24A: status-bar context hints on tab switch.
+        self._tabs_widget.currentChanged.connect(self._on_tab_changed_hint)
 
         self.setCentralWidget(self._tabs_widget)
 
@@ -791,37 +804,14 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Nothing to redo", 1500)
 
     def _show_workflow_walkthrough(self) -> None:
-        """UX5: end-to-end workflow help (modeless)."""
+        """Phase 24A: multi-page walkthrough dialog (replaces the old QMessageBox)."""
         if self.test_mode:
             self.statusBar().showMessage("Workflow walkthrough (test_mode: suppressed)")
             return
-        text = (
-            "<h3>RRational Inspector — typical workflow</h3>"
-            "<ol>"
-            "<li><b>Open a recording</b> via <i>File → Open recording</i> "
-            "(or the welcome screen). Accepts .rrational, Polar/Empatica CSV, "
-            "Kubios/Elite HRV/plain text.</li>"
-            "<li><b>Detect artifacts</b> in the right-side Preprocessing panel "
-            "(Browse tab). NK2 Kubios algorithm; results are persisted automatically.</li>"
-            "<li><b>Review &amp; correct</b>: enable <i>Use corrected RR values</i>, "
-            "or use <i>Manual mark mode</i> to click directly on beats. "
-            "<i>Exclusion mode</i> drags out time ranges to skip.</li>"
-            "<li><b>Save as .rrational v2</b> with the right-panel button — "
-            "open-exchange format with all the corrections preserved.</li>"
-            "<li><b>Setup tab</b>: define your groups, sections, sequences, protocol.</li>"
-            "<li><b>Participants tab</b>: link datasets to groups + sequences "
-            "(or import-from-workspace for a quick start).</li>"
-            "<li><b>Analysis tab</b>: pick a mode (Single / Repeating / Group / "
-            "Sequence) and Compute.</li>"
-            "<li><b>Results tab</b>: every metric in a sortable table. "
-            "Export as CSV, or generate a full HTML/Markdown report via "
-            "<i>File → Export report</i>.</li>"
-            "</ol>"
-            "<p><i>Tip: open a Project (File → Open project) to persist groups, "
-            "events, sequences, etc. across sessions and share state with the "
-            "Streamlit app.</i></p>"
-        )
-        QMessageBox.information(self, "Workflow walkthrough", text)
+        from rrational.inspector.walkthrough import WalkthroughDialog
+
+        dlg = WalkthroughDialog(self, self)
+        dlg.exec()
 
     def _reshow_welcome_dialog(self) -> None:
         """UX5: re-open the first-run welcome dialog on demand."""
@@ -1551,6 +1541,34 @@ class MainWindow(QMainWindow):
             tab.on_workspace_changed()
         self._refresh_visualisation_actions()
         self._refresh_tab_labels()
+
+    # Phase 24A: per-tab status-bar context hints. Map by class name so
+    # we don't have to import the optional DataTab / ParticipantTab at
+    # module-load time and so hidden layouts still get the right message.
+    _TAB_HINTS: dict[str, str] = {
+        "DataTab": "Pick a project then a file from the Raw-data tree to start",
+        "ParticipantTab": (
+            "Use the Detect button to find artifacts, then Apply correction"
+        ),
+        "BrowseTab": "Open a recording from the sidebar to view the timeline",
+        "SetupTab": (
+            "Define your study structure: events first, then sections + groups"
+        ),
+        "ParticipantsTab": "Link participant IDs to groups and sequences",
+        "AnalysisTab": "Pick a metric preset and mode, then click Compute",
+        "ResultsTab": "Sort, filter, and export your HRV metrics here",
+    }
+
+    def _on_tab_changed_hint(self, idx: int) -> None:
+        """Post a 5-second status-bar hint when the user switches tabs."""
+        if idx < 0 or idx >= self._tabs_widget.count():
+            return
+        widget = self._tabs_widget.widget(idx)
+        if widget is None:
+            return
+        hint = self._TAB_HINTS.get(type(widget).__name__)
+        if hint:
+            self.statusBar().showMessage(hint, 5000)
 
     def _refresh_tab_labels(self) -> None:
         """UX4: refresh top-tab labels with live state badges so the user

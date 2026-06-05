@@ -158,12 +158,31 @@ class _EventsPane(QWidget):
     """
 
     def __init__(self, main_window, parent=None) -> None:
+        from rrational.inspector.help_widgets import HelpExpander
+
         super().__init__(parent)
         self._main_window = main_window
         self._events: dict[str, list[str]] = self._load()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
+
+        outer.addWidget(
+            HelpExpander(
+                "Events",
+                (
+                    "<p>Events are time-point markers in your recordings "
+                    "(e.g. <i>rest_start</i>, <i>music_end</i>). Sections "
+                    "below are defined as the range between two events, so "
+                    "events are the foundation of every analysis.</p>"
+                    "<p>Use <b>Add event</b> to register a canonical name "
+                    "plus optional <b>synonyms</b> — the loader fuzzy-matches "
+                    "synonym strings against each recording's annotation "
+                    "labels, so <i>rest_start</i> can absorb "
+                    "<i>Ruhe Start</i>, <i>rest starts</i>, etc.</p>"
+                ),
+            )
+        )
 
         info = QLabel(
             "<b>Defined events</b> (saved to "
@@ -174,10 +193,13 @@ class _EventsPane(QWidget):
 
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("Add event…")
+        self._add_btn.setToolTip("Register a new canonical event name with synonyms.")
         self._add_btn.clicked.connect(self._on_add)
         self._edit_btn = QPushButton("Edit…")
+        self._edit_btn.setToolTip("Edit the selected event definition.")
         self._edit_btn.clicked.connect(self._on_edit)
         self._remove_btn = QPushButton("Remove")
+        self._remove_btn.setToolTip("Remove the selected event definition.")
         self._remove_btn.clicked.connect(self._on_remove)
         for b in (self._add_btn, self._edit_btn, self._remove_btn):
             btn_row.addWidget(b)
@@ -440,12 +462,32 @@ class _SectionsPane(QWidget):
     """
 
     def __init__(self, main_window, parent=None) -> None:
+        from rrational.inspector.help_widgets import HelpExpander
+
         super().__init__(parent)
         self._main_window = main_window
         self._sections: dict[str, dict] = self._load()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
+
+        outer.addWidget(
+            HelpExpander(
+                "Sections",
+                (
+                    "<p>Sections are time ranges between two events. The HRV "
+                    "analysis processes each section as one unit.</p>"
+                    "<p>Pick a <b>Start event</b> and <b>End event</b> (defined "
+                    "in the Events tab), give the section a <b>Name</b> "
+                    "(e.g. <i>baseline_rest</i>) and a human label. Keep the "
+                    "name machine-friendly (no spaces) — it's how downstream "
+                    "tools key into the data.</p>"
+                    "<p><b>Tip:</b> ensure your sections have at least ~100 "
+                    "beats for time-domain metrics and ~300 beats for "
+                    "frequency-domain metrics (Quigley 2024).</p>"
+                ),
+            )
+        )
 
         info = QLabel(
             "<b>Defined sections</b> (saved to "
@@ -456,10 +498,13 @@ class _SectionsPane(QWidget):
 
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("Add section…")
+        self._add_btn.setToolTip("Define a new section by start/end events.")
         self._add_btn.clicked.connect(self._on_add)
         self._edit_btn = QPushButton("Edit…")
+        self._edit_btn.setToolTip("Edit the selected section definition.")
         self._edit_btn.clicked.connect(self._on_edit)
         self._remove_btn = QPushButton("Remove")
+        self._remove_btn.setToolTip("Remove the selected section definition.")
         self._remove_btn.clicked.connect(self._on_remove)
         for b in (self._add_btn, self._edit_btn, self._remove_btn):
             btn_row.addWidget(b)
@@ -723,12 +768,31 @@ class _GroupsPane(QWidget):
     """
 
     def __init__(self, main_window, parent=None) -> None:
+        from rrational.inspector.help_widgets import HelpExpander
+
         super().__init__(parent)
         self._main_window = main_window
         self._groups: dict[str, dict] = self._load()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
+        layout.addWidget(
+            HelpExpander(
+                "Groups and playlists",
+                (
+                    "<p>A group is a collection of participants that share a "
+                    "condition (e.g. <i>control</i> vs <i>treatment</i>).</p>"
+                    "<p>Use <b>Add group</b> to pick a name and assign "
+                    "members. The Analysis tab's Group-Comparison mode then "
+                    "runs Friedman / RM-ANOVA + Holm post-hoc tests across "
+                    "the named groups.</p>"
+                    "<p>Members can also be edited later under the "
+                    "<b>Participants</b> tab — the assignments are stored in "
+                    "<code>config/participants.yml</code> and stay in sync.</p>"
+                ),
+            )
+        )
+
         info = QLabel(
             "<i>Group definitions are saved to "
             "<code>{project}/config/groups.yml</code> (or "
@@ -741,10 +805,13 @@ class _GroupsPane(QWidget):
 
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("Add group…")
+        self._add_btn.setToolTip("Create a new group and assign members.")
         self._add_btn.clicked.connect(self._on_add)
         self._edit_btn = QPushButton("Edit…")
+        self._edit_btn.setToolTip("Edit the selected group's name or members.")
         self._edit_btn.clicked.connect(self._on_edit)
         self._remove_btn = QPushButton("Remove")
+        self._remove_btn.setToolTip("Delete the selected group definition.")
         self._remove_btn.clicked.connect(self._on_remove)
         for b in (self._add_btn, self._edit_btn, self._remove_btn):
             btn_row.addWidget(b)
@@ -1027,6 +1094,8 @@ class _SequencesPane(QWidget):
     """List + add/edit/remove for named ordered section sequences."""
 
     def __init__(self, main_window, parent=None) -> None:
+        from rrational.inspector.help_widgets import HelpExpander
+
         super().__init__(parent)
         self._main_window = main_window
         # Loaded once on construction; mutations save back to disk.
@@ -1034,6 +1103,21 @@ class _SequencesPane(QWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
+
+        outer.addWidget(
+            HelpExpander(
+                "Sequences",
+                (
+                    "<p>A sequence is an ordered list of section names "
+                    "(e.g. <i>baseline &rarr; music &rarr; recovery</i>) used "
+                    "by the Analysis tab's <b>Sequence Comparison</b> mode "
+                    "for repeated-measures analysis.</p>"
+                    "<p>Use <b>Add sequence</b> to pick a name and arrange "
+                    "the sections in order. A sequence needs at least 2 "
+                    "sections to be statistically meaningful.</p>"
+                ),
+            )
+        )
 
         info = QLabel(
             "<i>Sequences are saved to "
@@ -1047,12 +1131,16 @@ class _SequencesPane(QWidget):
         # Buttons
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("Add sequence…")
+        self._add_btn.setToolTip("Create a new ordered list of section names.")
         self._add_btn.clicked.connect(self._on_add)
         self._edit_btn = QPushButton("Edit…")
+        self._edit_btn.setToolTip("Edit the selected sequence's name or order.")
         self._edit_btn.clicked.connect(self._on_edit)
         self._remove_btn = QPushButton("Remove")
+        self._remove_btn.setToolTip("Delete the selected sequence definition.")
         self._remove_btn.clicked.connect(self._on_remove)
         self._duplicate_btn = QPushButton("Duplicate")
+        self._duplicate_btn.setToolTip("Make a copy of the selected sequence.")
         self._duplicate_btn.clicked.connect(self._on_duplicate)
         for b in (self._add_btn, self._edit_btn, self._remove_btn, self._duplicate_btn):
             btn_row.addWidget(b)
@@ -1245,12 +1333,38 @@ class _ProtocolPane(QWidget):
     _STRATEGY_CHOICES = ["flag_only", "reject", "auto_fix"]
 
     def __init__(self, main_window, parent=None) -> None:
+        from rrational.inspector.help_widgets import HelpExpander
+
         super().__init__(parent)
         self._main_window = main_window
         self._protocol: dict = self._load()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
+
+        outer.addWidget(
+            HelpExpander(
+                "Protocol",
+                (
+                    "<p>The protocol captures study-wide timing assumptions "
+                    "used to flag recordings that drift from the expected "
+                    "structure.</p>"
+                    "<ul>"
+                    "<li><b>Expected total duration / section length</b> "
+                    "— used for duration sanity checks.</li>"
+                    "<li><b>Sections before/after pause</b> — the canonical "
+                    "session shape.</li>"
+                    "<li><b>Min duration / min beats</b> — sections below "
+                    "these limits are excluded from frequency-domain HRV "
+                    "(Quigley 2024 recommends 300+ beats / 5+ min).</li>"
+                    "<li><b>Mismatch strategy</b> — what to do when "
+                    "recordings don't match the expected protocol: flag "
+                    "only, reject outright, or attempt auto-fix.</li>"
+                    "</ul>"
+                ),
+            )
+        )
+
         info = QLabel(
             "<b>Protocol</b> — study-wide timing + threshold parameters "
             "(saved to <code>{project}/config/protocol.yml</code>, "
@@ -1269,43 +1383,52 @@ class _ProtocolPane(QWidget):
         self._expected_dur.setRange(0.1, 1000.0)
         self._expected_dur.setDecimals(2)
         self._expected_dur.setSuffix(" min")
+        self._expected_dur.setToolTip("Total expected duration of one session.")
         form.addRow("Expected total duration:", self._expected_dur)
 
         self._section_length = QDoubleSpinBox()
         self._section_length.setRange(0.1, 100.0)
         self._section_length.setDecimals(2)
         self._section_length.setSuffix(" min")
+        self._section_length.setToolTip("Expected duration per condition section.")
         form.addRow("Section length:", self._section_length)
 
         self._pre_pause = QSpinBox()
         self._pre_pause.setRange(0, 200)
+        self._pre_pause.setToolTip("Number of sections expected before the pause.")
         form.addRow("Sections before pause:", self._pre_pause)
 
         self._post_pause = QSpinBox()
         self._post_pause.setRange(0, 200)
+        self._post_pause.setToolTip("Number of sections expected after the pause.")
         form.addRow("Sections after pause:", self._post_pause)
 
         self._min_dur = QDoubleSpinBox()
         self._min_dur.setRange(0.1, 100.0)
         self._min_dur.setDecimals(2)
         self._min_dur.setSuffix(" min")
+        self._min_dur.setToolTip("Sections shorter than this are excluded from HRV.")
         form.addRow("Min section duration:", self._min_dur)
 
         self._min_beats = QSpinBox()
         self._min_beats.setRange(1, 100_000)
+        self._min_beats.setToolTip("Sections with fewer beats are excluded from HRV.")
         form.addRow("Min section beats:", self._min_beats)
 
         self._mismatch = QComboBox()
         for choice in self._STRATEGY_CHOICES:
             self._mismatch.addItem(choice)
+        self._mismatch.setToolTip("How to handle recordings that violate the protocol.")
         form.addRow("Mismatch strategy:", self._mismatch)
 
         outer.addWidget(form_box)
 
         btn_row = QHBoxLayout()
         self._save_btn = QPushButton("Save protocol")
+        self._save_btn.setToolTip("Persist the protocol values to disk.")
         self._save_btn.clicked.connect(self._on_save)
         self._reset_btn = QPushButton("Reset to defaults")
+        self._reset_btn.setToolTip("Restore all fields to their built-in defaults.")
         self._reset_btn.clicked.connect(self._on_reset)
         btn_row.addWidget(self._save_btn)
         btn_row.addWidget(self._reset_btn)

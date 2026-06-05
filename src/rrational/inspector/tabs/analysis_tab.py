@@ -1772,10 +1772,36 @@ class AnalysisTab(InspectorTab):
     TAB_LABEL = "Analysis"
 
     def __init__(self, main_window, parent=None) -> None:
+        from rrational.inspector.help_widgets import HelpExpander
+
         super().__init__(main_window, parent)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
+
+        # Phase 24A: top-of-tab HRV basics expander. Content adapted from
+        # gui/help_text.ANALYSIS_HELP — kept short here, defers to the
+        # Streamlit reference for the deep-dive.
+        outer.addWidget(
+            HelpExpander(
+                "HRV Analysis basics",
+                (
+                    "<p><b>Heart Rate Variability (HRV)</b> quantifies the "
+                    "variation in time between heartbeats. Higher HRV "
+                    "generally indicates better autonomic function.</p>"
+                    "<p><b>Time-domain metrics</b> "
+                    "(RMSSD, SDNN, pNN50) are the most robust and need "
+                    "~100+ beats / 2+ min of clean data.</p>"
+                    "<p><b>Frequency-domain metrics</b> "
+                    "(HF, LF, LF/HF) are sensitive to artifacts — keep "
+                    "artifact rate &lt;2% and use 5+ min of recording "
+                    "(Quigley 2024).</p>"
+                    "<p>Pick a <b>Mode</b> below, then choose a metric "
+                    "preset in the settings bar above and click "
+                    "<b>Compute</b>. Results land on the <i>Results</i> tab.</p>"
+                ),
+            )
+        )
 
         # Settings bar lives at the top, visible across every mode.
         self._settings_bar = _AnalysisSettingsBar(self)
@@ -1785,6 +1811,7 @@ class AnalysisTab(InspectorTab):
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Mode:"))
         self._mode_combo = QComboBox()
+        self._mode_combo.setToolTip("Pick the analysis flavour to compute below.")
         self._mode_combo.addItem("Single Participant", "single")
         self._mode_combo.addItem("Repeating Section", "repeating")
         self._mode_combo.addItem("Group comparison", "group")

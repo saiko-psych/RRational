@@ -99,10 +99,12 @@ class _MetricsPane(QWidget):
         bar.addWidget(self._info)
         bar.addStretch()
         self._export_btn = QPushButton("Export CSV…")
+        self._export_btn.setToolTip("Save the current table as a CSV file.")
         self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
         bar.addWidget(self._export_btn)
         self._clear_btn = QPushButton("Clear")
+        self._clear_btn.setToolTip("Remove every row from this table.")
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setEnabled(False)
         bar.addWidget(self._clear_btn)
@@ -202,10 +204,12 @@ class _GroupTestsPane(QWidget):
         bar.addWidget(self._info)
         bar.addStretch()
         self._export_btn = QPushButton("Export CSV…")
+        self._export_btn.setToolTip("Save the current table as a CSV file.")
         self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
         bar.addWidget(self._export_btn)
         self._clear_btn = QPushButton("Clear")
+        self._clear_btn.setToolTip("Remove every row from this table.")
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setEnabled(False)
         bar.addWidget(self._clear_btn)
@@ -317,10 +321,12 @@ class _SequenceTestsPane(QWidget):
         bar.addWidget(self._info)
         bar.addStretch()
         self._export_btn = QPushButton("Export CSV…")
+        self._export_btn.setToolTip("Save the current table as a CSV file.")
         self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
         bar.addWidget(self._export_btn)
         self._clear_btn = QPushButton("Clear")
+        self._clear_btn.setToolTip("Remove every row from this table.")
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setEnabled(False)
         bar.addWidget(self._clear_btn)
@@ -424,7 +430,29 @@ class ResultsTab(InspectorTab):
     TAB_LABEL = "Results"
 
     def __init__(self, main_window, parent=None) -> None:
+        from rrational.inspector.help_widgets import HelpExpander
+
         super().__init__(main_window, parent)
+
+        self._help_expander = HelpExpander(
+            "How to interpret these results",
+            (
+                "<p>The <b>HRV metrics</b> sub-tab shows every metric "
+                "computation as one row. Click any column header to sort. "
+                "Export the table as CSV with the button below.</p>"
+                "<p>The <b>Group tests</b> and <b>Sequence tests</b> sub-tabs "
+                "list Friedman / RM-ANOVA + Holm-corrected post-hoc results "
+                "from the Analysis tab's Group / Sequence modes.</p>"
+                "<p><b>Quality reminders</b> (Quigley 2024):</p>"
+                "<ul>"
+                "<li>Time-domain metrics tolerate &lt;36% artifacts.</li>"
+                "<li>Frequency-domain metrics need &lt;2% artifacts.</li>"
+                "<li>Always report artifact rate in publications.</li>"
+                "</ul>"
+                "<p>For a full publication-ready bundle use "
+                "<i>File &rarr; Export report</i> (HTML or Markdown).</p>"
+            ),
+        )
 
         self._subtabs = QTabWidget(self)
         self._subtabs.setDocumentMode(True)
@@ -468,6 +496,7 @@ class ResultsTab(InspectorTab):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._help_expander)
         layout.addWidget(self._subtabs)
         layout.addLayout(cache_bar)
 

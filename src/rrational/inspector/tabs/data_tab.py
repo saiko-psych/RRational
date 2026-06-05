@@ -270,9 +270,51 @@ class DataTab(InspectorTab):
     # UI construction
     # ------------------------------------------------------------------
     def _build(self) -> None:
+        # Phase 24A: in-tab help expanders. Imported here so a fresh
+        # ``import data_tab`` doesn't pay the cost when the widget isn't
+        # constructed (the optional-tab gate in main_window).
+        from rrational.inspector.help_widgets import HelpExpander
+
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(12)
+
+        outer.addWidget(
+            HelpExpander(
+                "What is this tab for?",
+                (
+                    "<p>The <b>Data</b> tab is your workspace overview. It shows the "
+                    "active project, the raw data sources detected under "
+                    "<code>data/raw/</code>, every <code>.rrational</code> export under "
+                    "<code>data/processed/</code>, and a per-participant summary "
+                    "table.</p>"
+                    "<p>Start by opening a project (<i>File &rarr; Open project</i>), "
+                    "then double-click any raw file or use <i>Load selected source</i> "
+                    "to bulk-load all files from a folder.</p>"
+                ),
+            )
+        )
+        outer.addWidget(
+            HelpExpander(
+                "What do the columns mean?",
+                (
+                    "<p>Each row of the participants table summarises one loaded "
+                    "recording.</p>"
+                    "<ul>"
+                    "<li><b>Beats / Duration / RR mean</b> — basic counts and "
+                    "averages after duplicate removal.</li>"
+                    "<li><b>Retained</b> — fraction of intervals inside the "
+                    "min/max RR window above.</li>"
+                    "<li><b>Artifacts %</b> — fraction flagged as ectopic / "
+                    "extra / missed by the Lipponen 2019 (Kubios) algorithm.</li>"
+                    "<li><b>Duplicates</b> — repeated timestamps from the recorder.</li>"
+                    "<li><b>Quality</b> — green &lt;5%, yellow &lt;15%, red otherwise. "
+                    "Use this to triage which recordings deserve manual review on "
+                    "the <i>Participant</i> tab.</li>"
+                    "</ul>"
+                ),
+            )
+        )
 
         outer.addWidget(self._build_project_block())
 
@@ -482,14 +524,21 @@ class DataTab(InspectorTab):
 
         btn_row = QHBoxLayout()
         self._open_project_btn = QPushButton("Open project...")
+        self._open_project_btn.setToolTip("Open an existing RRational project folder.")
         self._open_project_btn.clicked.connect(self._on_open_project_clicked)
         btn_row.addWidget(self._open_project_btn)
 
         self._new_project_btn = QPushButton("Create new project...")
+        self._new_project_btn.setToolTip(
+            "Create a new project folder with the standard subdirectories."
+        )
         self._new_project_btn.clicked.connect(self._on_new_project_clicked)
         btn_row.addWidget(self._new_project_btn)
 
         self._close_project_btn = QPushButton("Close project")
+        self._close_project_btn.setToolTip(
+            "Close the active project and fall back to global config."
+        )
         self._close_project_btn.clicked.connect(self._on_close_project_clicked)
         btn_row.addWidget(self._close_project_btn)
 
@@ -545,10 +594,14 @@ class DataTab(InspectorTab):
         btn_row.addWidget(self._load_selected_source_btn)
 
         self._open_recording_btn = QPushButton("Open recording...")
+        self._open_recording_btn.setToolTip(
+            "Open a single recording file (any supported format)."
+        )
         self._open_recording_btn.clicked.connect(self._on_open_recording_clicked)
         btn_row.addWidget(self._open_recording_btn)
 
         self._open_folder_btn = QPushButton("Open folder...")
+        self._open_folder_btn.setToolTip("Open every recording inside a chosen folder.")
         self._open_folder_btn.clicked.connect(self._on_open_folder_clicked)
         btn_row.addWidget(self._open_folder_btn)
 
