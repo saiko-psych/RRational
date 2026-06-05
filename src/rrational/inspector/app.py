@@ -15,6 +15,7 @@ from pathlib import Path
 import pyqtgraph as pg
 from qtpy.QtWidgets import QApplication
 
+from rrational.inspector.assets import app_icon
 from rrational.inspector.main_window import MainWindow
 
 # White background matches Streamlit-side theme + scientific-plotting convention.
@@ -73,6 +74,11 @@ def run(argv: list[str] | None = None) -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("RRational Inspector")
     app.setOrganizationName("RRational")
+    # App-wide icon: shows in the OS taskbar / dock / alt-tab switcher
+    # even before any window opens. MainWindow re-sets the same icon
+    # so the per-window title-bar gets it too (Wayland honours the
+    # per-window one, not the app-level one).
+    app.setWindowIcon(app_icon())
 
     window = MainWindow(initial_path=initial_path)
     window.show()

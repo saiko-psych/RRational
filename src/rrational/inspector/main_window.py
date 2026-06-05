@@ -109,6 +109,12 @@ class MainWindow(QMainWindow):
     def __init__(self, initial_path: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("RRational Inspector")
+        # Per-window icon: required on Wayland (which ignores
+        # QApplication.setWindowIcon) and used by Qt for the
+        # title-bar + alt-tab thumbnail on every platform.
+        from rrational.inspector.assets import app_icon
+
+        self.setWindowIcon(app_icon())
         self.resize(1400, 700)
 
         # Flipped on by pytest fixtures so modal QMessageBox calls don't
