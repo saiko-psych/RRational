@@ -49,6 +49,24 @@ from rrational.inspector.tabs import (
     SetupTab,
 )
 
+# Phase 22.3: optional Streamlit-mode tabs. Other agents are adding
+# DataTab + ParticipantTab in parallel; defer their imports so this
+# module still loads if either class is missing in the current branch.
+try:
+    from rrational.inspector.tabs.data_tab import DataTab  # type: ignore
+except ImportError:  # pragma: no cover - depends on parallel work
+    DataTab = None  # type: ignore[assignment]
+
+try:
+    from rrational.inspector.tabs.participant_tab import ParticipantTab  # type: ignore
+except ImportError:  # pragma: no cover - depends on parallel work
+    ParticipantTab = None  # type: ignore[assignment]
+
+# Valid values for the ``ui_layout`` setting.
+LAYOUT_STREAMLIT = "streamlit"
+LAYOUT_MNELAB = "mnelab"
+_VALID_LAYOUTS = (LAYOUT_STREAMLIT, LAYOUT_MNELAB)
+
 # Re-exported for older tests that import them from here. New code
 # should import from ``inspector.tabs.browse_tab``.
 from rrational.inspector.tabs.browse_tab import (  # noqa: F401
@@ -263,23 +281,54 @@ class MainWindow(QMainWindow):
         self._tabs_widget.setDocumentMode(True)
         self._tabs_widget.setMovable(False)
 
+        # Phase 22.3: ALWAYS construct every tab — the layout switcher
+        # toggles visibility, not existence, so cross-tab state stays
+        # consistent regardless of which mode the user picks. DataTab /
+        # ParticipantTab may still be None if the parallel work that
+        # introduces them hasn't landed yet; in that case they're skipped
+        # from the tab strip entirely (and the Streamlit mode degrades
+        # gracefully to whatever IS available).
         self._browse_tab = BrowseTab(self)
+        self._data_tab = DataTab(self) if DataTab is not None else None
+        self._participant_tab = (
+            ParticipantTab(self) if ParticipantTab is not None else None
+        )
         self._setup_tab = SetupTab(self)
         self._participants_tab = ParticipantsTab(self)
         self._analysis_tab = AnalysisTab(self)
         self._results_tab = ResultsTab(self)
 
+        # The full ordered list used for active-set notifications etc.
+        # ``None`` entries from optional tabs are dropped. The visible
+        # subset (and order) is controlled by ``_apply_layout_mode``.
         self._tabs = [
-            self._browse_tab,
-            self._setup_tab,
-            self._participants_tab,
-            self._analysis_tab,
-            self._results_tab,
+            t
+            for t in (
+                self._browse_tab,
+                self._data_tab,
+                self._participant_tab,
+                self._setup_tab,
+                self._participants_tab,
+                self._analysis_tab,
+                self._results_tab,
+            )
+            if t is not None
         ]
         for tab in self._tabs:
             self._tabs_widget.addTab(tab, tab.TAB_LABEL)
         # UX4: deferred — _refresh_tab_labels called below once everything
         # else (results store, project, etc.) is initialised.
+
+        # Phase 22.3: load the persisted layout mode and apply it before
+        # the window is shown. Falls back to "streamlit" for new users.
+        try:
+            stored = settings.read_setting("ui_layout")
+        except KeyError:  # pragma: no cover - defensive: settings key missing
+            stored = LAYOUT_STREAMLIT
+        if stored not in _VALID_LAYOUTS:
+            stored = LAYOUT_STREAMLIT
+        self._ui_layout: str = stored
+        self._apply_layout_mode(self._ui_layout)
 
         self.setCentralWidget(self._tabs_widget)
 
@@ -501,6 +550,47 @@ class MainWindow(QMainWindow):
             on_change=self._browse_tab.set_preprocessing_dock_visible,
             default=True,
         )
+
+        # Phase 22.3: View → Layout submenu (Streamlit / MNE-LAB modes).
+        # QActionGroup with exclusive=True gives the entries radio
+        # behaviour — Qt automatically unchecks the other one when the
+        # user picks a mode.
+        from qtpy.QtGui import QActionGroup
+
+        view_menu.addSeparator()
+        layout_menu = view_menu.addMenu("&Layout")
+        self._layout_action_group = QActionGroup(self)
+        self._layout_action_group.setExclusive(True)
+
+        self._layout_streamlit_act = QAction(
+            "Streamlit mode (Data / Participant / Setup / Analysis / Results)",
+            self,
+        )
+        self._layout_streamlit_act.setCheckable(True)
+        self._layout_streamlit_act.setChecked(self._ui_layout == LAYOUT_STREAMLIT)
+        self._layout_streamlit_act.setStatusTip(
+            "Streamlit-style tabs: Data / Participant / Setup / Analysis / Results"
+        )
+        self._layout_streamlit_act.triggered.connect(
+            lambda checked=False: checked and self.set_ui_layout(LAYOUT_STREAMLIT)
+        )
+        self._layout_action_group.addAction(self._layout_streamlit_act)
+        layout_menu.addAction(self._layout_streamlit_act)
+
+        self._layout_mnelab_act = QAction(
+            "MNE-LAB mode (Browse / Setup / Analysis / Results, dock-heavy)",
+            self,
+        )
+        self._layout_mnelab_act.setCheckable(True)
+        self._layout_mnelab_act.setChecked(self._ui_layout == LAYOUT_MNELAB)
+        self._layout_mnelab_act.setStatusTip(
+            "Single-window dock-based layout (Browse / Setup / Participants / Analysis / Results)"
+        )
+        self._layout_mnelab_act.triggered.connect(
+            lambda checked=False: checked and self.set_ui_layout(LAYOUT_MNELAB)
+        )
+        self._layout_action_group.addAction(self._layout_mnelab_act)
+        layout_menu.addAction(self._layout_mnelab_act)
 
         # ----- Edit menu --------------------------------------------------
         edit_menu = menubar.addMenu("&Edit")
@@ -1463,6 +1553,96 @@ class MainWindow(QMainWindow):
                 except Exception:  # pragma: no cover - defensive
                     state = ""
             self._tabs_widget.setTabText(i, f"{base}{state}")
+
+    # ------------------------------------------------------------------
+    # Phase 22.3: Layout switcher (Streamlit / MNE-LAB modes)
+    # ------------------------------------------------------------------
+    def _layout_visible_tabs(self, mode: str) -> set:
+        """Return the SET of tab widgets that should be visible in ``mode``.
+
+        Streamlit mode hides BrowseTab and shows the data-centric tabs
+        (Data + Participant) when they exist. MNE-LAB mode hides those
+        and shows BrowseTab + the global ParticipantsTab. Optional tabs
+        that weren't constructed (DataTab / ParticipantTab) are silently
+        omitted — the layout still works, just with fewer entries.
+        """
+        if mode == LAYOUT_STREAMLIT:
+            wanted = [
+                self._data_tab,
+                self._participant_tab,
+                self._setup_tab,
+                # The global "Participants Mgmt" table is redundant in
+                # Streamlit mode (DataTab + ParticipantTab cover that
+                # workflow) so we hide it unless DataTab is absent.
+                self._participants_tab if self._data_tab is None else None,
+                self._analysis_tab,
+                self._results_tab,
+            ]
+        elif mode == LAYOUT_MNELAB:
+            wanted = [
+                self._browse_tab,
+                self._setup_tab,
+                self._participants_tab,
+                self._analysis_tab,
+                self._results_tab,
+            ]
+        else:  # pragma: no cover - guarded by _VALID_LAYOUTS check
+            wanted = list(self._tabs)
+        return {t for t in wanted if t is not None}
+
+    def _apply_layout_mode(self, mode: str) -> None:
+        """Toggle each tab's visibility to match ``mode``.
+
+        Idempotent — safe to call as often as the layout actions fire.
+        After flipping visibility we always jump the current tab to the
+        first visible one for the new mode, so e.g. switching from
+        Streamlit (current = Data) to MNE-LAB lands the user on Browse
+        (the natural starting point) rather than wherever they happened
+        to be in the old layout.
+        """
+        if mode not in _VALID_LAYOUTS:
+            mode = LAYOUT_STREAMLIT
+        self._ui_layout = mode
+        visible = self._layout_visible_tabs(mode)
+        first_visible_idx: int | None = None
+        for i, tab in enumerate(self._tabs):
+            is_visible = tab in visible
+            self._tabs_widget.setTabVisible(i, is_visible)
+            if is_visible and first_visible_idx is None:
+                first_visible_idx = i
+        # Always select the first visible tab for the new mode. This
+        # keeps the QTabWidget pointing at a meaningful pane both on
+        # initial construction AND after a live mode switch.
+        if first_visible_idx is not None:
+            self._tabs_widget.setCurrentIndex(first_visible_idx)
+
+    def set_ui_layout(self, mode: str) -> None:
+        """Public entry point — switch layout, persist, sync menu state.
+
+        Called by the View → Layout actions AND usable from tests. The
+        choice is written to QSettings (unless ``test_mode`` is on) so
+        the next ``MainWindow`` constructed reads it back.
+        """
+        if mode not in _VALID_LAYOUTS:
+            mode = LAYOUT_STREAMLIT
+        self._apply_layout_mode(mode)
+        if not self.test_mode:
+            try:
+                settings.write_setting("ui_layout", mode)
+            except Exception:  # pragma: no cover - defensive
+                pass
+        # Keep the View menu's radio actions in sync if the caller
+        # bypassed them (e.g. test code calling set_ui_layout directly).
+        act = getattr(self, "_layout_streamlit_act", None)
+        if act is not None:
+            act.blockSignals(True)
+            act.setChecked(mode == LAYOUT_STREAMLIT)
+            act.blockSignals(False)
+        act = getattr(self, "_layout_mnelab_act", None)
+        if act is not None:
+            act.blockSignals(True)
+            act.setChecked(mode == LAYOUT_MNELAB)
+            act.blockSignals(False)
 
     # ------------------------------------------------------------------
     # Phase 17: visualisation dialogs (Tachogram / Poincare / PSD / HR)
