@@ -49,7 +49,12 @@ def detect_format(path: Path) -> str | None:
     """Auto-detect the RR interval file format.
 
     Returns one of: 'polar_sensor_logger', 'polar_flow', 'empatica',
-    'elite_hrv', 'kubios', 'plain_rr', or None if unrecognized.
+    'elite_hrv', 'kubios', 'plain_rr', 'hrv_logger', 'vns_analyse',
+    or None if unrecognized.
+
+    Phase 26: also detects HRV Logger paired files (date/rr columns,
+    optional companion _Events.csv) and VNS Analyse exports (text file
+    with a "RR Intervals" or "Hb Intervals" section header).
     """
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
@@ -61,6 +66,40 @@ def detect_format(path: Path) -> str | None:
         return None
 
     first = lines[0].strip()
+    lower_first = first.lower()
+
+    # VNS Analyse: text file with German section headers like
+    # "RR-Intervalle - Rohwerte" or "RR-Intervalle - Korrigierte Werte",
+    # or English equivalents from older exports. Also recognizes
+    # "mainParameterRMSSD" / "Hauptparameter" which only VNS exports use.
+    text_lower = text[:4096].lower()
+    if any(
+        marker in text_lower
+        for marker in (
+            "rr-intervalle",
+            "mainparameterrmssd",
+            "hauptparameter der vns",
+            "rr intervals (uncorrected)",
+            "rr intervals (corrected)",
+            "hb intervals",
+            "vegetatives nervensystem",
+        )
+    ):
+        return "vns_analyse"
+
+    # HRV Logger: CSV with EITHER "date,rr,since start" (classic) OR
+    # "timestamp, rr, since_start" (newer unix-ms format). Also detect
+    # by filename — '_RR' / '_RRIntervals' is the canonical naming.
+    cols = [c.strip().lower() for c in first.split(",")]
+    if "rr" in cols and ("date" in cols or "timestamp" in cols):
+        return "hrv_logger"
+
+    # HRV Logger Events file: opened directly — auto-find the RR pair.
+    stem_lower = path.stem.lower()
+    if "_events" in stem_lower and (
+        "timestamp" in lower_first or "annotation" in lower_first
+    ):
+        return "hrv_logger_events"
 
     # Kubios: starts with "Kubios HRV"
     if "kubios hrv" in first.lower():
@@ -135,7 +174,22 @@ def load_generic_rr(
         "elite_hrv": _parse_plain_rr,
         "plain_rr": _parse_plain_rr,
         "kubios": _parse_kubios,
+        "hrv_logger": _parse_hrv_logger,
+        "vns_analyse": _parse_vns_analyse,
     }
+
+    # Phase 26: if the user opened an Events.csv directly, point them
+    # to the matching RR file.
+    if fmt == "hrv_logger_events":
+        rr_companion = _find_hrv_logger_rr_companion(path)
+        if rr_companion is not None:
+            return load_generic_rr(rr_companion, participant_id, "hrv_logger")
+        raise ValueError(
+            f"{path.name} is an HRV Logger Events file. Could not find the "
+            "matching '_RR' or '_RRIntervals' file in the same folder. "
+            "Open the RR file instead — the Events file is loaded "
+            "automatically as event markers."
+        )
 
     parser = parsers.get(fmt)
     if parser is None:
@@ -369,6 +423,198 @@ def _parse_kubios(path: Path) -> tuple[list[RRInterval], dict]:
     if unit == "seconds":
         metadata["detected_unit"] = "seconds"
 
+    return intervals, metadata
+
+
+# Phase 26 — HRV Logger / VNS Analyse parsers using the existing
+# Streamlit-shared loaders. We thin-wrap them so generic_rr can serve
+# both single-file formats (Polar/Empatica/Kubios) AND paired/sectioned
+# formats (HRV Logger RR+Events, VNS Analyse with embedded sections)
+# behind one ``load_generic_rr`` entry point.
+_HRV_RR_TOKENS = ("RRIntervals", "RR_Intervals", "RR")
+_HRV_EVENT_TOKENS = ("Events", "EventMarkers")
+
+
+def _find_hrv_logger_rr_companion(events_path: Path) -> Path | None:
+    """Given an HRV Logger Events file, find the matching RR file.
+
+    Handles BOTH naming patterns observed in real exports:
+      ``{prefix}_Events.csv`` + ``{prefix}_RRIntervals.csv``
+      ``{date}_Events_{participant}.csv`` + ``{date}_RR_{participant}.csv``
+    Case-insensitive token replacement.
+    """
+    return _find_companion(events_path, _HRV_EVENT_TOKENS, _HRV_RR_TOKENS)
+
+
+def _find_hrv_logger_events_companion(rr_path: Path) -> Path | None:
+    """Inverse of :func:`_find_hrv_logger_rr_companion`."""
+    return _find_companion(rr_path, _HRV_RR_TOKENS, _HRV_EVENT_TOKENS)
+
+
+def _find_companion(
+    src_path: Path,
+    from_tokens: tuple[str, ...],
+    to_tokens: tuple[str, ...],
+) -> Path | None:
+    """Replace a token in the filename and return the path if it exists.
+
+    Tries every (from, to) combination, case-insensitive matching but
+    preserving original surrounding case in the new filename.
+    """
+    stem = src_path.stem
+    parent = src_path.parent
+    suffix = src_path.suffix
+    stem_lower = stem.lower()
+    for from_tok in from_tokens:
+        ft = from_tok.lower()
+        # Find the token bracketed by underscores or at the boundary.
+        for sep_l, sep_r in (("_", "_"), ("_", ""), ("", "_")):
+            needle = f"{sep_l}{ft}{sep_r}"
+            idx = stem_lower.find(needle)
+            if idx < 0:
+                continue
+            for to_tok in to_tokens:
+                replacement = f"{sep_l}{to_tok}{sep_r}"
+                new_stem = stem[:idx] + replacement + stem[idx + len(needle) :]
+                cand = parent / f"{new_stem}{suffix}"
+                if cand.exists():
+                    return cand
+    return None
+
+
+def _parse_hrv_logger(path: Path) -> tuple[list[RRInterval], dict]:
+    """Load HRV Logger RR file — supports BOTH legacy + unix-ms formats.
+
+    Legacy: ``date, rr, since start`` (datetime strings) — delegates to
+    the existing :func:`rrational.io.hrv_logger.load_rr_intervals`.
+    New: ``timestamp, rr, since_start`` (unix-ms integers) — parsed
+    inline since the shared loader currently rejects it.
+
+    Also auto-loads the companion Events.csv if found.
+    """
+    from datetime import datetime, timezone
+
+    from rrational.io.hrv_logger import load_rr_intervals
+
+    # Peek at the header to decide which path to take.
+    with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+        header_line = f.readline()
+    cols = [c.strip().lower() for c in header_line.strip().split(",")]
+    is_unix_ms = "timestamp" in cols and "date" not in cols
+
+    intervals: list[RRInterval] = []
+    if is_unix_ms:
+        import csv
+
+        ts_idx = cols.index("timestamp")
+        rr_idx = cols.index("rr") if "rr" in cols else cols.index("rr (ms)")
+        ss_idx = cols.index("since_start") if "since_start" in cols else None
+        with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+            reader = csv.reader(f)
+            next(reader, None)  # skip header
+            for row in reader:
+                if not row or len(row) <= max(ts_idx, rr_idx):
+                    continue
+                try:
+                    ts_ms = int(float(row[ts_idx].strip()))
+                    rr_ms = float(row[rr_idx].strip())
+                except (ValueError, IndexError):
+                    continue
+                elapsed = None
+                if ss_idx is not None and ss_idx < len(row):
+                    try:
+                        elapsed = int(float(row[ss_idx].strip()))
+                    except ValueError:
+                        elapsed = None
+                intervals.append(
+                    RRInterval(
+                        timestamp=datetime.fromtimestamp(
+                            ts_ms / 1000.0, tz=timezone.utc
+                        ),
+                        rr_ms=rr_ms,
+                        elapsed_ms=elapsed,
+                    )
+                )
+    else:
+        intervals, _row_count, _dupes = load_rr_intervals(path)
+
+    metadata: dict = {}
+    ev_path = _find_hrv_logger_events_companion(path)
+    if ev_path is not None:
+        try:
+            events = _load_events_flexible(ev_path)
+            metadata["events"] = events
+            metadata["events_file"] = ev_path.name
+        except Exception:
+            pass
+    return intervals, metadata
+
+
+def _load_events_flexible(ev_path: Path) -> list[dict]:
+    """Load an HRV Logger Events file, supporting both header schemas.
+
+    Legacy: ``annotation, timestamp`` (datetime strings) via the shared
+    loader. New: ``timestamp, label`` (unix-ms) or just ``timestamp``
+    parsed inline.
+    """
+    import csv
+    from datetime import datetime, timezone
+
+    from rrational.io.hrv_logger import load_events
+
+    with ev_path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+        header_line = f.readline()
+    cols = [c.strip().lower() for c in header_line.strip().split(",")]
+    if "annotation" in cols and "timestamp" in cols:
+        try:
+            evs = load_events(ev_path)
+            return [
+                {"label": e.label, "timestamp": e.timestamp}
+                for e in evs
+                if e.timestamp is not None
+            ]
+        except Exception:
+            return []
+    if "timestamp" in cols:
+        ts_idx = cols.index("timestamp")
+        label_idx = cols.index("label") if "label" in cols else None
+        out: list[dict] = []
+        with ev_path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if not row:
+                    continue
+                try:
+                    ts_ms = int(float(row[ts_idx].strip()))
+                except (ValueError, IndexError):
+                    continue
+                label = "event"
+                if label_idx is not None and label_idx < len(row):
+                    label = row[label_idx].strip() or "event"
+                out.append(
+                    {
+                        "label": label,
+                        "timestamp": datetime.fromtimestamp(
+                            ts_ms / 1000.0, tz=timezone.utc
+                        ),
+                    }
+                )
+        return out
+    return []
+
+
+def _parse_vns_analyse(path: Path) -> tuple[list[RRInterval], dict]:
+    """Load a VNS Analyse text file via the shared loader."""
+    from rrational.io.vns_analyse import _load_single_vns_file
+
+    intervals, events, header_info = _load_single_vns_file(path, use_corrected=False)
+    metadata: dict = dict(header_info)
+    metadata["events"] = [
+        {"label": e.label, "timestamp": e.timestamp}
+        for e in events
+        if e.timestamp is not None
+    ]
     return intervals, metadata
 
 

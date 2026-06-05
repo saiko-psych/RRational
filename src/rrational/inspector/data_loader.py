@@ -310,9 +310,26 @@ def load_raw_rr(filepath: Path) -> InspectorData:
         beat_count=len(rr_ms),
     )
 
+    # Phase 26: paired-file formats (HRV Logger, VNS Analyse) carry
+    # event markers in metadata['events']. Convert them to EventMeta
+    # so they show up on the plot + in the Events tab.
+    raw_events = recording.metadata.get("events") if recording.metadata else None
+    events: list[EventMeta] = [EventMeta(label="recording_start", t=float(t[0]))]
+    if raw_events:
+        for ev in raw_events:
+            ts = ev.get("timestamp")
+            label = ev.get("label", "event")
+            if ts is None:
+                continue
+            try:
+                t_epoch = ts.timestamp() if hasattr(ts, "timestamp") else float(ts)
+            except (TypeError, ValueError):
+                continue
+            events.append(EventMeta(label=str(label), t=float(t_epoch)))
+
     return InspectorData(
         t=t,
         v=rr_ms,
         sections=[section],
-        events=[EventMeta(label="recording_start", t=float(t[0]))],
+        events=events,
     )
