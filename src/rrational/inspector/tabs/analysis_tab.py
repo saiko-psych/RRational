@@ -1792,6 +1792,17 @@ class AnalysisTab(InspectorTab):
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(self._mode_combo)
         mode_row.addStretch()
+
+        # Phase 24B — analysis report export. Generates a markdown
+        # report from the current ResultsStore + workspace state.
+        self._export_report_btn = QPushButton("Export analysis report...")
+        self._export_report_btn.setToolTip(
+            "Write a Markdown report summarising the data source, cleaning "
+            "config, artifact correction, exclusion zones and per-section "
+            "HRV metrics. Mirrors the Streamlit AnalysisDocumentation export."
+        )
+        self._export_report_btn.clicked.connect(self._on_export_report)
+        mode_row.addWidget(self._export_report_btn)
         outer.addLayout(mode_row)
 
         self._stack = QStackedWidget(self)
@@ -1838,3 +1849,49 @@ class AnalysisTab(InspectorTab):
             idx = self._main_window._active_idx
             if idx is not None:
                 self._single_pane._dataset_combo.setCurrentIndex(idx)
+
+    # ------------------------------------------------------------------
+    # Phase 24B — Markdown analysis report
+    # ------------------------------------------------------------------
+    def build_analysis_report_markdown(self) -> str:
+        """Return a Markdown report summarising the current analysis.
+
+        Reuses :class:`rrational.inspector.report.ReportBuilder` so the
+        per-tab "Export analysis report..." button stays in lock-step
+        with the project-level publication report.
+        """
+        from rrational.inspector.report import ReportBuilder
+
+        return ReportBuilder(self._main_window).build_markdown()
+
+    def _on_export_report(self) -> None:
+        from pathlib import Path
+
+        from qtpy.QtWidgets import QFileDialog, QMessageBox
+
+        from rrational.inspector import settings as _settings
+
+        text = self.build_analysis_report_markdown()
+        if getattr(self._main_window, "test_mode", False):
+            self._main_window.statusBar().showMessage(
+                f"Analysis report ready ({len(text)} chars).", 3000
+            )
+            return
+        start_dir = _settings.read_setting("last_dir") or str(Path.cwd())
+        suggested = str(Path(start_dir) / "analysis_report.md")
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export analysis report",
+            suggested,
+            "Markdown (*.md);;All files (*)",
+        )
+        if not path_str:
+            return
+        try:
+            Path(path_str).write_text(text, encoding="utf-8")
+        except OSError as e:
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        self._main_window.statusBar().showMessage(
+            f"Exported analysis report to {path_str}", 4000
+        )

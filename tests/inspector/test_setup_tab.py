@@ -375,3 +375,54 @@ def test_sequences_pane_available_sections_is_union_across_datasets(main_window)
     available = pane._available_sections()
     # n_sections=2 → sec0, sec1; n_sections=4 → sec0..sec3
     assert set(available) == {"sec0", "sec1", "sec2", "sec3"}
+
+
+# ---------------------------------------------------------------------
+# Phase 24B — codebook export
+# ---------------------------------------------------------------------
+def test_phase24b_codebook_contains_every_definition(main_window):
+    """Codebook lists events, sections, groups, sequences from each pane."""
+    from rrational.inspector.persistence import Sequence
+
+    setup = main_window._setup_tab
+    # Seed each pane with at least one entry
+    setup._events_pane._events = {"rest_start": ["Rest", "/^rest/i"]}
+    setup._sections_pane._sections = {
+        "rest_pre": {
+            "label": "Pre-rest",
+            "description": "Quiet baseline",
+            "start_events": ["rest_start"],
+            "end_events": ["music_start"],
+        }
+    }
+    setup._groups_pane._groups = {
+        "Music": {"label": "Music", "description": "Treatment", "members": ["S001"]}
+    }
+    setup._sequences_pane._sequences = [
+        Sequence(name="Pre-Post", sections=["rest_pre", "rest_post"])
+    ]
+
+    text = setup.build_codebook_markdown()
+
+    assert "# Study Codebook" in text
+    assert "## Events" in text and "rest_start" in text
+    assert "## Sections" in text and "rest_pre" in text
+    assert "Pre-rest" in text
+    assert "rest_start" in text  # start event listed under sections too
+    assert "## Groups" in text and "Music" in text
+    assert "## Sequences" in text and "Pre-Post" in text
+    assert "rest_pre -> rest_post" in text
+
+
+def test_phase24b_codebook_empty_panes_render_placeholders(main_window):
+    """Empty panes still appear in the codebook with a 'no X defined' line."""
+    setup = main_window._setup_tab
+    text = setup.build_codebook_markdown()
+    # Each section heading should be present even when empty
+    for heading in ("## Events", "## Sections", "## Groups", "## Sequences"):
+        assert heading in text
+    # And each empty pane should print its own placeholder
+    assert "_No events defined._" in text
+    assert "_No sections defined._" in text
+    assert "_No groups defined._" in text
+    assert "_No sequences defined._" in text
