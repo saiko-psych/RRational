@@ -66,8 +66,8 @@ def main_window(qtbot):
 # ---------------------------------------------------------------------
 # Tab shell
 # ---------------------------------------------------------------------
-def test_five_top_level_tabs_exist(main_window):
-    """Phase 11 added the Participants tab between Setup and Analysis.
+def test_top_level_tabs_exist(main_window):
+    """Phase 11 added the Participants tab; Phase 22/24 added Data + Participant.
     UX4 adds live state badges so labels may have a suffix like "  (empty)".
     """
     titles = [
@@ -75,7 +75,15 @@ def test_five_top_level_tabs_exist(main_window):
         for i in range(main_window._tabs_widget.count())
     ]
     bases = [t.split("  ")[0] for t in titles]
-    assert bases == ["Browse", "Setup", "Participants", "Analysis", "Results"]
+    assert bases == [
+        "Browse",
+        "Data",
+        "Participant",
+        "Setup",
+        "Participants",
+        "Analysis",
+        "Results",
+    ]
 
 
 def test_browse_is_initial_active_tab(main_window):

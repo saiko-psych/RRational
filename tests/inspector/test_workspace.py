@@ -181,6 +181,12 @@ def test_close_active_when_others_remain_picks_next(main_window):
 
 def test_close_last_dataset_shows_empty_state(main_window):
     from rrational.inspector.data_loader import Dataset
+    from rrational.inspector.main_window import LAYOUT_MNELAB
+
+    # BrowseTab is hidden in the default Streamlit layout, so isVisible()
+    # would always be False there. Switch to MNE-LAB mode (where BrowseTab
+    # is the primary tab) before asserting its empty-state visibility.
+    main_window.set_ui_layout(LAYOUT_MNELAB)
 
     main_window.add_dataset(Dataset(name="A", data=_make_synthetic("A")))
     main_window.set_active_dataset(0)
@@ -188,7 +194,10 @@ def test_close_last_dataset_shows_empty_state(main_window):
 
     assert main_window._datasets == []
     assert main_window._active_idx is None
-    assert main_window._empty_label.isVisible() is True
+    # UX2: the empty placeholder is now the welcome widget (recent files +
+    # quick-start), not the bare "_empty_label". The label still exists for
+    # back-compat but stays hidden — the welcome widget owns the empty state.
+    assert main_window._browse_tab._welcome_widget.isVisible() is True
     assert main_window._plot.isVisible() is False
 
 
