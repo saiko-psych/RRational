@@ -71,7 +71,7 @@ class InspectorTab(QWidget):
         return format_config_path(rel_path)
 
     # ------------------------------------------------------------------
-    # UX4: live tab-label state badge
+    # Live tab-label state badge
     # ------------------------------------------------------------------
     def tab_label_state(self) -> str:
         """Return a short parenthesised state suffix appended to the tab label.

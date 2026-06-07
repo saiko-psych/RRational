@@ -1,9 +1,9 @@
 """Welcome widget shown in BrowseTab when no datasets are loaded.
 
-UX2 fix: replaces the bare "no .rrational loaded" QLabel with an
-actionable landing screen. The user immediately sees the two most
-common entry points (open recording / open .rrational v2) plus
-project actions and a clickable recent-files list.
+Actionable landing screen instead of a bare empty-state label. The
+user immediately sees the two most common entry points (open recording
+/ open .rrational v2) plus project actions and a clickable recent-files
+list.
 
 The widget is wholly stateless — it reads recent files from
 ``inspector.settings`` on every ``refresh()`` call. Buttons emit

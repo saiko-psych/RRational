@@ -1,27 +1,24 @@
 """Analysis tab — HRV-metric computation modes.
 
-Phase 4c brings the first two of RRational's four analysis modes:
+Provides RRational's four analysis modes:
 
 - **Single Participant**: pick a dataset + section, get HRV metrics for
   that one segment
 - **Repeating Section**: pick a section name, get the same metrics
   computed across every loaded dataset that has that section (e.g.
   "rest_pre" across all subjects)
+- **Group Comparison** + **Sequence**: aggregate views with per-mode
+  result tables and pop-up plot dialogs.
 
-Phase 23C brings the Streamlit-side analysis controls to the inspector:
+A per-tab settings bar at the top exposes the metric preset dropdown,
+a per-metric checkbox grid (mirrors ``HRV_METRICS_CATALOG``), a
+frequency-domain pipeline radio (NeuroKit2 default vs Kubios), and an
+overlapping-window panel (beats or seconds with configurable
+window/step). All persist via QSettings under the ``analysis_*`` keys.
 
-- A per-tab settings bar at the top exposes the metric preset
-  dropdown, a per-metric checkbox grid (mirrors ``HRV_METRICS_CATALOG``),
-  a frequency-domain pipeline radio (NeuroKit2 default vs Kubios), and
-  an overlapping-window panel (beats or seconds with configurable
-  window/step). All four persist via QSettings under the
-  ``analysis_*`` keys.
-- The Group Comparison pane gets a row of view buttons that open the
-  existing ``GroupBarChart`` / ``GroupBoxPlot`` / ``GroupViolinPlot`` /
-  ``SD1SD2Scatter`` widgets in a modal dialog.
-- Per-metric rows in the result tables get a yellow tint + tooltip
-  when the analysed segment falls below ``MIN_BEATS_TIME_DOMAIN`` /
-  ``MIN_BEATS_FREQUENCY_DOMAIN`` (Quigley et al. 2024).
+Per-metric rows in the result tables get a yellow tint + tooltip when
+the analysed segment falls below ``MIN_BEATS_TIME_DOMAIN`` /
+``MIN_BEATS_FREQUENCY_DOMAIN`` (Quigley et al. 2024).
 
 All modes delegate the science to ``rrational.analysis.hrv_compute``;
 this module is just the UI form + result-table rendering on top.
@@ -71,9 +68,9 @@ from rrational.analysis.hrv_metrics import (
     MIN_BEATS_TIME_DOMAIN,
 )
 
-# Optional reference catalogue (Phase 24C-retry). Imported defensively so
-# the Analysis tab keeps loading if the constant is removed or renamed
-# upstream — _resolve_reference_band() then short-circuits to "no overlay".
+# Optional reference catalogue. Imported defensively so the Analysis
+# tab keeps loading if the constant is removed or renamed upstream —
+# _resolve_reference_band() then short-circuits to "no overlay".
 try:
     from rrational.analysis.hrv_metrics import HRV_REFERENCE_VALUES
 except ImportError:  # pragma: no cover - defensive
@@ -86,9 +83,9 @@ if TYPE_CHECKING:
 
 # Default metric set — picked as the "Basic" preset from
 # ``rrational/analysis/hrv_metrics`` (every researcher recognises RMSSD,
-# SDNN, LF/HF, pNN50). Kept as a module-level constant for backward
-# compatibility with ``results_tab.py`` + tests that import it; the
-# Analysis tab itself now reads from the per-tab settings bar.
+# SDNN, LF/HF, pNN50). Kept as a module-level constant for the importers
+# in ``results_tab.py`` + tests; the Analysis tab itself reads from the
+# per-tab settings bar.
 _DEFAULT_METRICS = ["RMSSD", "SDNN", "MeanHR", "LF", "HF", "LF_HF", "pNN50"]
 
 # Ordered metric list — categories side by side, alphabetical inside
@@ -123,9 +120,9 @@ _PRESET_ORDER = [
     "Custom",
 ]
 
-# QSettings keys (Phase 23C). All read/written via raw QSettings — they
-# live outside the inspector's central ``_DEFAULTS`` dict because they
-# are Analysis-tab specific and the rest of the inspector doesn't care.
+# QSettings keys. All read/written via raw QSettings — they live
+# outside the inspector's central ``_DEFAULTS`` dict because they are
+# Analysis-tab specific and the rest of the inspector doesn't care.
 _SETTING_METRIC_PRESET = "analysis_metric_preset"
 _SETTING_SELECTED_METRICS = "analysis_selected_metrics"
 _SETTING_FREQ_METHOD = "analysis_freq_method"
@@ -139,9 +136,9 @@ _SETTING_OVERLAP_STEP = "analysis_overlap_step"
 # light and dark themes.
 _WARN_BRUSH = QColor(255, 247, 200)
 
-# Phase 24C-retry: HRV reference-band tints. Soft pastels so they read
-# on top of the alternating-row stripes without overwhelming the value
-# text. Mapping rule (see _resolve_reference_band):
+# HRV reference-band tints. Soft pastels so they read on top of the
+# alternating-row stripes without overwhelming the value text. Mapping
+# rule (see _resolve_reference_band):
 #   value >= high                  -> Excellent
 #   normal  <= value <  high       -> Normal
 #   low     <= value <  normal     -> Borderline
@@ -222,10 +219,9 @@ def _slice_section(
 ) -> np.ndarray | None:
     """Return the RR (ms) values inside ``section_name``, minus excluded beats.
 
-    Phase 15 adds the optional ``exclusions`` argument: any beat whose
-    timestamp falls inside ANY ``ExclusionZone`` is dropped from the
-    returned array. Pass ``None`` (or an empty list) for the legacy
-    behaviour.
+    The optional ``exclusions`` argument drops any beat whose timestamp
+    falls inside ANY ``ExclusionZone``. Pass ``None`` (or an empty
+    list) to skip the filter.
     """
     section = next((s for s in data.sections if s.name == section_name), None)
     if section is None:
@@ -861,9 +857,9 @@ class _SingleParticipantPane(QWidget):
             self._result_table.setItem(row, 0, QTableWidgetItem(m))
             value_item = QTableWidgetItem(_format_metric(metrics.get(m)))
             self._result_table.setItem(row, 1, value_item)
-            # Phase 24C-retry: overlay reference-band colour + tooltip
-            # before the warning-tint pass so the too-few-beats yellow
-            # always wins on undersampled segments.
+            # Overlay reference-band colour + tooltip BEFORE the
+            # warning-tint pass so the too-few-beats yellow always
+            # wins on undersampled segments.
             band = _resolve_reference_band(m, metrics.get(m))
             if band is not None:
                 brush, tooltip = band
@@ -1002,10 +998,10 @@ class _RepeatingSectionPane(QWidget):
             for col, m in enumerate(metric_cols, start=1):
                 value_item = QTableWidgetItem(_format_metric(metrics.get(m)))
                 self._result_table.setItem(row, col, value_item)
-                # Phase 24C-retry: per-cell reference-band overlay. The
-                # warning-tint below intentionally clobbers this when the
-                # segment is too short — incomplete data trumps "where
-                # does it fall on the band?".
+                # Per-cell reference-band overlay. The warning-tint
+                # below intentionally clobbers this when the segment is
+                # too short — incomplete data trumps "where does it fall
+                # on the band?".
                 band = _resolve_reference_band(m, metrics.get(m))
                 if band is not None:
                     brush, tooltip = band
@@ -1172,7 +1168,7 @@ class _GroupComparisonPane(QWidget):
         )
         outer.addWidget(self._result_stack)
 
-        # ---- 4. View buttons (Phase 23C): pop-up group plots ---------
+        # ---- 4. View buttons: pop-up group plots ---------------------
         plot_row = QHBoxLayout()
         plot_row.addStretch()
         self._bar_btn = QPushButton("Bar chart…")
@@ -1543,7 +1539,7 @@ class _GroupComparisonPane(QWidget):
         self._refresh_plot_buttons_enabled()
 
     # ------------------------------------------------------------------
-    # Group plots (Phase 23C)
+    # Group plots
     # ------------------------------------------------------------------
     def _group_label_by_dataset(self) -> dict[str, str]:
         """Snapshot of {dataset_name: group_label} for non-empty labels."""
@@ -2040,7 +2036,7 @@ class AnalysisTab(InspectorTab):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
 
-        # Phase 24A: top-of-tab HRV basics expander. Content adapted from
+        # Top-of-tab HRV basics expander. Content adapted from
         # gui/help_text.ANALYSIS_HELP — kept short here, defers to the
         # Streamlit reference for the deep-dive.
         outer.addWidget(
@@ -2081,8 +2077,8 @@ class AnalysisTab(InspectorTab):
         mode_row.addWidget(self._mode_combo)
         mode_row.addStretch()
 
-        # Phase 24B — analysis report export. Generates a markdown
-        # report from the current ResultsStore + workspace state.
+        # Analysis report export — generates a Markdown report from the
+        # current ResultsStore + workspace state.
         self._export_report_btn = QPushButton("Export analysis report...")
         self._export_report_btn.setToolTip(
             "Write a Markdown report summarising the data source, cleaning "
@@ -2139,7 +2135,7 @@ class AnalysisTab(InspectorTab):
                 self._single_pane._dataset_combo.setCurrentIndex(idx)
 
     # ------------------------------------------------------------------
-    # Phase 24B — Markdown analysis report
+    # Markdown analysis report
     # ------------------------------------------------------------------
     def build_analysis_report_markdown(self) -> str:
         """Return a Markdown report summarising the current analysis.

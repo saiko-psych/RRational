@@ -1,4 +1,4 @@
-"""Phase 24B — modal dialog to import Group / Sequence mappings from CSV.
+"""Modal dialog to import Group / Sequence mappings from CSV.
 
 Mirrors ``rrational.gui.tabs.data`` lines 884-1147: the user picks a CSV
 file, the dialog shows a preview, three QComboBoxes let them map

@@ -1,4 +1,4 @@
-"""Multi-page workflow walkthrough dialog (Phase 24A).
+"""Multi-page workflow walkthrough dialog.
 
 A QDialog with a stacked-page wizard that walks a new user through the
 end-to-end Inspector workflow: Welcome → Project Setup → Data Loading →

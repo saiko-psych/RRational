@@ -1,11 +1,11 @@
-"""Per-dataset persistence for Phase 15 exclusion zones.
+"""Per-dataset persistence for exclusion zones.
 
 An *exclusion zone* is a user-marked time window inside a recording
 whose beats should be filtered out of every downstream HRV computation.
 They're created by drag-selecting on the timeline plot (see
 :class:`rrational.inspector.plot_widget.RRPlotWidget`) and round-trip
-through the same project-vs-global storage scheme as the Phase 12
-artifact corrections.
+through the same project-vs-global storage scheme as the artifact
+corrections.
 
 File layout::
 
@@ -26,10 +26,10 @@ Schema (v1.0)::
         reason:    "noisy electrode"
         created_at: "2026-06-04T09:31:12"
 
-The artifact-correction file (Phase 12) is intentionally SEPARATE from
-this one so the two concerns can evolve independently and so the
-Streamlit app - which knows nothing about exclusion zones yet - keeps
-loading artifacts cleanly.
+The artifact-correction file is intentionally SEPARATE from this one
+so the two concerns can evolve independently and so the Streamlit app —
+which knows nothing about exclusion zones yet — keeps loading
+artifacts cleanly.
 
 Resolution order for the storage directory mirrors
 ``inspector.persistence``: a test-override path beats the project path

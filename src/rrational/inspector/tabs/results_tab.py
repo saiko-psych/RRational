@@ -1,4 +1,4 @@
-"""Results tab — accumulated HRV results + CSV export (Phase 4e).
+"""Results tab — accumulated HRV results + CSV export.
 
 Two sub-tabs:
 
@@ -121,8 +121,8 @@ class _MetricsPane(QWidget):
         self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
         bar.addWidget(self._export_btn)
-        # Phase 24B — wide-format export (one row per participant,
-        # columns pivoted by section_metric).
+        # Wide-format export (one row per participant, columns pivoted
+        # by section_metric).
         self._export_wide_btn = QPushButton("Export wide format…")
         self._export_wide_btn.setToolTip(
             "Export the same metrics in wide format (one row per participant, "
@@ -179,9 +179,8 @@ class _MetricsPane(QWidget):
         self._clear_btn.setEnabled(has_rows)
         self._stack.setCurrentIndex(1 if has_rows else 0)
 
-    # Phase 24B — wide-format export. Public helper so tests can drive
-    # it without dialog mocking; ``_on_export_wide`` wraps it with a
-    # file-picker.
+    # Wide-format export. Public helper so tests can drive it without
+    # dialog mocking; ``_on_export_wide`` wraps it with a file-picker.
     def build_wide_rows(self) -> tuple[list[str], list[list]]:
         """Return ``(headers, rows)`` for the wide CSV.
 
@@ -576,7 +575,7 @@ class ResultsTab(InspectorTab):
         self._subtabs.addTab(self._group_tests_pane, "Group tests")
         self._subtabs.addTab(self._sequence_tests_pane, "Sequence tests")
 
-        # ---- Phase 13: cache toolbar (Save / Reload / Clear) -------------
+        # ---- Cache toolbar (Save / Reload / Clear) ----------------------
         cache_bar = QHBoxLayout()
         cache_label = QLabel("<b>Cache:</b>")
         cache_label.setStyleSheet("color: #555; padding-left: 6px;")
@@ -621,8 +620,8 @@ class ResultsTab(InspectorTab):
     def refresh_results(self) -> None:
         """Re-pull from the store. Called by Analysis after each Compute.
 
-        Phase 13: also triggers an autosave so the cache stays current
-        without per-call-site sprinkling.
+        Also triggers an autosave so the cache stays current without
+        per-call-site sprinkling.
         """
         self._metrics_pane.refresh()
         self._group_tests_pane.refresh()
@@ -633,7 +632,7 @@ class ResultsTab(InspectorTab):
         self._refresh_cache_status()
 
     # ------------------------------------------------------------------
-    # Phase 13: manual cache controls
+    # Manual cache controls
     # ------------------------------------------------------------------
     def _refresh_cache_status(self) -> None:
         from rrational.inspector.results_persistence import _resolve_path

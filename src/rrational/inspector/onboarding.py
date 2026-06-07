@@ -1,4 +1,4 @@
-"""UX5: first-run welcome dialog + onboarded-marker management.
+"""First-run welcome dialog + onboarded-marker management.
 
 Shows a one-time modal walkthrough on first launch explaining the
 inspector's five tabs. The user can dismiss it forever via a

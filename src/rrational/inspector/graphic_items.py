@@ -17,7 +17,7 @@ a container to avoid the "wrapped C++ object deleted" bug
 discipline in ``plot_widget.py`` — the widget keeps lists of overlay
 items as attributes.
 
-Phase 16 adds **draggable boundaries** to ``SectionRegion``:
+``SectionRegion`` supports **draggable boundaries**:
 ``LinearRegionItem`` already exposes left+right edges as InfiniteLine
 children, so toggling ``setMovable(True)`` is most of the work. The
 extra plumbing here is:
@@ -53,7 +53,7 @@ class SectionRegion(pg.LinearRegionItem):
     Wraps PyQtGraph's ``LinearRegionItem``. Default appearance:
     semi-transparent fill (so the RR-tachogram beneath stays readable).
 
-    When ``editable=True`` (Phase 16):
+    When ``editable=True``:
     - the left+right edges become draggable handles
     - the snap_fn (if set) snaps each new bound to the nearest beat
     - ``sigRegionChangeFinished`` fires once per drag for persistence
@@ -247,9 +247,9 @@ class EventMarker(pg.InfiniteLine):
     """A vertical line at one event timestamp, with the event label.
 
     Stock ``InfiniteLine`` already supports a label that follows the
-    line on pan/zoom — we just plumb the constructor args. As with
-    ``SectionRegion``, no Phase 2 mouse interaction: future phases can
-    add ``movable=True`` for manual event creation.
+    line on pan/zoom — we just plumb the constructor args. No mouse
+    interaction yet: future work can add ``movable=True`` for manual
+    event creation.
     """
 
     def __init__(self, t: float, label: str, color: QColor) -> None:
@@ -273,8 +273,8 @@ class EventMarker(pg.InfiniteLine):
         # InfLineLabel widget) — we expose the text under a different
         # name so MainWindow / tests can read it back.
         self.event_label = label
-        # Events sit on TOP of section bands but below the cursor crosshair
-        # (which we'll add in Phase 3 at z=10).
+        # Events sit on TOP of section bands but below the cursor
+        # crosshair (z=10).
         self.setZValue(0)
 
     def apply_color(self, color: QColor) -> None:
@@ -333,10 +333,10 @@ class ArtifactOverlay(pg.ScatterPlotItem):
 class ManualArtifactOverlay(pg.ScatterPlotItem):
     """Scatter overlay for user-added manual artifact markers.
 
-    Phase 14: visually distinct from algorithm-detected artifacts —
-    rendered as filled squares (instead of circles) using the artifact
-    colour from the active ColorScheme. Behaviour is otherwise identical
-    to :class:`ArtifactOverlay` (replace-all on ``set_points``).
+    Visually distinct from algorithm-detected artifacts — rendered as
+    filled squares (instead of circles) using the artifact colour from
+    the active ColorScheme. Behaviour is otherwise identical to
+    :class:`ArtifactOverlay` (replace-all on ``set_points``).
     """
 
     def __init__(self) -> None:
@@ -366,10 +366,10 @@ class ManualArtifactOverlay(pg.ScatterPlotItem):
 class ExcludedArtifactOverlay(pg.ScatterPlotItem):
     """Scatter overlay for algorithm artifacts the user has excluded.
 
-    Phase 14: when the user clicks an algorithm-detected artifact, it
-    becomes "excluded" — still visible but rendered hollow + dimmed so
-    the eye can tell which beats the analysis should ignore. Drawn as
-    an outline circle (no fill) with reduced opacity.
+    When the user clicks an algorithm-detected artifact, it becomes
+    "excluded" — still visible but rendered hollow + dimmed so the eye
+    can tell which beats the analysis should ignore. Drawn as an
+    outline circle (no fill) with reduced opacity.
     """
 
     def __init__(self) -> None:
@@ -398,10 +398,10 @@ class ExcludedArtifactOverlay(pg.ScatterPlotItem):
         self.setBrush(pg.mkBrush(0, 0, 0, 0))
 
 
-# Visual constants for exclusion zones (Phase 15). The fill alpha is
-# deliberately higher than SectionRegion's so the user can spot a
-# narrow zone among section bands; the colour itself comes from
-# ColorScheme.exclusion so users can re-skin via Preferences.
+# Visual constants for exclusion zones. The fill alpha is deliberately
+# higher than SectionRegion's so the user can spot a narrow zone among
+# section bands; the colour itself comes from ColorScheme.exclusion so
+# users can re-skin via Preferences.
 EXCLUSION_ALPHA = 90
 EXCLUSION_BORDER_ALPHA = 200
 
@@ -409,11 +409,11 @@ EXCLUSION_BORDER_ALPHA = 200
 class ExclusionRegion(pg.LinearRegionItem):
     """A draggable, deletable time-range marking beats to exclude.
 
-    Phase 15 wraps PyQtGraph's ``LinearRegionItem`` so each zone is
-    independently movable along the X-axis - the user can fine-tune the
-    boundaries after the initial drag-create. Sits above section bands
-    (z=-10) but below event markers (z=0) so it visually reads as a
-    "veil" over the signal.
+    Wraps PyQtGraph's ``LinearRegionItem`` so each zone is independently
+    movable along the X-axis — the user can fine-tune the boundaries
+    after the initial drag-create. Sits above section bands (z=-10) but
+    below event markers (z=0) so it visually reads as a "veil" over the
+    signal.
 
     The zone carries a ``reason`` string + a back-reference to the
     :class:`~rrational.inspector.exclusion_persistence.ExclusionZone`
@@ -452,9 +452,9 @@ class ExclusionRegion(pg.LinearRegionItem):
             line.setPen(border_pen)
 
 
-# Visual constants for free-text annotations (Phase 20). Purple chosen
-# so the line stands apart from both blue/grey section borders and the
-# orange artifact dots.
+# Visual constants for free-text annotations. Purple chosen so the
+# line stands apart from both blue/grey section borders and the orange
+# artifact dots.
 _ANNOTATION_COLOR = "#8b3a8c"
 _ANNOTATION_LINE_ALPHA = 200
 

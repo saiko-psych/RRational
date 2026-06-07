@@ -1,8 +1,7 @@
 """Load .rrational v2 files into the inspector's continuous-timeline format.
 
-Replaces the per-section dict that ``main_window._load_rrational_sections``
-used to return. Phase 2 renders the WHOLE recording in a single plot
-with section bands as overlays, so we need:
+The inspector renders the WHOLE recording in a single plot with
+section bands as overlays, so we need:
 
 - one ``(t, v)`` array spanning every section, with NaN gaps where
   sections don't touch (PyQtGraph's ``connect="finite"`` breaks the
@@ -237,8 +236,8 @@ def load_raw_rr(filepath: Path) -> InspectorData:
 
     Auto-detects the format via ``io.generic_rr.detect_format``. Returns
     an InspectorData whose ``sections`` list has exactly one entry named
-    ``"recording"`` covering the whole file — Phase 4-Prep will let the
-    user split it into named sections via event markers.
+    ``"recording"`` covering the whole file. The user can split it into
+    named sections via event markers afterwards.
 
     Timestamp source priority (per-beat):
     1. Real wall-clock ``timestamp`` if the format carries it (Polar
@@ -310,9 +309,9 @@ def load_raw_rr(filepath: Path) -> InspectorData:
         beat_count=len(rr_ms),
     )
 
-    # Phase 26: paired-file formats (HRV Logger, VNS Analyse) carry
-    # event markers in metadata['events']. Convert them to EventMeta
-    # so they show up on the plot + in the Events tab.
+    # Paired-file formats (HRV Logger, VNS Analyse) carry event markers
+    # in metadata['events']. Convert them to EventMeta so they show up
+    # on the plot + in the Events tab.
     raw_events = recording.metadata.get("events") if recording.metadata else None
     events: list[EventMeta] = [EventMeta(label="recording_start", t=float(t[0]))]
     if raw_events:

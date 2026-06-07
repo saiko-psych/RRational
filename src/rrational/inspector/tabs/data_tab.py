@@ -1,4 +1,4 @@
-"""Data tab - workspace overview (Phase 22.1 + Phase 23A).
+"""Data tab — workspace overview.
 
 Streamlit-style "Data" tab that mirrors ``rrational.gui.tabs.data``. The
 goal is a single landing pane where the user can see:
@@ -12,12 +12,10 @@ goal is a single landing pane where the user can see:
    Has artifacts / Has NN / Quality.
 4. Bulk-action buttons (Import all from raw, Auto-assign from
    workspace, Export all to .rrational v2).
-
-Phase 23A adds a "Cleaning thresholds" block between the Project block
-and the side-by-side raw/processed blocks. The user can tune
-``rr_min_ms`` / ``rr_max_ms`` / ``sudden_change_pct`` and the
-participants table updates with retained/artifact stats from the
-shared ``rrational.prep.summaries.PreparationSummary`` pipeline.
+5. A "Cleaning thresholds" block where the user can tune ``rr_min_ms``
+   / ``rr_max_ms`` / ``sudden_change_pct``; the participants table
+   updates with retained/artifact stats from the shared
+   ``rrational.prep.summaries.PreparationSummary`` pipeline.
 
 The tab is workspace-level: ``on_active_dataset_changed`` is a no-op.
 ``on_workspace_changed`` rebuilds the participants table + the
@@ -65,7 +63,7 @@ if TYPE_CHECKING:
 
 
 # ----------------------------------------------------------------------
-# Phase 23A — Cleaning thresholds form defaults + helpers
+# Cleaning thresholds form defaults + helpers
 # ----------------------------------------------------------------------
 # Defaults match what ``rrational.inspector.settings`` registers for
 # the new keys (cleaning_min_rr_ms / cleaning_max_rr_ms /
@@ -213,8 +211,8 @@ COL_HAS_NN = 13
 COL_QUALITY = 14
 
 
-# Phase 23A Quality-badge thresholds (artifact_ratio). Mirrors the
-# Streamlit colour coding: green <5%, yellow <15%, red otherwise.
+# Quality-badge thresholds (artifact_ratio). Mirrors the Streamlit
+# colour coding: green <5%, yellow <15%, red otherwise.
 _QUALITY_GOOD_MAX = 0.05
 _QUALITY_OK_MAX = 0.15
 
@@ -239,7 +237,7 @@ def _quality_for(artifact_ratio: float) -> tuple[str, QColor]:
 
 
 # ----------------------------------------------------------------------
-# Raw-data-source detection (unchanged from Phase 22.1)
+# Raw-data-source detection
 # ----------------------------------------------------------------------
 # Folder-name → recording-app label. Mirrors the Streamlit detection
 # table in ``rrational.gui.tabs.data.RECORDING_APP_DETECTION`` but kept
@@ -579,7 +577,7 @@ class DataTab(InspectorTab):
         return box
 
     # ------------------------------------------------------------------
-    # Phase 24B — ID pattern picker callbacks
+    # ID pattern picker callbacks
     # ------------------------------------------------------------------
     def _on_id_pattern_preset_changed(self, idx: int) -> None:
         """When the user picks a preset, copy the regex into the edit
@@ -951,9 +949,9 @@ class DataTab(InspectorTab):
         self._participants_summary.setStyleSheet("color: #666;")
         layout.addWidget(self._participants_summary)
 
-        # Phase 24B — Issues Summary row sits above the table. Each
-        # metric is a clickable link that filters the table to those
-        # rows; clicking the "show all" link resets the filter.
+        # Issues Summary row sits above the table. Each metric is a
+        # clickable link that filters the table to those rows; clicking
+        # the "show all" link resets the filter.
         self._issues_label = QLabel("")
         self._issues_label.setStyleSheet("color: #555;")
         self._issues_label.setTextFormat(Qt.RichText)
@@ -969,8 +967,8 @@ class DataTab(InspectorTab):
         self._issues_filter: str | None = None
 
         # 15 columns — Streamlit-parity metrics from PreparationSummary
-        # (Phase 23A added Retained / Artifacts % / Duplicates / RR
-        # range + a trailing Quality badge).
+        # (Retained / Artifacts % / Duplicates / RR range + a trailing
+        # Quality badge).
         self._participants_table = QTableWidget(
             0, len(_PARTICIPANTS_TABLE_HEADERS), self
         )
@@ -1019,7 +1017,7 @@ class DataTab(InspectorTab):
         self._bulk_export_btn.clicked.connect(self._on_bulk_export_clicked)
         layout.addWidget(self._bulk_export_btn)
 
-        # Phase 24B — participants CSV export
+        # Participants CSV export action.
         self._export_participants_csv_btn = QPushButton("Export participants CSV...")
         self._export_participants_csv_btn.setToolTip(
             "Write the live participants table (ID / Group / Sequence / Beats / "
@@ -1030,7 +1028,7 @@ class DataTab(InspectorTab):
         )
         layout.addWidget(self._export_participants_csv_btn)
 
-        # Phase 24B — Group / Sequence CSV importer
+        # Group / Sequence CSV importer action.
         self._import_mapping_btn = QPushButton("Import Group/Sequence CSV...")
         self._import_mapping_btn.setToolTip(
             "Open a CSV with one row per participant and map its columns to "
@@ -1304,7 +1302,7 @@ class DataTab(InspectorTab):
         participants = self._collect_participants()
         cleaning_cfg = _current_cleaning_config()
         n_with_metrics = 0
-        # Phase 24B — per-row issue tags so we can filter + count issues
+        # Per-row issue tags so we can filter + count issues.
         self._row_issue_tags: list[set[str]] = []
         for pid in sorted(participants.keys()):
             data = participants[pid] or {}
@@ -1327,8 +1325,8 @@ class DataTab(InspectorTab):
             rr_range_str = "-"
             quality_label = "-"
             quality_colour: QColor | None = None
-            # Phase 24B — per-participant issue tags, kept in sync with
-            # the table row order so the filter / link counters work.
+            # Per-participant issue tags, kept in sync with the table
+            # row order so the filter / link counters work.
             row_tags: set[str] = set()
             n_events_int = 0
 
@@ -1419,7 +1417,7 @@ class DataTab(InspectorTab):
             "thresholds and click Apply &amp; refresh to recompute.</i>"
         )
 
-        # Phase 24B — issues summary banner + active-filter application.
+        # Issues summary banner + active-filter application.
         self._refresh_issues_label()
         self._apply_issues_filter()
 
@@ -1672,7 +1670,7 @@ class DataTab(InspectorTab):
         )
 
     # ------------------------------------------------------------------
-    # Phase 24B — participants CSV download
+    # Participants CSV download
     # ------------------------------------------------------------------
     def _suggested_participants_csv_name(self) -> str:
         proj = getattr(self._main_window, "_project", None)
@@ -1748,7 +1746,7 @@ class DataTab(InspectorTab):
         )
 
     # ------------------------------------------------------------------
-    # Phase 24B — Group / Sequence mapping CSV importer
+    # Group / Sequence mapping CSV importer
     # ------------------------------------------------------------------
     def _on_import_mapping_clicked(self) -> None:
         dlg = ImportParticipantMappingDialog(self._main_window, parent=self)

@@ -1,10 +1,10 @@
 """Inspector-side helper for computing PreparationSummary from a Dataset.
 
-Phase 23A: surface the Streamlit prep pipeline (artifact ratio, retained
-beats, duplicate count, RR range, artifact reasons) inside the
-Inspector's Data tab.
+Surfaces the Streamlit prep pipeline (artifact ratio, retained beats,
+duplicate count, RR range, artifact reasons) inside the Inspector's
+Data tab.
 
-We deliberately reuse the existing ``rrational.prep.summaries`` and
+Reuses the existing ``rrational.prep.summaries`` and
 ``rrational.cleaning.rr`` modules — this file is glue, not a
 re-implementation. The summary is built from the in-memory
 ``InspectorData`` (``t`` + ``v`` arrays) by reconstructing a minimal

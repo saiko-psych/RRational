@@ -1,4 +1,4 @@
-"""Participant tab — per-subject deep-dive (Phase 22.2 + Phase 23B).
+"""Participant tab — per-subject deep-dive.
 
 Streamlit-style focused per-participant view. Mirrors the workflow of
 ``src/rrational/gui/tabs/participant.py`` (Streamlit reference) but in
@@ -6,28 +6,27 @@ the PyQt inspector shell:
 
 - Top bar: a participant dropdown listing every loaded dataset's stem,
   plus Previous / Next arrow buttons and a "Showing X of Y" status.
-- Header metrics row (Phase 23B): "Participant | Group | Sequence |
-  Beats | Duration | Duplicates" — pulled from the active dataset +
+- Header metrics row: "Participant | Group | Sequence | Beats |
+  Duration | Duplicates" — pulled from the active dataset +
   ParticipantsTab metadata. Mirrors the Streamlit per-participant view.
 - Left dock: a vertical list of the active participant's sections.
   Clicking a row zooms the plot to that section; the per-row
-  "Validate" button records validation in ``{pid}_section_validations.yml``
-  (Phase 23B — replaces the Phase 22.2 status-bar no-op).
+  "Validate" button records validation in
+  ``{pid}_section_validations.yml``.
 - Center: the same ``RRPlotWidget`` the Browse tab uses (timeline +
   overlays + crosshair + keyboard nav).
 - Right dock: the same ``PreprocessingPanel`` the Browse tab uses
-  (workflow stepper + detect / correct / save buttons + Phase 14
-  manual marking + Phase 15 exclusion zones + Phase 16 section edit
-  mode + Phase 20 annotations).
+  (workflow stepper + detect / correct / save buttons + manual
+  marking + exclusion zones + section edit mode + annotations).
 - Bottom: an NN-intervals summary line — "X corrected of Y total NN
   intervals, artifact rate Z%" — refreshed after every preprocessing
   result.
 
-Splits the monolithic Browse tab into a single-participant focus mode
-without duplicating the heavy widgets. The dropdown drives the
-workspace's active dataset via ``main_window.set_active_dataset(idx)``;
-all the other tabs (and the original Browse tab itself) stay in lock-
-step because they share the same notification fan-out.
+Single-participant focus mode without duplicating the heavy widgets.
+The dropdown drives the workspace's active dataset via
+``main_window.set_active_dataset(idx)``; all the other tabs (and the
+original Browse tab) stay in lock-step because they share the same
+notification fan-out.
 """
 
 from __future__ import annotations
@@ -81,7 +80,7 @@ _ROLE_QUALITY_RANGE = Qt.UserRole + 2
 # with a basic Latin/Symbols subset.
 _VALIDATED_PREFIX = "✓ "
 
-# Quality-issue detection thresholds (Phase 24C-retry).
+# Quality-issue detection thresholds.
 # - Time gap: 5 s between consecutive beats is well past any plausible
 #   RR interval (HR < 12 bpm) — almost certainly a sensor dropout or a
 #   cross-section join.
@@ -448,7 +447,7 @@ class ParticipantTab(InspectorTab):
         top_layout.addWidget(self._status_label)
         top_layout.addStretch()
 
-        # ----- Header metrics row (Phase 23B) -----------------------------
+        # ----- Header metrics row ----------------------------------------
         # Streamlit's per-participant view surfaces participant id, group,
         # sequence, beat counts, duration, and duplicate count alongside
         # the plot. The PyQt port mirrors that with a flat field/value
@@ -503,7 +502,7 @@ class ParticipantTab(InspectorTab):
             "a row to clear validation."
         )
         self._sections_list.itemClicked.connect(self._on_section_clicked)
-        # Phase 23B: context menu lets the user clear a validation.
+        # Context menu lets the user clear a validation.
         self._sections_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self._sections_list.customContextMenuRequested.connect(
             self._on_section_context_menu
@@ -532,7 +531,7 @@ class ParticipantTab(InspectorTab):
         events_layout.addWidget(self._add_repetitive_btn)
         sections_layout.addWidget(events_box)
 
-        # ----- Quality issues group (Phase 24C-retry) -------------------
+        # ----- Quality issues group --------------------------------------
         # Collapsible QGroupBox sitting below the section list. Holds
         # three short QListWidgets (time gaps, high-variability segments,
         # exact-duplicate count). Each list row carries a (t_start, t_end)
@@ -636,10 +635,9 @@ class ParticipantTab(InspectorTab):
         self._dock_host.addDockWidget(Qt.RightDockWidgetArea, self._preprocessing_dock)
 
         # ----- Outer layout --------------------
-        # Phase 25b: the navigation toolbar (Start/End/Pan/Zoom/Fit) is
-        # embedded HERE at the top of the participant tab instead of
-        # the QMainWindow's global toolbar area. User feedback: 'diese
-        # zeile soll UNTER den haupt tabs sein (in participant)'.
+        # The navigation toolbar (Start/End/Pan/Zoom/Fit) is embedded
+        # HERE at the top of the participant tab instead of the
+        # QMainWindow's global toolbar area.
         from rrational.inspector.help_widgets import HelpExpander
 
         outer = QVBoxLayout(self)
@@ -764,9 +762,9 @@ class ParticipantTab(InspectorTab):
             self._participant_combo.setCurrentIndex(idx)
         finally:
             self._suppress_combo_signal = False
-        # Phase 23B: load this participant's section validations BEFORE
-        # rendering the section list so each row shows the validated
-        # state on first paint.
+        # Load this participant's section validations BEFORE rendering
+        # the section list so each row shows the validated state on
+        # first paint.
         self._reload_validations(ds)
         self._render_dataset(ds)
         self._refresh_buttons_and_status()
@@ -888,9 +886,9 @@ class ParticipantTab(InspectorTab):
 
         Beats / Retained / Duration / Duplicates are derived directly
         from the InspectorData arrays so we don't need to block on
-        PreparationSummary (Phase 23A ships that separately). Group +
-        Sequence come from the ParticipantsTab — same source the
-        Streamlit per-participant view uses.
+        PreparationSummary. Group + Sequence come from the
+        ParticipantsTab — same source the Streamlit per-participant
+        view uses.
         """
         stem = self._stem_for(ds)
         meta = self._participant_meta(stem)
@@ -903,8 +901,8 @@ class ParticipantTab(InspectorTab):
         # monotonically non-decreasing.
         finite_mask = np.isfinite(v)
         total_beats = int(finite_mask.sum())
-        # Phase 23A owns PreparationSummary; we fall back to "retained
-        # == total" and "duplicates == 0" until that ships and tells us
+        # PreparationSummary lives in prep_summary; here we fall back to
+        # "retained == total" and "duplicates == 0" until it tells us
         # otherwise. The header still reads correctly because the worst
         # case is just the absence of those two extra stats.
         retained = total_beats
@@ -965,7 +963,7 @@ class ParticipantTab(InspectorTab):
         return proj.project_path if proj is not None else None
 
     # ------------------------------------------------------------------
-    # Section-validation persistence (Phase 23B)
+    # Section-validation persistence
     # ------------------------------------------------------------------
     def _reload_validations(self, ds: "Dataset") -> None:
         """Refresh self._section_validations from ``{pid}_section_validations.yml``.
@@ -1002,7 +1000,7 @@ class ParticipantTab(InspectorTab):
         )
 
     # ------------------------------------------------------------------
-    # Quality issues (Phase 24C-retry)
+    # Quality issues
     # ------------------------------------------------------------------
     def _on_quality_box_toggled(self, checked: bool) -> None:
         """Show/hide the quality lists when the group box is toggled."""
@@ -1127,7 +1125,7 @@ class ParticipantTab(InspectorTab):
         )
 
     def _on_validate_section(self, name: str) -> None:
-        """Confirm + persist a section validation (Phase 23B).
+        """Confirm + persist a section validation.
 
         Pops a small confirmation dialog (suppressed in test_mode) and
         on Yes records the section in the participant's

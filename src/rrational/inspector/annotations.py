@@ -1,4 +1,4 @@
-"""Free-text annotation dataclass (Phase 20).
+"""Free-text annotation dataclass.
 
 Lightweight value object so persistence + UI code can pass annotations
 around without coupling to PyQtGraph items. The actual on-plot rendering

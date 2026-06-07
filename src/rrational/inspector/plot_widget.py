@@ -6,11 +6,8 @@ wall-clock time, with optional overlays:
 - ``SectionRegion`` — coloured bands marking named sections
 - ``EventMarker`` — vertical lines at event timestamps
 
-Phase 2 introduces the custom ``RRViewBox`` subclass: currently a thin
-no-op wrapper, but it's the hook point where Phase 3's click-to-add-
-event-marker and drag-to-edit-region will plug in. Subclassing the
-ViewBox now means later additions don't require touching every call
-site.
+A custom ``RRViewBox`` subclass is the hook point for drag-create
+gestures (currently used by exclusion-zone creation).
 
 Keyboard model:
     Left  / Right  — pan 25 % of the visible window
@@ -62,13 +59,12 @@ PAN_FRACTION = 0.25  # fraction of the visible window per Left/Right press
 ZOOM_FACTOR = 1.25  # multiplicative zoom per Up/Down press
 JUMP_WINDOW_S = 60.0  # Home/End viewport size
 LINE_COLOR = "#2E86AB"  # matches Scientific theme accent in color_scheme.py
-EXCLUSION_COLOR = "#FFA500"  # Phase 15 default; ColorScheme.exclusion overrides
+EXCLUSION_COLOR = "#FFA500"  # default; ColorScheme.exclusion overrides
 MIN_EXCLUSION_WIDTH_S = 0.5  # ignore microscopic drags (jitter from a click)
 
 # Distinct colours cycled through section regions / event markers. Picked
 # from the matplotlib "tab10" palette for adequate contrast against the
-# blue RR-tachogram on a white background. Phase 3 will move this into
-# the user-configurable ColorScheme.
+# blue RR-tachogram on a white background.
 _SECTION_PALETTE = [
     "#1f77b4",
     "#ff7f0e",
@@ -84,7 +80,7 @@ _SECTION_PALETTE = [
 
 
 class RRViewBox(pg.ViewBox):
-    """Custom ViewBox — Phase 15 drag-create for exclusion zones.
+    """Custom ViewBox — drag-create for exclusion zones.
 
     When ``exclusion_mode`` is ON (toggled from the PreprocessingPanel
     sidebar), a left-button drag emits ``exclusion_drag_finished(t0, t1)``
@@ -136,24 +132,24 @@ class RRPlotWidget(pg.PlotWidget):
     cursor_moved = Signal(float, float)
     # Emitted when the mouse leaves the plot region — readout should clear.
     cursor_left = Signal()
-    # Phase 14: emitted after a successful manual mark / unmark click.
-    # The payload is the beat-index touched and a short string action
-    # tag ("add" | "remove_manual" | "exclude_algo" | "include_algo").
+    # Emitted after a successful manual mark / unmark click. The payload
+    # is the beat-index touched and a short string action tag
+    # ("add" | "remove_manual" | "exclude_algo" | "include_algo").
     # PreprocessingPanel listens to auto-save + update the undo stack.
     manual_artifact_changed = Signal(int, str)
-    # Phase 15 - emitted after any zone create/edit/delete so the
-    # PreprocessingPanel can refresh its sidebar list + auto-save to disk.
+    # Emitted after any zone create/edit/delete so the PreprocessingPanel
+    # can refresh its sidebar list + auto-save to disk.
     exclusion_zones_changed = Signal()
-    # Phase 20: emitted when the user left-clicks on an empty part of the
-    # plot AND annotation mode is enabled. Carries the data-coords X
-    # position (t, seconds-since-epoch).
+    # Emitted when the user left-clicks on an empty part of the plot AND
+    # annotation mode is enabled. Carries the data-coords X position
+    # (t, seconds-since-epoch).
     plot_clicked = Signal(float)
-    # Phase 20: emitted on right-click of an AnnotationMarker so the
-    # panel can pop an edit / delete menu without coupling to QInfiniteLine.
+    # Emitted on right-click of an AnnotationMarker so the panel can pop
+    # an edit / delete menu without coupling to QInfiniteLine.
     annotation_context = Signal(object, object)  # (AnnotationMarker, QPoint)
 
-    # Phase 16: section editing signals. Emitted by SectionRegion handles
-    # after a drag finishes or a context-menu action is chosen. MainWindow
+    # Section editing signals. Emitted by SectionRegion handles after a
+    # drag finishes or a context-menu action is chosen. MainWindow
     # connects these to mutate the active dataset's SectionMeta + persist
     # via gui.persistence.save_sections.
     sigSectionEdited = Signal(str, float, float)  # label, new_t_start, new_t_end
@@ -163,8 +159,8 @@ class RRPlotWidget(pg.PlotWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent, viewBox=RRViewBox())
-        # Phase 16: flag controlling whether NEW SectionRegions spawn
-        # in edit mode. Toggled by MainWindow via ``set_section_edit_mode``.
+        # Flag controlling whether NEW SectionRegions spawn in edit
+        # mode. Toggled by MainWindow via ``set_section_edit_mode``.
         # When True, each newly-added region accepts edge drags + right-
         # click context menu (rename / delete / split).
         self._section_edit_mode: bool = False
@@ -226,7 +222,7 @@ class RRPlotWidget(pg.PlotWidget):
         self._artifact_overlay.setVisible(False)
         self.addItem(self._artifact_overlay)
 
-        # Phase 14: manual-mark mode (MNE-LAB-style).
+        # Manual-mark mode (MNE-LAB-style).
         # ``_manual_added_indices`` are beat-indices the user clicked to
         # ADD as artifacts; ``_manual_removed_indices`` are algorithm-
         # detected indices the user clicked to exclude from analysis.
@@ -252,13 +248,13 @@ class RRPlotWidget(pg.PlotWidget):
         # works on real recordings.
         self._click_tolerance_s = 2.0
 
-        # Phase 20: annotation overlays. ``_annotation_markers`` keeps
-        # strong Python refs so PySide6 doesn't garbage-collect the
-        # InfiniteLine items out from under the scene.
+        # Annotation overlays. ``_annotation_markers`` keeps strong
+        # Python refs so PySide6 doesn't garbage-collect the InfiniteLine
+        # items out from under the scene.
         self._annotation_markers: list[AnnotationMarker] = []
         self._annotation_mode = False
-        # Scene-level click signal is connected once below alongside
-        # the Phase 14 sigMouseMoved hookup - keep ordering centralized.
+        # Scene-level click signal is connected once below alongside the
+        # sigMouseMoved hookup — keep ordering centralized.
 
         # Focus is required for mouse-wheel zoom to feel responsive even
         # before the user has clicked into the plot.
@@ -295,10 +291,10 @@ class RRPlotWidget(pg.PlotWidget):
         # The PyQtGraph scene exposes a mouse-moved signal that gives us
         # pixel coordinates; we'll convert to data coords in the handler.
         self.scene().sigMouseMoved.connect(self._on_scene_mouse_moved)
-        # Phase 14: left-clicks land here in manual-mark mode.
+        # Left-clicks land here in manual-mark mode.
         self.scene().sigMouseClicked.connect(self._on_scene_mouse_clicked)
 
-        # ----- Phase 15 — exclusion zones -----------------------------------
+        # ----- Exclusion zones ----------------------------------------------
         # ``_exclusion_zones`` is the model: a list of dataclasses kept in
         # lock-step with the on-plot ExclusionRegion widgets in
         # ``_exclusion_regions``. Same array index => same zone. Selection
@@ -369,12 +365,12 @@ class RRPlotWidget(pg.PlotWidget):
     ) -> SectionRegion:
         """Add a coloured band for one section. Returns the created item.
 
-        Phase 16: the region is spawned with ``editable=self._section_edit_mode``
-        so it honours whatever section-edit toggle is currently active, and
-        the snap_fn is installed so drags snap to the nearest beat in the
-        active dataset. The four ``sig*Requested`` signals from the region
-        are forwarded onto the widget-level signals so MainWindow can
-        connect once at construction.
+        The region is spawned with ``editable=self._section_edit_mode``
+        so it honours whatever section-edit toggle is currently active,
+        and the snap_fn is installed so drags snap to the nearest beat
+        in the active dataset. The four ``sig*Requested`` signals from
+        the region are forwarded onto the widget-level signals so
+        MainWindow can connect once at construction.
         """
         if color is None:
             color = self._color_for_index(len(self._section_regions))
@@ -402,7 +398,7 @@ class RRPlotWidget(pg.PlotWidget):
         return region
 
     # ------------------------------------------------------------------
-    # Phase 16: section edit mode + snap helper + forwarding
+    # Section edit mode + snap helper + forwarding
     # ------------------------------------------------------------------
     def set_section_edit_mode(self, enabled: bool) -> None:
         """Toggle edit mode for every existing section region.
@@ -484,8 +480,8 @@ class RRPlotWidget(pg.PlotWidget):
         Reads the (t, v) of each index from the data cache; pass an
         empty array to clear the overlay (or use ``clear_artifacts``).
         """
-        # Phase 14: keep a Python-set cache so click handler can answer
-        # "is this index an algorithm artifact?" in O(1).
+        # Keep a Python-set cache so click handler can answer "is this
+        # index an algorithm artifact?" in O(1).
         self._algorithm_indices = {int(i) for i in indices} if len(indices) else set()
         if self._times is None or len(indices) == 0:
             self._artifact_overlay.clear_points()
@@ -494,7 +490,7 @@ class RRPlotWidget(pg.PlotWidget):
         vs = self._values[indices].tolist()
         self._artifact_overlay.set_points(ts, vs)
         self._artifact_overlay.setVisible(True)
-        # Re-render Phase-14 overlays now that the algo set is known.
+        # Re-render manual overlays now that the algo set is known.
         self._refresh_manual_overlays()
 
     def clear_artifacts(self) -> None:
@@ -517,7 +513,7 @@ class RRPlotWidget(pg.PlotWidget):
         )
 
     # ------------------------------------------------------------------
-    # Phase 14 — Manual artifact marking (MNE-LAB-style)
+    # Manual artifact marking (MNE-LAB-style)
     # ------------------------------------------------------------------
     def set_manual_mark_mode(self, enabled: bool) -> None:
         """Enable/disable click-to-mark interaction on the plot.
@@ -611,10 +607,10 @@ class RRPlotWidget(pg.PlotWidget):
         return best
 
     def _on_scene_mouse_clicked(self, ev) -> None:
-        """Route scene clicks into Phase 14 (manual mark) or Phase 20 (annotation).
+        """Route scene clicks into manual-mark or annotation handlers.
 
-        Phase 14: left-click in manual-mark mode toggles an artifact at
-        the nearest beat. Phase 20: left-click in annotation mode emits
+        Left-click in manual-mark mode toggles an artifact at the
+        nearest beat. Left-click in annotation mode emits
         ``plot_clicked(t)`` so the panel can open the new-annotation
         dialog; right-click on an existing AnnotationMarker emits
         ``annotation_context(marker, screen_pos)`` for an edit / delete
@@ -630,8 +626,8 @@ class RRPlotWidget(pg.PlotWidget):
         data_pos = vb.mapSceneToView(scene_pos)
         t_click = float(data_pos.x())
 
-        # Phase 20: right-click on an annotation marker fires the context
-        # signal so the panel can pop edit / delete options.
+        # Right-click on an annotation marker fires the context signal
+        # so the panel can pop edit / delete options.
         if ev.button() == Qt.RightButton:
             marker = self._marker_under(t_click)
             if marker is not None:
@@ -643,7 +639,7 @@ class RRPlotWidget(pg.PlotWidget):
         if ev.button() != Qt.LeftButton:
             return
 
-        # Phase 14: manual-mark mode click → toggle artifact at nearest beat.
+        # Manual-mark mode click → toggle artifact at nearest beat.
         if self._manual_mark_mode:
             idx = self._nearest_finite_beat(t_click)
             if idx is None:
@@ -656,7 +652,7 @@ class RRPlotWidget(pg.PlotWidget):
                 self.manual_artifact_changed.emit(int(idx), action)
             return
 
-        # Phase 20: annotation-mode click → emit plot_clicked for the panel.
+        # Annotation-mode click → emit plot_clicked for the panel.
         if self._annotation_mode:
             ev.accept()
             self.plot_clicked.emit(t_click)
@@ -687,7 +683,7 @@ class RRPlotWidget(pg.PlotWidget):
         return "add"
 
     # ------------------------------------------------------------------
-    # Phase 15 — Exclusion zones API
+    # Exclusion zones API
     # ------------------------------------------------------------------
     def set_exclusion_mode(self, enabled: bool) -> None:
         """Toggle drag-to-create exclusion mode on the underlying ViewBox.
@@ -813,7 +809,7 @@ class RRPlotWidget(pg.PlotWidget):
         return int(np.searchsorted(ts, t))
 
     # ------------------------------------------------------------------
-    # Phase 20: free-text annotations
+    # Free-text annotations
     # ------------------------------------------------------------------
     def set_annotation_mode(self, enabled: bool) -> None:
         """Toggle whether left-clicks on the plot emit ``plot_clicked``."""
@@ -925,13 +921,13 @@ class RRPlotWidget(pg.PlotWidget):
         self._event_markers.clear()
         self._sections_by_label.clear()
         self.clear_artifacts()
-        # Phase 15 - dataset switch must also drop the previous file's
-        # exclusion zones; the PreprocessingPanel is responsible for
-        # re-loading the next dataset's zones from disk.
+        # Dataset switch must also drop the previous file's exclusion
+        # zones; the PreprocessingPanel is responsible for re-loading the
+        # next dataset's zones from disk.
         self.clear_exclusion_zones()
-        # Phase 20: annotations are per-dataset; dropping overlays on
-        # dataset switch wipes the old ones so the panel can re-add the
-        # new dataset's markers from disk without dupes.
+        # Annotations are per-dataset; dropping overlays on dataset
+        # switch wipes the old ones so the panel can re-add the new
+        # dataset's markers from disk without dupes.
         self.clear_annotation_markers()
 
     def highlight_section(self, label: str | None) -> None:
@@ -959,7 +955,7 @@ class RRPlotWidget(pg.PlotWidget):
         self._curve.setPen(pg.mkPen(scheme.rr_line, width=1))
         # Artifact dots
         self._artifact_overlay.apply_color(QColor(scheme.artifact))
-        # Phase 14: manual + excluded overlays share the artifact colour
+        # Manual + excluded overlays share the artifact colour
         self._manual_overlay.apply_color(QColor(scheme.artifact))
         self._excluded_overlay.apply_color(QColor(scheme.artifact))
         # Section bands

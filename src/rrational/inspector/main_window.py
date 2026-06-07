@@ -1,18 +1,14 @@
 """Top-level QMainWindow for the RR inspector.
 
-Phase 3a: multi-dataset workspace. The user can open several .rrational
-files in parallel; the sidebar becomes a ``QTreeWidget`` with one
-top-level node per file and the file's sections as children. Click a
-filename to switch the active dataset; click a section to zoom into it.
+Multi-dataset workspace. The user can open several .rrational files in
+parallel; the sidebar is a ``QTreeWidget`` with one top-level node per
+file and the file's sections as children. Click a filename to switch
+the active dataset; click a section to zoom into it.
 
 File menu mirrors MNELAB conventions: Open, Open folder, Recent (with
 existence-check + auto-purge), Close current, Close all, Quit. Recent
 files persist via ``QSettings`` (Windows registry / macOS plist /
 Linux INI).
-
-Backward-compat with Phase 2 tests:
-- ``load_data(data, source_path)`` still closes all + loads one
-- ``_data`` and ``_loaded_path`` remain readable as the ACTIVE dataset
 """
 
 from __future__ import annotations
@@ -48,9 +44,8 @@ from rrational.inspector.tabs import (
     SetupTab,
 )
 
-# Phase 22.3: optional Streamlit-mode tabs. Other agents are adding
-# DataTab + ParticipantTab in parallel; defer their imports so this
-# module still loads if either class is missing in the current branch.
+# Optional Streamlit-mode tabs. Defer imports so this module still
+# loads if either class is missing in the current branch.
 try:
     from rrational.inspector.tabs.data_tab import DataTab  # type: ignore
 except ImportError:  # pragma: no cover - depends on parallel work
@@ -139,17 +134,15 @@ class MainWindow(QMainWindow):
         # opens, so we keep a handle on the submenu itself.
         self._recent_menu = None
 
-        # Phase 14: Edit-menu undo / redo for manual artifact marking.
-        # Populated by _build_menu; referenced by PreprocessingPanel to
-        # enable / disable as the stacks fill and drain.
+        # Edit-menu undo / redo for manual artifact marking. Populated
+        # by _build_menu; referenced by PreprocessingPanel to enable /
+        # disable as the stacks fill and drain.
         self._undo_action = None
         self._redo_action = None
 
-        # Phase 25b: build the navigation toolbar BEFORE constructing
-        # the tabs. ParticipantTab/BrowseTab embed the toolbar via
-        # take_nav_toolbar() inside their __init__, so it must exist
-        # by then. (Previously _build_toolbar ran after _build_central_widget,
-        # leaving the embed call a silent no-op.)
+        # Build the navigation toolbar BEFORE constructing the tabs.
+        # ParticipantTab/BrowseTab embed the toolbar via take_nav_toolbar()
+        # inside their __init__, so it must exist by then.
         self._build_toolbar()
 
         self._build_central_widget()
@@ -175,10 +168,10 @@ class MainWindow(QMainWindow):
 
         self._build_menu()
         self.setStatusBar(QStatusBar())
-        # UX1: a permanent project badge on the left of the status bar.
-        # Always visible so the user can tell at a glance which project
-        # is active (window title alone gets lost in tab clutter).
-        # Built BEFORE the cursor readout so it sits to its LEFT.
+        # Permanent project badge on the left of the status bar. Always
+        # visible so the user can tell at a glance which project is
+        # active (window title alone gets lost in tab clutter). Built
+        # BEFORE the cursor readout so it sits to its LEFT.
         self._project_badge = QLabel("")
         self._project_badge.setObjectName("projectBadge")
         self._project_badge.setCursor(Qt.PointingHandCursor)
@@ -196,16 +189,16 @@ class MainWindow(QMainWindow):
         self._key_filter = _GlobalKeyFilter(self)
         QApplication.instance().installEventFilter(self._key_filter)
 
-        # Phase 20: restore window + BrowseTab dock layout from QSettings
-        # so user-adjusted geometry survives across runs.
+        # Restore window + BrowseTab dock layout from QSettings so
+        # user-adjusted geometry survives across runs.
         self._restore_window_state()
 
-        # UX4: initial tab-label refresh once everything is wired up.
+        # Initial tab-label refresh once everything is wired up.
         self._refresh_tab_labels()
 
-        # Phase 24A: first-run walkthrough. Use a deferred QTimer + a
-        # NON-MODAL show() so __init__ never blocks (the modal exec()
-        # path hung headless tests + snapshot tooling indefinitely).
+        # First-run walkthrough. Use a deferred QTimer + a NON-MODAL
+        # show() so __init__ never blocks (the modal exec() path hangs
+        # headless tests + snapshot tooling indefinitely).
         # mark_onboarded() runs when the user dismisses the dialog.
         if not self.test_mode:
             from rrational.inspector.onboarding import (
@@ -284,7 +277,7 @@ class MainWindow(QMainWindow):
         self.open_project_path(path)
 
     # ------------------------------------------------------------------
-    # Phase 20: window + dock state persistence
+    # Window + dock state persistence
     # ------------------------------------------------------------------
     def _restore_window_state(self) -> None:
         """Reapply QMainWindow geometry + BrowseTab dock layout if cached."""
@@ -335,8 +328,7 @@ class MainWindow(QMainWindow):
             pass
 
     # ------------------------------------------------------------------
-    # Backward-compat properties: lots of tests still read ``_data`` /
-    # ``_loaded_path``. They map to the ACTIVE dataset now.
+    # ``_data`` / ``_loaded_path`` proxies map to the ACTIVE dataset.
     # ------------------------------------------------------------------
     @property
     def _data(self) -> InspectorData | None:
@@ -356,25 +348,21 @@ class MainWindow(QMainWindow):
     def _build_central_widget(self) -> None:
         """Construct the central QTabWidget + each top-level tab.
 
-        Browse owns the timeline/sidebar/overview widgets we used to
-        host directly on MainWindow; Setup/Analysis/Results are
-        placeholders until Phase 4b/c/d wire them up. The active tab
-        is also where Pan/Zoom/Home/End make sense — the global key
-        filter still routes them to the Browse plot regardless of which
-        tab is visible, since the user expects keyboard nav to "always
-        affect the timeline."
+        Browse owns the timeline/sidebar/overview widgets that used to
+        live directly on MainWindow. The global key filter routes
+        Pan/Zoom/Home/End to the Browse plot regardless of which tab is
+        visible, since the user expects keyboard nav to "always affect
+        the timeline."
         """
         self._tabs_widget = QTabWidget(self)
         self._tabs_widget.setDocumentMode(True)
         self._tabs_widget.setMovable(False)
 
-        # Phase 22.3: ALWAYS construct every tab — the layout switcher
-        # toggles visibility, not existence, so cross-tab state stays
-        # consistent regardless of which mode the user picks. DataTab /
-        # ParticipantTab may still be None if the parallel work that
-        # introduces them hasn't landed yet; in that case they're skipped
-        # from the tab strip entirely (and the Streamlit mode degrades
-        # gracefully to whatever IS available).
+        # ALWAYS construct every tab — the layout switcher toggles
+        # visibility, not existence, so cross-tab state stays consistent
+        # regardless of which mode the user picks. DataTab / ParticipantTab
+        # may be None if their modules are missing; they're skipped from
+        # the tab strip in that case.
         self._browse_tab = BrowseTab(self)
         self._data_tab = DataTab(self) if DataTab is not None else None
         self._participant_tab = (
@@ -403,8 +391,8 @@ class MainWindow(QMainWindow):
         ]
         for tab in self._tabs:
             self._tabs_widget.addTab(tab, tab.TAB_LABEL)
-        # UX4: deferred — _refresh_tab_labels called below once everything
-        # else (results store, project, etc.) is initialised.
+        # _refresh_tab_labels is deferred until results store / project
+        # are initialised below.
 
         # Load the persisted layout mode and apply it before the window
         # is shown. Falls back to MNE-LAB for new users — the classic
@@ -419,7 +407,7 @@ class MainWindow(QMainWindow):
         self._ui_layout: str = stored
         self._apply_layout_mode(self._ui_layout)
 
-        # Phase 24A: status-bar context hints on tab switch.
+        # Status-bar context hints on tab switch.
         self._tabs_widget.currentChanged.connect(self._on_tab_changed_hint)
 
         self.setCentralWidget(self._tabs_widget)
@@ -433,9 +421,9 @@ class MainWindow(QMainWindow):
         self._browse_tab._plot.cursor_moved.connect(self._update_cursor_readout)
         self._browse_tab._plot.cursor_left.connect(self._clear_cursor_readout)
 
-        # Phase 16: section-edit signal wiring. The plot emits each event
-        # from its SectionRegion children; MainWindow mutates the active
-        # dataset's SectionMeta + persists via gui.persistence.save_sections.
+        # Section-edit signal wiring. The plot emits each event from its
+        # SectionRegion children; MainWindow mutates the active dataset's
+        # SectionMeta + persists via gui.persistence.save_sections.
         self._browse_tab._plot.sigSectionEdited.connect(self._on_section_edited)
         self._browse_tab._plot.sigSectionRenameRequested.connect(
             self._on_section_rename_requested
@@ -448,9 +436,8 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------------
-    # Backward-compat proxies — tests + earlier-phase code still reach
-    # for widgets that now live inside BrowseTab. Forward the access so
-    # nothing has to change at call sites.
+    # Proxies for widgets that now live inside BrowseTab — forwarded so
+    # external callers can keep reaching them on MainWindow.
     # ------------------------------------------------------------------
     @property
     def _dataset_tree(self):
@@ -469,9 +456,7 @@ class MainWindow(QMainWindow):
         return self._browse_tab._empty_label
 
     def _on_tree_item_clicked(self, item, column) -> None:
-        """Forward sidebar clicks to BrowseTab (kept as a method for
-        tests that call ``main_window._on_tree_item_clicked(item, 0)``).
-        """
+        """Forward sidebar clicks to BrowseTab."""
         self._browse_tab._on_tree_item_clicked(item, column)
 
     def _build_menu(self) -> None:
@@ -505,9 +490,9 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        # UX2: "Open recording..." catch-all is the PRIMARY entry point.
-        # Polar / Empatica / Kubios / Elite HRV / plain text / .rrational
-        # all selectable through the dialog's file-type filter.
+        # "Open recording..." is the PRIMARY entry point. Polar /
+        # Empatica / Kubios / Elite HRV / plain text / .rrational are all
+        # selectable through the dialog's file-type filter.
         open_act = QAction("&Open recording…", self)
         open_act.setShortcut(QKeySequence.Open)  # Ctrl+O / Cmd+O
         open_act.setStatusTip(
@@ -630,7 +615,7 @@ class MainWindow(QMainWindow):
             on_change=self._plot.set_crosshair_visible,
         )
 
-        # Phase 20: dockable BrowseTab panels (Datasets + Preprocessing).
+        # Dockable BrowseTab panels (Datasets + Preprocessing).
         view_menu.addSeparator()
         self._toggle_datasets_dock_act = self._make_view_toggle(
             view_menu,
@@ -651,7 +636,7 @@ class MainWindow(QMainWindow):
             default=True,
         )
 
-        # Phase 22.3: View → Layout submenu (Streamlit / MNE-LAB modes).
+        # View → Layout submenu (Streamlit / MNE-LAB modes).
         # QActionGroup with exclusive=True gives the entries radio
         # behaviour — Qt automatically unchecks the other one when the
         # user picks a mode.
@@ -695,8 +680,8 @@ class MainWindow(QMainWindow):
         # ----- Edit menu --------------------------------------------------
         edit_menu = menubar.addMenu("&Edit")
 
-        # Phase 14: undo / redo for manual artifact marking. Disabled
-        # until the PreprocessingPanel populates its undo stack.
+        # Undo / redo for manual artifact marking. Disabled until the
+        # PreprocessingPanel populates its undo stack.
         self._undo_action = QAction("&Undo manual mark", self)
         self._undo_action.setShortcut(QKeySequence.Undo)  # Ctrl+Z / Cmd+Z
         self._undo_action.setStatusTip("Reverse the last manual artifact mark / unmark")
@@ -721,7 +706,7 @@ class MainWindow(QMainWindow):
 
         tools_menu = menubar.addMenu("&Tools")
 
-        # ----- UX2: Import from <source>... submenu ---------------------
+        # ----- Import from <source>... submenu --------------------------
         import_menu = tools_menu.addMenu("&Import from")
         for label, source_filter in [
             ("Polar (CSV)…", "Polar (*.csv)"),
@@ -738,7 +723,7 @@ class MainWindow(QMainWindow):
             import_menu.addAction(act)
         tools_menu.addSeparator()
 
-        # ----- Tools: visualisation submenu (Phase 17) -------------------
+        # ----- Tools: visualisation submenu -----------------------------
         # All four actions are dataset-aware; toggled by
         # ``_refresh_visualisation_actions`` on workspace changes.
         tools_menu.addSeparator()
@@ -773,7 +758,7 @@ class MainWindow(QMainWindow):
 
         # ----- Help menu --------------------------------------------------
         help_menu = menubar.addMenu("&Help")
-        # UX5: workflow-walkthrough is the FIRST help entry — most useful for new users.
+        # Workflow-walkthrough is the FIRST help entry — most useful for new users.
         walkthrough_act = QAction("&Workflow walkthrough…", self)
         walkthrough_act.setStatusTip(
             "Show the end-to-end workflow (raw → detect → review → save → setup → analyze → export)"
@@ -884,7 +869,7 @@ class MainWindow(QMainWindow):
                 obj.set_color_scheme(scheme)
 
     # ------------------------------------------------------------------
-    # Phase 14: Undo / Redo wiring (delegated to the preprocessing panel)
+    # Undo / Redo wiring (delegated to the preprocessing panel)
     # ------------------------------------------------------------------
     def _on_undo_clicked(self) -> None:
         panel = getattr(self._browse_tab, "_preprocessing_panel", None)
@@ -901,7 +886,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Nothing to redo", 1500)
 
     def _show_workflow_walkthrough(self) -> None:
-        """Phase 24A: multi-page walkthrough dialog (replaces the old QMessageBox)."""
+        """Open the multi-page workflow walkthrough dialog."""
         if self.test_mode:
             self.statusBar().showMessage("Workflow walkthrough (test_mode: suppressed)")
             return
@@ -911,7 +896,7 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _reshow_welcome_dialog(self) -> None:
-        """UX5: re-open the first-run welcome dialog on demand."""
+        """Re-open the first-run welcome dialog on demand."""
         if self.test_mode:
             self.statusBar().showMessage("Welcome dialog (test_mode: suppressed)")
             return
@@ -965,11 +950,9 @@ class MainWindow(QMainWindow):
     def _build_toolbar(self) -> None:
         """Plain QWidget navigation bar — embedded by tabs that need it.
 
-        Phase 25c: switched from QToolBar (which carries QMainWindow
-        toolbar-area baggage and produced layout-overlap bugs in
-        certain window sizes) to a plain QWidget + QHBoxLayout +
-        QPushButtons. Cleaner Z-order, no special QMainWindow
-        interaction.
+        Uses a plain QWidget + QHBoxLayout + QPushButtons rather than
+        QToolBar — QToolBar's QMainWindow toolbar-area integration
+        produced layout-overlap bugs at certain window sizes.
         """
         from qtpy.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
@@ -1148,9 +1131,9 @@ class MainWindow(QMainWindow):
             analysis_seq_pane, "refresh_sequences"
         ):
             analysis_seq_pane.refresh_sequences()
-        # Auto-load the per-project results cache (Phase 13). The store
-        # is replaced wholesale so closing a project + reopening another
-        # never bleeds rows between them.
+        # Auto-load the per-project results cache. The store is replaced
+        # wholesale so closing a project + reopening another never bleeds
+        # rows between them.
         self._load_results_cache()
         self._update_window_title()
         self._refresh_project_badge()
@@ -1208,7 +1191,7 @@ class MainWindow(QMainWindow):
         self.open_project_path(path)
 
     # ------------------------------------------------------------------
-    # UX1: project badge in the status bar
+    # Project badge in the status bar
     # ------------------------------------------------------------------
     def _refresh_project_badge(self) -> None:
         """Update the permanent status-bar badge to reflect ``self._project``."""
@@ -1355,7 +1338,7 @@ class MainWindow(QMainWindow):
             self.open_path(Path(path_str))
 
     def _on_open_rrational_only_clicked(self) -> None:
-        """UX2: filtered-only RRational v2 dialog (still accessible via main Open)."""
+        """Open dialog filtered to RRational v2 files only."""
         last_dir = self._open_dialog_default_dir()
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Open RRational v2 file", last_dir, "RRational v2.0 (*.rrational)"
@@ -1364,12 +1347,12 @@ class MainWindow(QMainWindow):
             self.open_path(Path(path_str))
 
     def _on_import_clicked(self, source_filter: str) -> None:
-        """UX2: source-specific Import-from submenu entries.
+        """Open a QFileDialog pre-selecting a source-specific file-type filter.
 
-        Opens a QFileDialog pre-selecting the given file-type filter
-        (e.g. ``"Polar (*.csv)"``) so the user sees only matching files.
-        Falls back to the same ``open_path`` loader once a file is chosen
-        (which auto-detects the actual format via ``generic_rr``).
+        ``source_filter`` is something like ``"Polar (*.csv)"`` so the
+        user sees only matching files. Falls back to the same ``open_path``
+        loader once a file is chosen (which auto-detects the actual
+        format via ``generic_rr``).
         """
         last_dir = self._open_dialog_default_dir()
         paths, _ = QFileDialog.getOpenFileNames(
@@ -1390,12 +1373,12 @@ class MainWindow(QMainWindow):
     def open_folder(self, folder: Path) -> None:
         """Open every recording in ``folder``.
 
-        Phase 20: detects BIDS-style layouts (``participants.tsv`` at the
-        root + ``sub-*/`` subdirs) and routes them through
-        :meth:`_load_bids_folder` instead of the flat glob.
+        Detects BIDS-style layouts (``participants.tsv`` at the root +
+        ``sub-*/`` subdirs) and routes them through :meth:`_load_bids_folder`
+        instead of the flat glob.
         """
-        # Phase 20: BIDS-formatted recording trees take priority over
-        # the flat glob — they carry per-subject metadata that the
+        # BIDS-formatted recording trees take priority over the flat
+        # glob — they carry per-subject metadata that the
         # ParticipantsTab can pre-populate.
         if self._is_bids_folder(folder):
             self._load_bids_folder(folder)
@@ -1420,7 +1403,7 @@ class MainWindow(QMainWindow):
             self.open_path(p)
 
     # ------------------------------------------------------------------
-    # Phase 20: BIDS folder detection + loader
+    # BIDS folder detection + loader
     # ------------------------------------------------------------------
     @staticmethod
     def _is_bids_folder(folder: Path) -> bool:
@@ -1672,9 +1655,9 @@ class MainWindow(QMainWindow):
         self._refresh_visualisation_actions()
         self._refresh_tab_labels()
 
-    # Phase 24A: per-tab status-bar context hints. Map by class name so
-    # we don't have to import the optional DataTab / ParticipantTab at
-    # module-load time and so hidden layouts still get the right message.
+    # Per-tab status-bar context hints. Map by class name so we don't
+    # have to import the optional DataTab / ParticipantTab at module-load
+    # time and so hidden layouts still get the right message.
     _TAB_HINTS: dict[str, str] = {
         "DataTab": "Pick a project then a file from the Raw-data tree to start",
         "ParticipantTab": (
@@ -1694,12 +1677,7 @@ class MainWindow(QMainWindow):
     }
 
     def _on_tab_changed_hint(self, idx: int) -> None:
-        """Post a 5-second status-bar hint when the user switches tabs.
-
-        Phase 25b: the nav-toolbar visibility-toggle was removed — the
-        toolbar is now embedded inside ParticipantTab/BrowseTab directly,
-        so it appears only where it belongs without a global toggle.
-        """
+        """Post a 5-second status-bar hint when the user switches tabs."""
         if idx < 0 or idx >= self._tabs_widget.count():
             return
         widget = self._tabs_widget.widget(idx)
@@ -1721,8 +1699,8 @@ class MainWindow(QMainWindow):
         return getattr(self, "_nav_toolbar", None)
 
     def _refresh_tab_labels(self) -> None:
-        """UX4: refresh top-tab labels with live state badges so the user
-        can SEE what's in each tab without clicking through them."""
+        """Refresh top-tab labels with live state badges so the user can
+        SEE what's in each tab without clicking through them."""
         for i, tab in enumerate(self._tabs):
             base = tab.TAB_LABEL
             state = ""
@@ -1736,7 +1714,7 @@ class MainWindow(QMainWindow):
             self._tabs_widget.setTabText(i, f"{base}{state}")
 
     # ------------------------------------------------------------------
-    # Phase 22.3: Layout switcher (Streamlit / MNE-LAB modes)
+    # Layout switcher (Streamlit / MNE-LAB modes)
     # ------------------------------------------------------------------
     def _layout_visible_tabs(self, mode: str) -> set:
         """Return the SET of tab widgets that should be visible in ``mode``.
@@ -1830,7 +1808,7 @@ class MainWindow(QMainWindow):
             act.blockSignals(False)
 
     # ------------------------------------------------------------------
-    # Phase 17: visualisation dialogs (Tachogram / Poincare / PSD / HR)
+    # Visualisation dialogs (Tachogram / Poincare / PSD / HR)
     # ------------------------------------------------------------------
     def _refresh_visualisation_actions(self) -> None:
         """Enable plot menu entries only when a dataset is loaded."""
@@ -1945,7 +1923,7 @@ class MainWindow(QMainWindow):
             pane.refresh_saved_groups()
 
     # ------------------------------------------------------------------
-    # Phase 13: Results cache (autosave / autoload / clear)
+    # Results cache (autosave / autoload / clear)
     # ------------------------------------------------------------------
     def _project_path_for_cache(self):
         return self._project.project_path if self._project is not None else None
@@ -1993,7 +1971,7 @@ class MainWindow(QMainWindow):
             tab.on_active_dataset_changed(data)
 
     # ------------------------------------------------------------------
-    # Phase 18: Report export (HTML / Markdown)
+    # Report export (HTML / Markdown)
     # ------------------------------------------------------------------
     def _report_default_dir(self) -> Path:
         """Choose a sensible default directory for report exports.
@@ -2085,7 +2063,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, title, msg)
 
     # ------------------------------------------------------------------
-    # Phase 16: Section boundary editing
+    # Section boundary editing
     # ------------------------------------------------------------------
     def _project_path_for_sections(self):
         return self._project.project_path if self._project is not None else None

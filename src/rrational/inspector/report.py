@@ -12,7 +12,7 @@ into a self-contained report file with:
 - Quality summary (per-dataset artifact-rate breakdown, pulled from any
   loaded .rrational file's ``QualityV2`` block)
 - Methods paragraph + reference bibliography with clickable DOI links
-- Audit trail collected from loaded .rrational files (Phase 7)
+- Audit trail collected from loaded .rrational files
 
 HTML output is **self-contained**: inline CSS, base64-embedded plots,
 no external assets. Friendly for emailing, attaching to grant
@@ -25,8 +25,8 @@ lock-step.
 Plots are exported via ``pyqtgraph.exporters.ImageExporter`` if a live
 ``BrowseTab`` plot is reachable. When that fails (headless environment,
 plot widget not yet built), the renderer silently emits an HTML comment
-``<!-- plot pending Phase 17 -->`` and Markdown skips the image line —
-the rest of the report still builds.
+``<!-- plot pending -->`` and Markdown skips the image line — the rest
+of the report still builds.
 """
 
 from __future__ import annotations
@@ -502,7 +502,7 @@ class ReportBuilder:
                     "</div>"
                 )
             else:
-                parts.append("<!-- plot pending Phase 17 -->")
+                parts.append("<!-- plot pending -->")
             parts.append("<table><thead><tr>")
             parts.append(
                 "<th>Section</th><th>Metric</th><th>Test</th>"
@@ -542,7 +542,7 @@ class ReportBuilder:
                     "</div>"
                 )
             else:
-                parts.append("<!-- plot pending Phase 17 -->")
+                parts.append("<!-- plot pending -->")
             parts.append("<table><thead><tr>")
             parts.append(
                 "<th>Sequence</th><th>Metric</th><th>Sections</th>"
@@ -619,7 +619,7 @@ class ReportBuilder:
         if plot_html_parts:
             parts.extend(plot_html_parts)
         elif datasets:
-            parts.append("<!-- plot pending Phase 17 -->")
+            parts.append("<!-- plot pending -->")
 
         # ----- References -----
         parts.append("<h2 id='references'>References</h2>")
@@ -903,10 +903,9 @@ class ReportBuilder:
     def _maybe_group_plot_png(self) -> str | None:
         """Try to grab a screenshot of the analysis tab's group bar chart.
 
-        Phase 17 will introduce a dedicated chart widget; until then we
-        look for any plot widget the analysis tab might expose and fall
-        back to ``None`` if nothing matches. The HTML caller emits an
-        ``<!-- plot pending Phase 17 -->`` comment in that case.
+        Looks for any plot widget the analysis tab might expose and
+        falls back to ``None`` if nothing matches. The HTML caller
+        emits an ``<!-- plot pending -->`` comment in that case.
         """
         tab = getattr(self._mw, "_analysis_tab", None)
         if tab is None:

@@ -1,4 +1,4 @@
-"""Persistence for per-dataset annotations (Phase 20).
+"""Persistence for per-dataset annotations.
 
 Annotations are saved to ``{pid}_annotations.yml`` in the same
 ``processed`` folder used by Streamlit's artifact corrections — keeping

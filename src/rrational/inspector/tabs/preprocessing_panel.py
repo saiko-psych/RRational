@@ -5,10 +5,9 @@ Mirrors the Streamlit Participants tab's preprocessing flow:
    dataset's RR array
 2. Shows artifact rate + Quigley-2024 quality grade
 3. Toggles overlay visibility on the main plot
-4. (Phase 4-Prep step 2: export as .rrational v2 once user has
-   validated sections)
+4. Exports as .rrational v2 once the user has validated sections
 
-Phase 15 adds an exclusion-mode toggle + a per-dataset zones list (with
+Also offers an exclusion-mode toggle + a per-dataset zones list (with
 Edit / Delete buttons) that auto-persists to ``{pid}_exclusions.yml``.
 """
 
@@ -57,8 +56,8 @@ _GRADE_COLOR = {
     "unknown": "#888888",  # grey
 }
 
-# Phase 14: cap on the undo/redo stack size. 50 mirrors mne-qt-browser's
-# default annotation undo depth.
+# Cap on the undo/redo stack size. 50 mirrors mne-qt-browser's default
+# annotation undo depth.
 _UNDO_DEPTH = 50
 
 
@@ -70,7 +69,7 @@ class PreprocessingPanel(QWidget):
         self._main_window = main_window
         self._last_result: "PreprocessingResult | None" = None
 
-        # Phase 27: wider so the workflow-stepper buttons aren't truncated.
+        # Wider so the workflow-stepper buttons aren't truncated.
         self.setMaximumWidth(340)
         self.setMinimumWidth(280)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
@@ -81,7 +80,7 @@ class PreprocessingPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        # UX3: workflow stepper at the very top so users see the linear
+        # Workflow stepper at the very top so users see the linear
         # 4-step path (Load → Detect → Review → Save) before anything else.
         from rrational.inspector.workflow_stepper import WorkflowStepper
 
@@ -157,7 +156,7 @@ class PreprocessingPanel(QWidget):
         self._undo_stack: list[tuple[str, int]] = []
         self._redo_stack: list[tuple[str, int]] = []
 
-        # --- Group 2: Exclusion zones (Phase 15) ----------------------------
+        # --- Group 2: Exclusion zones ---------------------------------------
         excl_box = QGroupBox("Exclusion zones")
         excl_layout = QVBoxLayout(excl_box)
         excl_layout.setSpacing(4)
@@ -185,7 +184,7 @@ class PreprocessingPanel(QWidget):
         if plot is not None:
             plot.exclusion_zones_changed.connect(self._on_zones_changed)
 
-        # --- Group 3: Section editing (Phase 16) ----------------------------
+        # --- Group 3: Section editing ---------------------------------------
         section_box = QGroupBox("Section editing")
         section_layout = QVBoxLayout(section_box)
         section_layout.setSpacing(4)
@@ -199,7 +198,7 @@ class PreprocessingPanel(QWidget):
         section_layout.addWidget(self._toggle_section_edit)
         layout.addWidget(section_box)
 
-        # --- Group 4: Export + Annotations (Phase 20) -----------------------
+        # --- Group 4: Export + Annotations ----------------------------------
         export_box = QGroupBox("Export & annotations")
         export_layout = QVBoxLayout(export_box)
         export_layout.setSpacing(4)
@@ -243,12 +242,10 @@ class PreprocessingPanel(QWidget):
         # Annotation state — one list per active dataset, persisted.
         self._annotations: list[Annotation] = []
 
-        layout.addStretch()
-
-        # Phase 14: wire the plot's manual-click signal to our handler.
-        # BrowseTab constructs the plot then this panel inside the same
-        # ``_build`` call, so ``parent`` is the BrowseTab and ``_plot``
-        # is already live. Going through ``parent`` rather than
+        # Wire the plot's manual-click signal to our handler. BrowseTab
+        # constructs the plot then this panel inside the same ``_build``
+        # call, so ``parent`` is the BrowseTab and ``_plot`` is already
+        # live. Going through ``parent`` rather than
         # ``main_window._browse_tab`` matters: the latter isn't assigned
         # on MainWindow until BrowseTab.__init__ returns.
         plot = parent._plot if parent is not None and hasattr(parent, "_plot") else None
@@ -259,7 +256,7 @@ class PreprocessingPanel(QWidget):
     # State sync
     # ------------------------------------------------------------------
     # ------------------------------------------------------------------
-    # UX3: workflow-stepper helpers
+    # Workflow-stepper helpers
     # ------------------------------------------------------------------
     def _refresh_workflow_steps(self) -> None:
         """Recompute the 1-2-3-4 step states from current panel state."""
@@ -310,13 +307,12 @@ class PreprocessingPanel(QWidget):
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
         """Reset the panel when the user switches/unloads a dataset.
 
-        Phase 12: when a dataset is loaded, also try to auto-restore any
-        previously-saved artifact corrections from
-        ``{pid}_artifacts.yml`` (Streamlit-shared).
-        Phase 14: also reset the undo/redo stacks (per-dataset history)
-        and the plot's manual / excluded sets.
-        Phase 15: same drill for exclusion zones from ``{pid}_exclusions.yml``.
-        UX3: update workflow-stepper state.
+        When a dataset is loaded, also try to auto-restore any
+        previously-saved artifact corrections from ``{pid}_artifacts.yml``
+        (Streamlit-shared) and any exclusion zones from
+        ``{pid}_exclusions.yml``. Also resets the undo/redo stacks
+        (per-dataset history), the plot's manual / excluded sets, and
+        the workflow-stepper state.
         """
         self._last_result = None
         self._undo_stack.clear()
@@ -350,15 +346,15 @@ class PreprocessingPanel(QWidget):
         self._toggle_manual_mark.blockSignals(False)
         self._toggle_manual_mark.setEnabled(data is not None)
         self._manual_help.setVisible(False)
-        # Reset the plot's manual sets too. The Phase-12 restore below
-        # will repopulate them if the dataset has prior corrections.
+        # Reset the plot's manual sets too. The restore call below will
+        # repopulate them if the dataset has prior corrections.
         plot = self._main_window._browse_tab._plot
         plot.set_manual_artifact_indices(added=set(), removed=set())
         plot.set_manual_mark_mode(False)
         self._update_undo_redo_actions()
 
-        # Phase 20: annotation toggle follows dataset availability +
-        # auto-restore any persisted annotations for this dataset's pid.
+        # Annotation toggle follows dataset availability + auto-restore
+        # any persisted annotations for this dataset's pid.
         self._toggle_annotation_mode.setEnabled(data is not None)
         if data is None:
             self._toggle_annotation_mode.blockSignals(True)
@@ -369,7 +365,7 @@ class PreprocessingPanel(QWidget):
         else:
             self._restore_annotations()
 
-        # Phase 12: attempt auto-restore from disk
+        # Attempt auto-restore from disk.
         if data is not None:
             self._try_restore_artifacts(data)
             self._try_restore_exclusion_zones(data)
@@ -407,7 +403,7 @@ class PreprocessingPanel(QWidget):
             return
 
         algo_indices = entry.get("algorithm_artifact_indices") or []
-        # Phase 14: also restore manual + excluded sets.
+        # Also restore manual + excluded sets.
         manual_entries = entry.get("manual_artifacts") or []
         manual_added = {
             int(m["original_idx"])
@@ -423,8 +419,8 @@ class PreprocessingPanel(QWidget):
         if not algo_indices and not manual_added and not manual_removed:
             return
 
-        # Rebuild a PreprocessingResult shell (we don't reload corrected_v
-        # from disk — that lives in nn_metadata.yml in Phase 12.2).
+        # Rebuild a PreprocessingResult shell (we don't reload
+        # corrected_v from disk — that lives in nn_metadata.yml).
         import numpy as _np
 
         indices_arr = _np.asarray(algo_indices, dtype=_np.int64)
@@ -447,8 +443,8 @@ class PreprocessingPanel(QWidget):
         # Render exactly like a fresh detection
         plot = self._main_window._browse_tab._plot
         plot.set_artifacts(restored.indices)
-        # Phase 14: push manual sets BEFORE flipping visibility so the
-        # refresh paints them on the same overlay-show cycle.
+        # Push manual sets BEFORE flipping visibility so the refresh
+        # paints them on the same overlay-show cycle.
         plot.set_manual_artifact_indices(added=manual_added, removed=manual_removed)
         plot.set_artifacts_visible(self._toggle_show_artifacts.isChecked())
         color = _GRADE_COLOR.get(restored.grade, "#888888")
@@ -476,7 +472,7 @@ class PreprocessingPanel(QWidget):
         )
 
     # ------------------------------------------------------------------
-    # Phase 15 — Exclusion zones
+    # Exclusion zones
     # ------------------------------------------------------------------
     def _try_restore_exclusion_zones(self, data: "InspectorData") -> None:
         """Auto-restore zones from ``{pid}_exclusions.yml`` on dataset switch.
@@ -622,7 +618,7 @@ class PreprocessingPanel(QWidget):
         # Corrected-values toggle only useful when there are actual artifacts.
         self._toggle_use_corrected.setEnabled(result.total > 0)
         self._export_btn.setEnabled(True)
-        # Phase 12: auto-persist so future loads restore this state
+        # Auto-persist so future loads restore this state.
         self._autosave_artifacts(result, data)
         self._main_window.statusBar().showMessage(
             f"Artifact detection: {result.total} found "
@@ -632,7 +628,7 @@ class PreprocessingPanel(QWidget):
         self._refresh_workflow_steps()
 
     def _autosave_artifacts(self, result, data: "InspectorData") -> None:
-        """Phase 12: persist the freshly-detected artifacts to disk.
+        """Persist the freshly-detected artifacts to disk.
 
         Writes to ``{project}/data/processed/{pid}_artifacts.yml`` (or
         the global fallback) using the v1.3 section-scoped schema with
@@ -640,9 +636,9 @@ class PreprocessingPanel(QWidget):
         whole-recording detection. Silent on failure (autosave must not
         crash compute).
 
-        Phase 14: also preserves any pre-existing manual / excluded
-        marks the user already had on the plot — re-running Detect
-        doesn't wipe their hand-edits.
+        Preserves any pre-existing manual / excluded marks the user
+        already had on the plot — re-running Detect doesn't wipe
+        hand-edits.
         """
         from rrational.gui.persistence import save_artifact_corrections
 
@@ -695,7 +691,7 @@ class PreprocessingPanel(QWidget):
         plot.set_artifacts_visible(checked)
 
     def _on_toggle_section_edit(self, checked: bool) -> None:
-        """Phase 16: flip the plot's section-edit mode."""
+        """Flip the plot's section-edit mode."""
         plot = self._main_window._browse_tab._plot
         plot.set_section_edit_mode(bool(checked))
         msg = (
@@ -719,7 +715,7 @@ class PreprocessingPanel(QWidget):
         self._refresh_workflow_steps()
 
     # ------------------------------------------------------------------
-    # Phase 14 — Manual artifact marking + undo / redo
+    # Manual artifact marking + undo / redo
     # ------------------------------------------------------------------
     def _on_toggle_manual_mark(self, checked: bool) -> None:
         """Forward the checkbox state to the plot's interaction mode."""
@@ -949,7 +945,7 @@ class PreprocessingPanel(QWidget):
         self._refresh_workflow_steps()
 
     # ------------------------------------------------------------------
-    # Phase 20: Free-text annotations
+    # Free-text annotations
     # ------------------------------------------------------------------
     def _on_toggle_annotation_mode(self, checked: bool) -> None:
         plot = self._main_window._browse_tab._plot

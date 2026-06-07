@@ -1,4 +1,4 @@
-"""Participants tab — per-subject metadata editor (Phase 11).
+"""Participants tab — per-subject metadata editor.
 
 Streamlit-shared persistence via ``gui.persistence.save_participants`` /
 ``load_participants`` (``participants.yml`` in the project's or global
@@ -366,7 +366,7 @@ class ParticipantsTab(InspectorTab):
         in participants. Skips conflicts silently."""
         from pathlib import Path as _Path
 
-        # Phase 24B — honour the user's ID-pattern picker from the Data tab.
+        # Honour the user's ID-pattern picker from the Data tab.
         try:
             from rrational.inspector.tabs.data_tab import extract_participant_id
         except ImportError:  # pragma: no cover - defensive

@@ -1,10 +1,7 @@
 """Setup tab — events / sections / groups / sequences.
 
-Replaces the Phase 4a placeholder with four sub-panes that mirror the
-Streamlit Setup tab. For Phase 4b step 1 we render the active dataset's
-events and sections as sortable tables; Groups/Sequences (which are
-project-level rather than dataset-level) get scaffold panes until the
-project-management layer is ported.
+Four sub-panes mirror the Streamlit Setup tab: events / sections (per
+dataset) plus groups / sequences (project-level).
 
 All four panes update via ``on_active_dataset_changed`` — switching the
 active dataset in BrowseTab reflects through the same notification
@@ -1557,7 +1554,7 @@ class SetupTab(InspectorTab):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._subtabs)
 
-        # Phase 24B — codebook export.
+        # Codebook export action.
         action_row = QHBoxLayout()
         self._export_codebook_btn = QPushButton("Export codebook...")
         self._export_codebook_btn.setToolTip(
@@ -1570,7 +1567,7 @@ class SetupTab(InspectorTab):
         layout.addLayout(action_row)
 
     # ------------------------------------------------------------------
-    # UX4: tab-label state badge — groups + sequences counts
+    # Tab-label state badge — groups + sequences counts
     # ------------------------------------------------------------------
     def tab_label_state(self) -> str:
         n_groups = len(self._groups_pane.groups)
@@ -1603,7 +1600,7 @@ class SetupTab(InspectorTab):
         self._sequences_pane.refresh_workspace()
 
     # ------------------------------------------------------------------
-    # Phase 24B — Markdown codebook export
+    # Markdown codebook export
     # ------------------------------------------------------------------
     def build_codebook_markdown(self) -> str:
         """Return a Markdown codebook of every defined event / section /

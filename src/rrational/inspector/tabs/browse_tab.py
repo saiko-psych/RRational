@@ -1,10 +1,8 @@
 """Browse tab — dataset tree + overview bar + main timeline plot.
 
-This is the Phase 2/3 inspector UI moved into its own QWidget so the
-MainWindow can host multiple tabs (Setup, Analysis, Results) alongside
-it. All the widget objects (``_dataset_tree``, ``_plot``,
-``_overview_bar``, ``_empty_label``) live HERE now; the MainWindow
-exposes proxy properties so existing tests don't need to change.
+All the widget objects (``_dataset_tree``, ``_plot``, ``_overview_bar``,
+``_empty_label``) live HERE; the MainWindow exposes proxy properties so
+external callers can keep reaching them on MainWindow.
 
 The tab pulls workspace state from its ``self._main_window`` reference
 (``_datasets`` and ``_active_idx``). The MainWindow notifies the tab
@@ -52,10 +50,9 @@ class BrowseTab(InspectorTab):
         self._build()
 
     def _build(self) -> None:
-        # Phase 20: replace the old QSplitter with a nested QMainWindow
-        # so we can host real QDockWidgets — that gives the user
-        # tear-off panels (drag-undock) plus saveState/restoreState
-        # geometry persistence à la MNE-LAB.
+        # Use a nested QMainWindow so we can host real QDockWidgets —
+        # that gives the user tear-off panels (drag-undock) plus
+        # saveState/restoreState geometry persistence à la MNE-LAB.
         self._dock_host = QMainWindow(self)
         # Without this, the inner QMainWindow draws its own frame inside
         # the parent tab, which looks like a window-in-a-window.
@@ -79,10 +76,10 @@ class BrowseTab(InspectorTab):
         self._overview_bar = OverviewBar()
         self._overview_bar.link_to(self._plot)
 
-        # UX2: replace the bare empty-state QLabel with an actionable
-        # WelcomeWidget — 4 large action buttons + recent-files list.
-        # The label is kept as a hidden fallback for any code path that
-        # might still toggle it (paranoia for downstream tests).
+        # Actionable WelcomeWidget — 4 large action buttons +
+        # recent-files list — replaces the bare empty-state QLabel. The
+        # label is kept as a hidden fallback for any code path that
+        # might still toggle it.
         from rrational.inspector.welcome_widget import WelcomeWidget
 
         self._welcome_widget = WelcomeWidget(self._main_window, parent=self)
@@ -147,7 +144,7 @@ class BrowseTab(InspectorTab):
         layout.addWidget(self._dock_host)
 
     # ------------------------------------------------------------------
-    # Phase 20: dock visibility helpers (wired to MainWindow's View menu)
+    # Dock visibility helpers (wired to MainWindow's View menu)
     # ------------------------------------------------------------------
     def set_datasets_dock_visible(self, visible: bool) -> None:
         self._datasets_dock.setVisible(bool(visible))
@@ -173,7 +170,7 @@ class BrowseTab(InspectorTab):
             return False
 
     # ------------------------------------------------------------------
-    # UX4: tab-label state badge
+    # Tab-label state badge
     # ------------------------------------------------------------------
     def tab_label_state(self) -> str:
         n = len(self._main_window._datasets)
@@ -205,8 +202,8 @@ class BrowseTab(InspectorTab):
         ds = self._main_window._datasets[idx]
         # Render the plot + overlays BEFORE the panel runs — _render_dataset
         # calls plot.set_data which resets the artifact overlay, and the
-        # panel's on_active_dataset_changed (Phase 12) auto-restores
-        # cached artifacts onto the overlay. Order matters.
+        # panel's on_active_dataset_changed auto-restores cached artifacts
+        # onto the overlay. Order matters.
         self._render_dataset(ds)
         self._update_tree_active_marker()
         self._preprocessing_panel.on_active_dataset_changed(data)
@@ -215,7 +212,7 @@ class BrowseTab(InspectorTab):
     # Rendering
     # ------------------------------------------------------------------
     def _render_dataset(self, ds: "Dataset") -> None:
-        # UX2: hide welcome widget when actual data is shown.
+        # Hide welcome widget when actual data is shown.
         self._welcome_widget.setVisible(False)
         self._empty_label.setVisible(False)
         self._plot.setVisible(True)
@@ -249,7 +246,7 @@ class BrowseTab(InspectorTab):
         self._plot.setVisible(False)
         self._overview_bar.clear_data()
         self._overview_bar.setVisible(False)
-        # UX2: welcome widget replaces the bare empty label.
+        # Welcome widget replaces the bare empty label.
         self._welcome_widget.setVisible(True)
         self._welcome_widget.refresh()  # refresh recent-files list
 

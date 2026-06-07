@@ -31,12 +31,12 @@ _DEFAULTS: dict[str, object] = {
     "geometry": None,  # QByteArray — main window geometry
     "window_state": None,  # QByteArray — dock/toolbar state
     "show_sidebar": True,
-    "show_overview_bar": True,  # Phase 3c will use this
+    "show_overview_bar": True,
     "show_events": True,
     "show_sections": True,
     "show_grid": True,
-    "show_crosshair": True,  # Phase 3d will use this
-    # Phase 20: dockable BrowseTab layout
+    "show_crosshair": True,
+    # Dockable BrowseTab layout
     "show_datasets_dock": True,
     "show_preprocessing_dock": True,
     "browse_dock_state": None,  # QByteArray — saveState() of BrowseTab's QMainWindow
@@ -60,13 +60,13 @@ _DEFAULTS: dict[str, object] = {
     # and NOT cleared on close_project() so the auto-load can find it
     # again next launch.
     "last_project_path": "",
-    # Phase 23A: per-user RR cleaning thresholds surfaced on the Data tab.
+    # Per-user RR cleaning thresholds surfaced on the Data tab.
     # Defaults match what the Streamlit prep wizard shows by default.
     "cleaning_min_rr_ms": 300,
     "cleaning_max_rr_ms": 2000,
     "cleaning_sudden_change_pct": 20,
-    # Phase 24B: participant ID regex used when extracting an ID from
-    # raw-file stems. Default mirrors ``rrational.io.DEFAULT_ID_PATTERN``.
+    # Participant ID regex used when extracting an ID from raw-file
+    # stems. Default mirrors ``rrational.io.DEFAULT_ID_PATTERN``.
     "participant_id_pattern": r"(?P<participant>\d{4}[A-Z]{4})",
 }
 
@@ -185,8 +185,7 @@ def enable_test_mode(tmp_dir: Path) -> None:
 
 # ----------------------------------------------------------------------
 # JSON dump/restore — useful for "Reset settings" UI or for printing
-# the current config in bug reports. Not invoked yet; will be wired
-# into the Settings dialog (Phase 3b).
+# the current config in bug reports.
 # ----------------------------------------------------------------------
 def dump_settings_json() -> str:
     """Return the current settings as pretty-printed JSON."""

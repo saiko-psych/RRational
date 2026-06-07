@@ -1,17 +1,9 @@
 """Reusable in-app help widgets — MNE-LAB style.
 
-Phase 24A originally shipped ``HelpExpander`` as a checkable GroupBox
-that took up permanent vertical space on every tab. User feedback
-("die help sections mit checkboxen ist eine schlechte lösung — siehe
-wie MNE es gemacht hat") prompted a redesign:
-
-- The new ``HelpExpander`` is a thin, single-button row showing a small
-  ``ⓘ Help`` button. Clicking opens a focused popup with the help text.
-- API-compatible with Phase 24A: same constructor signature, same
-  ``is_open()`` / ``body_label()`` accessors, so the five tab files
-  that already use it work without modification.
-- Also exposes ``InfoButton`` for new callers who want the inline icon
-  without the wrapping QGroupBox semantics.
+``HelpExpander`` is a thin, single-button row showing a small ``ⓘ Help``
+button. Clicking opens a focused popup with the help text. ``InfoButton``
+exposes the same icon for callers that want the inline button without
+the wrapping QGroupBox semantics.
 
 This mirrors MNE-LAB's "compact UI + focused docs popup" approach
 rather than always-visible inline documentation.
@@ -38,7 +30,7 @@ _DEFAULT_OPEN_KEY = "help_expanders_default_open"
 def help_expanders_default_open() -> bool:
     """Persisted "auto-open help popups on launch" preference (default False).
 
-    Retained for API-compat with Phase 24A even though the new
+    Retained for API-compat with older callers even though the
     popup-style help no longer needs to track open/closed state across
     tabs.
     """
@@ -107,12 +99,11 @@ class InfoButton(QToolButton):
 
 
 class HelpExpander(QWidget):
-    """Phase 24A compatibility shim — renders as a thin info-button row.
+    """Thin info-button row that opens a popup with the help text.
 
-    Same constructor signature as the original. The "Show help" header +
-    expandable body has been replaced by an :class:`InfoButton` that
-    opens a popup. Callers that depended on the GroupBox API still get
-    a working widget; the visual chrome differs but nothing breaks.
+    The "Show help" header + expandable body has been replaced by an
+    :class:`InfoButton`. Callers that depended on the older GroupBox API
+    still get a working widget via the compat methods below.
     """
 
     def __init__(
@@ -140,7 +131,7 @@ class HelpExpander(QWidget):
         row.addStretch()
 
     # ------------------------------------------------------------------
-    # Phase 24A compatibility API
+    # Compatibility API for older callers expecting a checkable expander
     # ------------------------------------------------------------------
     def is_open(self) -> bool:
         """Always False — popups are transient, not persistent."""
