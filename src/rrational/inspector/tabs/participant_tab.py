@@ -268,6 +268,12 @@ class ParticipantTab(InspectorTab):
         # ----- Plot + bottom NN summary in the center --------------------
         self._plot = RRPlotWidget()
         self._plot.setFocusPolicy(Qt.StrongFocus)
+        # Bug B4: lock in a sane minimum so the dock layout cannot squeeze
+        # the central plot down to a sliver when both side docks claim
+        # space. Without this, the snapshot harness occasionally captured
+        # the plot at ~400 px wide on first paint before the layout had
+        # a chance to settle.
+        self._plot.setMinimumSize(400, 300)
 
         self._nn_summary = QLabel("No artifact detection run yet on this participant.")
         self._nn_summary.setStyleSheet(
@@ -367,6 +373,11 @@ class ParticipantTab(InspectorTab):
             | QDockWidget.DockWidgetClosable
         )
         self._sections_dock.setWidget(sections_container)
+        # Bug B4: hint the dock area to give the sidebar a fixed-ish slice
+        # rather than the default 50/50 split, so the central plot keeps
+        # the bulk of the horizontal real estate.
+        sections_container.setMinimumWidth(220)
+        sections_container.setMaximumWidth(320)
         self._dock_host.addDockWidget(Qt.LeftDockWidgetArea, self._sections_dock)
 
         # ----- Right dock: preprocessing panel ---------------------------
@@ -397,6 +408,10 @@ class ParticipantTab(InspectorTab):
             | QDockWidget.DockWidgetClosable
         )
         self._preprocessing_dock.setWidget(self._preprocessing_panel)
+        # Bug B4: same width cap as the left dock — keeps the central
+        # plot from being squeezed when both side docks are visible.
+        self._preprocessing_panel.setMinimumWidth(260)
+        self._preprocessing_panel.setMaximumWidth(360)
         self._dock_host.addDockWidget(Qt.RightDockWidgetArea, self._preprocessing_dock)
 
         # ----- Outer layout --------------------

@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from qtpy.QtCore import QEventLoop, QTimer
 from qtpy.QtWidgets import QApplication
 
 # Import early so the inspector lazy-imports inside MainWindow find them
@@ -28,6 +29,24 @@ from rrational.inspector.main_window import MainWindow  # noqa: E402
 
 _OUT_DIR = Path(__file__).parent / "snapshots"
 _OUT_DIR.mkdir(exist_ok=True)
+
+
+def _let_layout_settle(app: QApplication, ms: int = 200) -> None:
+    """Bug B4: actually wait for the dock layout + pyqtgraph plot to
+    finish laying out.
+
+    A handful of ``processEvents()`` calls is not enough on Windows when
+    a tab containing a nested ``QMainWindow`` + ``QDockWidget``s + a
+    pyqtgraph widget is shown for the first time — the dock area can
+    still be mid-resize when ``QWidget.grab()`` runs, producing a
+    captured frame where the central plot pane is rendered at a sliver
+    of its final width. A real event-loop timer guarantees Qt has
+    finished its deferred layout passes before we grab.
+    """
+    loop = QEventLoop()
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec()
+    app.processEvents()
 
 
 def _make_synthetic_dataset(name: str) -> Dataset:
@@ -81,6 +100,7 @@ def snapshot_all_tabs() -> list[Path]:
     win.add_dataset(_make_synthetic_dataset("0012MEBE.csv"))
     win.set_active_dataset(0)
     app.processEvents()
+    _let_layout_settle(app)
 
     written: list[Path] = []
     tabs = win._tabs_widget
@@ -89,9 +109,9 @@ def snapshot_all_tabs() -> list[Path]:
             continue
         tabs.setCurrentIndex(i)
         app.processEvents()
-        # Let layout settle.
-        for _ in range(3):
-            app.processEvents()
+        # Let layout settle — dock area + pyqtgraph need a real timer,
+        # not just a burst of processEvents (Bug B4).
+        _let_layout_settle(app)
         widget_name = type(tabs.widget(i)).__name__
         path = _OUT_DIR / f"tab_{i:02d}_{widget_name}.png"
         pix = win.grab()
@@ -107,13 +127,14 @@ def snapshot_all_tabs() -> list[Path]:
     # MNE-LAB mode for comparison
     win.set_ui_layout("mnelab")
     app.processEvents()
+    _let_layout_settle(app)
     for i in range(tabs.count()):
         if not tabs.isTabVisible(i):
             continue
         tabs.setCurrentIndex(i)
         app.processEvents()
-        for _ in range(3):
-            app.processEvents()
+        # See note above (Bug B4): real timer beats processEvents bursts.
+        _let_layout_settle(app)
         widget_name = type(tabs.widget(i)).__name__
         path = _OUT_DIR / f"mnelab_{i:02d}_{widget_name}.png"
         pix = win.grab()
