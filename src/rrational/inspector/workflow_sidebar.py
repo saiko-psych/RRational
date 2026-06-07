@@ -72,7 +72,7 @@ _STEP_TO_TAB_INDEX: dict[int, int] = {
 _STEP_HINTS: dict[int, str] = {
     1: "Step 1: open a .rrational file or BIDS folder from the File menu",
     2: "Step 2: scroll the timeline in the Browse tab to inspect the recording",
-    3: "Step 3: click the Detect button in the right panel",
+    3: "Step 3: click 'Detect artifacts' in the Preprocessing panel on the right",
     4: "Step 4: define events, sections, groups, sequences or protocol in Setup",
     5: "Step 5: add or import participants in the Participants tab",
     6: "Step 6: configure metrics and run analyses in the Analysis tab",

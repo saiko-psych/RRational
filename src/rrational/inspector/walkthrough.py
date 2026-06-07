@@ -106,11 +106,14 @@ PAGES: tuple[WalkthroughPage, ...] = (
             "<p>Use the <b>Participant</b> tab to step through each loaded "
             "recording with the previous/next buttons.</p>"
             "<p>On the right, the <b>Preprocessing</b> panel runs the "
-            "Lipponen 2019 (Kubios) artifact detector. Click <i>Detect</i>, "
-            "review the orange X markers, then <i>Apply correction</i>.</p>"
-            "<p>For persistent bad segments, switch to <i>Add Exclusions</i> "
-            "mode and drag out a time range. Exclusions and corrections are "
-            "saved automatically and respected by every downstream analysis.</p>"
+            "Lipponen 2019 (Kubios) artifact detector. Click "
+            "<b>Detect artifacts</b>, review the orange X markers, then "
+            "tick <b>Use corrected RR values</b> to switch the plot to the "
+            "interpolated series.</p>"
+            "<p>For persistent bad segments, enable "
+            "<b>Exclusion mode (drag-select)</b> and drag out a time range. "
+            "Exclusions and corrections are saved automatically and "
+            "respected by every downstream analysis.</p>"
         ),
         try_target_attr="_participant_tab",
         try_label="Open the Participant tab",

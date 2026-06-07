@@ -66,11 +66,7 @@ LAYOUT_STREAMLIT = "streamlit"
 LAYOUT_MNELAB = "mnelab"
 _VALID_LAYOUTS = (LAYOUT_STREAMLIT, LAYOUT_MNELAB)
 
-# Re-exported for older tests that import them from here. New code
-# should import from ``inspector.tabs.browse_tab``.
-from rrational.inspector.tabs.browse_tab import (  # noqa: F401
-    ROLE_DATASET_IDX as _ROLE_DATASET_IDX,
-)
+# Used by tests/inspector/test_overlays.py
 from rrational.inspector.tabs.browse_tab import (  # noqa: F401
     ROLE_SECTION_NAME as _ROLE_SECTION_NAME,
 )
@@ -621,7 +617,7 @@ class MainWindow(QMainWindow):
             "Streamlit-style tabs: Data / Participant / Setup / Analysis / Results"
         )
         self._layout_streamlit_act.triggered.connect(
-            lambda checked=False: checked and self.set_ui_layout(LAYOUT_STREAMLIT)
+            lambda: self.set_ui_layout(LAYOUT_STREAMLIT)
         )
         self._layout_action_group.addAction(self._layout_streamlit_act)
         layout_menu.addAction(self._layout_streamlit_act)
@@ -636,7 +632,7 @@ class MainWindow(QMainWindow):
             "Single-window dock-based layout (Browse / Setup / Participants / Analysis / Results)"
         )
         self._layout_mnelab_act.triggered.connect(
-            lambda checked=False: checked and self.set_ui_layout(LAYOUT_MNELAB)
+            lambda: self.set_ui_layout(LAYOUT_MNELAB)
         )
         self._layout_action_group.addAction(self._layout_mnelab_act)
         layout_menu.addAction(self._layout_mnelab_act)
@@ -1606,14 +1602,18 @@ class MainWindow(QMainWindow):
     _TAB_HINTS: dict[str, str] = {
         "DataTab": "Pick a project then a file from the Raw-data tree to start",
         "ParticipantTab": (
-            "Use the Detect button to find artifacts, then Apply correction"
+            "Click 'Detect artifacts' to find anomalies, "
+            "then tick 'Use corrected RR values' to apply the cleaned series"
         ),
         "BrowseTab": "Open a recording from the sidebar to view the timeline",
         "SetupTab": (
             "Define your study structure: events first, then sections + groups"
         ),
         "ParticipantsTab": "Link participant IDs to groups and sequences",
-        "AnalysisTab": "Pick a metric preset and mode, then click Compute",
+        "AnalysisTab": (
+            "Pick a metric preset and mode, then click the Compute / "
+            "Compare / Run button for that mode"
+        ),
         "ResultsTab": "Sort, filter, and export your HRV metrics here",
     }
 
