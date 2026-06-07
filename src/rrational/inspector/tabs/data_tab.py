@@ -111,7 +111,7 @@ def _persist_cleaning_config(min_ms: float, max_ms: float, sudden_pct: float) ->
 
 
 # ----------------------------------------------------------------------
-# Phase 24B — participant ID pattern picker helpers
+# Participant ID pattern picker helpers
 # ----------------------------------------------------------------------
 def _read_id_pattern() -> str:
     """Return the persisted participant ID regex, or the DEFAULT."""
@@ -121,6 +121,32 @@ def _read_id_pattern() -> str:
     if raw is None or raw == "":
         return _DEFAULT
     return str(raw)
+
+
+# Human-readable descriptions for canned regexes. Keys are kept in sync
+# with rrational.io.PREDEFINED_PATTERNS so when the user picks one, the
+# UI explains it in plain language instead of showing the raw regex.
+_PATTERN_DESCRIPTIONS: dict[str, str] = {
+    r"(?P<participant>\d{4}[A-Z]{4})": "4 digits + 4 uppercase letters (e.g. 0012MEBE)",
+    r"(?P<participant>\d{4}[A-Za-z]{4})": (
+        "4 digits + 4 letters, case-insensitive (e.g. 0012MeBe)"
+    ),
+    r"(?P<participant>[A-Za-z0-9]+)": "Any alphanumeric ID (e.g. abc123)",
+    r"(?P<participant>\d+)": "Digits only (e.g. 001, 0123)",
+    r"(?P<participant>[A-Za-z]+\d+)": "Letters + digits (e.g. P001, SUB123)",
+    r"(?P<participant>[A-Za-z]+_\d+)": "Underscore separated (e.g. sub_001)",
+}
+
+
+def _describe_pattern(regex: str) -> str:
+    """Return a human-readable description for ``regex``.
+
+    Falls back to the raw regex when we don't have a canned description
+    — power users typing custom patterns still see what they entered.
+    """
+    if not regex:
+        return "(no pattern — use the filename stem)"
+    return _PATTERN_DESCRIPTIONS.get(regex, regex)
 
 
 def extract_participant_id(file_path: Path, pattern: str | None = None) -> str:
@@ -313,17 +339,44 @@ class DataTab(InspectorTab):
     # UI construction
     # ------------------------------------------------------------------
     def _build(self) -> None:
-        # Phase 24A: in-tab help expanders. Imported here so a fresh
-        # ``import data_tab`` doesn't pay the cost when the widget isn't
-        # constructed (the optional-tab gate in main_window).
         from rrational.inspector.help_widgets import HelpExpander
+        from rrational.inspector.workflow_stepper import WorkflowStepper
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
-        outer.setSpacing(12)
+        outer.setSpacing(10)
 
-        # Phase 25b: single consolidated help button instead of two
-        # stacked "ⓘ Help" buttons that looked orphaned.
+        # Workflow stepper across the top: Project -> Folder -> Settings ->
+        # Participants. Pure visual cue — clicking a step is a no-op here
+        # because all four sections are visible at once below.
+        self._stepper = WorkflowStepper(self)
+        # Override the default 4-step labels for this tab's flow.
+        for step, label in (
+            (1, "1. Project"),
+            (2, "2. Data folder"),
+            (3, "3. Import settings"),
+            (4, "4. Participants"),
+        ):
+            btn = self._stepper.button_for(step)
+            if btn is not None:
+                btn.setText(label)
+                btn.setToolTip(label)
+        outer.addWidget(self._stepper)
+
+        # Primary action button — its label + handler change based on the
+        # workspace state. Bold + extra padding so it pops as the next
+        # thing the user should do.
+        self._primary_action_btn = QPushButton("Open or create project...")
+        self._primary_action_btn.setStyleSheet(
+            "QPushButton { font-weight: bold; padding: 8px 14px; }"
+        )
+        self._primary_action_btn.setMinimumHeight(36)
+        self._primary_action_btn.clicked.connect(self._on_primary_action_clicked)
+        primary_row = QHBoxLayout()
+        primary_row.addWidget(self._primary_action_btn)
+        primary_row.addStretch()
+        outer.addLayout(primary_row)
+
         outer.addWidget(
             HelpExpander(
                 "Data tab — overview & column reference",
@@ -356,40 +409,41 @@ class DataTab(InspectorTab):
             )
         )
 
+        # Step 1: Project (start here when no project is open).
         outer.addWidget(self._build_project_block())
 
-        # Phase 23A: cleaning thresholds form sits between Project and
-        # the raw/processed file lists so the user sees what the
-        # downstream metrics are computed against before they look at
-        # the participants table.
-        outer.addWidget(self._build_cleaning_block())
-
-        # Two side-by-side blocks: Raw data (left) + Processed data (right).
-        # Both list the actual files in the project so the user sees the
-        # state at a glance and clicks any file to open it.
+        # Step 2: Data folder — raw sources discovered under data/raw/
+        # plus the .rrational exports under data/processed/. These two
+        # lists answer "what do I have on disk?".
         files_row = QHBoxLayout()
         files_row.setSpacing(8)
         files_row.addWidget(self._build_sources_block(), stretch=1)
         files_row.addWidget(self._build_processed_block(), stretch=1)
         outer.addLayout(files_row, stretch=1)
 
-        # Participants block stretches to consume vertical space — it's
-        # the centerpiece of the tab.
+        # Step 3: Import settings — cleaning thresholds + ID pattern
+        # picker. Placed AFTER the folder so the user picks files first,
+        # then tunes how they're parsed/cleaned.
+        outer.addWidget(self._build_cleaning_block())
+
+        # Step 4: Participants table (centerpiece).
         self._participants_group = self._build_participants_block()
         outer.addWidget(self._participants_group, stretch=1)
 
         outer.addWidget(self._build_bulk_actions_block())
 
     def _build_cleaning_block(self) -> QGroupBox:
-        """Tiny form for ``CleaningConfig`` thresholds (Phase 23A) + a
-        Phase 24B ID-pattern picker sub-group.
+        """Import settings: cleaning thresholds + participant ID picker.
 
         Two min/max RR spin-boxes + one sudden-change-% spin-box +
         Apply button. Values persist to QSettings; Apply invalidates the
         per-dataset summary cache and refreshes the participants table.
         The ID-pattern picker writes its choice to QSettings under
-        ``participant_id_pattern``.
+        ``participant_id_pattern``. The raw regex is tucked into a
+        collapsible "Advanced" expander so the default landing view
+        shows the human-readable description, not the regex itself.
         """
+        from qtpy.QtWidgets import QCheckBox as _CheckBox
         from qtpy.QtWidgets import QComboBox as _Combo
         from qtpy.QtWidgets import QLineEdit as _LineEdit
 
@@ -400,7 +454,7 @@ class DataTab(InspectorTab):
             PREDEFINED_PATTERNS as _PATTERNS,
         )
 
-        box = QGroupBox("Cleaning thresholds && participant ID")
+        box = QGroupBox("Step 3: Import settings (cleaning && participant ID)")
         outer = QVBoxLayout(box)
         outer.setSpacing(6)
 
@@ -439,20 +493,41 @@ class DataTab(InspectorTab):
         )
         form.addRow("Sudden change:", self._cleaning_sudden_spin)
 
-        # Phase 24B: participant ID regex picker. The combo lists the
-        # canned PREDEFINED_PATTERNS + "Custom"; switching to Custom
-        # enables the regex line edit so the user can type their own.
+        # Participant ID picker: combo with human-readable preset names.
+        # The combo carries the regex as item data; the line edit only
+        # appears in the "Advanced" expander so non-power-users never
+        # see the raw regex.
         self._id_pattern_combo = _Combo()
         self._pattern_names: list[str] = list(_PATTERNS.keys())
         for name in self._pattern_names:
             self._id_pattern_combo.addItem(name, _PATTERNS[name])
         self._id_pattern_combo.addItem("Custom pattern...", None)
         self._id_pattern_combo.setToolTip(
-            "Pick a canned regex or 'Custom' to type your own. The captured "
-            "'participant' group becomes the participant ID for new files."
+            "Pick a canned pattern or 'Custom' to type your own regex in "
+            "the Advanced section below. The captured 'participant' group "
+            "becomes the participant ID for new files."
         )
-        form.addRow("ID pattern preset:", self._id_pattern_combo)
+        form.addRow("ID pattern:", self._id_pattern_combo)
 
+        # Friendly description of the current pattern. This is what the
+        # user sees by default — the raw regex lives in the Advanced
+        # expander.
+        self._id_pattern_description = QLabel("")
+        self._id_pattern_description.setWordWrap(True)
+        self._id_pattern_description.setStyleSheet("color: #444; font-style: italic;")
+        form.addRow("Matches:", self._id_pattern_description)
+
+        # Live match counter — kept on the main form because it's the
+        # quickest signal that the pattern actually works.
+        self._id_pattern_status = QLabel("")
+        self._id_pattern_status.setStyleSheet("color: #555;")
+        form.addRow("", self._id_pattern_status)
+
+        outer.addLayout(form)
+
+        # Advanced toggle: hides the raw regex line-edit by default so
+        # the landing view shows the friendly description, not the
+        # regex. Power users tick the checkbox to type a custom pattern.
         self._id_pattern_edit = _LineEdit()
         self._id_pattern_edit.setPlaceholderText(_DEFAULT_ID)
         self._id_pattern_edit.setToolTip(
@@ -468,11 +543,21 @@ class DataTab(InspectorTab):
                 sel_idx = i
                 break
         self._id_pattern_combo.setCurrentIndex(sel_idx)
-        form.addRow("ID pattern:", self._id_pattern_edit)
 
-        self._id_pattern_status = QLabel("")
-        self._id_pattern_status.setStyleSheet("color: #555;")
-        form.addRow("", self._id_pattern_status)
+        self._advanced_toggle = _CheckBox("Show raw regex (advanced)")
+        self._advanced_toggle.setStyleSheet("color: #666;")
+        # Reuse QFrame (already imported) so we don't need a fresh
+        # QWidget import just for the collapsible advanced panel.
+        self._advanced_panel = QFrame()
+        adv_layout = QVBoxLayout(self._advanced_panel)
+        adv_layout.setContentsMargins(20, 0, 0, 0)
+        adv_layout.setSpacing(4)
+        adv_layout.addWidget(QLabel("Regex with (?P<participant>...) group:"))
+        adv_layout.addWidget(self._id_pattern_edit)
+        self._advanced_panel.setVisible(False)
+        self._advanced_toggle.toggled.connect(self._advanced_panel.setVisible)
+        outer.addWidget(self._advanced_toggle)
+        outer.addWidget(self._advanced_panel)
 
         self._id_pattern_combo.currentIndexChanged.connect(
             self._on_id_pattern_preset_changed
@@ -480,8 +565,6 @@ class DataTab(InspectorTab):
         self._id_pattern_edit.textChanged.connect(self._on_id_pattern_text_changed)
         # Initial enable + validation
         self._on_id_pattern_preset_changed(self._id_pattern_combo.currentIndex())
-
-        outer.addLayout(form)
 
         btn_row = QHBoxLayout()
         self._cleaning_apply_btn = QPushButton("Apply & refresh")
@@ -517,6 +600,12 @@ class DataTab(InspectorTab):
 
         text = (text or "").strip()
         write_setting("participant_id_pattern", text or "")
+
+        # Refresh the friendly description so the user always sees what
+        # the regex actually means.
+        if hasattr(self, "_id_pattern_description"):
+            self._id_pattern_description.setText(_describe_pattern(text))
+
         # Validate + count matches against raw filenames in the project.
         try:
             compiled = _re.compile(text) if text else None
@@ -666,7 +755,7 @@ class DataTab(InspectorTab):
         self._open_all_btn.setEnabled(True)
 
     def _build_project_block(self) -> QGroupBox:
-        box = QGroupBox("Project")
+        box = QGroupBox("Step 1: Project")
         layout = QVBoxLayout(box)
         layout.setSpacing(6)
 
@@ -716,9 +805,27 @@ class DataTab(InspectorTab):
         """
         from qtpy.QtWidgets import QTreeWidget
 
-        box = QGroupBox("Raw data (data/raw/)")
+        box = QGroupBox("Step 2: Raw data (data/raw/)")
         layout = QVBoxLayout(box)
         layout.setSpacing(6)
+
+        # Prominent "Analyze folder..." button — the primary action for
+        # this block. Bold + extra padding so it reads as the next step
+        # the user should take when raw files live outside the project
+        # tree (or before a project is opened).
+        self._analyze_folder_btn = QPushButton("Analyze folder...")
+        self._analyze_folder_btn.setStyleSheet(
+            "QPushButton { font-weight: bold; padding: 6px 12px; }"
+        )
+        self._analyze_folder_btn.setToolTip(
+            "Scan a folder for raw HRV recordings (HRV Logger / VNS / Polar / "
+            "Empatica / Kubios / Elite HRV) and load them into the workspace."
+        )
+        self._analyze_folder_btn.clicked.connect(self._on_open_folder_clicked)
+        analyze_row = QHBoxLayout()
+        analyze_row.addWidget(self._analyze_folder_btn)
+        analyze_row.addStretch()
+        layout.addLayout(analyze_row)
 
         self._sources_label = QLabel()
         self._sources_label.setStyleSheet("color: #666;")
@@ -836,7 +943,7 @@ class DataTab(InspectorTab):
         )
 
     def _build_participants_block(self) -> QGroupBox:
-        box = QGroupBox("Participants")
+        box = QGroupBox("Step 4: Participants")
         layout = QVBoxLayout(box)
         layout.setSpacing(6)
 
@@ -946,6 +1053,12 @@ class DataTab(InspectorTab):
         self._refresh_processed_list()
         self._refresh_participants_table()
         self._refresh_bulk_buttons()
+        self._refresh_primary_action()
+        self._refresh_stepper()
+        # Push a status-bar message that matches the tab title state so
+        # the two stop contradicting each other ("44 participants, 1
+        # dataset" up top vs. "No project active" at the bottom).
+        self._sync_status_bar()
 
     # MainWindow.set_active_project calls this name; provide as alias.
     refresh_from_workspace = on_workspace_changed
@@ -986,6 +1099,122 @@ class DataTab(InspectorTab):
             self._project_label.setText(f"<b>{name}</b>")
             self._project_path_label.setText(str(proj.project_path))
             self._close_project_btn.setEnabled(True)
+
+    def _workspace_state(self) -> str:
+        """Classify the current workspace into one of four named states.
+
+        Drives the primary-action button label and the stepper. Keeping
+        the classification central means the button + stepper stay in
+        sync without their own duplicate truth-tables.
+        """
+        has_project = getattr(self._main_window, "_project", None) is not None
+        raw_dir = self._project_raw_dir()
+        has_sources = False
+        if raw_dir is not None and raw_dir.exists():
+            has_sources = any(s["count"] > 0 for s in _scan_data_sources(raw_dir))
+        n_participants = len(self._collect_participants())
+        if not has_project:
+            return "no_project"
+        if not has_sources:
+            return "no_folder"
+        if n_participants == 0:
+            return "no_participants"
+        return "ready"
+
+    def _refresh_primary_action(self) -> None:
+        """Update the prominent action button label/handler to match state."""
+        if not hasattr(self, "_primary_action_btn"):
+            return
+        state = self._workspace_state()
+        if state == "no_project":
+            label = "Open or create project..."
+            tip = "Open an existing RRational project or create a new one."
+        elif state == "no_folder":
+            label = "Analyze data folder..."
+            tip = (
+                "Scan a folder for raw HRV recordings and load them into the workspace."
+            )
+        elif state == "no_participants":
+            label = "Auto-create participants from folder"
+            tip = (
+                "Register one participant per loaded dataset (delegates to "
+                "the Participants tab's bulk importer)."
+            )
+        else:
+            label = "Open Participant tab to inspect a recording"
+            tip = "Jump to the Participant tab to review a loaded dataset."
+        self._primary_action_btn.setText(label)
+        self._primary_action_btn.setToolTip(tip)
+        self._primary_action_state = state
+
+    def _on_primary_action_clicked(self) -> None:
+        """Dispatch to the right handler based on workspace state."""
+        state = getattr(self, "_primary_action_state", self._workspace_state())
+        if state == "no_project":
+            self._on_open_project_clicked()
+        elif state == "no_folder":
+            self._on_open_folder_clicked()
+        elif state == "no_participants":
+            self._on_bulk_assign_clicked()
+        else:
+            # Try to switch focus to the Participant tab if available.
+            mw = self._main_window
+            tabs = getattr(mw, "_tabs", None) or getattr(mw, "tab_widget", None)
+            if tabs is not None:
+                for i in range(tabs.count()):
+                    label = tabs.tabText(i)
+                    if "Participant" in label and "Data" not in label:
+                        tabs.setCurrentIndex(i)
+                        return
+            mw.statusBar().showMessage(
+                "Open the Participant tab to inspect a recording.", 3000
+            )
+
+    def _refresh_stepper(self) -> None:
+        """Recolour the stepper buttons to match the current state."""
+        if not hasattr(self, "_stepper"):
+            return
+        state = self._workspace_state()
+        # State -> step states. The first incomplete step becomes
+        # "active"; everything before is "done", everything after is
+        # "locked" (but visible).
+        progression = {
+            "no_project": {1: "active", 2: "locked", 3: "locked", 4: "locked"},
+            "no_folder": {1: "done", 2: "active", 3: "locked", 4: "locked"},
+            "no_participants": {1: "done", 2: "done", 3: "active", 4: "locked"},
+            "ready": {1: "done", 2: "done", 3: "done", 4: "active"},
+        }
+        self._stepper.set_step_states(progression[state])
+
+    def _sync_status_bar(self) -> None:
+        """Push a status-bar message that agrees with the tab title.
+
+        Eliminates the contradiction where the tab badge said
+        "44 participants, 1 dataset" while the status bar still showed
+        "No project active". We only push a message when one isn't
+        already shown by another action — Qt clears showMessage after
+        the timeout, so this is best-effort.
+        """
+        mw = self._main_window
+        # Don't clobber transient action messages (e.g. "Imported 5
+        # dataset(s) ...") — only push our own when nothing else is.
+        bar = mw.statusBar()
+        if bar.currentMessage():
+            return
+        proj = getattr(mw, "_project", None)
+        if proj is None:
+            bar.showMessage("No project active (global config).", 0)
+            return
+        name = (
+            proj.metadata.name if proj.metadata is not None else proj.project_path.name
+        )
+        n_participants = len(self._collect_participants())
+        n_datasets = len(mw._datasets)
+        bar.showMessage(
+            f"Project: {name}  ·  {n_participants} participant(s)  "
+            f"·  {n_datasets} dataset(s) loaded.",
+            0,
+        )
 
     def _refresh_sources_block(self) -> None:
         """Re-scan data/raw/ and rebuild the QTreeWidget.
