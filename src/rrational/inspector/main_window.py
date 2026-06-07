@@ -235,8 +235,53 @@ class MainWindow(QMainWindow):
                 # Defer to after MainWindow is fully constructed + shown.
                 QTimer.singleShot(0, _show_walkthrough)
 
+        # F10: auto-load the last project if the user enabled it and a
+        # valid path is on record. Skipped in test_mode so pytest runs do
+        # not contaminate each other through QSettings, and skipped when
+        # the caller passed an explicit ``initial_path`` (their intent
+        # wins over the persisted project). Failures here are swallowed
+        # silently — a missing or corrupt project must not block startup.
+        if initial_path is None and not self.test_mode:
+            try:
+                self._maybe_auto_load_last_project()
+            except Exception:  # pragma: no cover - defensive
+                pass
+
         if initial_path is not None:
             self.open_path(initial_path)
+
+    def _maybe_auto_load_last_project(self) -> None:
+        """Reopen the most recently active project if auto-load is on.
+
+        Reads ``auto_load_last_project`` + ``last_project_path`` from
+        QSettings. The path must point at a valid RRational project
+        directory; anything else is treated as a no-op (the user falls
+        through to the normal welcome flow). Called once per construction
+        from ``__init__``.
+        """
+        try:
+            enabled = settings.read_setting("auto_load_last_project")
+        except KeyError:  # pragma: no cover - defensive
+            enabled = True
+        if not enabled:
+            return
+        try:
+            last = settings.read_setting("last_project_path")
+        except KeyError:  # pragma: no cover - defensive
+            last = ""
+        if not last:
+            return
+        path = Path(str(last))
+        if not path.is_dir():
+            return
+        valid, _issues = ProjectManager.is_valid_project(path)
+        if not valid:
+            return
+        # open_project_path handles the project switch, dataset refresh,
+        # tab selection and badge update. We do NOT raise on failure —
+        # the user can still pick a project manually from the welcome
+        # screen if the auto-load silently bails.
+        self.open_project_path(path)
 
     # ------------------------------------------------------------------
     # Phase 20: window + dock state persistence
@@ -361,14 +406,16 @@ class MainWindow(QMainWindow):
         # UX4: deferred — _refresh_tab_labels called below once everything
         # else (results store, project, etc.) is initialised.
 
-        # Phase 22.3: load the persisted layout mode and apply it before
-        # the window is shown. Falls back to "streamlit" for new users.
+        # Load the persisted layout mode and apply it before the window
+        # is shown. Falls back to MNE-LAB for new users — the classic
+        # sidebar + plot + tool-rail pattern is the most intuitive entry
+        # point for newcomers. Existing users keep whatever they picked.
         try:
             stored = settings.read_setting("ui_layout")
         except KeyError:  # pragma: no cover - defensive: settings key missing
-            stored = LAYOUT_STREAMLIT
+            stored = LAYOUT_MNELAB
         if stored not in _VALID_LAYOUTS:
-            stored = LAYOUT_STREAMLIT
+            stored = LAYOUT_MNELAB
         self._ui_layout: str = stored
         self._apply_layout_mode(self._ui_layout)
 
@@ -482,6 +529,14 @@ class MainWindow(QMainWindow):
         open_folder_act.setStatusTip("Load every recording inside a chosen folder")
         open_folder_act.triggered.connect(self._on_open_folder_clicked)
         file_menu.addAction(open_folder_act)
+
+        try_demo_act = QAction("&Try with sample data", self)
+        try_demo_act.setStatusTip(
+            "Load a synthetic 5-minute recording so you can explore the inspector"
+        )
+        try_demo_act.triggered.connect(self.load_demo_dataset)
+        file_menu.addAction(try_demo_act)
+        self._try_demo_act = try_demo_act
 
         self._recent_menu = file_menu.addMenu("Open &recent")
         # Rebuild the recent list every time the user opens File menu
@@ -1071,6 +1126,10 @@ class MainWindow(QMainWindow):
             if not self.test_mode:
                 add_recent_project(pm.project_path, pm.metadata.name)
                 settings.write_setting("last_dir", str(pm.project_path))
+                # F10: remember the most recently opened project so the
+                # next launch can auto-load it. Stored as a plain str so
+                # QSettings round-trips it cleanly on every platform.
+                settings.write_setting("last_project_path", str(pm.project_path))
             # NOTE: do NOT auto-load every .rrational from data/processed/
             # on project open — overwhelms the user with random files.
             # The DataTab shows a clear overview of available raw +
@@ -1526,6 +1585,23 @@ class MainWindow(QMainWindow):
         self._notify_tabs_workspace_changed()
         return len(self._datasets) - 1
 
+    def load_demo_dataset(self) -> int:
+        """Load the synthetic demo recording and make it active.
+
+        Used by the WelcomeWidget's "Try with sample data" button and
+        the File -> "Try with sample data" menu entry. Returns the new
+        dataset's index so callers/tests can locate it.
+        """
+        from rrational.inspector.welcome_widget import make_demo_dataset
+
+        ds = make_demo_dataset()
+        idx = self.add_dataset(ds)
+        self.set_active_dataset(idx)
+        self.statusBar().showMessage(
+            "Loaded demo recording. Explore the Browse/Participant tabs.", 5000
+        )
+        return idx
+
     def set_active_dataset(self, idx: int) -> None:
         """Switch which dataset is currently rendered in the plot."""
         if not (0 <= idx < len(self._datasets)):
@@ -1706,7 +1782,7 @@ class MainWindow(QMainWindow):
         to be in the old layout.
         """
         if mode not in _VALID_LAYOUTS:
-            mode = LAYOUT_STREAMLIT
+            mode = LAYOUT_MNELAB
         self._ui_layout = mode
         visible = self._layout_visible_tabs(mode)
         first_visible_idx: int | None = None
@@ -1733,7 +1809,7 @@ class MainWindow(QMainWindow):
         the next ``MainWindow`` constructed reads it back.
         """
         if mode not in _VALID_LAYOUTS:
-            mode = LAYOUT_STREAMLIT
+            mode = LAYOUT_MNELAB
         self._apply_layout_mode(mode)
         if not self.test_mode:
             try:

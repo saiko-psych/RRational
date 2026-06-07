@@ -40,10 +40,26 @@ _DEFAULTS: dict[str, object] = {
     "show_datasets_dock": True,
     "show_preprocessing_dock": True,
     "browse_dock_state": None,  # QByteArray — saveState() of BrowseTab's QMainWindow
-    # Phase 22.3: top-level layout mode.
+    # Top-level layout mode.
     # "streamlit" — Data / Participant / Setup / Analysis / Results tabs (Browse hidden)
     # "mnelab"    — Browse / Setup / Participants / Analysis / Results (dock-heavy)
-    "ui_layout": "streamlit",
+    # Default is "mnelab": the classic sidebar + plot + tool-rail pattern is
+    # the most intuitive entry point for newcomers and avoids the Streamlit-
+    # mode redundancy of multiple "pick a participant" tabs. Users who
+    # previously chose "streamlit" keep that choice — the default only
+    # applies to fresh installs (or when the QSettings key is missing).
+    "ui_layout": "mnelab",
+    # Auto-load the most recently opened project on startup. When True
+    # (default) the inspector reopens whatever project was active last
+    # session so the user does not have to re-pick it through File menu.
+    # The last project path is stored under ``last_project_path`` and only
+    # consulted at startup when this flag is True.
+    "auto_load_last_project": True,
+    # Path of the most recently opened project (str). Empty when no
+    # project has been opened yet. Updated on every set_active_project()
+    # and NOT cleared on close_project() so the auto-load can find it
+    # again next launch.
+    "last_project_path": "",
     # Phase 23A: per-user RR cleaning thresholds surfaced on the Data tab.
     # Defaults match what the Streamlit prep wizard shows by default.
     "cleaning_min_rr_ms": 300,

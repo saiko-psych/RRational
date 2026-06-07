@@ -76,11 +76,16 @@ def test_walkthrough_next_and_previous(qtbot, main_window):
 
 def test_walkthrough_try_button_switches_tab(qtbot, main_window):
     """The Try-it-now jump switches the main window to the target tab."""
+    from rrational.inspector.main_window import LAYOUT_STREAMLIT
     from rrational.inspector.walkthrough import WalkthroughDialog
+
+    # DataTab is hidden in MNE-LAB (the default layout); the walkthrough
+    # correctly refuses to jump to a hidden tab. Switch to Streamlit mode
+    # so the jump has a visible target.
+    main_window.set_ui_layout(LAYOUT_STREAMLIT)
 
     dlg = WalkthroughDialog(main_window)
     qtbot.addWidget(dlg)
-    # Project setup page targets the Data tab.
     data_tab = getattr(main_window, "_data_tab", None)
     if data_tab is None:
         pytest.skip("Data tab is optional; cannot verify try-it-now jump")

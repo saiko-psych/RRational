@@ -46,11 +46,17 @@ def _visible_tab_widgets(win):
 # ---------------------------------------------------------------------
 # Default mode
 # ---------------------------------------------------------------------
-def test_default_layout_is_streamlit(main_window):
-    """A fresh QSettings (autouse-isolated) ⇒ streamlit is the default."""
-    from rrational.inspector.main_window import LAYOUT_STREAMLIT
+def test_default_layout_is_mnelab(main_window):
+    """A fresh QSettings (autouse-isolated) ⇒ MNE-LAB is the default.
 
-    assert main_window._ui_layout == LAYOUT_STREAMLIT
+    The classic sidebar + plot + tool-rail pattern is the most intuitive
+    entry point for newcomers. Users who previously chose Streamlit keep
+    that preference; this just changes the value used when no preference
+    is on record.
+    """
+    from rrational.inspector.main_window import LAYOUT_MNELAB
+
+    assert main_window._ui_layout == LAYOUT_MNELAB
 
 
 def test_streamlit_mode_hides_browse_tab(main_window):
@@ -175,9 +181,12 @@ def test_layout_menu_actions_are_radio(main_window):
 
 
 def test_clicking_mnelab_menu_action_switches_mode(main_window):
-    from rrational.inspector.main_window import LAYOUT_MNELAB
+    from rrational.inspector.main_window import LAYOUT_MNELAB, LAYOUT_STREAMLIT
 
-    # Start in streamlit (default), trigger the MNE action.
+    # Force streamlit first so triggering the MNE action is a real switch
+    # (default mode is now MNE-LAB; triggering an already-checked action
+    # in an exclusive QActionGroup is a no-op).
+    main_window.set_ui_layout(LAYOUT_STREAMLIT)
     main_window._layout_mnelab_act.trigger()
     assert main_window._ui_layout == LAYOUT_MNELAB
     assert main_window._browse_tab in _visible_tab_widgets(main_window)
@@ -218,8 +227,8 @@ def test_all_required_tabs_are_constructed(main_window):
     assert main_window._results_tab is not None
 
 
-def test_invalid_layout_falls_back_to_streamlit(main_window):
-    from rrational.inspector.main_window import LAYOUT_STREAMLIT
+def test_invalid_layout_falls_back_to_mnelab(main_window):
+    from rrational.inspector.main_window import LAYOUT_MNELAB
 
     main_window.set_ui_layout("bogus-mode")
-    assert main_window._ui_layout == LAYOUT_STREAMLIT
+    assert main_window._ui_layout == LAYOUT_MNELAB

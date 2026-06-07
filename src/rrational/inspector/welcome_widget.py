@@ -33,6 +33,66 @@ from qtpy.QtWidgets import (
 if TYPE_CHECKING:
     from rrational.inspector.main_window import MainWindow
 
+# Stable name used by the File-menu entry, tests and the welcome button
+# alike. Centralised so renaming touches one place.
+DEMO_DATASET_NAME = "Demo recording (5 min)"
+
+
+def make_demo_dataset():
+    """Build a 5-min synthetic HRV recording with three sections.
+
+    Layout: ``rest_pre`` (1 min) -> ``music`` (3 min) -> ``rest_post``
+    (1 min), with realistic mean RR (~830 ms at rest, ~760 ms during
+    music) and Gaussian beat-to-beat variability so the plot looks like
+    a real recording instead of a flat line. Returned Dataset has no
+    ``path`` (it's synthetic), which the inspector handles fine.
+    """
+    import numpy as np
+
+    from rrational.inspector.data_loader import (
+        Dataset,
+        EventMeta,
+        InspectorData,
+        SectionMeta,
+    )
+
+    rng = np.random.default_rng(seed=42)
+    base = 1_700_000_000.0  # arbitrary epoch anchor
+    rr_ms_rest_pre = 830 + 30 * rng.standard_normal(60)
+    rr_ms_music = 760 + 25 * rng.standard_normal(180)  # higher HR
+    rr_ms_post = 820 + 28 * rng.standard_normal(60)
+    rr_ms = np.concatenate([rr_ms_rest_pre, rr_ms_music, rr_ms_post])
+    # Cumulative RR sums give a strictly increasing beat-time axis.
+    t = base + np.cumsum(rr_ms) / 1000.0
+
+    sections = [
+        SectionMeta(
+            name="rest_pre",
+            t_start=float(t[0]),
+            t_end=float(t[59]),
+            beat_count=60,
+        ),
+        SectionMeta(
+            name="music",
+            t_start=float(t[60]),
+            t_end=float(t[239]),
+            beat_count=180,
+        ),
+        SectionMeta(
+            name="rest_post",
+            t_start=float(t[240]),
+            t_end=float(t[-1]),
+            beat_count=60,
+        ),
+    ]
+    events = [
+        EventMeta(label="rest_pre_start", t=float(t[0])),
+        EventMeta(label="music_start", t=float(t[60])),
+        EventMeta(label="rest_post_start", t=float(t[240])),
+    ]
+    data = InspectorData(t=t, v=rr_ms, sections=sections, events=events)
+    return Dataset(name=DEMO_DATASET_NAME, data=data)
+
 
 class WelcomeWidget(QWidget):
     """Landing screen shown when the BrowseTab has no active dataset."""
@@ -100,6 +160,14 @@ class WelcomeWidget(QWidget):
         )
         self._open_rrational_btn.clicked.connect(self._on_open_rrational)
         primary_row.addWidget(self._open_rrational_btn)
+
+        self._try_demo_btn = self._make_action_button(
+            "Try with sample data",
+            "Load a synthetic 5-minute recording so you can explore the inspector "
+            "without your own data",
+        )
+        self._try_demo_btn.clicked.connect(self._on_try_demo)
+        primary_row.addWidget(self._try_demo_btn)
         primary_row.addStretch(1)
         root.addLayout(primary_row)
 
@@ -214,3 +282,7 @@ class WelcomeWidget(QWidget):
 
     def _on_recent_clicked(self, path: Path) -> None:
         self._main_window.open_path(path)
+
+    def _on_try_demo(self) -> None:
+        """Load a synthetic demo dataset and switch to it."""
+        self._main_window.load_demo_dataset()
