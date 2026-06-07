@@ -25,6 +25,25 @@ if TYPE_CHECKING:
     from rrational.inspector.main_window import MainWindow
 
 
+def format_config_path(rel_path: str) -> str:
+    """Resolve ``{project}/<rel_path>`` to a display string for UI labels.
+
+    When a project is active, returns its absolute config path wrapped in
+    ``<code>``. When no project is open, shows the ``~/.rrational/``
+    fallback with an italic hint. The return value is HTML — suitable
+    for use inside a ``QLabel``.
+
+    Panes call this on every render (e.g. inside ``refresh_from_workspace``)
+    so the displayed path tracks project open/close events.
+    """
+    from rrational.inspector.persistence import get_active_project_config_dir
+
+    active = get_active_project_config_dir()
+    if active is not None:
+        return f"<code>{active / rel_path}</code>"
+    return f"<code>~/.rrational/{rel_path}</code> <i>(no project open)</i>"
+
+
 class InspectorTab(QWidget):
     """Base class for every top-level tab inside the inspector."""
 
@@ -43,6 +62,13 @@ class InspectorTab(QWidget):
 
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
         """A different dataset is now active; re-render UI as needed."""
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    def format_config_path(self, rel_path: str) -> str:
+        """Method-form wrapper around :func:`format_config_path`."""
+        return format_config_path(rel_path)
 
     # ------------------------------------------------------------------
     # UX4: live tab-label state badge

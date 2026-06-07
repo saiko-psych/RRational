@@ -45,7 +45,7 @@ from rrational.inspector.persistence import (
     load_sequences,
     save_sequences,
 )
-from rrational.inspector.tabs.base import InspectorTab
+from rrational.inspector.tabs.base import InspectorTab, format_config_path
 
 if TYPE_CHECKING:
     from rrational.inspector.data_loader import InspectorData
@@ -184,12 +184,12 @@ class _EventsPane(QWidget):
             )
         )
 
-        info = QLabel(
-            "<b>Defined events</b> (saved to "
-            "<code>{project}/config/events.yml</code>, Streamlit-shared)"
+        self._info_label = QLabel(
+            f"<b>Defined events</b> (saved to "
+            f"{format_config_path('config/events.yml')}, Streamlit-shared)"
         )
-        info.setStyleSheet("color: #777;")
-        outer.addWidget(info)
+        self._info_label.setStyleSheet("color: #777;")
+        outer.addWidget(self._info_label)
 
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("Add event…")
@@ -251,6 +251,10 @@ class _EventsPane(QWidget):
     def refresh_from_workspace(self) -> None:
         """Re-read from disk; called after project open/close."""
         self._events = self._load()
+        self._info_label.setText(
+            f"<b>Defined events</b> (saved to "
+            f"{format_config_path('config/events.yml')}, Streamlit-shared)"
+        )
         self._refresh_defs_table()
         self._refresh_buttons()
 
@@ -489,12 +493,12 @@ class _SectionsPane(QWidget):
             )
         )
 
-        info = QLabel(
-            "<b>Defined sections</b> (saved to "
-            "<code>{project}/config/sections.yml</code>, Streamlit-shared)"
+        self._info_label = QLabel(
+            f"<b>Defined sections</b> (saved to "
+            f"{format_config_path('config/sections.yml')}, Streamlit-shared)"
         )
-        info.setStyleSheet("color: #777;")
-        outer.addWidget(info)
+        self._info_label.setStyleSheet("color: #777;")
+        outer.addWidget(self._info_label)
 
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("Add section…")
@@ -566,6 +570,10 @@ class _SectionsPane(QWidget):
 
     def refresh_from_workspace(self) -> None:
         self._sections = self._load()
+        self._info_label.setText(
+            f"<b>Defined sections</b> (saved to "
+            f"{format_config_path('config/sections.yml')}, Streamlit-shared)"
+        )
         self._refresh_defs_table()
         self._refresh_buttons()
 
@@ -793,15 +801,14 @@ class _GroupsPane(QWidget):
             )
         )
 
-        info = QLabel(
-            "<i>Group definitions are saved to "
-            "<code>{project}/config/groups.yml</code> (or "
-            "<code>~/.rrational/groups.yml</code> when no project is open). "
-            "Shared with the Streamlit app.</i>"
+        self._info_label = QLabel(
+            f"<i>Group definitions are saved to "
+            f"{format_config_path('config/groups.yml')}. "
+            f"Shared with the Streamlit app.</i>"
         )
-        info.setWordWrap(True)
-        info.setStyleSheet("color: #777;")
-        layout.addWidget(info)
+        self._info_label.setWordWrap(True)
+        self._info_label.setStyleSheet("color: #777;")
+        layout.addWidget(self._info_label)
 
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("Add group…")
@@ -836,6 +843,11 @@ class _GroupsPane(QWidget):
     def refresh_from_workspace(self) -> None:
         """Re-read from disk and rebuild — called on workspace/project change."""
         self._groups = self._load()
+        self._info_label.setText(
+            f"<i>Group definitions are saved to "
+            f"{format_config_path('config/groups.yml')}. "
+            f"Shared with the Streamlit app.</i>"
+        )
         self._refresh_table()
         self._refresh_buttons()
 
@@ -1365,14 +1377,14 @@ class _ProtocolPane(QWidget):
             )
         )
 
-        info = QLabel(
-            "<b>Protocol</b> — study-wide timing + threshold parameters "
-            "(saved to <code>{project}/config/protocol.yml</code>, "
-            "Streamlit-shared)."
+        self._info_label = QLabel(
+            f"<b>Protocol</b> — study-wide timing + threshold parameters "
+            f"(saved to {format_config_path('config/protocol.yml')}, "
+            f"Streamlit-shared)."
         )
-        info.setWordWrap(True)
-        info.setStyleSheet("color: #777;")
-        outer.addWidget(info)
+        self._info_label.setWordWrap(True)
+        self._info_label.setStyleSheet("color: #777;")
+        outer.addWidget(self._info_label)
 
         from qtpy.QtWidgets import QDoubleSpinBox, QSpinBox
 
@@ -1469,6 +1481,11 @@ class _ProtocolPane(QWidget):
     def refresh_from_workspace(self) -> None:
         """Re-read protocol.yml after a project open/close."""
         self._protocol = self._load()
+        self._info_label.setText(
+            f"<b>Protocol</b> — study-wide timing + threshold parameters "
+            f"(saved to {format_config_path('config/protocol.yml')}, "
+            f"Streamlit-shared)."
+        )
         self._apply_to_widgets(self._protocol)
 
     # ------------------------------------------------------------------

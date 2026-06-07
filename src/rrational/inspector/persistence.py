@@ -69,6 +69,17 @@ def set_active_project_config_dir(path: Path | None) -> None:
     _project_config_dir = path
 
 
+def get_active_project_config_dir() -> Path | None:
+    """Return the active project's ``config/`` directory, or None.
+
+    Returns the value set by :func:`set_active_project_config_dir`. The
+    test override (:func:`set_inspector_config_dir`) is intentionally
+    ignored here — UI labels should reflect what the user perceives as
+    the active project, not test plumbing.
+    """
+    return _project_config_dir
+
+
 def _config_dir() -> Path:
     base = _config_dir_override or _project_config_dir or _DEFAULT_CONFIG_DIR
     base.mkdir(parents=True, exist_ok=True)

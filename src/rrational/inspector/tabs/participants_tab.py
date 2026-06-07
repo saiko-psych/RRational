@@ -162,15 +162,15 @@ class ParticipantsTab(InspectorTab):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
 
-        info = QLabel(
-            "<b>Participants</b> — saved to "
-            "<code>{project}/config/participants.yml</code> "
-            "(Streamlit-shared). Each entry can be linked to a group "
-            "and to an event sequence."
+        self._info_label = QLabel(
+            f"<b>Participants</b> — saved to "
+            f"{self.format_config_path('config/participants.yml')} "
+            f"(Streamlit-shared). Each entry can be linked to a group "
+            f"and to an event sequence."
         )
-        info.setWordWrap(True)
-        info.setStyleSheet("color: #777;")
-        outer.addWidget(info)
+        self._info_label.setWordWrap(True)
+        self._info_label.setStyleSheet("color: #777;")
+        outer.addWidget(self._info_label)
 
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("Add participant…")
@@ -259,6 +259,12 @@ class ParticipantsTab(InspectorTab):
     def on_workspace_changed(self) -> None:
         # Re-read in case the project changed
         self._participants = self._load()
+        self._info_label.setText(
+            f"<b>Participants</b> — saved to "
+            f"{self.format_config_path('config/participants.yml')} "
+            f"(Streamlit-shared). Each entry can be linked to a group "
+            f"and to an event sequence."
+        )
         self._refresh_table()
         self._refresh_buttons()
 
