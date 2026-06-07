@@ -982,8 +982,8 @@ def generate_group_analysis_html(results: dict, output_path) -> "Path":
               ``{group_label: {metric: [values]}}``.
             - ``group_tests`` (list[GroupTestRow]): the pyobjects already
               held in the results store; rendered as a stats table.
-        output_path: ``pathlib.Path`` destination. Parent dirs are NOT
-            created — caller's responsibility.
+        output_path: ``pathlib.Path`` destination. Parent dirs are
+            created if missing.
 
     Returns:
         ``output_path`` (echoed) for chaining.
@@ -991,6 +991,7 @@ def generate_group_analysis_html(results: dict, output_path) -> "Path":
     from pathlib import Path
 
     out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
     timestamp = str(results.get("timestamp") or "n/a")
     project_name = results.get("project_name")
     per_group: dict[str, dict[str, list[float]]] = (

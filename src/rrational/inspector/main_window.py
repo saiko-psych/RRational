@@ -1636,8 +1636,8 @@ class MainWindow(QMainWindow):
         self._notify_tabs_active_changed()
 
     # ------------------------------------------------------------------
-    # Phase-2 entry point retained for tests + scripts that don't care
-    # about multi-dataset.
+    # Single-dataset entry point retained for tests + scripts that
+    # don't care about multi-dataset workflows.
     # ------------------------------------------------------------------
     def load_data(self, data: InspectorData, source_path: Path | None = None) -> None:
         """Replace the workspace with ONE dataset built from ``data``."""

@@ -101,7 +101,11 @@ class _NumericItem(QTableWidgetItem):
 class _MetricsPane(QWidget):
     """Table of every (dataset, section) HRV-compute row."""
 
-    HEADERS = ["Mode", "Dataset", "Section", "Beats", *_DEFAULT_METRICS]
+    # Fixed leading columns; the metric columns are appended dynamically
+    # in ``refresh()`` from the union of metric keys across all rows, so
+    # custom presets (e.g. "Nonlinear only") display their actual
+    # computed values instead of empty default columns.
+    FIXED_HEADERS = ["Mode", "Dataset", "Section", "Beats"]
 
     def __init__(self, main_window, parent=None) -> None:
         super().__init__(parent)
@@ -139,8 +143,13 @@ class _MetricsPane(QWidget):
         bar.addWidget(self._clear_btn)
         outer.addLayout(bar)
 
-        self._table = QTableWidget(0, len(self.HEADERS), self)
-        self._table.setHorizontalHeaderLabels(self.HEADERS)
+        # Initial column set: fixed leading columns + default metrics so
+        # the empty table has a sensible width. refresh() rebuilds the
+        # metric columns from each compute's actual key set.
+        self._metric_cols: list[str] = list(_DEFAULT_METRICS)
+        headers = [*self.FIXED_HEADERS, *self._metric_cols]
+        self._table = QTableWidget(0, len(headers), self)
+        self._table.setHorizontalHeaderLabels(headers)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectRows)
         self._table.setAlternatingRowColors(True)
@@ -162,6 +171,24 @@ class _MetricsPane(QWidget):
         # garbage.
         self._table.setSortingEnabled(False)
         self._table.setRowCount(0)
+
+        # Rebuild metric columns from the union of keys across all rows,
+        # preserving the default order for known metrics and appending
+        # unknown ones at the end.
+        seen: list[str] = []
+        seen_set: set[str] = set()
+        for r in rows:
+            for m in r.metrics.keys():
+                if m not in seen_set:
+                    seen.append(m)
+                    seen_set.add(m)
+        default_order = [m for m in _DEFAULT_METRICS if m in seen_set]
+        extras = [m for m in seen if m not in default_order]
+        self._metric_cols = default_order + extras if seen else list(_DEFAULT_METRICS)
+        headers = [*self.FIXED_HEADERS, *self._metric_cols]
+        self._table.setColumnCount(len(headers))
+        self._table.setHorizontalHeaderLabels(headers)
+
         for r in rows:
             i = self._table.rowCount()
             self._table.insertRow(i)
@@ -169,7 +196,7 @@ class _MetricsPane(QWidget):
             self._table.setItem(i, 1, QTableWidgetItem(r.dataset))
             self._table.setItem(i, 2, QTableWidgetItem(r.section))
             self._table.setItem(i, 3, _NumericItem(r.n_beats, display=str(r.n_beats)))
-            for col, m in enumerate(_DEFAULT_METRICS, start=4):
+            for col, m in enumerate(self._metric_cols, start=len(self.FIXED_HEADERS)):
                 self._table.setItem(i, col, _NumericItem(r.metrics.get(m)))
         self._table.setSortingEnabled(True)
         self._info.setText(f"{len(rows)} row(s)")
@@ -251,10 +278,13 @@ class _MetricsPane(QWidget):
         path = _ask_csv_path(self, "hrv_metrics")
         if path is None:
             return
+        # Use whatever metric columns the visible table currently shows
+        # so the CSV layout matches what the user is looking at.
+        metric_cols = self._metric_cols
         try:
             with path.open("w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
-                w.writerow(self.HEADERS)
+                w.writerow([*self.FIXED_HEADERS, *metric_cols])
                 for r in rows:
                     w.writerow(
                         [
@@ -262,7 +292,7 @@ class _MetricsPane(QWidget):
                             r.dataset,
                             r.section,
                             r.n_beats,
-                            *[r.metrics.get(m, "") for m in _DEFAULT_METRICS],
+                            *[r.metrics.get(m, "") for m in metric_cols],
                         ]
                     )
         except OSError as e:

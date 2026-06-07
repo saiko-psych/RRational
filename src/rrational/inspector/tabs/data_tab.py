@@ -1157,7 +1157,7 @@ class DataTab(InspectorTab):
         else:
             # Try to switch focus to the Participant tab if available.
             mw = self._main_window
-            tabs = getattr(mw, "_tabs", None) or getattr(mw, "tab_widget", None)
+            tabs = getattr(mw, "_tabs_widget", None)
             if tabs is not None:
                 for i in range(tabs.count()):
                     label = tabs.tabText(i)
