@@ -24,6 +24,7 @@ import math
 from datetime import datetime
 from pathlib import Path
 
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -31,6 +32,7 @@ from qtpy.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -43,6 +45,20 @@ from rrational.inspector.results_store import GroupTestRow, SequenceTestRow
 from rrational.inspector.tabs.base import InspectorTab
 
 _DEFAULT_METRICS = ["RMSSD", "SDNN", "MeanHR", "LF", "HF", "LF_HF", "pNN50"]
+
+
+def _empty_state_stack(table: QTableWidget, hint_text: str) -> QStackedWidget:
+    """Wrap ``table`` in a [hint, table] stack. Defaults to the hint."""
+    label = QLabel(hint_text)
+    label.setAlignment(Qt.AlignCenter)
+    label.setWordWrap(True)
+    label.setTextFormat(Qt.RichText)
+    label.setStyleSheet("QLabel { color: #666; font-size: 13px; padding: 32px; }")
+    stack = QStackedWidget()
+    stack.addWidget(label)
+    stack.addWidget(table)
+    stack.setCurrentIndex(0)
+    return stack
 
 
 def _fmt(value) -> str:
@@ -133,7 +149,11 @@ class _MetricsPane(QWidget):
             QHeaderView.ResizeToContents
         )
         self._table.setSortingEnabled(True)
-        outer.addWidget(self._table)
+        self._stack = _empty_state_stack(
+            self._table,
+            "Compute results in the <b>Analysis</b> tab to populate this view.",
+        )
+        outer.addWidget(self._stack)
 
     def refresh(self) -> None:
         rows = self._main_window._results_store.metric_rows
@@ -157,6 +177,7 @@ class _MetricsPane(QWidget):
         self._export_btn.setEnabled(has_rows)
         self._export_wide_btn.setEnabled(has_rows)
         self._clear_btn.setEnabled(has_rows)
+        self._stack.setCurrentIndex(1 if has_rows else 0)
 
     # Phase 24B — wide-format export. Public helper so tests can drive
     # it without dialog mocking; ``_on_export_wide`` wraps it with a
@@ -305,7 +326,11 @@ class _GroupTestsPane(QWidget):
             QHeaderView.ResizeToContents
         )
         self._table.setSortingEnabled(True)
-        outer.addWidget(self._table)
+        self._stack = _empty_state_stack(
+            self._table,
+            "Run <b>Group comparison</b> in the Analysis tab to populate this view.",
+        )
+        outer.addWidget(self._stack)
 
     @staticmethod
     def _groups_str(row: GroupTestRow) -> str:
@@ -336,6 +361,7 @@ class _GroupTestsPane(QWidget):
         has_rows = len(rows) > 0
         self._export_btn.setEnabled(has_rows)
         self._clear_btn.setEnabled(has_rows)
+        self._stack.setCurrentIndex(1 if has_rows else 0)
 
     def _on_export(self) -> None:
         rows = self._main_window._results_store.group_test_rows
@@ -422,7 +448,11 @@ class _SequenceTestsPane(QWidget):
             QHeaderView.ResizeToContents
         )
         self._table.setSortingEnabled(True)
-        outer.addWidget(self._table)
+        self._stack = _empty_state_stack(
+            self._table,
+            "Run <b>Sequence comparison</b> in the Analysis tab to populate this view.",
+        )
+        outer.addWidget(self._stack)
 
     @staticmethod
     def _sections_str(row: SequenceTestRow) -> str:
@@ -453,6 +483,7 @@ class _SequenceTestsPane(QWidget):
         has_rows = len(rows) > 0
         self._export_btn.setEnabled(has_rows)
         self._clear_btn.setEnabled(has_rows)
+        self._stack.setCurrentIndex(1 if has_rows else 0)
 
     def _on_export(self) -> None:
         rows = self._main_window._results_store.sequence_test_rows

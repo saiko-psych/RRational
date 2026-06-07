@@ -41,18 +41,21 @@ from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QSpinBox,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -643,6 +646,29 @@ def _tint_row(table: QTableWidget, row: int, tooltip: str) -> None:
         item.setToolTip(tooltip)
 
 
+def _make_empty_hint(text: str) -> QLabel:
+    """Build a centred, multi-line empty-state hint label."""
+    label = QLabel(text)
+    label.setAlignment(Qt.AlignCenter)
+    label.setWordWrap(True)
+    label.setTextFormat(Qt.RichText)
+    label.setStyleSheet("QLabel { color: #666; font-size: 13px; padding: 32px; }")
+    return label
+
+
+def _wrap_table_with_hint(table: QTableWidget, hint_text: str) -> QStackedWidget:
+    """Wrap ``table`` in a QStackedWidget [hint, table].
+
+    Callers should switch to index 1 (the table) the first time they
+    populate it; the stack starts on index 0 (the hint).
+    """
+    stack = QStackedWidget()
+    stack.addWidget(_make_empty_hint(hint_text))
+    stack.addWidget(table)
+    stack.setCurrentIndex(0)
+    return stack
+
+
 class _SingleParticipantPane(QWidget):
     """Pick a dataset + section, compute HRV metrics on that segment."""
 
@@ -679,7 +705,24 @@ class _SingleParticipantPane(QWidget):
         self._result_table.setAlternatingRowColors(True)
         self._result_table.verticalHeader().setVisible(False)
         self._result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        outer.addWidget(self._result_table)
+        self._result_stack = _wrap_table_with_hint(
+            self._result_table,
+            "Click <b>Compute HRV metrics</b> below to populate this table.",
+        )
+        outer.addWidget(self._result_stack)
+
+        # F6: plot tabs — instantiated lazily on first compute so the
+        # empty state stays cheap. Plot widgets take rr_intervals in
+        # their constructors so we rebuild them each run.
+        self._plot_tabs = QTabWidget(self)
+        self._plot_empty_label = _make_empty_hint(
+            "Run <b>Compute HRV metrics</b> to see plots."
+        )
+        self._plot_stack = QStackedWidget(self)
+        self._plot_stack.addWidget(self._plot_empty_label)
+        self._plot_stack.addWidget(self._plot_tabs)
+        self._plot_stack.setCurrentIndex(0)
+        outer.addWidget(self._plot_stack, 1)
 
     def refresh_workspace(self) -> None:
         """Rebuild the dataset dropdown from the workspace."""
@@ -735,6 +778,13 @@ class _SingleParticipantPane(QWidget):
             selected_metrics=selected,
             warning=warning,
         )
+        # F6: rebuild the plot tabs with the freshly-computed RR data.
+        # The plot widgets expect rr_intervals in their constructors, so
+        # discarding + reinstantiating is simpler than a per-widget setter.
+        self._rebuild_plot_tabs(rr, sec_name)
+        # Flip the stacks from empty-hint (0) to populated (1).
+        self._result_stack.setCurrentIndex(1)
+        self._plot_stack.setCurrentIndex(1)
         # Push to the central results store; Results tab picks it up.
         self._main_window._results_store.add_metric_row(
             MetricRow(
@@ -750,6 +800,30 @@ class _SingleParticipantPane(QWidget):
         if warning:
             msg += f" — {warning}"
         self._main_window.statusBar().showMessage(msg, 5000)
+
+    def _rebuild_plot_tabs(self, rr_ms: np.ndarray, section_label: str) -> None:
+        """Replace every tab in ``_plot_tabs`` with fresh widgets for ``rr_ms``."""
+        from rrational.inspector.plots.hr_distribution import HRDistributionPlot
+        from rrational.inspector.plots.poincare import PoincarePlot
+        from rrational.inspector.plots.psd import PSDPlot
+        from rrational.inspector.plots.tachogram import TachogramPlot
+
+        while self._plot_tabs.count() > 0:
+            w = self._plot_tabs.widget(0)
+            self._plot_tabs.removeTab(0)
+            w.deleteLater()
+        self._plot_tabs.addTab(
+            TachogramPlot(rr_ms, section_label=section_label), "Tachogram"
+        )
+        self._plot_tabs.addTab(
+            PoincarePlot(rr_ms, section_label=section_label), "Poincaré"
+        )
+        self._plot_tabs.addTab(
+            PSDPlot(rr_ms, section_label=section_label), "Frequency (PSD)"
+        )
+        self._plot_tabs.addTab(
+            HRDistributionPlot(rr_ms, section_label=section_label), "HR distribution"
+        )
 
     def _populate_result_table(
         self,
@@ -844,7 +918,11 @@ class _RepeatingSectionPane(QWidget):
         self._result_table.setAlternatingRowColors(True)
         self._result_table.verticalHeader().setVisible(False)
         self._result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        outer.addWidget(self._result_table)
+        self._result_stack = _wrap_table_with_hint(
+            self._result_table,
+            "Pick a section and click <b>Compute across all datasets</b>.",
+        )
+        outer.addWidget(self._result_stack)
 
     def refresh_workspace(self) -> None:
         """Rebuild the section-name dropdown from the union across datasets."""
@@ -885,6 +963,8 @@ class _RepeatingSectionPane(QWidget):
         self._populate_result_table(
             rows, selected_metrics_seen or list(_DEFAULT_METRICS)
         )
+        if rows:
+            self._result_stack.setCurrentIndex(1)
         # Push each per-dataset row into the central store.
         for ds_name, metrics, n_beats in rows:
             self._main_window._results_store.add_metric_row(
@@ -1086,7 +1166,11 @@ class _GroupComparisonPane(QWidget):
         self._group_stats_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch
         )
-        outer.addWidget(self._group_stats_table)
+        self._result_stack = _wrap_table_with_hint(
+            self._group_stats_table,
+            "Click <b>Compare across groups</b> after selecting at least 2 groups.",
+        )
+        outer.addWidget(self._result_stack)
 
         # ---- 4. View buttons (Phase 23C): pop-up group plots ---------
         plot_row = QHBoxLayout()
@@ -1107,6 +1191,16 @@ class _GroupComparisonPane(QWidget):
         self._sd_btn.clicked.connect(lambda: self._open_plot("sd"))
         self._sd_btn.setEnabled(False)
         plot_row.addWidget(self._sd_btn)
+        # F8: HTML report export — only meaningful after at least one
+        # compute has produced stats; gated alongside the plot buttons.
+        self._report_btn = QPushButton("Generate HTML report…")
+        self._report_btn.setToolTip(
+            "Write a self-contained HTML report of the current group-comparison "
+            "results (descriptives + statistical tests)."
+        )
+        self._report_btn.clicked.connect(self._on_generate_report)
+        self._report_btn.setEnabled(False)
+        plot_row.addWidget(self._report_btn)
         outer.addLayout(plot_row)
 
         # Track the latest dialog so tests can introspect it.
@@ -1235,7 +1329,6 @@ class _GroupComparisonPane(QWidget):
 
     def _on_save_as_group(self) -> None:
         """Persist current ad-hoc assignment as named groups in groups.yml."""
-        from qtpy.QtWidgets import QMessageBox
 
         from rrational.gui.persistence import load_groups, save_groups
 
@@ -1314,6 +1407,9 @@ class _GroupComparisonPane(QWidget):
         self._box_btn.setEnabled(enabled)
         self._violin_btn.setEnabled(enabled)
         self._sd_btn.setEnabled(enabled)
+        # F8: report needs a group-test result row, not just metric rows.
+        has_group_tests = bool(store and getattr(store, "group_test_rows", []))
+        self._report_btn.setEnabled(enabled and has_group_tests)
 
     # ------------------------------------------------------------------
     # Compute
@@ -1397,6 +1493,8 @@ class _GroupComparisonPane(QWidget):
         )
 
         self._group_stats_table.setRowCount(0)
+        # Stats are about to populate — flip the empty-state stack.
+        self._result_stack.setCurrentIndex(1)
         for group_name in result.groups:
             row = self._group_stats_table.rowCount()
             self._group_stats_table.insertRow(row)
@@ -1511,6 +1609,78 @@ class _GroupComparisonPane(QWidget):
                 dialog.exec()
         return dialog
 
+    # ------------------------------------------------------------------
+    # F8: HTML report export
+    # ------------------------------------------------------------------
+    def _build_group_report_payload(self) -> dict:
+        """Collect the results-store data needed for the HTML report."""
+        from datetime import datetime
+
+        store = self._main_window._results_store
+        group_label_by_dataset = self._group_label_by_dataset()
+
+        # Per-group descriptives: scan the metric_rows currently in the
+        # store and bucket by the live group-label mapping.
+        per_group: dict[str, dict[str, list[float]]] = {}
+        for r in store.metric_rows:
+            label = group_label_by_dataset.get(r.dataset)
+            if not label:
+                continue
+            metric_bucket = per_group.setdefault(label, {})
+            for m, v in r.metrics.items():
+                if v is None:
+                    continue
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if math.isnan(fv) or math.isinf(fv):
+                    continue
+                metric_bucket.setdefault(m, []).append(fv)
+
+        return {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "project_name": (
+                self._main_window._project.metadata.name
+                if getattr(self._main_window, "_project", None) is not None
+                and self._main_window._project.metadata is not None
+                else None
+            ),
+            "per_group_descriptives": per_group,
+            "group_tests": list(store.group_test_rows),
+        }
+
+    def _on_generate_report(self) -> None:
+        from pathlib import Path
+
+        from rrational.inspector import settings as _settings
+        from rrational.inspector.report import generate_group_analysis_html
+
+        payload = self._build_group_report_payload()
+        if getattr(self._main_window, "test_mode", False):
+            # Don't pop dialogs in test mode — surface a status message
+            # so tests can assert it without mocking QFileDialog.
+            self._main_window.statusBar().showMessage(
+                "Group HTML report ready (test mode — no file written).", 3000
+            )
+            return
+        start_dir = _settings.read_setting("last_dir") or str(Path.cwd())
+        suggested = str(Path(start_dir) / "group_analysis_report.html")
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save report",
+            suggested,
+            "HTML Files (*.html)",
+        )
+        if not path_str:
+            return
+        try:
+            out_path = generate_group_analysis_html(payload, Path(path_str))
+        except OSError as e:
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        self._main_window.statusBar().showMessage(f"Saved report to {out_path}", 4000)
+
 
 class _SequenceComparisonPane(QWidget):
     """Repeated-measures analysis across an ordered Sequence of sections.
@@ -1583,7 +1753,12 @@ class _SequenceComparisonPane(QWidget):
             QHeaderView.Stretch
         )
         self._section_stats_table.setMaximumHeight(180)
-        outer.addWidget(self._section_stats_table)
+        self._result_stack = _wrap_table_with_hint(
+            self._section_stats_table,
+            "Define a sequence in the Setup tab, then click "
+            "<b>Run repeated-measures comparison</b>.",
+        )
+        outer.addWidget(self._result_stack)
 
         # ---- Per-dataset line chart ----------------------------------
         outer.addWidget(QLabel("<b>Per-dataset trajectories</b>"))
@@ -1770,6 +1945,7 @@ class _SequenceComparisonPane(QWidget):
 
         # ----- Per-section descriptives table -----
         self._section_stats_table.setRowCount(0)
+        self._result_stack.setCurrentIndex(1)
         for s in result.sections:
             row = self._section_stats_table.rowCount()
             self._section_stats_table.insertRow(row)
@@ -1978,8 +2154,6 @@ class AnalysisTab(InspectorTab):
 
     def _on_export_report(self) -> None:
         from pathlib import Path
-
-        from qtpy.QtWidgets import QFileDialog, QMessageBox
 
         from rrational.inspector import settings as _settings
 

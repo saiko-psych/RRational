@@ -681,3 +681,72 @@ def test_single_compute_applies_reference_overlay_when_catalogue_has_metric(
     ]
     assert any(brush_color == c for c in expected)
     assert "reference" in value_item.toolTip().lower()
+
+
+# ---------------------------------------------------------------------
+# V3: empty-state stacks (single-participant pane)
+# ---------------------------------------------------------------------
+def test_single_pane_shows_empty_state_before_compute(main_window):
+    """Before any compute runs, the Single Participant pane's result and
+    plot stacks both start on the hint widget (index 0)."""
+    pane = main_window._analysis_tab._single_pane
+    assert pane._result_stack.currentIndex() == 0
+    assert pane._plot_stack.currentIndex() == 0
+
+
+def test_single_pane_flips_to_results_after_compute(main_window):
+    """After a successful compute the stacks switch to index 1
+    (the populated table / plot tabs)."""
+    from rrational.inspector.data_loader import Dataset
+
+    main_window.add_dataset(Dataset(name="A", data=_make_data(["rest_pre"])))
+    main_window.set_active_dataset(0)
+    pane = main_window._analysis_tab._single_pane
+    pane._on_compute()
+    assert pane._result_stack.currentIndex() == 1
+    assert pane._plot_stack.currentIndex() == 1
+    # Plot tabs should have been populated with the four standard plots.
+    titles = [pane._plot_tabs.tabText(i) for i in range(pane._plot_tabs.count())]
+    assert titles == ["Tachogram", "Poincaré", "Frequency (PSD)", "HR distribution"]
+
+
+# ---------------------------------------------------------------------
+# F8: HTML report writer
+# ---------------------------------------------------------------------
+def test_generate_group_analysis_html_writes_file(tmp_path):
+    """Smoke test: render the HTML and confirm the file lands on disk
+    with the headline section names + a stats row."""
+    from rrational.inspector.report import generate_group_analysis_html
+    from rrational.inspector.results_store import GroupTestRow
+
+    payload = {
+        "timestamp": "2026-01-01 00:00:00",
+        "project_name": "Demo",
+        "per_group_descriptives": {
+            "Music": {"RMSSD": [42.0, 45.0, 50.0]},
+            "Control": {"RMSSD": [38.0, 40.0, 41.0]},
+        },
+        "group_tests": [
+            GroupTestRow(
+                section="rest",
+                metric="RMSSD",
+                test_name="Welch t",
+                statistic=2.5,
+                p_value=0.04,
+                effect_size_name="Cohen's d",
+                effect_size=1.1,
+                is_parametric=True,
+                groups=("Music", "Control"),
+                n_per_group={"Music": 3, "Control": 3},
+            )
+        ],
+    }
+    out = generate_group_analysis_html(payload, tmp_path / "report.html")
+    assert out.exists()
+    text = out.read_text(encoding="utf-8")
+    assert "Group analysis report" in text
+    assert "Per-group descriptives" in text
+    assert "Statistical tests" in text
+    assert "Music" in text
+    assert "RMSSD" in text
+    assert "Welch t" in text

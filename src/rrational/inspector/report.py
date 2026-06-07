@@ -938,3 +938,137 @@ def _grab_widget_png(widget) -> str | None:
         return _encode_qimage_png(qimg)
     except Exception:
         return None
+
+
+# ----------------------------------------------------------------------
+# F8: standalone HTML report for the Group Comparison pane. Kept
+# deliberately small (no plots, no audit-trail) so the inspector can
+# wire a "Generate HTML report..." button without dragging the full
+# ReportBuilder pipeline. Plot embedding can be added later.
+# ----------------------------------------------------------------------
+_GROUP_REPORT_CSS = (
+    "body{font-family:sans-serif;max-width:900px;margin:2em auto;padding:0 1em;}"
+    "table{border-collapse:collapse;}"
+    "th,td{border:1px solid #ccc;padding:6px 12px;text-align:left;}"
+    "th{background:#f5f5f5;}"
+    "h1{color:#222;}"
+    "h2{color:#2E86AB;margin-top:2em;}"
+    ".meta{color:#666;}"
+    ".empty{color:#888;font-style:italic;}"
+)
+
+
+def _group_descriptive_rows(values: list[float]) -> tuple[int, str, str]:
+    """Return ``(n, mean_str, sd_str)`` for a list of floats."""
+    import statistics
+
+    finite = [v for v in values if v is not None and not math.isnan(v)]
+    n = len(finite)
+    if n == 0:
+        return 0, "—", "—"
+    mean = statistics.fmean(finite)
+    sd = statistics.stdev(finite) if n >= 2 else 0.0
+    return n, f"{mean:.3f}", f"{sd:.3f}"
+
+
+def generate_group_analysis_html(results: dict, output_path) -> "Path":
+    """Render a self-contained HTML report for the Group Comparison pane.
+
+    Args:
+        results: dict with keys:
+            - ``timestamp`` (str | None): pre-formatted timestamp; falls
+              back to "n/a" so tests can build deterministic payloads.
+            - ``project_name`` (str | None): optional project label.
+            - ``per_group_descriptives`` (dict[str, dict[str, list[float]]]):
+              ``{group_label: {metric: [values]}}``.
+            - ``group_tests`` (list[GroupTestRow]): the pyobjects already
+              held in the results store; rendered as a stats table.
+        output_path: ``pathlib.Path`` destination. Parent dirs are NOT
+            created — caller's responsibility.
+
+    Returns:
+        ``output_path`` (echoed) for chaining.
+    """
+    from pathlib import Path
+
+    out = Path(output_path)
+    timestamp = str(results.get("timestamp") or "n/a")
+    project_name = results.get("project_name")
+    per_group: dict[str, dict[str, list[float]]] = (
+        results.get("per_group_descriptives") or {}
+    )
+    group_tests = results.get("group_tests") or []
+
+    parts: list[str] = []
+    parts.append("<html>")
+    parts.append("<head>")
+    parts.append("<title>Group analysis report</title>")
+    parts.append(f"<style>{_GROUP_REPORT_CSS}</style>")
+    parts.append("</head>")
+    parts.append("<body>")
+    parts.append("<h1>Group analysis report</h1>")
+    parts.append("<p class='meta'>")
+    if project_name:
+        parts.append(f"Project: <b>{_html_escape(str(project_name))}</b><br>")
+    parts.append(f"Generated: {_html_escape(timestamp)}")
+    parts.append("</p>")
+
+    # ---- Per-group descriptives ----
+    parts.append("<h2>Per-group descriptives</h2>")
+    if not per_group:
+        parts.append("<p class='empty'>(no descriptive data)</p>")
+    for group_label, metrics_dict in per_group.items():
+        parts.append(f"<h3>{_html_escape(str(group_label))}</h3>")
+        if not metrics_dict:
+            parts.append("<p class='empty'>(no metrics recorded)</p>")
+            continue
+        parts.append(
+            "<table><thead><tr>"
+            "<th>Metric</th><th>Mean</th><th>SD</th><th>N</th>"
+            "</tr></thead><tbody>"
+        )
+        for metric, values in metrics_dict.items():
+            n, mean_str, sd_str = _group_descriptive_rows(list(values))
+            parts.append(
+                "<tr>"
+                f"<td>{_html_escape(str(metric))}</td>"
+                f"<td>{mean_str}</td>"
+                f"<td>{sd_str}</td>"
+                f"<td>{n}</td>"
+                "</tr>"
+            )
+        parts.append("</tbody></table>")
+
+    # ---- Statistical tests ----
+    parts.append("<h2>Statistical tests</h2>")
+    if not group_tests:
+        parts.append("<p class='empty'>(no test results)</p>")
+    else:
+        parts.append(
+            "<table><thead><tr>"
+            "<th>Metric</th><th>Test</th><th>Statistic</th><th>p</th><th>p_fdr</th>"
+            "</tr></thead><tbody>"
+        )
+        # Holm/Bonferroni-style FDR fallback: if the row carries a
+        # ``p_fdr`` attribute, use it; otherwise show "—" (FDR is not
+        # always available depending on how the row was constructed).
+        for row in group_tests:
+            metric = getattr(row, "metric", "")
+            test_name = getattr(row, "test_name", "")
+            statistic = getattr(row, "statistic", None)
+            p_value = getattr(row, "p_value", None)
+            p_fdr = getattr(row, "p_fdr", None)
+            parts.append(
+                "<tr>"
+                f"<td>{_html_escape(str(metric))}</td>"
+                f"<td>{_html_escape(str(test_name))}</td>"
+                f"<td>{_fmt_num(statistic)}</td>"
+                f"<td>{_fmt_p(p_value).replace('&lt;', '<')}</td>"
+                f"<td>{'—' if p_fdr is None else _fmt_p(p_fdr).replace('&lt;', '<')}</td>"
+                "</tr>"
+            )
+        parts.append("</tbody></table>")
+
+    parts.append("</body></html>")
+    out.write_text("\n".join(parts), encoding="utf-8")
+    return out
