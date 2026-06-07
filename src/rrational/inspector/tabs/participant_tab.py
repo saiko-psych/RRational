@@ -39,10 +39,15 @@ import numpy as np
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QDockWidget,
+    QDoubleSpinBox,
+    QFormLayout,
     QFrame,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -50,6 +55,9 @@ from qtpy.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -182,6 +190,202 @@ def _detect_high_variability_segments(
     return segments
 
 
+class RepetitiveEventsDialog(QDialog):
+    """Modal dialog to generate a repeating sequence of events.
+
+    Mirrors the Streamlit ``Generate Repetitive Events`` expander
+    (``src/rrational/gui/app.py``): the user specifies a start
+    timestamp, a repetition count, and a list of (event-label,
+    duration-in-seconds) rows; on accept, the dialog emits
+    ``repetition_count * len(sequence)`` events spaced by the per-row
+    durations.
+
+    The dialog is intentionally self-contained — it does NOT touch
+    the active dataset directly. Callers consume :meth:`generated_events`
+    after the dialog accepts and append them to whatever event list the
+    caller owns.
+    """
+
+    # Sentinel used by tests / test_mode to bypass exec() and pre-fill
+    # the table programmatically. See test_mode constructor flag.
+    def __init__(
+        self,
+        default_start_t: float,
+        parent: QWidget | None = None,
+        test_mode: bool = False,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Add repetitive sequence")
+        self.setMinimumWidth(480)
+        self._test_mode = test_mode
+        self._default_start_t = float(default_start_t)
+
+        outer = QVBoxLayout(self)
+
+        form = QFormLayout()
+        # Start timestamp: epoch-seconds spinner so the dialog stays
+        # headless-friendly. The participant tab pre-fills it with the
+        # current plot crosshair / dataset start so the user rarely has
+        # to type a raw number.
+        self._start_spin = QDoubleSpinBox()
+        self._start_spin.setRange(0.0, 1e12)
+        self._start_spin.setDecimals(3)
+        self._start_spin.setSingleStep(1.0)
+        self._start_spin.setValue(self._default_start_t)
+        self._start_spin.setToolTip(
+            "Epoch seconds for the first event in the sequence. "
+            "Defaults to the active dataset's start time."
+        )
+        form.addRow("Start timestamp (epoch s):", self._start_spin)
+
+        self._rep_spin = QSpinBox()
+        self._rep_spin.setRange(1, 100)
+        self._rep_spin.setValue(10)
+        self._rep_spin.setToolTip("How many times to repeat the event sequence below.")
+        form.addRow("Repetition count:", self._rep_spin)
+        outer.addLayout(form)
+
+        outer.addWidget(QLabel("<b>Event sequence (one repetition):</b>"))
+
+        self._table = QTableWidget(0, 2)
+        self._table.setHorizontalHeaderLabels(["Event label", "Duration (s)"])
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents
+        )
+        self._table.verticalHeader().setVisible(False)
+        outer.addWidget(self._table)
+
+        # Two starter rows so the table isn't empty on open — matches
+        # the Streamlit defaults ("rest 30s, music 60s").
+        self._add_row("rest", 30.0)
+        self._add_row("music", 60.0)
+
+        row_btns = QHBoxLayout()
+        add_row_btn = QPushButton("Add row")
+        add_row_btn.clicked.connect(lambda: self._add_row("", 30.0))
+        remove_row_btn = QPushButton("Remove selected row")
+        remove_row_btn.clicked.connect(self._remove_selected_row)
+        row_btns.addWidget(add_row_btn)
+        row_btns.addWidget(remove_row_btn)
+        row_btns.addStretch()
+        outer.addLayout(row_btns)
+
+        self._preview_label = QLabel("")
+        self._preview_label.setStyleSheet("color: #555;")
+        outer.addWidget(self._preview_label)
+
+        # Live preview hooks — recompute whenever the user tweaks any
+        # input. Cheap: it just multiplies numbers.
+        self._rep_spin.valueChanged.connect(self._refresh_preview)
+        self._table.itemChanged.connect(lambda *_: self._refresh_preview())
+
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self._on_accept)
+        bb.rejected.connect(self.reject)
+        outer.addWidget(bb)
+
+        self._refresh_preview()
+
+    # ------------------------------------------------------------------
+    # Table helpers
+    # ------------------------------------------------------------------
+    def _add_row(self, label: str, duration: float) -> None:
+        row = self._table.rowCount()
+        self._table.insertRow(row)
+        self._table.setItem(row, 0, QTableWidgetItem(label))
+        self._table.setItem(row, 1, QTableWidgetItem(f"{duration:g}"))
+
+    def _remove_selected_row(self) -> None:
+        row = self._table.currentRow()
+        if row >= 0:
+            self._table.removeRow(row)
+            self._refresh_preview()
+
+    def set_sequence(self, sequence: list[tuple[str, float]]) -> None:
+        """Replace the table rows with ``sequence`` (test helper)."""
+        self._table.blockSignals(True)
+        try:
+            self._table.setRowCount(0)
+            for label, duration in sequence:
+                self._add_row(label, float(duration))
+        finally:
+            self._table.blockSignals(False)
+        self._refresh_preview()
+
+    def set_repetitions(self, n: int) -> None:
+        """Set the repetition count programmatically (test helper)."""
+        self._rep_spin.setValue(int(n))
+
+    # ------------------------------------------------------------------
+    # Sequence + preview
+    # ------------------------------------------------------------------
+    def _read_sequence(self) -> list[tuple[str, float]]:
+        out: list[tuple[str, float]] = []
+        for row in range(self._table.rowCount()):
+            label_item = self._table.item(row, 0)
+            dur_item = self._table.item(row, 1)
+            label = (label_item.text() if label_item else "").strip()
+            try:
+                duration = float(dur_item.text()) if dur_item else 0.0
+            except (TypeError, ValueError):
+                duration = 0.0
+            if not label or duration <= 0:
+                continue
+            out.append((label, duration))
+        return out
+
+    def _refresh_preview(self) -> None:
+        sequence = self._read_sequence()
+        reps = int(self._rep_spin.value())
+        n_events = reps * len(sequence)
+        total_s = reps * sum(duration for _, duration in sequence)
+        self._preview_label.setText(
+            f"Will create {n_events} events spanning {total_s:.1f} seconds."
+        )
+
+    # ------------------------------------------------------------------
+    # Accept guard
+    # ------------------------------------------------------------------
+    def _on_accept(self) -> None:
+        sequence = self._read_sequence()
+        if not sequence:
+            if self._test_mode:
+                # In headless tests, let the caller see the failure mode
+                # by accepting anyway — caller inspects generated_events.
+                self.accept()
+                return
+            QMessageBox.warning(
+                self,
+                "Empty sequence",
+                "Add at least one event row (with a label and a positive "
+                "duration) before generating.",
+            )
+            return
+        self.accept()
+
+    # ------------------------------------------------------------------
+    # Output
+    # ------------------------------------------------------------------
+    def generated_events(self) -> list[tuple[str, float]]:
+        """Return the (label, epoch_t) tuples this dialog would create.
+
+        Computed lazily from the current dialog state so callers can
+        re-invoke after :meth:`set_sequence` / :meth:`set_repetitions`
+        in tests.
+        """
+        sequence = self._read_sequence()
+        reps = int(self._rep_spin.value())
+        start_t = float(self._start_spin.value())
+        out: list[tuple[str, float]] = []
+        cursor = start_t
+        for _ in range(reps):
+            for label, duration in sequence:
+                out.append((label, cursor))
+                cursor += float(duration)
+        return out
+
+
 class ParticipantTab(InspectorTab):
     """Single-participant deep-dive: dropdown + plot + sections + preprocessing."""
 
@@ -310,6 +514,23 @@ class ParticipantTab(InspectorTab):
         sections_layout.setContentsMargins(4, 4, 4, 4)
         sections_layout.addWidget(QLabel("<b>Sections</b>"))
         sections_layout.addWidget(self._sections_list)
+
+        # ----- Events toolbar (F1: repetitive-sequence generator) -------
+        # Single button that opens the RepetitiveEventsDialog. Generated
+        # events are appended to the active dataset's events list and
+        # rendered immediately as event markers on the plot.
+        events_box = QGroupBox("Events")
+        events_layout = QVBoxLayout(events_box)
+        events_layout.setContentsMargins(6, 6, 6, 6)
+        self._add_repetitive_btn = QPushButton("Add repetitive sequence…")
+        self._add_repetitive_btn.setToolTip(
+            "Open a dialog that generates a repeating sequence of events "
+            "(e.g. 10 x [rest 30s, music 60s]) and appends them to this "
+            "participant's event list."
+        )
+        self._add_repetitive_btn.clicked.connect(self._on_add_repetitive_clicked)
+        events_layout.addWidget(self._add_repetitive_btn)
+        sections_layout.addWidget(events_box)
 
         # ----- Quality issues group (Phase 24C-retry) -------------------
         # Collapsible QGroupBox sitting below the section list. Holds
@@ -991,3 +1212,98 @@ class ParticipantTab(InspectorTab):
         self._main_window.statusBar().showMessage(
             f"Validation cleared for section '{name}'.", 3000
         )
+
+    # ------------------------------------------------------------------
+    # Repetitive-events generator (F1)
+    # ------------------------------------------------------------------
+    def _on_add_repetitive_clicked(self) -> None:
+        """Open the RepetitiveEventsDialog and append accepted events.
+
+        In ``test_mode`` the caller is expected to drive the dialog via
+        :meth:`open_repetitive_events_dialog` so it can pre-fill the
+        table and accept programmatically without exec()ing a real
+        modal loop. The button handler shows the same dialog with the
+        default seed rows otherwise.
+        """
+        idx = self._main_window._active_idx
+        if idx is None:
+            return
+        ds = self._main_window._datasets[idx]
+        default_start = self._default_event_start_t(ds)
+        dlg = self.open_repetitive_events_dialog(default_start_t=default_start)
+        if dlg is None:
+            return
+        # In non-test mode, exec() the dialog and bail out on Cancel.
+        if not getattr(self._main_window, "test_mode", False):
+            if dlg.exec() != QDialog.Accepted:
+                return
+        self._apply_repetitive_events(dlg, ds)
+
+    def open_repetitive_events_dialog(
+        self,
+        default_start_t: float | None = None,
+    ) -> "RepetitiveEventsDialog | None":
+        """Construct the dialog without exec()ing it (test entry point).
+
+        Returns the dialog so tests can call ``set_sequence`` /
+        ``set_repetitions`` and then ``_apply_repetitive_events`` to
+        commit. In production code this is called from
+        :meth:`_on_add_repetitive_clicked` which then exec()s itself.
+        """
+        idx = self._main_window._active_idx
+        if idx is None:
+            return None
+        if default_start_t is None:
+            ds = self._main_window._datasets[idx]
+            default_start_t = self._default_event_start_t(ds)
+        test_mode = bool(getattr(self._main_window, "test_mode", False))
+        return RepetitiveEventsDialog(
+            default_start_t=float(default_start_t),
+            parent=self,
+            test_mode=test_mode,
+        )
+
+    def _default_event_start_t(self, ds: "Dataset") -> float:
+        """Pick a sensible default start timestamp for the dialog.
+
+        Prefers the active dataset's first finite sample. If the
+        dataset is empty, falls back to 0.0 so the spinbox stays
+        usable.
+        """
+        t = ds.data.t
+        finite = np.isfinite(t)
+        if finite.any():
+            return float(t[finite][0])
+        return 0.0
+
+    def _apply_repetitive_events(
+        self,
+        dlg: "RepetitiveEventsDialog",
+        ds: "Dataset",
+    ) -> int:
+        """Append the dialog's generated events to ``ds`` + re-render.
+
+        Returns the number of events that were appended. The events
+        land on ``ds.data.events`` (the same list manual events live
+        on) so any future save path picks them up automatically.
+        """
+        from rrational.inspector.data_loader import EventMeta
+
+        generated = dlg.generated_events()
+        if not generated:
+            return 0
+        for label, t in generated:
+            ev = EventMeta(label=str(label), t=float(t))
+            ds.data.events.append(ev)
+            # Mirror the data mutation onto the live plot so the user
+            # sees the new markers without having to switch datasets.
+            try:
+                self._plot.add_event_marker(ev)
+            except Exception:  # pragma: no cover - defensive
+                pass
+        n = len(generated)
+        self._main_window.statusBar().showMessage(
+            f"Added {n} repetitive event(s) to {self._stem_for(ds)}.",
+            3000,
+        )
+        return n

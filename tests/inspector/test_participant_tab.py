@@ -558,3 +558,75 @@ def test_quality_lists_populate_on_dataset_load(participant_tab, main_window):
     rng = first.data(_ROLE_QUALITY_RANGE)
     assert rng is not None
     assert len(rng) == 2
+
+
+# ---------------------------------------------------------------------
+# F1 — Repetitive events generator
+# ---------------------------------------------------------------------
+def test_repetitive_events_generator_creates_n_events(main_window, participant_tab):
+    """Filling 3 repetitions x 2 events appends 6 EventMetas to the dataset.
+
+    Drives the RepetitiveEventsDialog through its test-mode entry point
+    (open_repetitive_events_dialog + _apply_repetitive_events) so the
+    modal exec() loop is bypassed and the table can be pre-filled
+    programmatically.
+    """
+    from rrational.inspector.data_loader import Dataset
+
+    pid = "RPT"
+    data = _make_data(n_sections=2)
+    main_window.add_dataset(Dataset(name=f"{pid}.rrational", data=data))
+    main_window.set_active_dataset(0)
+    participant_tab.on_workspace_changed()
+    participant_tab.on_active_dataset_changed(main_window._data)
+
+    n_before = len(data.events)
+
+    # Construct the dialog without exec()ing it, pre-fill 3x[rest 5s,
+    # music 10s], and apply.
+    dlg = participant_tab.open_repetitive_events_dialog()
+    assert dlg is not None
+    dlg.set_repetitions(3)
+    dlg.set_sequence([("rest", 5.0), ("music", 10.0)])
+
+    ds = main_window._datasets[0]
+    n_added = participant_tab._apply_repetitive_events(dlg, ds)
+
+    assert n_added == 6
+    assert len(data.events) == n_before + 6
+
+    # The newly-appended events are the last 6 entries in insertion order.
+    new = data.events[-6:]
+    labels = [ev.label for ev in new]
+    assert labels == ["rest", "music"] * 3
+
+    # Timestamps step by per-row duration: cumulative offsets
+    # 0, 5, 15, 20, 30, 35 from the dialog's default start.
+    start = dlg._start_spin.value()
+    offsets = [ev.t - start for ev in new]
+    assert offsets == pytest.approx([0.0, 5.0, 15.0, 20.0, 30.0, 35.0])
+
+
+def test_repetitive_events_preview_label_reports_counts(participant_tab, main_window):
+    """The dialog's preview label reflects the current sequence + reps."""
+    from rrational.inspector.data_loader import Dataset
+
+    main_window.add_dataset(Dataset(name="PRV.rrational", data=_make_data()))
+    main_window.set_active_dataset(0)
+    participant_tab.on_workspace_changed()
+    participant_tab.on_active_dataset_changed(main_window._data)
+
+    dlg = participant_tab.open_repetitive_events_dialog()
+    assert dlg is not None
+    dlg.set_repetitions(4)
+    dlg.set_sequence([("a", 7.0), ("b", 13.0)])
+    # 4 * 2 = 8 events, total span 4 * 20.0 = 80.0 s.
+    txt = dlg._preview_label.text()
+    assert "8 events" in txt
+    assert "80.0" in txt
+
+
+def test_repetitive_events_button_present_in_tab(participant_tab):
+    """The 'Add repetitive sequence…' button must be wired up."""
+    assert participant_tab._add_repetitive_btn is not None
+    assert "repetitive" in participant_tab._add_repetitive_btn.text().lower()
