@@ -6905,7 +6905,7 @@ def _setup_inspection_shortcuts(participant_id: str) -> None:
     # The functions are stored ON the parent window (not the iframe's closure)
     # so they survive after Streamlit destroys/recreates the components.html
     # iframe between reruns.
-    components.html(
+    st.components.v1.html(
         """
     <script>
     (function() {
