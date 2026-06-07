@@ -906,10 +906,11 @@ class _RepeatingSectionPane(QWidget):
         rows: list[tuple[str, dict, int]],
         selected_metrics: list[str],
     ) -> None:
-        # Always use the default metric columns for table shape so
-        # backward-compat tests stay green. Extra computed metrics get
-        # stored in the results store but aren't visible here yet.
-        metric_cols = list(_DEFAULT_METRICS)
+        # Table shape follows the user's metric selection so that picking
+        # e.g. "Nonlinear only" doesn't leave empty time-domain columns.
+        metric_cols = (
+            list(selected_metrics) if selected_metrics else list(_DEFAULT_METRICS)
+        )
         self._result_table.setColumnCount(1 + len(metric_cols))
         self._result_table.setHorizontalHeaderLabels(["Dataset", *metric_cols])
         self._result_table.setRowCount(0)
@@ -1562,7 +1563,8 @@ class _SequenceComparisonPane(QWidget):
 
         # ---- Result label (omnibus test summary) ---------------------
         self._result_label = QLabel(
-            "<i>Define a sequence in the Setup tab, then pick it above + click Compute.</i>"
+            "<i>Define a sequence in the Setup tab, then pick it above + "
+            "click <b>Run repeated-measures comparison</b>.</i>"
         )
         self._result_label.setWordWrap(True)
         self._result_label.setStyleSheet("padding: 8px;")

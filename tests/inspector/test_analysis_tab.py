@@ -175,7 +175,7 @@ def test_repeating_compute_produces_one_row_per_matching_dataset(main_window):
     assert names == {"A", "B"}
 
 
-def test_repeating_metric_columns_have_seven_metrics(main_window):
+def test_repeating_metric_columns_match_selected_metrics(main_window):
     from rrational.inspector.data_loader import Dataset
 
     main_window.add_dataset(Dataset(name="A", data=_make_data(["x"])))
@@ -183,8 +183,16 @@ def test_repeating_metric_columns_have_seven_metrics(main_window):
     pane = main_window._analysis_tab._repeating_pane
     pane._section_combo.setCurrentIndex(0)
     pane._on_compute()
-    # Headers: Dataset + 7 default metrics
-    assert pane._result_table.columnCount() == 1 + 7
+    # Table shape follows the AnalysisSettingsBar's active selection
+    # (default "Basic" preset). Header: "Dataset" + one column per metric.
+    selected = pane._settings_bar.selected_metrics()
+    assert len(selected) > 0, "Settings bar should have at least one metric selected"
+    assert pane._result_table.columnCount() == 1 + len(selected)
+    headers = [
+        pane._result_table.horizontalHeaderItem(i).text()
+        for i in range(pane._result_table.columnCount())
+    ]
+    assert headers == ["Dataset", *selected]
 
 
 # ---------------------------------------------------------------------
