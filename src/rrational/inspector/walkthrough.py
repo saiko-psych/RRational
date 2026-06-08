@@ -114,6 +114,11 @@ PAGES: tuple[WalkthroughPage, ...] = (
             "<b>Exclusion mode (drag-select)</b> and drag out a time range. "
             "Exclusions and corrections are saved automatically and "
             "respected by every downstream analysis.</p>"
+            "<p><b>Plot keyboard shortcuts:</b> <b>a</b> toggles annotation "
+            "mode (drag a range to pin a note), <b>e</b> toggles exclusion "
+            "mode, <b>r</b> resets the zoom to the full recording, "
+            "<b>1</b> / <b>2</b> / <b>3</b> jump to the last 1 min / 10 min / "
+            "full window, and the arrow keys pan / zoom.</p>"
         ),
         try_target_attr="_participant_tab",
         try_label="Open the Participant tab",

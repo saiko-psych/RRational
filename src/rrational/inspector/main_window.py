@@ -435,6 +435,59 @@ class MainWindow(QMainWindow):
             self._on_section_split_requested
         )
 
+        # Plot-level keyboard shortcuts (A / E) route through these
+        # signals so the panel checkbox state stays the single source
+        # of truth. Status messages (R / 1 / 2 / 3) bubble up the same
+        # way. Wire BOTH the BrowseTab and ParticipantTab plots — the
+        # active one depends on the UI layout mode.
+        for plot in self._all_plots():
+            plot.mode_toggle_requested.connect(self._on_plot_mode_toggle_requested)
+            plot.status_message_requested.connect(self._on_plot_status_message)
+
+    def _all_plots(self) -> list:
+        """Return every RRPlotWidget instance currently hosted by the window.
+
+        Used to wire plot-level signals at construction time without
+        knowing which UI layout the user will pick. Skips plots that
+        don't exist (Streamlit-only tabs may be absent).
+        """
+        plots: list = []
+        for path in (("_browse_tab", "_plot"), ("_participant_tab", "_plot")):
+            obj = self
+            for attr in path:
+                obj = getattr(obj, attr, None)
+                if obj is None:
+                    break
+            if obj is not None:
+                plots.append(obj)
+        return plots
+
+    # ------------------------------------------------------------------
+    # Plot-shortcut bridges (panel-owned modes + status bar)
+    # ------------------------------------------------------------------
+    def _on_plot_mode_toggle_requested(self, mode: str) -> None:
+        """Flip the matching PreprocessingPanel checkbox for ``mode``.
+
+        The panel's checkbox is the canonical state — its ``toggled``
+        signal then propagates to the plot via the existing handler.
+        That keeps the keyboard shortcut and the visible UI control
+        in lockstep automatically.
+        """
+        panel = getattr(self._browse_tab, "_preprocessing_panel", None)
+        if panel is None:
+            return
+        checkbox = None
+        if mode == "annotation":
+            checkbox = getattr(panel, "_toggle_annotation_mode", None)
+        elif mode == "exclusion":
+            checkbox = getattr(panel, "_toggle_exclusion_mode", None)
+        if checkbox is None or not checkbox.isEnabled():
+            return
+        checkbox.setChecked(not checkbox.isChecked())
+
+    def _on_plot_status_message(self, text: str, ms: int) -> None:
+        self.statusBar().showMessage(str(text), int(ms))
+
     # ------------------------------------------------------------------
     # Proxies for widgets that now live inside BrowseTab — forwarded so
     # external callers can keep reaching them on MainWindow.
@@ -755,6 +808,34 @@ class MainWindow(QMainWindow):
             self._hr_dist_act,
         ]
         self._refresh_visualisation_actions()
+
+        # ----- Cross-recording annotation table -------------------------
+        tools_menu.addSeparator()
+        self._annotation_table_act = QAction("&Annotations…", self)
+        self._annotation_table_act.setStatusTip(
+            "Open the cross-recording annotation table (sort, filter, CSV)"
+        )
+        self._annotation_table_act.triggered.connect(self._on_show_annotation_table)
+        tools_menu.addAction(self._annotation_table_act)
+
+        # ----- Batch preprocessing + quality triage ---------------------
+        tools_menu.addSeparator()
+        self._batch_preprocess_act = QAction(
+            "Run preprocessing on all loaded recordings…", self
+        )
+        self._batch_preprocess_act.setStatusTip(
+            "Detect artifacts + save .rrational v2 for every loaded recording, "
+            "then open a quality-triage dashboard"
+        )
+        self._batch_preprocess_act.triggered.connect(self._on_batch_preprocess_clicked)
+        tools_menu.addAction(self._batch_preprocess_act)
+
+        self._quality_triage_act = QAction("Quality triage…", self)
+        self._quality_triage_act.setStatusTip(
+            "Open the quality-triage dashboard for the currently loaded recordings"
+        )
+        self._quality_triage_act.triggered.connect(self._on_quality_triage_clicked)
+        tools_menu.addAction(self._quality_triage_act)
 
         # ----- Help menu --------------------------------------------------
         help_menu = menubar.addMenu("&Help")
@@ -1907,6 +1988,135 @@ class MainWindow(QMainWindow):
             test_mode=self.test_mode,
         )
         self._latest_visualisation_dialog = dlg
+
+    # ------------------------------------------------------------------
+    # Cross-recording annotation table
+    # ------------------------------------------------------------------
+    def _on_show_annotation_table(self) -> None:
+        """Open the modal cross-recording annotation table."""
+        from rrational.inspector.annotation_table_dialog import (
+            AnnotationTableDialog,
+        )
+
+        dlg = AnnotationTableDialog(self, parent=self)
+        # Keep a strong reference for headless / test_mode runs where
+        # ``exec`` is replaced by ``show``.
+        self._annotation_table_dialog = dlg
+        if self.test_mode:
+            dlg.show()
+        else:
+            dlg.exec()
+
+    # ------------------------------------------------------------------
+    # Batch preprocessing + quality triage
+    # ------------------------------------------------------------------
+    def _on_batch_preprocess_clicked(self) -> None:
+        """Run detect+save across every loaded dataset, then pop triage."""
+        from qtpy.QtWidgets import QProgressDialog
+
+        if not self._datasets:
+            self.statusBar().showMessage("Batch preprocess: no datasets loaded.", 3000)
+            return
+
+        panel = getattr(self._browse_tab, "_preprocessing_panel", None)
+        if panel is None:
+            self.statusBar().showMessage(
+                "Batch preprocess: preprocessing panel unavailable.", 3000
+            )
+            return
+
+        n = len(self._datasets)
+        results = []
+
+        if self.test_mode:
+            # Headless path: no QProgressDialog (would steal focus +
+            # block pytest-qt). Run the same logic synchronously.
+            results = panel.apply_to_recordings(list(self._datasets))
+        else:
+            dlg = QProgressDialog("Detecting artifacts…", "Cancel", 0, n, self)
+            dlg.setWindowTitle("Batch preprocessing")
+            dlg.setWindowModality(Qt.WindowModal)
+            dlg.setMinimumDuration(0)
+            dlg.setValue(0)
+            cancelled = {"flag": False}
+
+            def _progress(i: int, total: int, name: str) -> None:
+                if dlg.wasCanceled():
+                    cancelled["flag"] = True
+                    return
+                dlg.setLabelText(f"Processing {name}… ({i + 1}/{total})")
+                dlg.setValue(i)
+                QApplication.processEvents()
+
+            # apply_to_recordings doesn't expose a cancel hook; we
+            # filter the workspace ourselves so a mid-run cancel
+            # doesn't process subsequent datasets.
+            for i, ds in enumerate(list(self._datasets)):
+                _progress(i, n, ds.name)
+                if cancelled["flag"]:
+                    break
+                results.append(panel.process_single(ds))
+            dlg.setValue(n)
+
+        # Refresh the panel for the currently-active dataset so the
+        # batch's autosaved artifacts immediately show on screen.
+        try:
+            self._notify_tabs_active_changed()
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+        self.statusBar().showMessage(
+            f"Batch preprocessing finished: {len(results)} recordings processed",
+            5000,
+        )
+
+        if not results:
+            return
+        self._show_quality_triage(results)
+
+    def _on_quality_triage_clicked(self) -> None:
+        """Tools → Quality triage. Recomputes grades WITHOUT exporting."""
+        if not self._datasets:
+            self.statusBar().showMessage("Quality triage: no datasets loaded.", 3000)
+            return
+        panel = getattr(self._browse_tab, "_preprocessing_panel", None)
+        if panel is None:
+            self.statusBar().showMessage(
+                "Quality triage: preprocessing panel unavailable.", 3000
+            )
+            return
+        results = panel.apply_to_recordings(list(self._datasets), save_export=False)
+        if not results:
+            return
+        self._show_quality_triage(results)
+
+    def _show_quality_triage(self, results) -> None:
+        """Build + show a QualityTriageDialog wired up to dataset activation."""
+        from rrational.inspector.quality_triage_dialog import (
+            QualityTriageDialog,
+        )
+
+        dlg = QualityTriageDialog(results, parent=self)
+        dlg.open_recording.connect(self._activate_dataset_by_name)
+        self._latest_triage_dialog = dlg
+        if self.test_mode:
+            # Tests inspect _latest_triage_dialog directly; exec() would
+            # block the test process indefinitely.
+            return
+        dlg.exec()
+
+    def _activate_dataset_by_name(self, name: str) -> None:
+        """Find the loaded dataset whose ``.name`` matches and activate it."""
+        for i, ds in enumerate(self._datasets):
+            if ds.name == name:
+                self.set_active_dataset(i)
+                self.statusBar().showMessage(
+                    f"Activated '{name}' from quality triage", 3000
+                )
+                return
+        self.statusBar().showMessage(
+            f"Quality triage: recording '{name}' is no longer loaded.", 3000
+        )
 
     def _on_sequences_changed(self) -> None:
         """Called by Setup tab after persisting a sequence edit.

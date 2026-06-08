@@ -15,6 +15,18 @@ Keyboard model:
     Home  / End    — jump to first / last 60 s of signal
                      (Home/End live on MainWindow as an eventFilter —
                      QGraphicsView eats them if wired here directly)
+    R              — reset view to full recording (``autoRange`` on X)
+    1 / 2 / 3      — zoom presets: last 1 min / 10 min / full recording
+    A              — request a toggle of annotation mode (parent panel
+                     owns the checkbox state; plot only asks)
+    E              — request a toggle of exclusion mode (same pattern)
+
+Drag model in annotation mode:
+    Left-button drag emits ``plot_range_selected(t0, t1)`` so the panel
+    can prompt for a label and pin an :class:`Annotation` at the
+    midpoint. A single left click (no meaningful drag width) still
+    fires the existing ``plot_clicked(t)`` signal, preserving the
+    original click-to-annotate flow.
 """
 
 from __future__ import annotations
@@ -61,6 +73,14 @@ JUMP_WINDOW_S = 60.0  # Home/End viewport size
 LINE_COLOR = "#2E86AB"  # matches Scientific theme accent in color_scheme.py
 EXCLUSION_COLOR = "#FFA500"  # default; ColorScheme.exclusion overrides
 MIN_EXCLUSION_WIDTH_S = 0.5  # ignore microscopic drags (jitter from a click)
+# Same threshold for annotation drags — anything narrower is treated as
+# a stray click and routed to ``plot_clicked`` instead of the range path.
+MIN_ANNOTATION_DRAG_WIDTH_S = 0.5
+# Zoom-preset window sizes for the 1 / 2 keys (Key_3 falls back to full
+# recording via ``reset_view``). Picked to mirror common HRV windows:
+# 1 min (short-term metrics) and 10 min (ultra-short → standard).
+PRESET_WINDOW_1_S = 60.0
+PRESET_WINDOW_2_S = 600.0
 
 # Distinct colours cycled through section regions / event markers. Picked
 # from the matplotlib "tab10" palette for adequate contrast against the
@@ -98,19 +118,31 @@ class RRViewBox(pg.ViewBox):
 
     # (t_start, t_end) of a finished left-drag, in data-coordinate seconds
     exclusion_drag_finished = Signal(float, float)
+    # Same payload, but emitted while annotation mode is on. Kept as a
+    # distinct signal so the plot widget can route exclusion drags into
+    # ExclusionRegion creation and annotation drags into the panel's
+    # input-dialog prompt without a mode-tag string.
+    annotation_drag_finished = Signal(float, float)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._exclusion_mode = False
+        self._annotation_mode = False
 
     def set_exclusion_mode(self, enabled: bool) -> None:
         self._exclusion_mode = bool(enabled)
 
+    def set_annotation_mode(self, enabled: bool) -> None:
+        self._annotation_mode = bool(enabled)
+
     def mouseDragEvent(self, ev, axis=None) -> None:  # noqa: N802 — Qt API
-        # In exclusion mode we intercept LEFT-button drags only. Middle/
-        # right keep their stock zoom/menu semantics so users still have
-        # an escape hatch for navigation.
-        if not self._exclusion_mode or ev.button() != Qt.LeftButton:
+        # In exclusion / annotation mode we intercept LEFT-button drags
+        # only. Middle / right keep their stock zoom/menu semantics so
+        # users still have an escape hatch for navigation.
+        intercept = (
+            self._exclusion_mode or self._annotation_mode
+        ) and ev.button() == Qt.LeftButton
+        if not intercept:
             return super().mouseDragEvent(ev, axis=axis)
         ev.accept()
         if ev.isFinish():
@@ -120,7 +152,12 @@ class RRViewBox(pg.ViewBox):
             t1 = float(self.mapSceneToView(end_scene).x())
             if t0 > t1:
                 t0, t1 = t1, t0
-            self.exclusion_drag_finished.emit(t0, t1)
+            # Exclusion takes precedence — both modes ON is an
+            # accidental state the user can resolve by un-ticking one.
+            if self._exclusion_mode:
+                self.exclusion_drag_finished.emit(t0, t1)
+            else:
+                self.annotation_drag_finished.emit(t0, t1)
 
 
 class RRPlotWidget(pg.PlotWidget):
@@ -147,6 +184,20 @@ class RRPlotWidget(pg.PlotWidget):
     # Emitted on right-click of an AnnotationMarker so the panel can pop
     # an edit / delete menu without coupling to QInfiniteLine.
     annotation_context = Signal(object, object)  # (AnnotationMarker, QPoint)
+    # Emitted when a left-drag finishes in annotation mode AND has a
+    # meaningful width (>= ``MIN_ANNOTATION_DRAG_WIDTH_S``). Carries the
+    # ordered range ``(t0, t1)`` in seconds-since-epoch. The panel pops
+    # an input dialog and pins an Annotation at the midpoint.
+    plot_range_selected = Signal(float, float)
+    # Asks the MainWindow to toggle a mode owned by the panel
+    # (currently "annotation" or "exclusion"). The plot fires this from
+    # keyboard shortcuts so checkbox state stays in lockstep with the
+    # underlying ViewBox flags — the panel's checkbox is the single
+    # source of truth.
+    mode_toggle_requested = Signal(str)
+    # Transient status-bar message request. Payload: (text, ms_timeout).
+    # Routed through a signal so the plot stays ignorant of QMainWindow.
+    status_message_requested = Signal(str, int)
 
     # Section editing signals. Emitted by SectionRegion handles after a
     # drag finishes or a context-menu action is chosen. MainWindow
@@ -271,6 +322,27 @@ class RRPlotWidget(pg.PlotWidget):
         self._make_shortcut(QKeySequence(Qt.Key_Right), self.pan_right)
         self._make_shortcut(QKeySequence(Qt.Key_Up), self.zoom_out)
         self._make_shortcut(QKeySequence(Qt.Key_Down), self.zoom_in)
+        # R / 1 / 2 / 3 mirror MNE-Python's plot_raw zoom helpers — R
+        # resets to full extent, 1 / 2 / 3 are window-size presets
+        # picked for short-term HRV review.
+        self._make_shortcut(QKeySequence(Qt.Key_R), self.reset_view)
+        self._make_shortcut(
+            QKeySequence(Qt.Key_1), lambda: self.zoom_last_seconds(PRESET_WINDOW_1_S)
+        )
+        self._make_shortcut(
+            QKeySequence(Qt.Key_2), lambda: self.zoom_last_seconds(PRESET_WINDOW_2_S)
+        )
+        self._make_shortcut(QKeySequence(Qt.Key_3), self.reset_view)
+        # A / E ask the panel (via MainWindow) to flip the matching
+        # checkbox so the ViewBox flag + checkbox state never drift.
+        self._make_shortcut(
+            QKeySequence(Qt.Key_A),
+            lambda: self.mode_toggle_requested.emit("annotation"),
+        )
+        self._make_shortcut(
+            QKeySequence(Qt.Key_E),
+            lambda: self.mode_toggle_requested.emit("exclusion"),
+        )
 
         # ----- Crosshair ----------------------------------------------------
         # Vertical InfiniteLine that tracks the cursor X position. Hidden
@@ -306,6 +378,9 @@ class RRPlotWidget(pg.PlotWidget):
         self._selected_exclusion_idx: int | None = None
         self.getViewBox().exclusion_drag_finished.connect(
             self._on_exclusion_drag_finished
+        )
+        self.getViewBox().annotation_drag_finished.connect(
+            self._on_annotation_drag_finished
         )
         # Delete-key shortcut removes the currently-selected zone.
         self._make_shortcut(
@@ -769,6 +844,17 @@ class RRPlotWidget(pg.PlotWidget):
         )
         self.add_exclusion_zone(zone)
 
+    def _on_annotation_drag_finished(self, t0: float, t1: float) -> None:
+        """Re-emit a meaningful annotation drag as ``plot_range_selected``.
+
+        Microscopic drags (jitter from a near-click) are dropped so the
+        scene-level click handler can still fire ``plot_clicked`` for the
+        original point-annotation flow.
+        """
+        if abs(t1 - t0) < MIN_ANNOTATION_DRAG_WIDTH_S:
+            return
+        self.plot_range_selected.emit(float(t0), float(t1))
+
     def _on_region_edited(self, zone: ExclusionZone, region: ExclusionRegion) -> None:
         """Sync model.start_t/end_t after a drag-edit of an existing region."""
         lo, hi = region.getRegion()
@@ -812,8 +898,17 @@ class RRPlotWidget(pg.PlotWidget):
     # Free-text annotations
     # ------------------------------------------------------------------
     def set_annotation_mode(self, enabled: bool) -> None:
-        """Toggle whether left-clicks on the plot emit ``plot_clicked``."""
+        """Toggle whether left-clicks / drags on the plot fire annotation signals.
+
+        A click still emits ``plot_clicked(t)`` (existing point-annotation
+        flow); a drag wider than ``MIN_ANNOTATION_DRAG_WIDTH_S`` emits
+        ``plot_range_selected(t0, t1)`` instead so the panel can pin the
+        annotation at the midpoint of the dragged range.
+        """
         self._annotation_mode = bool(enabled)
+        vb = self.getViewBox()
+        if hasattr(vb, "set_annotation_mode"):
+            vb.set_annotation_mode(enabled)
 
     def is_annotation_mode(self) -> bool:
         return self._annotation_mode
@@ -1032,3 +1127,40 @@ class RRPlotWidget(pg.PlotWidget):
         t = self._times[finite]
         start = max(t[-1] - JUMP_WINDOW_S, t[0])
         self.getViewBox().setXRange(start, t[-1], padding=0)
+
+    def reset_view(self) -> None:
+        """Zoom out to the full data range on X (Y is left to autorange).
+
+        Bound to the ``R`` and ``3`` shortcuts. No-op when no data is
+        loaded — the status-bar message keeps the user informed instead
+        of silently doing nothing.
+        """
+        if self._times is None or len(self._times) == 0:
+            self.status_message_requested.emit("Reset view: no file loaded", 2000)
+            return
+        finite = np.isfinite(self._times)
+        t = self._times[finite]
+        if len(t) == 0:
+            return
+        self.getViewBox().setXRange(float(t[0]), float(t[-1]), padding=0.02)
+        self.enableAutoRange(axis="y")
+        self.status_message_requested.emit("View reset to full recording", 1500)
+
+    def zoom_last_seconds(self, seconds: float) -> None:
+        """Show the last ``seconds`` of the recording as the viewport.
+
+        Bound to the ``1`` / ``2`` shortcuts (60 s and 600 s). Anchored
+        to the end of the recording — matches the MNE convention where
+        the most recent data is what the user typically wants to review.
+        """
+        if self._times is None or len(self._times) == 0:
+            self.status_message_requested.emit("Zoom preset: no file loaded", 2000)
+            return
+        finite = np.isfinite(self._times)
+        t = self._times[finite]
+        if len(t) == 0:
+            return
+        end = float(t[-1])
+        start = max(float(t[0]), end - float(seconds))
+        self.getViewBox().setXRange(start, end, padding=0)
+        self.status_message_requested.emit(f"Zoomed to last {int(seconds)} s", 1500)
