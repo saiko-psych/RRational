@@ -2,7 +2,28 @@
 
 All notable changes to RRational are documented here.
 
-## [Unreleased] — feature/pyqt-inspector branch
+## [Unreleased] — main (post Phase 28 polish, Sprints 1-6)
+
+### Fixed — Streamlit app
+- Participant tab "Could not generate RR plot: name 'components' is not defined" — `_setup_inspection_shortcuts` now uses `st.components.v1.html(...)` instead of a missing local `components` alias. The whole RR-plot block (mode radio, resolution slider, fragment) was being swallowed by the surrounding `except` (commit ac1dea9).
+- Single-Participant Analysis with v1.0 ready-file + overlapping-windows showed "Aggregated results from N valid windows" then nothing. `_render_single_participant_analysis` now calls `_display_single_participant_results` before its early `return` so metrics + plots render in the same script run as the click (commit 255a259).
+- `st.toast(..., icon="info")` raised `StreamlitAPIException` on Streamlit 1.51 during legacy `~/.music_hrv` migration. Switched to `icon=":material/info:"` (commit df9080b).
+
+### Added — Streamlit tests (the gap that let those bugs slip)
+- New `tests/streamlit/test_app_smoke.py` — 11 AppTest-driven smoke tests (~60 s wall clock). Covers: imports + first render, welcome screen, no NameError / unresolved HTML tags in markdown, each of Data/Participants/Setup/Analysis renders, sidebar nav contract, Analyze HRV click renders results table + metrics (direct regression test for the display bug). Catches both classes of bug that previously only showed up via manual click-testing.
+
+### Added — Inspector features (Sprints 1-6)
+- Sprint 1 (bugs + small visuals): repeating analysis table respects `selected_metrics` (B1); `_ROLE_DATASET_IDX` dead re-export dropped (B2); layout-menu lambdas call `set_ui_layout` unconditionally so `act.trigger()` works in tests (B3); dock widths capped so the central plot keeps its space + snapshot harness uses a real `QEventLoop` to settle layout (B4); `{project}/config/X.yml` placeholders resolve to live paths via new `format_config_path()` helper (V2); status-bar tab hints reference the actual button labels in the UI (V5).
+- Sprint 2 (features + UX): DataTab restructured as a 4-step workflow with stepper + state-aware primary action + humanized regex (V1); empty-state hints across AnalysisTab / ResultsTab tables (V3); MNE-LAB is now the default UI layout (V7); auto-load last project on startup (F10); "Try with sample data" button on the WelcomeWidget + matching File menu entry (F11); repetitive events generator on ParticipantTab (F1); four plot tabs (Tachogram / Poincaré / Frequency PSD / HR distribution) wired into the Single-Participant pane (F6); `generate_group_analysis_html()` + matching button on the Group Comparison pane (F8).
+- Sprint 3 (code hygiene): dead `workflow_sidebar.py` (344 LOC) removed (C3); ~97 `# Phase N:` development-log comments + module-docstring changelogs stripped while preserving WHY context (C1); redundant `addStretch()` removed from preprocessing panel (C5).
+- Sprint 4 (cosmetic): SetupTab sub-pane tables claim vertical space so "Export codebook" pins to the bottom (V8); collapsed "Metrics to compute" group shows the selected-metrics summary instead of an empty bordered box (V9); ParticipantsTab columns stretch evenly with the numeric "# manual events" column sizing to its content (V10); permanent "No project active" status-bar message dropped in favour of the inline `format_config_path` hints (V11); snapshot harness gained Welcome-state pass + explicit DataTab pass + compute-then-snap-plot-tabs pass (V12).
+- Sprint 5 (frontend-design): new central `style/theme.py` module with `apply_app_theme(app, mode)`. Refined Laboratory aesthetic — graphite surface stack, warm amber primary accent, 4 px spacing rhythm, smart font fallback (IBM Plex Sans / Segoe UI Variable / SF Pro Text — no bundled fonts). Both dark and light palettes share the same selectors so runtime mode switching is a single `setStyleSheet` call. Nine primary-action buttons tagged via `setProperty("primary", True)` so they pick up the amber fill. Six `QLabel`s with embedded `<i>`/`<code>`/`<b>` now have `setTextFormat(RichText)` — the literal `</i>` leak in the preprocessing-panel summary is gone.
+- Sprint 6 (post-review fixes): DataTab primary-action navigation used wrong attribute name (`_tabs` instead of `_tabs_widget`), crashed on `.count()` — fixed (C1). `generate_group_analysis_html` now `mkdir(parents=True, exist_ok=True)` on its output path (C3). ResultsTab `_MetricsPane` propagates the B1 fix — table columns and CSV export follow the union of metric keys across rows instead of hardcoded `_DEFAULT_METRICS` (I1). Surviving `# Phase-2 entry point` comment rephrased (I2).
+
+### Verified — End-to-end workflow against Kubios HRV Premium 3.5.0
+- The full pipeline (Format-Detect → Load → Range-Clean → NK2 Lipponen 2019 artifact detect → correct → HRV in either NK2-default or Kubios-compatible mode) runs cleanly on the demo HRV Logger data (8971 RR intervals, 2.13 % artifact rate). Companion `_Events.csv` files auto-load. Kubios-mode produces absolute ms² (LF/HF >> 1) while NK2-default yields normalised n.u. (<<1). Validation memo (`project_kubios_validation.md`): MeanNN ±0.35 %, RMSSD ±0.83 %, HF ±2.7 %, LF ±5.4 %, LF/HF ±5.8 %. SDNN diverges 30-60 % by design (Task Force 1996 raw NN vs. Kubios detrended signal). All 3 `test_kubios_*` tests in `tests/analysis/test_hrv_compute.py` pass.
+
+## [Unreleased] — feature/pyqt-inspector branch (Phases 1-20 baseline, now merged to main)
 
 ### Added — PyQt Inspector (Phases 1–20)
 
