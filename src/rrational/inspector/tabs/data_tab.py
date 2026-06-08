@@ -1201,7 +1201,9 @@ class DataTab(InspectorTab):
             return
         proj = getattr(mw, "_project", None)
         if proj is None:
-            bar.showMessage("No project active (global config).", 0)
+            # The DataTab's project block already shows "No project
+            # active" inline at the right context; do not echo it into
+            # the status bar where it would persist across every tab.
             return
         name = (
             proj.metadata.name if proj.metadata is not None else proj.project_path.name

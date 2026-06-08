@@ -1199,7 +1199,13 @@ class MainWindow(QMainWindow):
         if badge is None:
             return
         if self._project is None:
-            badge.setText("No project active — using global config")
+            # The "no project active" hint is already surfaced inline at
+            # the right context (DataTab project block + the
+            # ``format_config_path`` "(no project open)" suffix on every
+            # config-path label). Keeping it in the permanent status-bar
+            # badge produced redundant noise on every tab — clear the
+            # badge instead and let the inline hints carry the message.
+            badge.setText("")
             badge.setStyleSheet(
                 "QLabel#projectBadge { "
                 "color: #777; font-style: italic; padding: 0 8px; "

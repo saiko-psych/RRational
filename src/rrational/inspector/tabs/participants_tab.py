@@ -199,10 +199,19 @@ class ParticipantsTab(InspectorTab):
         self._table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._table.setAlternatingRowColors(True)
         self._table.verticalHeader().setVisible(False)
-        self._table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeToContents
-        )
-        self._table.horizontalHeader().setStretchLastSection(True)
+        header = self._table.horizontalHeader()
+        # Text columns (ID, Label, Group, Sequence) share the available
+        # width via Stretch; the numeric "# manual events" column shrinks
+        # to fit its content. Without this the previous combo of
+        # ResizeToContents + setStretchLastSection(True) made the numeric
+        # column eat ~60% of the tab width while the text columns
+        # bunched up on the left.
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)  # ID
+        header.setSectionResizeMode(1, QHeaderView.Stretch)  # Label
+        header.setSectionResizeMode(2, QHeaderView.Stretch)  # Group
+        header.setSectionResizeMode(3, QHeaderView.Stretch)  # Sequence
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # # manual events
         self._table.setSortingEnabled(True)
         self._table.itemSelectionChanged.connect(self._refresh_buttons)
         outer.addWidget(self._table)
