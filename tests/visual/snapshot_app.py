@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from qtpy.QtCore import QEventLoop, QTimer
+from qtpy.QtCore import QEventLoop, Qt, QTimer
 from qtpy.QtWidgets import QApplication
 
 # Import early so the inspector lazy-imports inside MainWindow find them
@@ -29,6 +29,8 @@ from rrational.inspector.main_window import MainWindow  # noqa: E402
 
 _OUT_DIR = Path(__file__).parent / "snapshots"
 _OUT_DIR.mkdir(exist_ok=True)
+
+_MAX_WIDTH = 1600
 
 
 def _let_layout_settle(app: QApplication, ms: int = 200) -> None:
@@ -47,6 +49,15 @@ def _let_layout_settle(app: QApplication, ms: int = 200) -> None:
     QTimer.singleShot(ms, loop.quit)
     loop.exec()
     app.processEvents()
+
+
+def _save_grab(win: MainWindow, path: Path) -> None:
+    """Grab the window, downscale to <=1600px wide, save PNG."""
+    pix = win.grab()
+    if pix.width() > _MAX_WIDTH:
+        pix = pix.scaledToWidth(_MAX_WIDTH, mode=Qt.SmoothTransformation)
+    pix.save(str(path), "PNG")
+    print(f"wrote {path}")
 
 
 def _make_synthetic_dataset(name: str) -> Dataset:
@@ -86,6 +97,15 @@ def _make_synthetic_dataset(name: str) -> Dataset:
 
 
 def snapshot_all_tabs() -> list[Path]:
+    # Wipe stale PNGs so removed snapshots don't linger and confuse
+    # eyeball-verification. Cheap because the dir only has a few dozen
+    # files at most.
+    for old in _OUT_DIR.glob("*.png"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
     app = QApplication.instance() or QApplication(sys.argv)
 
     win = MainWindow()
@@ -96,13 +116,23 @@ def snapshot_all_tabs() -> list[Path]:
     win.show()
     app.processEvents()
 
+    written: list[Path] = []
+
+    # Pass A — Welcome state: MainWindow shows BrowseTab with the
+    # WelcomeWidget (incl. "Try with sample data" button) when no
+    # datasets are loaded. Captured BEFORE add_dataset(), otherwise the
+    # welcome panel is hidden and replaced by the plot.
+    _let_layout_settle(app, 200)
+    welcome_path = _OUT_DIR / "welcome_00_no_dataset.png"
+    _save_grab(win, welcome_path)
+    written.append(welcome_path)
+
     # Load a synthetic dataset so the participant view has content.
     win.add_dataset(_make_synthetic_dataset("0012MEBE.csv"))
     win.set_active_dataset(0)
     app.processEvents()
     _let_layout_settle(app)
 
-    written: list[Path] = []
     tabs = win._tabs_widget
     for i in range(tabs.count()):
         if not tabs.isTabVisible(i):
@@ -114,15 +144,48 @@ def snapshot_all_tabs() -> list[Path]:
         _let_layout_settle(app)
         widget_name = type(tabs.widget(i)).__name__
         path = _OUT_DIR / f"tab_{i:02d}_{widget_name}.png"
-        pix = win.grab()
-        # Force max-1600-wide so the Read tool can display the result.
-        if pix.width() > 1600:
-            from qtpy.QtCore import Qt as _Qt
-
-            pix = pix.scaledToWidth(1600, mode=_Qt.SmoothTransformation)
-        pix.save(str(path), "PNG")
+        _save_grab(win, path)
         written.append(path)
-        print(f"wrote {path}")
+
+    # Pass C — Single-pane Compute (F6): trigger a real compute on the
+    # AnalysisTab's single-participant pane and snap each plot tab so
+    # the populated Tachogram / Poincare / PSD / HR-distribution views
+    # are visually verifiable. Wrapped in try/except because synthetic
+    # data shape changes or settings-bar drift would otherwise crash
+    # the whole harness.
+    ana_tab = getattr(win, "_analysis_tab", None)
+    single_pane = (
+        getattr(ana_tab, "_single_pane", None) if ana_tab is not None else None
+    )
+    if single_pane is not None:
+        try:
+            # Make sure the AnalysisTab is the current tab so the grab
+            # captures the populated plot panel.
+            ana_idx = tabs.indexOf(ana_tab)
+            if ana_idx >= 0 and tabs.isTabVisible(ana_idx):
+                tabs.setCurrentIndex(ana_idx)
+                _let_layout_settle(app, 200)
+            ds_combo = getattr(single_pane, "_dataset_combo", None)
+            sec_combo = getattr(single_pane, "_section_combo", None)
+            if ds_combo is not None and ds_combo.count() > 0:
+                ds_combo.setCurrentIndex(0)
+            if sec_combo is not None and sec_combo.count() > 0:
+                sec_combo.setCurrentIndex(0)
+            app.processEvents()
+            single_pane._on_compute()
+            _let_layout_settle(app, 500)
+
+            plot_tabs = getattr(single_pane, "_plot_tabs", None)
+            if plot_tabs is not None:
+                for i in range(plot_tabs.count()):
+                    plot_tabs.setCurrentIndex(i)
+                    _let_layout_settle(app, 200)
+                    name = plot_tabs.tabText(i).replace(" ", "_")
+                    path = _OUT_DIR / f"analysis_compute_plot_{name}.png"
+                    _save_grab(win, path)
+                    written.append(path)
+        except Exception as exc:  # noqa: BLE001 — harness must not crash
+            print(f"skipped F6 plot capture: {exc!r}")
 
     # MNE-LAB mode for comparison
     win.set_ui_layout("mnelab")
@@ -137,14 +200,47 @@ def snapshot_all_tabs() -> list[Path]:
         _let_layout_settle(app)
         widget_name = type(tabs.widget(i)).__name__
         path = _OUT_DIR / f"mnelab_{i:02d}_{widget_name}.png"
-        pix = win.grab()
-        if pix.width() > 1600:
-            from qtpy.QtCore import Qt as _Qt
-
-            pix = pix.scaledToWidth(1600, mode=_Qt.SmoothTransformation)
-        pix.save(str(path), "PNG")
+        _save_grab(win, path)
         written.append(path)
-        print(f"wrote {path}")
+
+    # Pass B — Streamlit-mode DataTab: in Streamlit layout DataTab is
+    # the default first tab, but it can be skipped by the visible-tab
+    # iteration above (e.g. if hidden by future layout tweaks). Capture
+    # it explicitly so V1 is always represented in the snapshot set.
+    win.set_ui_layout("streamlit")
+    app.processEvents()
+    _let_layout_settle(app, 300)
+    for i in range(tabs.count()):
+        if not tabs.isTabVisible(i):
+            continue
+        tabs.setCurrentIndex(i)
+        app.processEvents()
+        _let_layout_settle(app)
+        widget_name = type(tabs.widget(i)).__name__
+        path = _OUT_DIR / f"streamlit_{i:02d}_{widget_name}.png"
+        _save_grab(win, path)
+        written.append(path)
+
+    data_tab = getattr(win, "_data_tab", None)
+    if data_tab is not None:
+        try:
+            data_idx = tabs.indexOf(data_tab)
+            if data_idx >= 0:
+                # Force-visible just for this snapshot if the layout
+                # decided to hide DataTab — otherwise setCurrentIndex
+                # silently no-ops on an invisible tab.
+                was_visible = tabs.isTabVisible(data_idx)
+                if not was_visible:
+                    tabs.setTabVisible(data_idx, True)
+                tabs.setCurrentIndex(data_idx)
+                _let_layout_settle(app, 300)
+                path = _OUT_DIR / "streamlit_data_tab_explicit.png"
+                _save_grab(win, path)
+                written.append(path)
+                if not was_visible:
+                    tabs.setTabVisible(data_idx, False)
+        except Exception as exc:  # noqa: BLE001
+            print(f"skipped explicit DataTab capture: {exc!r}")
 
     win.close()
     return written
