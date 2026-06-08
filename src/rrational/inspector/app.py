@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import pyqtgraph as pg
+from qtpy.QtCore import QSettings
 from qtpy.QtWidgets import QApplication
 
 from rrational.inspector.assets import app_icon
@@ -22,6 +23,24 @@ from rrational.inspector.main_window import MainWindow
 # antialias=False is intentional: on long signals (10k+ points) antialiasing
 # halves the frame rate. Turn it on for screenshot exports only.
 pg.setConfigOptions(background="w", foreground="k", antialias=False)
+
+# QSettings key for the app-wide QSS theme mode ("dark" or "light"). Lives
+# outside ``settings._DEFAULTS`` because it must be read BEFORE MainWindow
+# instantiates anything that touches that module.
+_THEME_MODE_KEY = "inspector/theme_mode"
+
+
+def _resolve_theme_mode() -> str:
+    """Return "dark" or "light" — defaults to "dark" on first launch.
+
+    Reads directly from ``QSettings`` so the value is available before
+    the inspector's settings module is imported. Unknown values fall
+    back to "dark" rather than raising — a corrupted QSettings entry
+    shouldn't stop the app from starting.
+    """
+    raw = QSettings().value(_THEME_MODE_KEY, "dark")
+    mode = str(raw).strip().lower() if raw is not None else "dark"
+    return mode if mode in ("dark", "light") else "dark"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -79,6 +98,13 @@ def run(argv: list[str] | None = None) -> int:
     # so the per-window title-bar gets it too (Wayland honours the
     # per-window one, not the app-level one).
     app.setWindowIcon(app_icon())
+
+    # Apply the Refined Laboratory QSS theme BEFORE constructing
+    # MainWindow so the user never sees a flash of unstyled default Qt.
+    # Mode is read from QSettings; defaults to dark on first launch.
+    from rrational.inspector.style import apply_app_theme
+
+    apply_app_theme(app, mode=_resolve_theme_mode())
 
     window = MainWindow(initial_path=initial_path)
     window.show()
