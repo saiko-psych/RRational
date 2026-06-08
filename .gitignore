@@ -79,3 +79,18 @@ docs/development/inspector-research.md
 docs/reference/HRV_project_spec.md
 docs/reference/PLAN_rrational_v2.md
 docs/reference/hrv_tools_summary.md
+
+# Dev-time screenshot scratch at the repo root only. The published
+# docs/assets/screenshots/ tree is explicitly tracked and must remain
+# matchable — pinning the leading slash keeps the pattern from
+# eating it.
+/screenshots/
+
+# Local-only superpowers plan notes (skill-generated planning material).
+docs/superpowers/
+
+# Per-session inspector snapshot harness output.
+tests/visual/snapshots/
+
+# Local-only validation script (E2E + Kubios smoke, manually run).
+tests/workflow_verification.py

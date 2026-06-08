@@ -1,0 +1,90 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs when a new commit lands on the same branch/PR
+# so we don't queue up redundant work.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast tier: pure-Python tests + Streamlit AppTest smoke. Runs on every
+  # push + PR. Should finish in ~3-5 minutes.
+  fast:
+    name: Fast (analysis + io + streamlit smoke)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run fast suites
+        run: |
+          uv run pytest \
+            tests/analysis \
+            tests/cleaning \
+            tests/io \
+            tests/prep \
+            tests/segments \
+            tests/gui \
+            tests/streamlit \
+            tests/test_cli.py \
+            -v --tb=short
+
+  # Slow tier: full PyQt Inspector suite. Runs on PR + main pushes but is
+  # gated so a failing fast tier doesn't waste 20 minutes here.
+  inspector:
+    name: Inspector (PyQt, offscreen)
+    runs-on: ubuntu-22.04
+    needs: fast
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install Qt runtime deps for offscreen QPA
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon0 \
+            libegl1 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libfontconfig1 \
+            libgl1 \
+            libdbus-1-3
+
+      - name: Install dependencies (including PyQt extras)
+        run: uv sync --all-extras --dev
+
+      - name: Run inspector suite (offscreen QPA)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          uv run pytest tests/inspector -v --tb=short
