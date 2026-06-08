@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -103,12 +104,12 @@ class _EventDefinitionDialog(QDialog):
         form.addRow("Canonical name *:", self._name_edit)
         outer.addLayout(form)
 
-        outer.addWidget(
-            QLabel(
-                "Synonyms / regex (one per line). Streamlit format: literal "
-                "string OR <code>/pattern/flags</code>."
-            )
+        help_label = QLabel(
+            "Synonyms / regex (one per line). Streamlit format: literal "
+            "string OR <code>/pattern/flags</code>."
         )
+        help_label.setTextFormat(Qt.RichText)
+        outer.addWidget(help_label)
         from qtpy.QtWidgets import QPlainTextEdit
 
         self._syn_edit = QPlainTextEdit()
@@ -117,10 +118,94 @@ class _EventDefinitionDialog(QDialog):
         self._syn_edit.setPlaceholderText("Rest_Pre\nPre_Rest\n/^ruhe.vor/i")
         outer.addWidget(self._syn_edit)
 
+        # Live regex-validation status — flips red on any malformed
+        # /pattern/flags line so the user sees the problem before
+        # hitting OK. Literal strings (no leading slash) are always OK.
+        self._regex_status = QLabel("")
+        self._regex_status.setTextFormat(Qt.RichText)
+        self._regex_status.setWordWrap(True)
+        outer.addWidget(self._regex_status)
+        self._syn_edit.textChanged.connect(self._validate_synonyms)
+
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self._ok_btn = bb.button(QDialogButtonBox.Ok)
         bb.accepted.connect(self._on_accept)
         bb.rejected.connect(self.reject)
         outer.addWidget(bb)
+
+        # Run once so an empty / pre-filled textarea shows the right state.
+        self._validate_synonyms()
+
+    @staticmethod
+    def _parse_regex_line(line: str) -> tuple[str, str] | None:
+        """Return ``(pattern, flags)`` for a ``/pattern/flags`` line, else None.
+
+        A literal synonym (no enclosing slashes) is not a regex and
+        returns ``None``. Lines like ``/foo/`` or ``/foo/i`` are.
+        """
+        if not line.startswith("/"):
+            return None
+        end = line.rfind("/")
+        if end <= 0:  # only one slash, malformed-but-treat-as-literal
+            return None
+        return line[1:end], line[end + 1 :]
+
+    def _validate_synonyms(self) -> None:
+        """Compile every /pattern/flags line and surface the first error.
+
+        Disables OK while any regex line is broken so the user can't
+        save a definition the loader will silently skip.
+        """
+        import re
+
+        lines = self._syn_edit.toPlainText().splitlines()
+        errors: list[tuple[int, str, str]] = []  # (line_no, raw, error)
+        n_regex = 0
+        n_literal = 0
+        for i, raw in enumerate(lines, start=1):
+            line = raw.strip()
+            if not line:
+                continue
+            parsed = self._parse_regex_line(line)
+            if parsed is None:
+                n_literal += 1
+                continue
+            pattern, flags_str = parsed
+            qt_flags = 0
+            for ch in flags_str:
+                if ch == "i":
+                    qt_flags |= re.IGNORECASE
+                elif ch == "m":
+                    qt_flags |= re.MULTILINE
+                elif ch == "s":
+                    qt_flags |= re.DOTALL
+                # Other flags (x, a, u) ignored — Streamlit only honours i/m/s.
+            try:
+                re.compile(pattern, qt_flags)
+                n_regex += 1
+            except re.error as exc:
+                errors.append((i, line, str(exc)))
+
+        if errors:
+            line_no, raw, err = errors[0]
+            self._regex_status.setText(
+                f"<span style='color:#d97862;'>Line {line_no}: "
+                f"invalid regex <code>{raw}</code> &mdash; {err}</span>"
+            )
+            self._ok_btn.setEnabled(False)
+        elif n_regex + n_literal == 0:
+            self._regex_status.setText(
+                "<span style='color:#a8adb5;'>No synonyms yet "
+                "(the canonical name will be the only match).</span>"
+            )
+            self._ok_btn.setEnabled(True)
+        else:
+            self._regex_status.setText(
+                f"<span style='color:#5ab896;'>OK &mdash; "
+                f"{n_regex} regex, {n_literal} literal "
+                f"{'string' if n_literal == 1 else 'strings'}.</span>"
+            )
+            self._ok_btn.setEnabled(True)
 
     def _on_accept(self) -> None:
         name = self._name_edit.text().strip()
