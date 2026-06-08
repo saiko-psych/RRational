@@ -162,7 +162,9 @@ st.set_page_config(
 # This runs once per session and migrates if legacy has more data than current
 if "legacy_migration_done" not in st.session_state:
     if migrate_legacy_config():
-        st.toast("Migrated settings from previous version", icon="info")
+        # Streamlit 1.51+ rejects the string "info" — emoji shortcodes
+        # or :material/info: are the supported icon forms now.
+        st.toast("Migrated settings from previous version", icon=":material/info:")
         # Clear session state keys so migrated data will be loaded fresh
         for key in [
             "groups",
