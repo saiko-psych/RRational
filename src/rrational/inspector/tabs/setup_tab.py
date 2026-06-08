@@ -208,12 +208,12 @@ class _EventsPane(QWidget):
         )
         self._defs_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._defs_table.itemSelectionChanged.connect(self._refresh_buttons)
-        outer.addWidget(self._defs_table)
+        outer.addWidget(self._defs_table, 1)
 
         outer.addSpacing(8)
         outer.addWidget(QLabel("<b>Found in active dataset</b> (read-only)"))
         self._table = _ReadOnlyTable(["Label", "Time", "Epoch (s)"])
-        outer.addWidget(self._table)
+        outer.addWidget(self._table, 1)
 
         self._refresh_defs_table()
         self._refresh_buttons()
@@ -517,12 +517,12 @@ class _SectionsPane(QWidget):
         )
         self._defs_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._defs_table.itemSelectionChanged.connect(self._refresh_buttons)
-        outer.addWidget(self._defs_table)
+        outer.addWidget(self._defs_table, 1)
 
         outer.addSpacing(8)
         outer.addWidget(QLabel("<b>Found in active dataset</b> (read-only)"))
         self._table = _ReadOnlyTable(["Name", "Start", "End", "Duration", "Beats"])
-        outer.addWidget(self._table)
+        outer.addWidget(self._table, 1)
 
         self._refresh_defs_table()
         self._refresh_buttons()
@@ -825,7 +825,7 @@ class _GroupsPane(QWidget):
         self._table = _ReadOnlyTable(["Name", "Label", "Members", "Description"])
         self._table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._table.itemSelectionChanged.connect(self._refresh_buttons)
-        layout.addWidget(self._table)
+        layout.addWidget(self._table, 1)
 
         self._refresh_table()
         self._refresh_buttons()
@@ -1168,7 +1168,7 @@ class _SequencesPane(QWidget):
         )
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.itemSelectionChanged.connect(self._refresh_buttons)
-        outer.addWidget(self._table)
+        outer.addWidget(self._table, 1)
 
         self._refresh_table()
         self._refresh_buttons()
@@ -1552,7 +1552,7 @@ class SetupTab(InspectorTab):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._subtabs)
+        layout.addWidget(self._subtabs, 1)
 
         # Codebook export action.
         action_row = QHBoxLayout()
