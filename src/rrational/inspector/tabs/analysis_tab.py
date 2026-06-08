@@ -339,11 +339,25 @@ class _AnalysisSettingsBar(QWidget):
         settings_layout.addLayout(top_row)
 
         # ---- Per-metric checkbox grid (collapsible) ------------------
+        # The group box is checkable so the (large) checkbox grid can
+        # collapse when not in use. When collapsed, a single-line
+        # "Selected: …" summary label takes the grid's place so the
+        # group never reads as an empty bordered box.
         metrics_box = QGroupBox("Metrics to compute", self)
         metrics_box.setCheckable(True)
         metrics_box.setChecked(False)  # start collapsed
-        metrics_layout = QGridLayout(metrics_box)
-        metrics_layout.setContentsMargins(8, 6, 8, 6)
+        metrics_outer = QVBoxLayout(metrics_box)
+        metrics_outer.setContentsMargins(8, 6, 8, 6)
+        metrics_outer.setSpacing(4)
+
+        self._selected_metrics_summary = QLabel("", metrics_box)
+        self._selected_metrics_summary.setWordWrap(True)
+        self._selected_metrics_summary.setStyleSheet("QLabel { color: #555; }")
+        metrics_outer.addWidget(self._selected_metrics_summary)
+
+        self._metrics_grid_widget = QWidget(metrics_box)
+        metrics_layout = QGridLayout(self._metrics_grid_widget)
+        metrics_layout.setContentsMargins(0, 0, 0, 0)
         self._metric_checkboxes: dict[str, QCheckBox] = {}
         cols = 5
         for i, metric in enumerate(_ALL_METRICS_ORDERED):
@@ -351,8 +365,11 @@ class _AnalysisSettingsBar(QWidget):
             cb.toggled.connect(lambda _checked, m=metric: self._on_metric_toggled(m))
             self._metric_checkboxes[metric] = cb
             metrics_layout.addWidget(cb, i // cols, i % cols)
+        metrics_outer.addWidget(self._metrics_grid_widget)
+
         # Toggle visibility based on group-box checkable state so the
-        # grid actually collapses when unchecked.
+        # grid actually collapses when unchecked — and so the summary
+        # label takes the grid's slot when collapsed.
         metrics_box.toggled.connect(self._toggle_metrics_grid_visible)
         self._metrics_box = metrics_box
         settings_layout.addWidget(metrics_box)
@@ -404,9 +421,26 @@ class _AnalysisSettingsBar(QWidget):
     # UI handlers
     # ------------------------------------------------------------------
     def _toggle_metrics_grid_visible(self, checked: bool) -> None:
-        """Show/hide the per-metric checkbox grid when the group is toggled."""
-        for cb in self._metric_checkboxes.values():
-            cb.setVisible(checked)
+        """Show the checkbox grid when expanded, the summary label when collapsed.
+
+        Without the summary, the collapsed group renders as an empty
+        bordered box (~50 px tall) that reads like a UI bug.
+        """
+        self._metrics_grid_widget.setVisible(checked)
+        self._selected_metrics_summary.setVisible(not checked)
+        if not checked:
+            self._refresh_selected_metrics_summary()
+
+    def _refresh_selected_metrics_summary(self) -> None:
+        """Populate the collapsed-state summary with the current selection."""
+        if not hasattr(self, "_selected_metrics_summary"):
+            return
+        selected = self.selected_metrics()
+        if not selected:
+            text = "No metrics selected — defaults will be used."
+        else:
+            text = "Selected: " + ", ".join(selected)
+        self._selected_metrics_summary.setText(text)
 
     def _on_preset_changed(self, _idx: int) -> None:
         if self._building:
@@ -485,6 +519,9 @@ class _AnalysisSettingsBar(QWidget):
         s.setValue(_SETTING_OVERLAP_SIZE, int(self._overlap_size_spin.value()))
         s.setValue(_SETTING_OVERLAP_STEP, int(self._overlap_step_spin.value()))
         s.sync()
+        # Keep the collapsed-state summary in sync with the current
+        # selection (cheap; no-op when the label isn't visible).
+        self._refresh_selected_metrics_summary()
 
     def _restore(self) -> None:
         s = self._qs()
@@ -529,6 +566,8 @@ class _AnalysisSettingsBar(QWidget):
             self._overlap_step_spin.setValue(75)
         # Sync the suffix with the restored mode.
         self._on_overlap_mode_changed(self._overlap_mode_combo.currentIndex())
+        # Initial summary text reflects whatever just got restored.
+        self._refresh_selected_metrics_summary()
 
     # ------------------------------------------------------------------
     # Read-only accessors used by the compute panes
