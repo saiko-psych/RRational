@@ -226,6 +226,28 @@ def apply_custom_css():
         background-color: var(--bg-tertiary) !important;
     }
 
+    /* Link buttons (st.link_button) — Streamlit emits these with a
+       white-ish default background that becomes unreadable in dark
+       mode. Mirror the secondary-button styling so they blend in. */
+    .stLinkButton > a,
+    .stLinkButton a[data-testid="baseLinkButton-secondary"],
+    .stLinkButton a[kind="secondary"] {
+        background-color: var(--bg-secondary) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 6px !important;
+        font-weight: 500 !important;
+        text-decoration: none !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .stLinkButton > a:hover,
+    .stLinkButton a[data-testid="baseLinkButton-secondary"]:hover {
+        background-color: var(--bg-tertiary) !important;
+        color: var(--text-primary) !important;
+        text-decoration: none !important;
+    }
+
     /* ============================================
        INPUTS & FORMS
        ============================================ */
@@ -1112,6 +1134,20 @@ def apply_custom_css():
     /* Sidebar buttons */
     [data-testid="stSidebar"] .stButton > button {
         background-color: var(--accent-primary) !important;
+    }
+
+    /* Sidebar link buttons - same fix as the global rule above so
+       Documentation / Report a bug stay legible in dark mode. */
+    [data-testid="stSidebar"] .stLinkButton > a,
+    [data-testid="stSidebar"] .stLinkButton a[data-testid="baseLinkButton-secondary"] {
+        background-color: var(--bg-secondary) !important;
+        color: var(--sidebar-text) !important;
+        border: 1px solid var(--border-color) !important;
+    }
+
+    [data-testid="stSidebar"] .stLinkButton > a:hover {
+        background-color: var(--bg-tertiary) !important;
+        color: var(--sidebar-text) !important;
     }
 
     /* Sidebar checkboxes */

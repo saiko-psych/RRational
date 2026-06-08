@@ -204,6 +204,14 @@ if "restore_participant" in st.query_params:
 if "app_settings" not in st.session_state:
     st.session_state.app_settings = load_settings()
 
+# Sync dark/light theme from the URL query param (the JS toggle writes
+# it via history.replaceState alongside localStorage). Without this
+# bridge get_current_theme_colors() always reads "light" and the
+# Plotly plots render with white backgrounds in dark mode.
+_url_theme = st.query_params.get("theme")
+if _url_theme in ("dark", "light"):
+    st.session_state.app_settings["theme"] = _url_theme
+
 if "data_dir" not in st.session_state:
     if TEST_MODE:
         # In test mode, auto-load demo data for faster testing
@@ -1893,6 +1901,22 @@ def render_settings_panel():
                     htmlEl.classList.remove('dark-theme');
                 }
 
+                // First-load bridge: if dark mode is saved but the URL has
+                // no theme param yet, set it so the next Streamlit rerun
+                // bakes the right Plotly bg colour in. Without this the
+                // user lands in dark mode with WHITE plot canvases until
+                // they toggle.
+                try {
+                    var p0 = new URLSearchParams(window.parent.location.search);
+                    if (savedTheme && !p0.get('theme')) {
+                        p0.set('theme', savedTheme);
+                        window.parent.history.replaceState(
+                            null, '',
+                            window.parent.location.pathname + '?' + p0.toString()
+                        );
+                    }
+                } catch(e) {}
+
                 // Update button active states
                 function updateButtons() {
                     var isDark = htmlEl.classList.contains('dark-theme');
@@ -1904,10 +1928,25 @@ def render_settings_panel():
                     }
                 }
 
+                // Persist the theme choice as a URL query param so the
+                // Python side picks it up on the next rerun and the
+                // Plotly plots get the right bg colour from the start.
+                function _setThemeQueryParam(theme) {
+                    try {
+                        var p = new URLSearchParams(window.parent.location.search);
+                        p.set('theme', theme);
+                        window.parent.history.replaceState(
+                            null, '',
+                            window.parent.location.pathname + '?' + p.toString()
+                        );
+                    } catch(e) {}
+                }
+
                 // Switch to light theme
                 window.switchToLightTheme = function() {
                     htmlEl.classList.remove('dark-theme');
                     window.parent.localStorage.setItem('music-hrv-theme', 'light');
+                    _setThemeQueryParam('light');
                     // Also set Streamlit's theme for data grids (use 'Custom' to keep using config.toml)
                     var lightTheme = {
                         name: 'Custom',
@@ -1928,6 +1967,7 @@ def render_settings_panel():
                 window.switchToDarkTheme = function() {
                     htmlEl.classList.add('dark-theme');
                     window.parent.localStorage.setItem('music-hrv-theme', 'dark');
+                    _setThemeQueryParam('dark');
                     // Also set Streamlit's theme for data grids (use 'Custom' to keep using config.toml)
                     var darkTheme = {
                         name: 'Custom',

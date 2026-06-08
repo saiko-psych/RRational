@@ -67,19 +67,27 @@ PLOT_COLORS = {
 
 
 def get_theme_colors():
-    """Get colors for chart rendering.
+    """Get colors for chart rendering, respecting dark mode.
 
-    Always returns light theme colors to match config.toml base theme.
-    Dark mode is handled by JavaScript updatePlotlyTheme() function
-    which updates charts dynamically when user switches themes.
+    The previous version always returned light colours and relied on a
+    JavaScript updatePlotlyTheme() hook to recolour the iframe after
+    render. That hook fires "sometimes" — when Streamlit swaps the
+    plot iframe between reruns the listener is gone and the plot stays
+    white-on-dark, leaving Tachogram / Poincare / Frequency / HR
+    distribution as unreadable white rectangles. Read the live theme
+    state directly so the right colours are baked in at render time.
     """
-    # Always use light theme for initial render (matches config.toml)
-    # JavaScript handles dark mode switching dynamically
-    return {
-        "bg": "#FFFFFF",
-        "text": "#31333F",
-        "grid": "rgba(0,0,0,0.1)",
-    }
+    try:
+        from rrational.gui.theme import get_current_theme_colors
+
+        return get_current_theme_colors()
+    except Exception:
+        # Failsafe — light theme defaults if theme module unavailable.
+        return {
+            "bg": "#FFFFFF",
+            "text": "#31333F",
+            "grid": "rgba(0,0,0,0.1)",
+        }
 
 
 def create_professional_tachogram(
