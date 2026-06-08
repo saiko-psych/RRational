@@ -116,10 +116,13 @@ class WelcomeWidget(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(40, 30, 40, 30)
         root.setSpacing(20)
-        root.addItem(QSpacerItem(0, 10, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        # Slightly heavier bottom spacer (2:1) lifts the title block to
+        # the optical-centre / upper-third sweet spot — eye lands on the
+        # title naturally without the "content sinking" feel.
+        root.addStretch(1)
 
         # ----- Title block -----------------------------------------------
-        title = QLabel("RRational Inspector")
+        title = QLabel("RRational")
         title_font = QFont()
         title_font.setPointSize(22)
         title_font.setBold(True)
@@ -219,7 +222,7 @@ class WelcomeWidget(QWidget):
         self._empty_recent_label.setAlignment(Qt.AlignCenter)
         root.addWidget(self._empty_recent_label)
 
-        root.addItem(QSpacerItem(0, 10, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        root.addStretch(2)
 
     def _make_action_button(
         self, label: str, tooltip: str, primary: bool = False

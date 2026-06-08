@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, initial_path: Path | None = None) -> None:
         super().__init__()
-        self.setWindowTitle("RRational Inspector")
+        self.setWindowTitle("RRational")
         # Per-window icon: required on Wayland (which ignores
         # QApplication.setWindowIcon) and used by Qt for the
         # title-bar + alt-tab thumbnail on every platform.
@@ -780,7 +780,7 @@ class MainWindow(QMainWindow):
         shortcuts_act.triggered.connect(self._show_shortcuts_dialog)
         help_menu.addAction(shortcuts_act)
 
-        about_act = QAction("&About RRational Inspector", self)
+        about_act = QAction("&About RRational", self)
         about_act.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_act)
 
@@ -937,8 +937,8 @@ class MainWindow(QMainWindow):
             return
         QMessageBox.about(
             self,
-            "About RRational Inspector",
-            "<h3>RRational Inspector</h3>"
+            "About RRational",
+            "<h3>RRational</h3>"
             "<p>Scrollable RR-interval browser for the RRational HRV toolkit.</p>"
             "<p>Built with PyQtGraph + PySide6. Architecture inspired by "
             "<a href='https://github.com/mne-tools/mne-qt-browser'>mne-qt-browser</a> "
@@ -1275,13 +1275,13 @@ class MainWindow(QMainWindow):
         if self._project is not None and self._project.metadata is not None:
             proj_part = self._project.metadata.name
         if proj_part and ds_part:
-            self.setWindowTitle(f"RRational Inspector — [{proj_part}] {ds_part}")
+            self.setWindowTitle(f"RRational — [{proj_part}] {ds_part}")
         elif proj_part:
-            self.setWindowTitle(f"RRational Inspector — [{proj_part}]")
+            self.setWindowTitle(f"RRational — [{proj_part}]")
         elif ds_part:
-            self.setWindowTitle(f"RRational Inspector — {ds_part}")
+            self.setWindowTitle(f"RRational — {ds_part}")
         else:
-            self.setWindowTitle("RRational Inspector")
+            self.setWindowTitle("RRational")
 
     # ------------------------------------------------------------------
     # Public navigation API (toolbar + key filter share this)

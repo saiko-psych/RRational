@@ -88,7 +88,7 @@ class WelcomeDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Welcome to RRational Inspector")
+        self.setWindowTitle("Welcome to RRational")
         self.setMinimumWidth(560)
 
         outer = QVBoxLayout(self)

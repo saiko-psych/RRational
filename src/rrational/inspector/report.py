@@ -410,14 +410,14 @@ class ReportBuilder:
         parts.append("<html lang='en'>")
         parts.append("<head>")
         parts.append("<meta charset='utf-8'>")
-        parts.append("<title>RRational Inspector Report</title>")
+        parts.append("<title>RRational Report</title>")
         parts.append(f"<style>{_BASE_CSS}</style>")
         parts.append("</head>")
         parts.append("<body>")
 
         # ----- Title + metadata -----
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        parts.append("<h1>RRational Inspector Report</h1>")
+        parts.append("<h1>RRational Report</h1>")
         parts.append("<div class='meta'>")
         parts.append(
             f"Project: <b>{_html_escape(self._project_name())}</b> &middot; "
@@ -665,7 +665,7 @@ class ReportBuilder:
     def build_markdown(self) -> str:
         out = io.StringIO()
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        out.write("# RRational Inspector Report\n\n")
+        out.write("# RRational Report\n\n")
         out.write(
             f"_Project_: **{self._project_name()}**  \n"
             f"_Generated_: {ts}  \n"

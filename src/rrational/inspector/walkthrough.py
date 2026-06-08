@@ -54,7 +54,7 @@ class WalkthroughPage:
 # answer follow-up questions in context.
 PAGES: tuple[WalkthroughPage, ...] = (
     WalkthroughPage(
-        title="Welcome to the RRational Inspector",
+        title="Welcome to RRational",
         illustration="[ Inspector overview ]",
         body_html=(
             "<p>This walkthrough takes you from a fresh project to "
@@ -213,7 +213,7 @@ class WalkthroughDialog(QDialog):
     ) -> None:
         super().__init__(parent if parent is not None else main_window)
         self._main_window = main_window
-        self.setWindowTitle("RRational Inspector — Workflow walkthrough")
+        self.setWindowTitle("RRational — Workflow walkthrough")
         self.setMinimumSize(640, 520)
 
         self._pages: list[WalkthroughPage] = list(PAGES)

@@ -91,7 +91,7 @@ def run(argv: list[str] | None = None) -> int:
     initial_path: Path | None = args.file_path or args.path
 
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("RRational Inspector")
+    app.setApplicationName("RRational")
     app.setOrganizationName("RRational")
     # App-wide icon: shows in the OS taskbar / dock / alt-tab switcher
     # even before any window opens. MainWindow re-sets the same icon

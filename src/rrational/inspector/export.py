@@ -242,7 +242,7 @@ def build_v2_export(
     participant_id: str,
     preprocessing: "PreprocessingResult | None" = None,
     source_path: "Path | None" = None,
-    source_app: str = "RRational Inspector",
+    source_app: str = "RRational",
 ) -> RRationalExportV2:
     """Build a complete :class:`RRationalExportV2` from inspector state.
 
