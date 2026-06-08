@@ -2836,6 +2836,15 @@ def _render_single_participant_analysis():
                                         "Ready file analysis complete (overlapping windows)",
                                         icon="success",
                                     )
+                                    # Render results NOW so the user sees them in
+                                    # the same script run. A bare ``return`` here
+                                    # exits before the display call at the bottom
+                                    # of _render_single_participant_analysis, so
+                                    # the metrics table + plots only appeared on
+                                    # the user's next interaction.
+                                    _display_single_participant_results(
+                                        selected_participant
+                                    )
                                     return  # Exit early, skip standard analysis
                                 else:
                                     st.warning(
