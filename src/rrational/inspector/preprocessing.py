@@ -51,6 +51,28 @@ def _grade_for_rate(rate: float) -> tuple[str, str]:
     return "poor", "Consider excluding this recording from analysis."
 
 
+# A/B/C/D letter grade — same Quigley 2024 thresholds, just renamed for
+# the cross-recording triage dashboard where the long-form names are too
+# wide to fit alongside numeric columns.
+_LETTER_GRADE_MAP = {
+    "excellent": "A",
+    "good": "B",
+    "moderate": "C",
+    "poor": "D",
+    "unknown": "?",
+}
+
+
+def _grade_letter_for_rate(rate: float) -> str:
+    """Return the A/B/C/D letter for ``rate`` (or '?' if non-finite)."""
+    import math
+
+    if not math.isfinite(rate):
+        return "?"
+    grade, _msg = _grade_for_rate(rate)
+    return _LETTER_GRADE_MAP.get(grade, "?")
+
+
 def detect_artifacts(v: np.ndarray) -> PreprocessingResult:
     """Run NK2's Kubios fixpeaks on the RR-ms array ``v``.
 

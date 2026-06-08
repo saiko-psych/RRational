@@ -249,6 +249,10 @@ class PreprocessingPanel(QWidget):
             plot = parent._plot
             plot.plot_clicked.connect(self._on_plot_clicked)
             plot.annotation_context.connect(self._on_annotation_right_clicked)
+            # Drag-annotation: a left-drag in annotation mode emits a
+            # range; we anchor the annotation at the midpoint and prompt
+            # for text exactly like the click path.
+            plot.plot_range_selected.connect(self._on_plot_range_selected)
 
         # Annotation state — one list per active dataset, persisted.
         self._annotations: list[Annotation] = []
@@ -697,6 +701,184 @@ class PreprocessingPanel(QWidget):
         except Exception:  # pragma: no cover - autosave must not crash detect
             pass
 
+    # ------------------------------------------------------------------
+    # Batch-apply API — used by MainWindow's "Run on all loaded" entry
+    # and by the Quality-triage dashboard.
+    # ------------------------------------------------------------------
+    def process_single(self, ds, save_export: bool = True) -> "BatchResult":
+        """Run detect + (optional) .rrational save on ``ds``.
+
+        Mirrors what ``_on_detect_clicked`` + ``_on_export_clicked`` do
+        for the currently-active dataset, but takes the dataset
+        explicitly so it can run on every workspace entry in turn
+        without flipping the active selection / re-rendering the plot
+        per recording. Returns a :class:`BatchResult` row suitable for
+        :class:`QualityTriageDialog`.
+
+        ``save_export=False`` skips the .rrational write (the Tools →
+        Quality triage menu uses this to recompute grades without
+        clobbering on-disk exports the user already curated).
+        """
+        from rrational.inspector.preprocessing import (
+            _grade_letter_for_rate,
+            detect_artifacts,
+        )
+        from rrational.inspector.quality_triage_dialog import BatchResult
+
+        data = ds.data
+        n_beats = int(len(data.v)) if data is not None else 0
+
+        if data is None or n_beats == 0:
+            return BatchResult(
+                name=ds.name,
+                n_beats=0,
+                n_artifacts=0,
+                artifact_rate=0.0,
+                grade="?",
+                saved_path=None,
+            )
+
+        try:
+            result = detect_artifacts(data.v)
+        except Exception:
+            # Batch must never crash on one bad recording — surface as a
+            # "?" grade row so the user can still see the others.
+            return BatchResult(
+                name=ds.name,
+                n_beats=n_beats,
+                n_artifacts=0,
+                artifact_rate=0.0,
+                grade="?",
+                saved_path=None,
+            )
+
+        rate = float(result.rate)
+        letter = _grade_letter_for_rate(rate)
+
+        # Persist the artifact correction so a subsequent single-dataset
+        # open auto-restores the same state via _try_restore_artifacts.
+        # Failures are swallowed (autosave must not crash batch).
+        try:
+            self._autosave_artifacts_for(result, ds)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+        saved_path: str | None = None
+        if save_export:
+            saved_path = self._export_dataset_silent(ds, result)
+
+        return BatchResult(
+            name=ds.name,
+            n_beats=n_beats,
+            n_artifacts=int(result.total),
+            artifact_rate=rate,
+            grade=letter,
+            saved_path=saved_path,
+        )
+
+    def apply_to_recordings(
+        self, recordings, progress_cb=None, save_export: bool = True
+    ) -> list:
+        """Run :meth:`process_single` across ``recordings``.
+
+        ``progress_cb(i, total, name)`` is called BEFORE each recording
+        is processed so a wrapping QProgressDialog can update its label.
+        Returns the list of :class:`BatchResult` rows in input order.
+        """
+        results = []
+        total = len(recordings)
+        for i, ds in enumerate(recordings):
+            if progress_cb is not None:
+                try:
+                    progress_cb(i, total, ds.name)
+                except Exception:  # pragma: no cover - defensive
+                    pass
+            results.append(self.process_single(ds, save_export=save_export))
+        return results
+
+    def _autosave_artifacts_for(self, result, ds) -> None:
+        """Per-dataset variant of :meth:`_autosave_artifacts`.
+
+        The single-dataset version peeks at ``self._main_window._data``
+        + the plot's manual sets; in batch we have neither (we're not
+        rendering ``ds``), so we write the algorithm artifacts only and
+        leave the manual / excluded sets untouched (any prior file for
+        ``ds`` keeps its hand edits because save_artifact_corrections
+        rewrites the whole document — see note below).
+        """
+        from rrational.gui.persistence import (
+            load_artifact_corrections,
+            save_artifact_corrections,
+        )
+
+        pid = Path(ds.name).stem
+        proj = getattr(self._main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+
+        # Preserve any existing manual / excluded marks for this pid by
+        # reading them back BEFORE overwriting the algorithm set.
+        prior = None
+        try:
+            prior = load_artifact_corrections(
+                pid, project_path=project_path, section_key="_full"
+            )
+        except Exception:
+            prior = None
+        manual_artifacts = (prior or {}).get("manual_artifacts") or []
+        artifact_exclusions = list((prior or {}).get("excluded_artifact_indices") or [])
+
+        indices_by_type = {k: [] for k in (result.by_type or {}).keys()}
+        save_artifact_corrections(
+            participant_id=pid,
+            manual_artifacts=manual_artifacts,
+            artifact_exclusions=[int(i) for i in artifact_exclusions],
+            algorithm_artifacts=[int(i) for i in result.indices],
+            algorithm_method="lipponen2019",
+            indices_by_type=indices_by_type,
+            section_key="_full",
+            project_path=project_path,
+        )
+
+    def _export_dataset_silent(self, ds, result) -> str | None:
+        """Write ``ds`` as a .rrational v2 file without prompting.
+
+        Destination = ``{project}/data/processed/{stem}.rrational`` when
+        a project is active, otherwise the QSettings ``last_dir`` falls
+        back to the dataset's source folder, then ``Path.cwd()``.
+        Returns the absolute path string on success, None on any error
+        (batch must never crash on a single bad recording).
+        """
+        from rrational.inspector.export import export_inspector_to_rrational
+
+        pid = Path(ds.name).stem
+        proj = getattr(self._main_window, "_project", None)
+        if proj is not None:
+            out_dir = proj.project_path / "data" / "processed"
+        else:
+            last_dir = settings.read_setting("last_dir")
+            if last_dir:
+                out_dir = Path(str(last_dir))
+            elif ds.path is not None:
+                out_dir = ds.path.parent
+            else:
+                out_dir = Path.cwd()
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+        out_path = out_dir / f"{pid}.rrational"
+        try:
+            export_inspector_to_rrational(
+                ds.data,
+                out_path,
+                participant_id=pid,
+                preprocessing=result,
+                source_path=ds.path,
+            )
+        except Exception:
+            return None
+        return str(out_path)
+
     def _on_toggle_show_artifacts(self, checked: bool) -> None:
         plot = self._main_window._browse_tab._plot
         plot.set_artifacts_visible(checked)
@@ -1040,6 +1222,42 @@ class PreprocessingPanel(QWidget):
             return
         text = str(text).strip()
         ann = _Annotation.create(t=t, text=text)
+        self._annotations.append(ann)
+        plot = self._main_window._browse_tab._plot
+        plot.add_annotation_marker(ann.t, ann.text)
+        self._persist_annotations()
+        self._refresh_annotation_label()
+        self._main_window.statusBar().showMessage(
+            f"Added annotation '{ann.text[:40]}'", 3000
+        )
+
+    def _on_plot_range_selected(self, t0: float, t1: float) -> None:
+        """Annotation-mode drag finished — pin annotation at the midpoint.
+
+        The Annotation model is point-based (single ``t``); a drag is
+        UX sugar that gives users an easier target than a precise click.
+        We capture the midpoint so the on-plot marker visually sits
+        centered on what the user selected.
+        """
+        from rrational.inspector.annotations import Annotation as _Annotation
+
+        if not self._toggle_annotation_mode.isChecked():
+            return
+        t_mid = (float(t0) + float(t1)) / 2.0
+        width_s = abs(float(t1) - float(t0))
+        if self._main_window.test_mode:
+            text = f"auto-test range @ {t_mid:.0f} ({width_s:.1f}s)"
+            ok = True
+        else:
+            text, ok = QInputDialog.getText(
+                self,
+                "New annotation",
+                f"Note text (range: {width_s:.1f} s):",
+            )
+        if not ok or not str(text).strip():
+            return
+        text = str(text).strip()
+        ann = _Annotation.create(t=t_mid, text=text)
         self._annotations.append(ann)
         plot = self._main_window._browse_tab._plot
         plot.add_annotation_marker(ann.t, ann.text)
