@@ -29,12 +29,25 @@ from qtpy.QtWidgets import (
 )
 
 
-# Step ordering is fixed; these labels show up in the buttons.
+# Visible button labels — kept short so all four fit the narrow
+# preprocessing dock without ellipsising. Numeric prefix is dropped
+# because left-to-right placement already conveys the sequence; the
+# state-prefix glyph (check / triangle / dot) communicates progress.
+# The longer descriptive version lives in STEP_TOOLTIPS and shows
+# on hover.
 STEP_LABELS: dict[int, str] = {
-    1: "1. Load raw",
-    2: "2. Detect artifacts",
-    3: "3. Review & correct",
-    4: "4. Save .rrational",
+    1: "Load",
+    2: "Detect",
+    3: "Review",
+    4: "Save",
+}
+
+# Long-form hover text — explains what each step actually does.
+STEP_TOOLTIPS: dict[int, str] = {
+    1: "Load raw recording — opens a participant file from disk",
+    2: "Detect artifacts — runs the NeuroKit2 Lipponen 2019 algorithm",
+    3: "Review & correct — inspect markers, manually toggle outliers",
+    4: "Save .rrational — export the corrected segment as a v2 file",
 }
 
 # Allowed states - kept as a frozen set so typos surface in tests.
@@ -107,11 +120,10 @@ class WorkflowStepper(QWidget):
             btn = QPushButton(STEP_LABELS[step], self)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # In the narrow preprocessing dock, button text gets
-            # ellipsised ('. Load r' instead of '1. Load raw') — force
-            # a minimum width so the full label is always visible.
-            btn.setMinimumWidth(110)
-            btn.setToolTip(STEP_LABELS[step])
+            # Width pinned so the short label + state prefix never
+            # ellipsises in the narrow preprocessing dock.
+            btn.setMinimumWidth(78)
+            btn.setToolTip(STEP_TOOLTIPS[step])
             # Use lambda default-arg trick to capture the step index.
             btn.clicked.connect(lambda _checked, s=step: self.step_clicked.emit(s))
             self._buttons[step] = btn
@@ -156,7 +168,7 @@ class WorkflowStepper(QWidget):
             if state == "locked":
                 btn.setToolTip(_LOCKED_TOOLTIP)
             else:
-                btn.setToolTip(STEP_LABELS[step])
+                btn.setToolTip(STEP_TOOLTIPS[step])
             self._states[step] = state
 
     def state_for(self, step: int) -> str | None:
