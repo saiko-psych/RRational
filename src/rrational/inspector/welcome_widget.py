@@ -131,7 +131,9 @@ class WelcomeWidget(QWidget):
             "Scrollable RR-interval browser for the RRational HRV toolkit"
         )
         subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet("color: #777; font-size: 12px;")
+        # "muted" QSS property paints the secondary text colour from the
+        # active theme palette — works on both dark and light modes.
+        subtitle.setProperty("muted", True)
         root.addWidget(subtitle)
 
         root.addItem(QSpacerItem(0, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
@@ -147,9 +149,13 @@ class WelcomeWidget(QWidget):
         primary_row = QHBoxLayout()
         primary_row.setSpacing(12)
         primary_row.addStretch(1)
+        # The three landing-screen entry buttons are the canonical
+        # primary actions of the whole app — flag them as primary so the
+        # QSS theme paints them with the amber accent fill.
         self._open_recording_btn = self._make_action_button(
             "Open recording...",
             "Open any supported RR file (.rrational, .csv, .txt, .dat)",
+            primary=True,
         )
         self._open_recording_btn.clicked.connect(self._on_open_recording)
         primary_row.addWidget(self._open_recording_btn)
@@ -157,6 +163,7 @@ class WelcomeWidget(QWidget):
         self._open_rrational_btn = self._make_action_button(
             "Open .rrational v2...",
             "Open only RRational v2 export files",
+            primary=True,
         )
         self._open_rrational_btn.clicked.connect(self._on_open_rrational)
         primary_row.addWidget(self._open_rrational_btn)
@@ -165,6 +172,7 @@ class WelcomeWidget(QWidget):
             "Try with sample data",
             "Load a synthetic 5-minute recording so you can explore the inspector "
             "without your own data",
+            primary=True,
         )
         self._try_demo_btn.clicked.connect(self._on_try_demo)
         primary_row.addWidget(self._try_demo_btn)
@@ -195,7 +203,7 @@ class WelcomeWidget(QWidget):
         root.addItem(QSpacerItem(0, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
 
         recent_header = QLabel(f"Recent files (last {self.MAX_RECENT_SHOWN}):")
-        recent_header.setStyleSheet("color: #555; font-weight: bold;")
+        recent_header.setProperty("heading", True)
         recent_header.setAlignment(Qt.AlignCenter)
         root.addWidget(recent_header)
 
@@ -207,18 +215,27 @@ class WelcomeWidget(QWidget):
         root.addWidget(self._recent_container, alignment=Qt.AlignHCenter)
 
         self._empty_recent_label = QLabel("(no recent files)")
-        self._empty_recent_label.setStyleSheet("color: #999; font-style: italic;")
+        self._empty_recent_label.setProperty("hint", True)
         self._empty_recent_label.setAlignment(Qt.AlignCenter)
         root.addWidget(self._empty_recent_label)
 
         root.addItem(QSpacerItem(0, 10, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-    def _make_action_button(self, label: str, tooltip: str) -> QPushButton:
+    def _make_action_button(
+        self, label: str, tooltip: str, primary: bool = False
+    ) -> QPushButton:
         btn = QPushButton(label)
         btn.setToolTip(tooltip)
         btn.setMinimumHeight(40)
         btn.setMinimumWidth(220)
         btn.setCursor(Qt.PointingHandCursor)
+        if primary:
+            # Re-polish after setProperty so the QSS selector
+            # QPushButton[primary="true"] takes effect — Qt only
+            # re-evaluates property selectors on a polish pass.
+            btn.setProperty("primary", True)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
         return btn
 
     # ------------------------------------------------------------------
@@ -254,12 +271,10 @@ class WelcomeWidget(QWidget):
     def _add_recent_button(self, path: Path) -> None:
         btn = QPushButton(path.name)
         btn.setToolTip(str(path))
+        # Flat buttons get the accent-coloured link styling from the
+        # central QSS via the :flat pseudo state — no per-button override.
         btn.setFlat(True)
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setStyleSheet(
-            "QPushButton { color: #1a5fb4; text-align: left; padding: 2px 8px; }"
-            "QPushButton:hover { text-decoration: underline; }"
-        )
         btn.clicked.connect(lambda _checked=False, p=path: self._on_recent_clicked(p))
         self._recent_layout.addWidget(btn)
         self._recent_buttons.append(btn)

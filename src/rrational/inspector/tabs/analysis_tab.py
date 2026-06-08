@@ -294,17 +294,17 @@ class _AnalysisSettingsBar(QWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(6)
+        outer.setSpacing(10)
 
         settings_box = QGroupBox("Analysis settings", self)
         settings_layout = QVBoxLayout(settings_box)
-        settings_layout.setContentsMargins(8, 8, 8, 8)
-        settings_layout.setSpacing(6)
+        settings_layout.setContentsMargins(14, 20, 14, 14)
+        settings_layout.setSpacing(12)
         outer.addWidget(settings_box)
 
         # ---- Preset + freq method row -------------------------------
         top_row = QHBoxLayout()
-        top_row.setSpacing(12)
+        top_row.setSpacing(16)
 
         preset_row = QHBoxLayout()
         preset_row.addWidget(QLabel("Metrics preset:"))
@@ -352,7 +352,9 @@ class _AnalysisSettingsBar(QWidget):
 
         self._selected_metrics_summary = QLabel("", metrics_box)
         self._selected_metrics_summary.setWordWrap(True)
-        self._selected_metrics_summary.setStyleSheet("QLabel { color: #555; }")
+        # Theme-aware secondary text via the global "muted" property —
+        # readable on both dark + light QSS palettes.
+        self._selected_metrics_summary.setProperty("muted", True)
         metrics_outer.addWidget(self._selected_metrics_summary)
 
         self._metrics_grid_widget = QWidget(metrics_box)
@@ -687,7 +689,10 @@ def _make_empty_hint(text: str) -> QLabel:
     label.setAlignment(Qt.AlignCenter)
     label.setWordWrap(True)
     label.setTextFormat(Qt.RichText)
-    label.setStyleSheet("QLabel { color: #666; font-size: 13px; padding: 32px; }")
+    # Theme-aware muted colour via QSS property; padding stays inline
+    # because it's a per-instance layout hint, not a colour decision.
+    label.setProperty("muted", True)
+    label.setStyleSheet("QLabel { padding: 32px; font-size: 13px; }")
     return label
 
 
@@ -728,6 +733,10 @@ class _SingleParticipantPane(QWidget):
 
         button_row = QHBoxLayout()
         self._compute_btn = QPushButton("Compute HRV metrics")
+        # Single-pane primary action: amber-accent fill from the QSS.
+        self._compute_btn.setProperty("primary", True)
+        self._compute_btn.style().unpolish(self._compute_btn)
+        self._compute_btn.style().polish(self._compute_btn)
         self._compute_btn.clicked.connect(self._on_compute)
         self._compute_btn.setEnabled(False)
         button_row.addWidget(self._compute_btn)
@@ -941,6 +950,9 @@ class _RepeatingSectionPane(QWidget):
 
         button_row = QHBoxLayout()
         self._compute_btn = QPushButton("Compute across all datasets")
+        self._compute_btn.setProperty("primary", True)
+        self._compute_btn.style().unpolish(self._compute_btn)
+        self._compute_btn.style().polish(self._compute_btn)
         self._compute_btn.clicked.connect(self._on_compute)
         self._compute_btn.setEnabled(False)
         button_row.addWidget(self._compute_btn)
@@ -1176,6 +1188,9 @@ class _GroupComparisonPane(QWidget):
 
         button_row = QHBoxLayout()
         self._compute_btn = QPushButton("Compare across groups")
+        self._compute_btn.setProperty("primary", True)
+        self._compute_btn.style().unpolish(self._compute_btn)
+        self._compute_btn.style().polish(self._compute_btn)
         self._compute_btn.clicked.connect(self._on_compute)
         self._compute_btn.setEnabled(False)
         button_row.addWidget(self._compute_btn)
@@ -1754,12 +1769,17 @@ class _SequenceComparisonPane(QWidget):
 
         # Sequence preview label — shows the chain of section names
         self._sequence_preview = QLabel("<i>No sequence selected.</i>")
+        self._sequence_preview.setTextFormat(Qt.RichText)
         self._sequence_preview.setWordWrap(True)
-        self._sequence_preview.setStyleSheet("color: #666; padding: 4px;")
+        self._sequence_preview.setProperty("muted", True)
+        self._sequence_preview.setStyleSheet("QLabel { padding: 4px; }")
         outer.addWidget(self._sequence_preview)
 
         button_row = QHBoxLayout()
         self._compute_btn = QPushButton("Run repeated-measures comparison")
+        self._compute_btn.setProperty("primary", True)
+        self._compute_btn.style().unpolish(self._compute_btn)
+        self._compute_btn.style().polish(self._compute_btn)
         self._compute_btn.clicked.connect(self._on_compute)
         self._compute_btn.setEnabled(False)
         button_row.addWidget(self._compute_btn)

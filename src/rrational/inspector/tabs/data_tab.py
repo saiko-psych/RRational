@@ -362,12 +362,13 @@ class DataTab(InspectorTab):
         outer.addWidget(self._stepper)
 
         # Primary action button — its label + handler change based on the
-        # workspace state. Bold + extra padding so it pops as the next
-        # thing the user should do.
+        # workspace state. Flagged "primary" so the QSS theme paints it
+        # with the amber accent fill (matches the Welcome screen's entry
+        # buttons so the user sees one consistent "click here" affordance).
         self._primary_action_btn = QPushButton("Open or create project...")
-        self._primary_action_btn.setStyleSheet(
-            "QPushButton { font-weight: bold; padding: 8px 14px; }"
-        )
+        self._primary_action_btn.setProperty("primary", True)
+        self._primary_action_btn.style().unpolish(self._primary_action_btn)
+        self._primary_action_btn.style().polish(self._primary_action_btn)
         self._primary_action_btn.setMinimumHeight(36)
         self._primary_action_btn.clicked.connect(self._on_primary_action_clicked)
         primary_row = QHBoxLayout()
@@ -808,13 +809,13 @@ class DataTab(InspectorTab):
         layout.setSpacing(6)
 
         # Prominent "Analyze folder..." button — the primary action for
-        # this block. Bold + extra padding so it reads as the next step
-        # the user should take when raw files live outside the project
-        # tree (or before a project is opened).
+        # this block. Inherits the QSS theme's primary-action styling so
+        # it reads as the next step the user should take when raw files
+        # live outside the project tree (or before a project is opened).
         self._analyze_folder_btn = QPushButton("Analyze folder...")
-        self._analyze_folder_btn.setStyleSheet(
-            "QPushButton { font-weight: bold; padding: 6px 12px; }"
-        )
+        self._analyze_folder_btn.setProperty("primary", True)
+        self._analyze_folder_btn.style().unpolish(self._analyze_folder_btn)
+        self._analyze_folder_btn.style().polish(self._analyze_folder_btn)
         self._analyze_folder_btn.setToolTip(
             "Scan a folder for raw HRV recordings (HRV Logger / VNS / Polar / "
             "Empatica / Kubios / Elite HRV) and load them into the workspace."

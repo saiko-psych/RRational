@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from qtpy.QtCore import Qt  # noqa: F401 — used inline for setTextFormat(Qt.RichText)
 from qtpy.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -77,8 +78,8 @@ class PreprocessingPanel(QWidget):
         from qtpy.QtWidgets import QGroupBox
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
 
         # Workflow stepper at the very top so users see the linear
         # 4-step path (Load → Detect → Review → Save) before anything else.
@@ -91,22 +92,29 @@ class PreprocessingPanel(QWidget):
         # --- Group 1: Artifact detection ------------------------------------
         detect_box = QGroupBox("Artifact detection")
         detect_layout = QVBoxLayout(detect_box)
-        detect_layout.setSpacing(4)
+        detect_layout.setContentsMargins(12, 18, 12, 12)
+        detect_layout.setSpacing(8)
 
         self._detect_btn = QPushButton("Detect artifacts")
         self._detect_btn.setToolTip(
             "Run NeuroKit2 Kubios algorithm on the active dataset's RR series"
         )
+        # Primary action of the panel: amber-accent variant from the QSS theme.
+        self._detect_btn.setProperty("primary", True)
         self._detect_btn.clicked.connect(self._on_detect_clicked)
         self._detect_btn.setEnabled(False)
         detect_layout.addWidget(self._detect_btn)
 
+        # RichText so the inline <i>/<b> markup in the placeholder + the
+        # status messages set later actually render — without this Qt
+        # ships them through as literal "<i>Detect artifacts</i>" text.
         self._summary = QLabel(
             "No artifact detection run yet.\n\nLoad a recording, then "
             "click <i>Detect artifacts</i>."
         )
+        self._summary.setTextFormat(Qt.RichText)
         self._summary.setWordWrap(True)
-        self._summary.setStyleSheet("color: #555; padding: 2px 0;")
+        self._summary.setProperty("muted", True)
         detect_layout.addWidget(self._summary)
 
         self._toggle_show_artifacts = QCheckBox("Show artifact markers")
@@ -137,14 +145,14 @@ class PreprocessingPanel(QWidget):
         detect_layout.addWidget(self._toggle_manual_mark)
 
         self._manual_help = QLabel(
-            "<small style='color:#666'>"
             "Left-click near a beat: add manual mark<br>"
             "Left-click on algorithm artifact: exclude<br>"
             "Left-click on manual mark: remove<br>"
             "Edit → Undo / Redo (Ctrl+Z / Ctrl+Y)"
-            "</small>"
         )
+        self._manual_help.setTextFormat(Qt.RichText)
         self._manual_help.setWordWrap(True)
+        self._manual_help.setProperty("muted", True)
         self._manual_help.setVisible(False)
         detect_layout.addWidget(self._manual_help)
 
@@ -159,7 +167,8 @@ class PreprocessingPanel(QWidget):
         # --- Group 2: Exclusion zones ---------------------------------------
         excl_box = QGroupBox("Exclusion zones")
         excl_layout = QVBoxLayout(excl_box)
-        excl_layout.setSpacing(4)
+        excl_layout.setContentsMargins(12, 18, 12, 12)
+        excl_layout.setSpacing(8)
 
         self._toggle_exclusion_mode = QCheckBox("Exclusion mode (drag-select)")
         self._toggle_exclusion_mode.setToolTip(
@@ -187,7 +196,8 @@ class PreprocessingPanel(QWidget):
         # --- Group 3: Section editing ---------------------------------------
         section_box = QGroupBox("Section editing")
         section_layout = QVBoxLayout(section_box)
-        section_layout.setSpacing(4)
+        section_layout.setContentsMargins(12, 18, 12, 12)
+        section_layout.setSpacing(8)
         self._toggle_section_edit = QCheckBox("Section edit mode")
         self._toggle_section_edit.setChecked(False)
         self._toggle_section_edit.setToolTip(
@@ -201,7 +211,8 @@ class PreprocessingPanel(QWidget):
         # --- Group 4: Export + Annotations ----------------------------------
         export_box = QGroupBox("Export & annotations")
         export_layout = QVBoxLayout(export_box)
-        export_layout.setSpacing(4)
+        export_layout.setContentsMargins(12, 18, 12, 12)
+        export_layout.setSpacing(8)
 
         self._export_btn = QPushButton("Save as .rrational v2…")
         self._export_btn.setToolTip(
@@ -220,10 +231,10 @@ class PreprocessingPanel(QWidget):
         self._toggle_annotation_mode.setEnabled(False)
         export_layout.addWidget(self._toggle_annotation_mode)
 
-        self._annotation_count_label = QLabel(
-            "<small style='color:#888;'>No annotations.</small>"
-        )
+        self._annotation_count_label = QLabel("No annotations.")
+        self._annotation_count_label.setTextFormat(Qt.RichText)
         self._annotation_count_label.setWordWrap(True)
+        self._annotation_count_label.setProperty("muted", True)
         export_layout.addWidget(self._annotation_count_label)
         layout.addWidget(export_box)
 
@@ -970,14 +981,13 @@ class PreprocessingPanel(QWidget):
 
     def _refresh_annotation_label(self) -> None:
         n = len(self._annotations)
+        # Label has the "muted" property + RichText format set at build
+        # time — palette-aware grey + working inline markup come for free.
         if n == 0:
-            self._annotation_count_label.setText(
-                "<small style='color:#888;'>No annotations.</small>"
-            )
+            self._annotation_count_label.setText("No annotations.")
         else:
             self._annotation_count_label.setText(
-                f"<small style='color:#555;'><b>{n}</b> annotation(s) "
-                "on this dataset.</small>"
+                f"<b>{n}</b> annotation(s) on this dataset."
             )
 
     def _persist_annotations(self) -> None:

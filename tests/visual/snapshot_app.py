@@ -107,6 +107,12 @@ def snapshot_all_tabs() -> list[Path]:
             pass
 
     app = QApplication.instance() or QApplication(sys.argv)
+    # Mirror app.run(): the Refined Laboratory QSS theme must be applied
+    # BEFORE the first widget renders, otherwise the snapshot captures
+    # the unstyled Qt default look instead of the production theme.
+    from rrational.inspector.style import apply_app_theme
+
+    apply_app_theme(app, mode="dark")
 
     win = MainWindow()
     win.test_mode = True

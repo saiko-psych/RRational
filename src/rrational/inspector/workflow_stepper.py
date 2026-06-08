@@ -40,23 +40,31 @@ STEP_LABELS: dict[int, str] = {
 # Allowed states - kept as a frozen set so typos surface in tests.
 _VALID_STATES = frozenset({"done", "active", "locked"})
 
-# Per-state stylesheet snippets. Kept short so QSS warnings are obvious
-# in the test log if Qt complains. Colors chosen to match the existing
-# _GRADE_COLOR palette in preprocessing_panel.py for visual cohesion.
+# Per-state stylesheet snippets. The palette mirrors the "Refined
+# Laboratory" QSS theme tokens in rrational.inspector.style.theme so
+# the stepper feels visually continuous with the rest of the chrome
+# instead of breaking into web-stock primary blues/greens. The hex
+# codes here are intentionally inlined rather than imported — the
+# stepper is constructed before the theme module touches the
+# application, so a circular import would be easy to introduce.
+#   done    = jade success
+#   active  = amber accent
+#   locked  = muted graphite
 _STYLE: dict[str, str] = {
     "done": (
-        "QPushButton { background-color: #2ca02c; color: white; "
-        "border: 1px solid #1f7a1f; border-radius: 4px; padding: 4px 6px; "
-        "font-weight: bold; }"
+        "QPushButton { background-color: #5ab896; color: #1a1d22; "
+        "border: 1px solid #4a9d80; border-radius: 4px; padding: 6px 10px; "
+        "font-weight: 600; letter-spacing: 0.3px; }"
     ),
     "active": (
-        "QPushButton { background-color: #5b8def; color: white; "
-        "border: 1px solid #3060c0; border-radius: 4px; padding: 4px 6px; "
-        "font-weight: bold; }"
+        "QPushButton { background-color: #e8a13a; color: #1a1d22; "
+        "border: 1px solid #c98a2a; border-radius: 4px; padding: 6px 10px; "
+        "font-weight: 600; letter-spacing: 0.3px; }"
     ),
     "locked": (
-        "QPushButton { background-color: #e0e0e0; color: #888; "
-        "border: 1px solid #c0c0c0; border-radius: 4px; padding: 4px 6px; }"
+        "QPushButton { background-color: #2a3038; color: #6e7480; "
+        "border: 1px solid #3d4350; border-radius: 4px; padding: 6px 10px; "
+        "letter-spacing: 0.3px; }"
     ),
 }
 
@@ -113,7 +121,8 @@ class WorkflowStepper(QWidget):
             if i < len(sorted_steps) - 1:
                 sep = QLabel("→", self)  # right arrow
                 sep.setAlignment(Qt.AlignCenter)
-                sep.setStyleSheet("color: #888; font-weight: bold;")
+                # Theme-aware muted glyph via the global "muted" QSS property.
+                sep.setProperty("muted", True)
                 layout.addWidget(sep, 0)
 
         # Default state: step 1 active, rest locked.
