@@ -193,10 +193,15 @@ def test_drag_in_annotation_mode_creates_annotation(main_window, qtbot):
 
     assert len(panel._annotations) == n_before + 1
     new_ann = panel._annotations[-1]
-    # Annotation pinned at the midpoint of the dragged range.
-    assert new_ann.t == pytest.approx(200.0)
-    # Marker rendered onto the plot.
-    assert any(abs(m.annotation_t - 200.0) < 1e-6 for m in plot.annotation_markers())
+    # Range annotations now store onset + duration directly (MNE-style)
+    # instead of collapsing to the midpoint — the on-plot marker still
+    # pins at the onset, but the dataclass carries the full range.
+    assert new_ann.t == pytest.approx(150.0)
+    assert new_ann.duration == pytest.approx(100.0)
+    assert new_ann.t_end == pytest.approx(250.0)
+    assert new_ann.is_range is True
+    # Marker rendered onto the plot at the onset.
+    assert any(abs(m.annotation_t - 150.0) < 1e-6 for m in plot.annotation_markers())
 
 
 def test_short_drag_in_annotation_mode_ignored(main_window):
