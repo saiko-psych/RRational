@@ -43,6 +43,7 @@ from qtpy.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -134,10 +135,30 @@ class AnnotationTableDialog(QDialog):
         header.setSectionResizeMode(self.COL_LABEL, QHeaderView.Stretch)
         self._table.itemChanged.connect(self._on_item_changed)
 
+        # ----- Empty-state hint (shown when no rows) ----------------------
+        self._empty_hint = QLabel(
+            "<p style='color:#888;'>"
+            "<b>No annotations yet.</b><br><br>"
+            "Add them inline by switching to <i>Annotation mode</i> in the "
+            "Preprocessing panel and clicking a beat on the plot,<br>"
+            "or import a CSV via <b>Import CSV...</b> above. The expected "
+            "columns are <code>recording,start_s,end_s,label,source</code>."
+            "</p>",
+            self,
+        )
+        self._empty_hint.setTextFormat(Qt.RichText)
+        self._empty_hint.setAlignment(Qt.AlignCenter)
+        self._empty_hint.setWordWrap(True)
+
+        # Stack the table over the hint so we can swap based on row count.
+        self._body_stack = QStackedWidget(self)
+        self._body_stack.addWidget(self._table)
+        self._body_stack.addWidget(self._empty_hint)
+
         # ----- Layout ---------------------------------------------------
         root = QVBoxLayout(self)
         root.addLayout(toolbar)
-        root.addWidget(self._table)
+        root.addWidget(self._body_stack)
 
         # Initial population.
         self._suspend_item_signal = False
@@ -192,6 +213,12 @@ class AnnotationTableDialog(QDialog):
         finally:
             self._suspend_item_signal = False
         self._apply_filter()
+        # Swap to the empty-state hint when there is nothing to show.
+        # Index 0 is the table, index 1 is the hint label.
+        self._body_stack.setCurrentIndex(0 if rows else 1)
+        # Bulk-action buttons are useless without rows — hide them too.
+        self._export_btn.setEnabled(bool(rows))
+        self._delete_btn.setEnabled(bool(rows))
 
     def _append_row(
         self,

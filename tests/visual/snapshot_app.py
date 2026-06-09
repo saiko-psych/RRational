@@ -248,6 +248,58 @@ def snapshot_all_tabs() -> list[Path]:
         except Exception as exc:  # noqa: BLE001
             print(f"skipped explicit DataTab capture: {exc!r}")
 
+    # Pass D — Round-8 MNE-inspired dialogs. Each one is opened
+    # programmatically against the synthetic dataset that's already in
+    # the workspace so we can grab the chrome (table contents, summary
+    # line, sort indicators) without needing a real project on disk.
+    # Wrapped per-dialog so a single failure doesn't sink the rest.
+
+    # Quality triage with a hand-built sample BatchResult set covering
+    # all four grades + an unknown row.
+    try:
+        from rrational.inspector.quality_triage_dialog import (
+            BatchResult,
+            QualityTriageDialog,
+        )
+
+        sample_results = [
+            BatchResult("0001CTRL.csv", 5210, 87, 0.0167, "A", "data/0001.rrational"),
+            BatchResult("0002EXPR.csv", 4980, 162, 0.0325, "B", "data/0002.rrational"),
+            BatchResult("0003CTRL.csv", 5620, 412, 0.0733, "C", None),
+            BatchResult("0004CTRL.csv", 3105, 401, 0.1291, "D", None),
+            BatchResult("0005EXPR.csv", 280, 0, 0.0, "?", None),
+        ]
+        qt_dlg = QualityTriageDialog(sample_results, parent=win)
+        qt_dlg.resize(900, 480)
+        qt_dlg.show()
+        _let_layout_settle(app, 250)
+        path = _OUT_DIR / "round8_quality_triage_dialog.png"
+        _save_grab(qt_dlg, path)
+        written.append(path)
+        qt_dlg.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"skipped quality triage capture: {exc!r}")
+
+    # Annotation table opened against the loaded dataset(s). Empty by
+    # design — the synthetic dataset has no on-disk annotations — but
+    # captures the toolbar, the "Show:" filter, the column headers, and
+    # the empty-state body.
+    try:
+        from rrational.inspector.annotation_table_dialog import (
+            AnnotationTableDialog,
+        )
+
+        at_dlg = AnnotationTableDialog(win, parent=win)
+        at_dlg.resize(900, 480)
+        at_dlg.show()
+        _let_layout_settle(app, 250)
+        path = _OUT_DIR / "round8_annotation_table_dialog.png"
+        _save_grab(at_dlg, path)
+        written.append(path)
+        at_dlg.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"skipped annotation table capture: {exc!r}")
+
     win.close()
     return written
 

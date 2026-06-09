@@ -16,7 +16,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from qtpy.QtCore import Qt, Signal
-from qtpy.QtGui import QColor
+from qtpy.QtGui import QBrush, QColor
 from qtpy.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -63,14 +63,17 @@ class _NumericItem(QTableWidgetItem):
         return super().__lt__(other)
 
 
-# Row tint per grade — colours chosen for legibility on the inspector's
-# dark theme. Light enough not to swamp the row text. None = no tint
-# (e.g. "?" / unknown).
-_GRADE_TINT = {
-    "A": "#1f3d2a",  # muted green
-    "B": "#3d3a1f",  # muted yellow
-    "C": "#3d2e1f",  # muted orange
-    "D": "#3d1f1f",  # muted red
+# Grade letter colours — bright and saturated so the A/B/C/D badge
+# stands out in the Grade column at a glance. We paint the foreground
+# of the grade cell (always reliable across Qt back-ends) rather than
+# the row background, which gets overridden by the dark theme's QSS
+# on some Qt builds and by the offscreen QPA used in the snapshot
+# harness. ``?`` rows fall back to the default text colour.
+_GRADE_COLOR = {
+    "A": "#5ab896",  # jade
+    "B": "#e8a13a",  # amber
+    "C": "#d4814a",  # warm orange
+    "D": "#d97862",  # coral
 }
 
 
@@ -99,7 +102,9 @@ class QualityTriageDialog(QDialog):
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectRows)
         self._table.setSelectionMode(QTableWidget.SingleSelection)
-        self._table.setAlternatingRowColors(True)
+        # Per-row brushes carry the grade colour — alternating row
+        # stripes would desaturate them, so leave them off here.
+        self._table.setAlternatingRowColors(False)
         self._table.verticalHeader().setVisible(False)
         # Sorting added AFTER cells are populated — Qt's setItem path is
         # several times faster when the table isn't actively re-sorting
@@ -132,22 +137,34 @@ class QualityTriageDialog(QDialog):
     # Row population helpers
     # ------------------------------------------------------------------
     def _populate_row(self, row: int, r: BatchResult) -> None:
+        from qtpy.QtGui import QFont
+
         name_item = QTableWidgetItem(r.name)
         beats_item = _NumericItem(str(r.n_beats), r.n_beats)
         arts_item = _NumericItem(str(r.n_artifacts), r.n_artifacts)
         rate_item = _NumericItem(f"{r.artifact_rate * 100:.2f}", r.artifact_rate)
+
         grade_item = QTableWidgetItem(r.grade)
         grade_item.setTextAlignment(Qt.AlignCenter)
+        # Paint the grade letter in its colour + bold so the user can
+        # scan the column at a glance. The full-row tint we tried first
+        # was silently dropped by the offscreen QPA used in the visual
+        # snapshot harness.
+        colour = _GRADE_COLOR.get(r.grade)
+        if colour is not None:
+            grade_item.setForeground(QBrush(QColor(colour)))
+            bold = QFont()
+            bold.setBold(True)
+            bold.setPointSize(bold.pointSize() + 1)
+            grade_item.setFont(bold)
+
         saved_item = QTableWidgetItem("yes" if r.saved_path else "no")
         if r.saved_path:
             saved_item.setToolTip(str(r.saved_path))
         saved_item.setTextAlignment(Qt.AlignCenter)
 
         items = [name_item, beats_item, arts_item, rate_item, grade_item, saved_item]
-        tint = _GRADE_TINT.get(r.grade)
         for col, item in enumerate(items):
-            if tint is not None:
-                item.setBackground(QColor(tint))
             self._table.setItem(row, col, item)
 
     # ------------------------------------------------------------------
