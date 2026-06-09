@@ -281,7 +281,7 @@ def test_export_clicked_in_test_mode_writes_real_file(
     written = list(tmp_path.glob("*.rrational"))
     assert len(written) == 1
     loaded = load_rrational_v2(written[0])
-    assert loaded.metadata.source_app == "RRational Inspector"
+    assert loaded.metadata.source_app == "RRational"
     # The CSV has at least one section (empatica generic_rr parser
     # creates a single-section dataset)
     assert len(loaded.sections) >= 1
