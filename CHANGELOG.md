@@ -2,6 +2,46 @@
 
 All notable changes to RRational are documented here.
 
+## [Unreleased] — main (Rounds 7-10, MNE-inspired feature parity + BIDS/PRISM interop)
+
+Continued from Sprint 6. Forty-five commits on `main` between `00e29b7..cbcca6a`. Theme: import MNE-Python's interaction patterns and persistence formats so the Inspector behaves like a familiar EEG-lab tool, plus first-class round-trip with BIDS-physio and PRISM Studio so RR datasets can move into multi-modal workflows without bespoke glue code.
+
+### Changed — Round 7 (naming + workflow polish)
+- User-facing "RRational Inspector" renamed to "RRational" across window titles, menus, dialogs, and report subjects — the Inspector is now the primary UI, not a subordinate tool. Tests updated accordingly (commit `95399f7`).
+- Workflow stepper labels no longer ellipsise mid-step; column widths scale to the longest label so all four steps stay readable on narrow Layouts (commit `c802557`).
+
+### Added — Round 8 (five MNE-inspired Inspector features)
+- **Live regex validation in event-definition dialog** (commit `cfe6edd`) — synonyms field validates incrementally with red border + tooltip on `re.error`; the OK button disables on malformed input. Mirrors MNE-Python's `mne.event.find_events` regex semantics so the same patterns work cross-tool.
+- **Batch preprocessing + quality triage dashboard** (commit `a73a3f6`) — multi-select datasets in the workspace tree, run cleaning + artifact correction across all of them, then review a quality-triage dialog (signal length, artifact %, gap count, recommended action) before committing. Pattern from MNE-LAB's batch-processing dock.
+- **Cross-recording annotation table + CSV import/export** (commit `626a7fe`) — `AnnotationTableDialog` lists every annotation across the workspace with file column, timestamp, text, duration. CSV round-trip handles `end_s` field with negative-duration clamping. Drop-in replacement for MNE's `Annotations.to_dataframe()`.
+- **MNE-style plot shortcuts + drag-annotation** (commit `faa6179`) — `R` reset view, `1/2/3` jump to 60s/600s/full, `A` toggle annotation mode, `E` toggle exclusion mode. Left-drag in annotation mode creates a range annotation; sub-0.5s drags fall through to the click-to-annotate path. Exclusion mode wins on dual-mode drags.
+- **Reproducible recipe export — history subpackage** (commits `0df990c` + `d69beb6` + `93358f9`) — every recorded `Action` (frozen dataclass) emits real `to_python()` source via the actual inspector APIs (`load_exclusion_zones`/`save_exclusion_zones`, `load_annotations`/`save_annotations`). File menu entry "Export Recipe…" writes a runnable `.py` that re-applies the entire history to a fresh load of the same recording.
+
+### Fixed — Round 8 polish
+- Round-8 dialogs picked up visual cleanup pass: missing primary-action tagging on the AnnotationTableDialog OK button, inconsistent dialog padding, label/widget alignment (commit `e82d9f9`).
+- Recipe-export test expectations updated post-rename (`source_app="RRational"` instead of `"RRational Inspector"`, commit `c398027`).
+
+### Added — Round 9 (range annotations + BIDS/MNE round-trip)
+- **Range annotations (MNE-style onset + duration)** (commit `f03fad2`) — `Annotation` dataclass extended with `duration: float = 0.0` and computed `t_end`, `is_range` properties. `Annotation.create_range(t_start, t_end, text)` classmethod. Drag-to-annotate now stores the full range instead of collapsing to the midpoint; the on-plot marker still pins at the onset. Legacy YAML files load with `duration=0.0` (backward compatible).
+- **BIDS-prep metadata on `InspectorData`** (commit `1e54b7c`) — added `experimenter`, `description`, `device`, `line_freq` fields so BIDS export has the spec's RECOMMENDED keys available at export time.
+- **BIDS-physio export** (commit `a42da2e`, issue #3) — `bids_export.py` writes `sub-<pid>[_ses-<ses>]_task-<task>_recording-cardiac_physio.tsv.gz` plus a JSON sidecar with all BIDS REQUIRED + RECOMMENDED fields. `SamplingFrequency = mean_beat_rate` per the spec's documented workaround for event-spaced cardiac data. Tools menu entry "Export to BIDS-physio…" with `test_mode` no-dialog path.
+- **BIDS-physio import** (commit `a4ce230`, issue #4) — `generic_rr.py` `detect_format()` recognises filenames ending `_recording-cardiac_physio.tsv.gz` paired with a sidecar JSON. `_parse_bids_physio()` reads the gzipped TSV, honours the sidecar's `Columns` array, anchors absolute timestamps from `StartTime`. Round-trip preserves RR values to ±1 ms (round-to-nearest-ms semantics documented in tests).
+- **Reproducible recipe embedded in HTML report** (commit `e25d952`, QW1) — Report's new "Reproducible recipe" section includes the recorder's full Python script with `tokenize`-based syntax highlighting (keywords coral, strings jade, comments slate, numbers amber). Report becomes a self-contained reproduction artifact.
+- **Central `rrational._logging` module** (commit `8ff217f`, issue #5) — `logger = logging.getLogger("rrational")` with `NullHandler`, plus `set_log_level()`, `use_log_level()` context manager, and `@verbose` decorator. `_resolve_level()` accepts `str` / `int` / `bool` / `None` for MNE-compatibility (`verbose=True` → DEBUG, `False` → WARNING, etc.).
+
+### Fixed — Round 10 (BIDS spec compliance + PRISM Studio interop)
+- **BIDS-physio sidecar drops non-spec key** (commit `2706a1a`) — removed bespoke `RecordingType` field that isn't in BIDS v1.11.1; added spec-compliant `PhysioType: "generic"` and `cardiac.LongName: "RR interval"` so labels surface correctly in `mne-bids` / `fmriprep` BIDS-aware UIs. Three new tests verify the spec assertions.
+
+### Added — Round 10 (PRISM Studio biometrics)
+- **PRISM Studio biometrics export** (commit `6181206`) — `prism_export.py` writes `sub-<pid>[_ses-<ses>]_task-<task>_biometrics-hrv_biometrics.tsv` (one row per recording) plus a JSON sidecar with PRISM's Technical / Study / Metadata blocks. Twelve HRV summary metrics mapped from NK2 keys to PRISM column names (`MeanNN`→`mean_nn_ms`, `RMSSD`→`rmssd_ms`, etc.) with column metadata (LongName, Units, DataType). Tools menu entry "Export to PRISM biometrics…". Confirms RRational HRV outputs are first-class citizens of the PRISM multi-modal research framework without a "BIDS-with-PRISM-flag" anti-pattern — two distinct exporters, one per spec.
+
+### Verified — Round 7-10 test coverage
+- Full test suite: 215 tests, 1 documented skip (`test_app_renders_welcome_screen_without_project` — AppTest inherits user's `~/.rrational/settings.yml`, env-dependent). 
+- New test files added: `tests/inspector/test_bids_export.py` (13 tests including 3 for Round-10 spec fixes), `test_bids_export_wiring.py` (4 tests), `test_bids_import.py` (9 tests), `test_prism_export.py` (14 tests), `test_prism_export_wiring.py` (5 tests), `test_plot_shortcuts.py` (10 tests), `test_annotation_table_dialog.py` (multiple suites), `test_batch_preprocess.py` (multiple suites), `test_quality_triage.py`, `test_save_recipe.py` (history + script emit), `test_history.py` (Action dataclasses + recorder), `tests/test_logging.py` (8 tests for `@verbose` + `use_log_level`).
+
+### Documented — Round 10 audit
+- `.claude/analysis/bids_cardiac_compat.md` (internal, gitignored) — research notes on BIDS Physiological Recordings v1.11.1 spec, PRISM Studio biometrics modality, and the event-spaced-data limitation (sampling-frequency=mean-beat-rate workaround). Confirms PRISM does not parse cardiac time-series; its biometrics modality is summary-metrics-only (one row per recording).
+
 ## [Unreleased] — main (post Phase 28 polish, Sprints 1-6)
 
 ### Fixed — Streamlit app
