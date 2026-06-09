@@ -89,6 +89,13 @@ docs/reference/hrv_tools_summary.md
 # Local-only superpowers plan notes (skill-generated planning material).
 docs/superpowers/
 
+# Local-only Claude analysis scratch (sprint research, gap reports, feature
+# inventories). Already-committed audits like bids_cardiac_compat.md stay
+# tracked via the explicit unignore below.
+.claude/analysis/*.md
+!.claude/analysis/bids_cardiac_compat.md
+.claude/scheduled_tasks.lock
+
 # Per-session inspector snapshot harness output.
 tests/visual/snapshots/
 
