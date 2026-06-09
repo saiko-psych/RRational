@@ -226,7 +226,7 @@ def test_build_markdown_starts_with_title(main_window):
     from rrational.inspector.report import ReportBuilder
 
     md = ReportBuilder(main_window).build_markdown()
-    assert md.startswith("# RRational Inspector Report")
+    assert md.startswith("# RRational Report")
 
 
 def test_build_markdown_empty_store_shows_friendly_placeholders(main_window):
@@ -320,7 +320,7 @@ def test_export_markdown_action_writes_default_path_in_test_mode(main_window, tm
     main_window._on_export_report_markdown_clicked()
     out = tmp_path / "rrational_report.md"
     assert out.exists()
-    assert out.read_text(encoding="utf-8").startswith("# RRational Inspector Report")
+    assert out.read_text(encoding="utf-8").startswith("# RRational Report")
 
 
 # ---------------------------------------------------------------------

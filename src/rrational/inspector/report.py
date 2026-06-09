@@ -219,6 +219,110 @@ def _html_escape(s: str) -> str:
     )
 
 
+_PYTHON_KEYWORDS = frozenset(
+    [
+        "False",
+        "None",
+        "True",
+        "and",
+        "as",
+        "assert",
+        "async",
+        "await",
+        "break",
+        "class",
+        "continue",
+        "def",
+        "del",
+        "elif",
+        "else",
+        "except",
+        "finally",
+        "for",
+        "from",
+        "global",
+        "if",
+        "import",
+        "in",
+        "is",
+        "lambda",
+        "nonlocal",
+        "not",
+        "or",
+        "pass",
+        "raise",
+        "return",
+        "try",
+        "while",
+        "with",
+        "yield",
+    ]
+)
+
+
+def _highlight_python(code: str) -> str:
+    """Tiny in-house Python highlighter for the embedded recipe block.
+
+    Tokenises the recorded recipe via :mod:`tokenize` and wraps each
+    token in a span carrying one of the four CSS classes defined in
+    ``_BASE_CSS`` (``kw`` / ``str`` / ``com`` / ``num``). We use
+    ``tokenize`` rather than regex so the highlighter handles triple-
+    quoted strings, escape sequences, and comments after code on the
+    same line without false positives. Falls back to a plain
+    HTML-escape on any tokenisation error — the script is then still
+    readable, just not coloured.
+    """
+    import io
+    import tokenize
+
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(code).readline))
+    except (tokenize.TokenizeError, IndentationError, SyntaxError):
+        return _html_escape(code)
+
+    # Rebuild the source line by line so whitespace + indentation are
+    # preserved exactly — token columns track the original character
+    # offsets, so we can splice spans into the raw source.
+    lines = code.splitlines(keepends=True)
+    out: list[str] = []
+    for lineno, line in enumerate(lines, start=1):
+        cursor = 0
+        for tok in tokens:
+            if tok.type in (tokenize.ENCODING, tokenize.ENDMARKER):
+                continue
+            (s_line, s_col), (e_line, e_col) = tok.start, tok.end
+            if s_line != lineno:
+                continue
+            # Emit any whitespace between the previous token and this one.
+            if s_col > cursor:
+                out.append(_html_escape(line[cursor:s_col]))
+            text = line[s_col:e_col] if e_line == lineno else line[s_col:]
+            css = _token_css_class(tok)
+            if css is not None:
+                out.append(f"<span class='{css}'>{_html_escape(text)}</span>")
+            else:
+                out.append(_html_escape(text))
+            cursor = e_col if e_line == lineno else len(line)
+        if cursor < len(line):
+            out.append(_html_escape(line[cursor:]))
+    return "".join(out)
+
+
+def _token_css_class(tok) -> str | None:
+    """Map a tokenize.Token to a span class — None means "no styling"."""
+    import tokenize
+
+    if tok.type == tokenize.COMMENT:
+        return "com"
+    if tok.type == tokenize.STRING:
+        return "str"
+    if tok.type == tokenize.NUMBER:
+        return "num"
+    if tok.type == tokenize.NAME and tok.string in _PYTHON_KEYWORDS:
+        return "kw"
+    return None
+
+
 # ----------------------------------------------------------------------
 # Built-in CSS — single string concatenated into <style> at the top of
 # every HTML report. Compact, print-friendly, no external fonts.
@@ -270,6 +374,19 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .audit { background: #f8f9fb; border-left: 3px solid #2E86AB;
          padding: .5em 1em; margin: .5em 0; font-size: 0.9em; }
 .note { font-style: italic; color: #555; font-size: 0.9em; }
+.hint { color: #555; font-size: 0.9em; margin-top: .25em; }
+pre.code { background: #1f2228; color: #eaecef; padding: 1em 1.25em;
+           border-radius: 6px; overflow-x: auto; font-size: 0.85em;
+           line-height: 1.5; }
+pre.code code { font-family: 'JetBrains Mono', 'Consolas',
+                'SF Mono', monospace; white-space: pre; }
+/* Tiny built-in Python keyword highlighter — no external JS load,
+   no network at render time. Keywords identified by a trivial regex
+   substitution in _recipe_code_html below. */
+pre.code .kw { color: #d97862; font-weight: 600; }
+pre.code .str { color: #5ab896; }
+pre.code .com { color: #8c98a6; font-style: italic; }
+pre.code .num { color: #e8a13a; }
 
 @media print {
     body { max-width: 100%; margin: 0; }
@@ -358,6 +475,24 @@ class ReportBuilder:
     def _datasets(self):
         return list(getattr(self._mw, "_datasets", []))
 
+    def _recipe_code(self) -> str | None:
+        """Render the recorded GUI actions as a Python script string.
+
+        Returns ``None`` when the recorder is missing or empty so the
+        report can substitute an explanatory placeholder. The same
+        text powers File -> Save recipe..., so HTML readers see the
+        exact code the user would download via the menu.
+        """
+        recorder = getattr(self._mw, "history", None)
+        if recorder is None or not getattr(recorder, "actions", None):
+            return None
+        try:
+            from rrational.inspector.history import to_script
+
+            return to_script(recorder)
+        except Exception:  # pragma: no cover - defensive
+            return None
+
     def _audit_entries(self) -> list[tuple[str, str, str, str]]:
         """Walk every loaded .rrational dataset and pull its audit_trail.
 
@@ -439,6 +574,7 @@ class ReportBuilder:
             ("methods", "Methods"),
             ("references", "References"),
             ("audit", "Audit trail"),
+            ("recipe", "Reproducible recipe"),
         ]:
             parts.append(f"<li><a href='#{anchor}'>{label}</a></li>")
         parts.append("</ol></nav>")
@@ -655,6 +791,26 @@ class ReportBuilder:
                     f"{_html_escape(details)}"
                     "</div>"
                 )
+
+        # ----- Reproducible recipe -----
+        parts.append("<h2 id='recipe'>Reproducible recipe</h2>")
+        recipe_code = self._recipe_code()
+        if recipe_code is None:
+            parts.append(
+                "<div class='empty'>"
+                "(no actions recorded in this session — interact with "
+                "the inspector then re-export the report)"
+                "</div>"
+            )
+        else:
+            parts.append(
+                "<p class='hint'>The Python below replays this session's "
+                "GUI actions. Re-running it with the same input files in "
+                "place reproduces the same .rrational v2 outputs.</p>"
+            )
+            parts.append(
+                f"<pre class='code'><code>{_highlight_python(recipe_code)}</code></pre>"
+            )
 
         parts.append("</body></html>")
         return "\n".join(parts)
