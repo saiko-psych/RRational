@@ -50,12 +50,20 @@ def detect_format(path: Path) -> str | None:
 
     Returns one of: 'polar_sensor_logger', 'polar_flow', 'empatica',
     'elite_hrv', 'kubios', 'plain_rr', 'hrv_logger', 'vns_analyse',
-    or None if unrecognized.
-
-    Phase 26: also detects HRV Logger paired files (date/rr columns,
-    optional companion _Events.csv) and VNS Analyse exports (text file
-    with a "RR Intervals" or "Hb Intervals" section header).
+    'bids_physio', or None if unrecognized.
     """
+    # BIDS-physio detection happens FIRST because it is the only
+    # extension-driven format we support (everything else is a plain
+    # text/CSV the read_text call below can sniff). We require the
+    # canonical ``recording-cardiac_physio.tsv.gz`` BIDS suffix so an
+    # arbitrary ``.tsv.gz`` from somewhere else does not get mistaken
+    # for a BIDS bundle.
+    name_lower = path.name.lower()
+    if name_lower.endswith("_physio.tsv.gz") and "recording-cardiac" in name_lower:
+        sidecar = path.with_name(path.name[: -len(".tsv.gz")] + ".json")
+        if sidecar.exists():
+            return "bids_physio"
+
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
@@ -176,6 +184,7 @@ def load_generic_rr(
         "kubios": _parse_kubios,
         "hrv_logger": _parse_hrv_logger,
         "vns_analyse": _parse_vns_analyse,
+        "bids_physio": _parse_bids_physio,
     }
 
     # Phase 26: if the user opened an Events.csv directly, point them
@@ -205,6 +214,76 @@ def load_generic_rr(
         rr_intervals=rr_intervals,
         metadata=metadata,
     )
+
+
+def _parse_bids_physio(path: Path) -> tuple[list[RRInterval], dict]:
+    """Read a BIDS-spec cardiac physio TSV.GZ + matching JSON sidecar.
+
+    The TSV is header-less, one column (``cardiac``) of RR intervals in
+    ms (RRational's BIDS export keeps that shape, and the BIDS spec
+    leaves column ordering / count to the sidecar's ``Columns`` array
+    so we honour it). The sidecar's ``StartTime`` becomes the recording
+    epoch anchor; subsequent beat timestamps are reconstructed by
+    cumulative RR sum because BIDS physio for event-spaced data does
+    not carry per-beat times.
+    """
+    import gzip
+    import json
+    from datetime import datetime, timezone
+
+    sidecar_path = path.with_name(path.name[: -len(".tsv.gz")] + ".json")
+    sidecar: dict = {}
+    if sidecar_path.exists():
+        try:
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            sidecar = {}
+
+    columns = sidecar.get("Columns") or ["cardiac"]
+    try:
+        cardiac_idx = columns.index("cardiac")
+    except ValueError:
+        # No explicit cardiac column — fall back to column 0.
+        cardiac_idx = 0
+
+    intervals: list[RRInterval] = []
+    elapsed = 0
+    start_time = sidecar.get("StartTime")
+    base_ts = None
+    if isinstance(start_time, (int, float)):
+        base_ts = datetime.fromtimestamp(float(start_time), tz=timezone.utc)
+
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t") if "\t" in line else [line]
+            if cardiac_idx >= len(parts):
+                continue
+            try:
+                rr_ms = int(round(float(parts[cardiac_idx])))
+            except ValueError:
+                continue
+            ts = (
+                datetime.fromtimestamp(
+                    base_ts.timestamp() + elapsed / 1000.0,
+                    tz=timezone.utc,
+                )
+                if base_ts is not None
+                else None
+            )
+            intervals.append(RRInterval(timestamp=ts, rr_ms=rr_ms, elapsed_ms=elapsed))
+            elapsed += rr_ms
+
+    metadata = {
+        "sidecar": sidecar,
+        "source_format": "bids_physio",
+        "task": sidecar.get("TaskName"),
+        "manufacturer": sidecar.get("Manufacturer"),
+        "experimenter": sidecar.get("Experimenter"),
+    }
+    return intervals, metadata
 
 
 def _parse_polar_sensor_logger(path: Path) -> tuple[list[RRInterval], dict]:
