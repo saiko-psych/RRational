@@ -40,6 +40,12 @@ from rrational.inspector.exclusion_persistence import (
     load_exclusion_zones,
     save_exclusion_zones,
 )
+from rrational.inspector.history import (
+    AddAnnotation,
+    AddExclusionZone,
+    DetectArtifacts,
+    SaveRRationalExport,
+)
 
 if TYPE_CHECKING:
     from rrational.inspector.annotations import Annotation
@@ -526,7 +532,20 @@ class PreprocessingPanel(QWidget):
             )
 
     def _on_zones_changed(self) -> None:
-        """Plot fired ``exclusion_zones_changed`` — refresh + auto-save."""
+        """Plot fired ``exclusion_zones_changed`` — refresh + auto-save.
+
+        Also pushes an :class:`AddExclusionZone` action into the inspector
+        history when the zone count grew since the last call (delete /
+        edit don't generate a recipe entry — the recipe replays
+        creations, not interactive edits).
+        """
+        plot = self._main_window._browse_tab._plot
+        prev_count = getattr(self, "_history_zone_count", 0)
+        zones = list(plot._exclusion_zones)
+        if len(zones) > prev_count:
+            for zone in zones[prev_count:]:
+                self._record_exclusion_history(zone)
+        self._history_zone_count = len(zones)
         self._refresh_zones_table()
         self._autosave_exclusion_zones()
 
@@ -635,6 +654,17 @@ class PreprocessingPanel(QWidget):
         self._export_btn.setEnabled(True)
         # Auto-persist so future loads restore this state.
         self._autosave_artifacts(result, data)
+        # Record detect into the reproducible-action history. ``pid`` is
+        # optional context — handy when the recipe is reviewed by a
+        # second pair of eyes.
+        try:
+            history = getattr(self._main_window, "history", None)
+            if history is not None:
+                history.record(
+                    DetectArtifacts(method="lipponen2019", pid=self._active_pid())
+                )
+        except Exception:  # pragma: no cover - history must not break detect
+            pass
         self._main_window.statusBar().showMessage(
             f"Artifact detection: {result.total} found "
             f"({result.rate * 100:.2f}%, {result.grade})",
@@ -877,6 +907,25 @@ class PreprocessingPanel(QWidget):
             )
         except Exception:
             return None
+        # Record into the reproducible-action history so a recipe built
+        # off a batch run still reflects every export that landed on
+        # disk (the surrounding BatchPreprocess action is the
+        # higher-level "for-each-loop" trace).
+        try:
+            history = getattr(self._main_window, "history", None)
+            if history is not None:
+                section_name = ds.data.sections[0].name if ds.data.sections else ""
+                n_beats = int(len(ds.data.v)) if ds.data is not None else 0
+                history.record(
+                    SaveRRationalExport(
+                        pid=pid,
+                        section=section_name,
+                        out_path=str(out_path),
+                        n_beats=n_beats,
+                    )
+                )
+        except Exception:  # pragma: no cover - history must not break batch
+            pass
         return str(out_path)
 
     def _on_toggle_show_artifacts(self, checked: bool) -> None:
@@ -1129,6 +1178,26 @@ class PreprocessingPanel(QWidget):
         n_corrected = sum(
             s.nn_correction.intervals_corrected for s in export.sections.values()
         )
+        # Record the export into the reproducible-action history. The
+        # ``section`` field is best-effort — we report the first section
+        # name (single-section recordings are the common case); a future
+        # extension can emit one record per section if needed.
+        try:
+            history = getattr(self._main_window, "history", None)
+            if history is not None:
+                section_name = (
+                    next(iter(export.sections.keys()), "") if export.sections else ""
+                )
+                history.record(
+                    SaveRRationalExport(
+                        pid=participant_id,
+                        section=section_name,
+                        out_path=str(out_path),
+                        n_beats=int(len(data.v)),
+                    )
+                )
+        except Exception:  # pragma: no cover - history must not break export
+            pass
         self._main_window.statusBar().showMessage(
             f"Exported {n_sections} section(s), "
             f"{n_corrected} corrected interval(s) → {out_path.name}",
@@ -1227,6 +1296,7 @@ class PreprocessingPanel(QWidget):
         plot.add_annotation_marker(ann.t, ann.text)
         self._persist_annotations()
         self._refresh_annotation_label()
+        self._record_annotation_history(ann.t, ann.text)
         self._main_window.statusBar().showMessage(
             f"Added annotation '{ann.text[:40]}'", 3000
         )
@@ -1263,9 +1333,47 @@ class PreprocessingPanel(QWidget):
         plot.add_annotation_marker(ann.t, ann.text)
         self._persist_annotations()
         self._refresh_annotation_label()
+        self._record_annotation_history(ann.t, ann.text)
         self._main_window.statusBar().showMessage(
             f"Added annotation '{ann.text[:40]}'", 3000
         )
+
+    # ------------------------------------------------------------------
+    # History bridge — record annotation + exclusion actions
+    # ------------------------------------------------------------------
+    def _record_annotation_history(self, t: float, label: str) -> None:
+        """Push one :class:`AddAnnotation` into the inspector history.
+
+        Best-effort: an exception in the recorder must never break the
+        annotation flow. ``pid`` falls back to an empty string when no
+        active dataset is loaded so the rendered recipe still parses.
+        """
+        try:
+            history = getattr(self._main_window, "history", None)
+            if history is None:
+                return
+            pid = self._active_pid() or ""
+            history.record(AddAnnotation(pid=pid, t=float(t), label=str(label)))
+        except Exception:  # pragma: no cover - history must not break
+            pass
+
+    def _record_exclusion_history(self, zone) -> None:
+        """Push one :class:`AddExclusionZone` into the inspector history."""
+        try:
+            history = getattr(self._main_window, "history", None)
+            if history is None:
+                return
+            pid = self._active_pid() or ""
+            history.record(
+                AddExclusionZone(
+                    pid=pid,
+                    t_start=float(zone.start_t),
+                    t_end=float(zone.end_t),
+                    reason=str(zone.reason or ""),
+                )
+            )
+        except Exception:  # pragma: no cover - history must not break
+            pass
 
     def _annotation_for_marker(self, marker) -> "Annotation | None":
         """Find the dataclass that produced ``marker`` (match by time)."""

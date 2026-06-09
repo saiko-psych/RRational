@@ -53,6 +53,7 @@ from rrational.inspector.annotation_persistence import (
     save_annotations,
 )
 from rrational.inspector.annotations import Annotation
+from rrational.inspector.history import AddAnnotation
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from rrational.inspector.main_window import MainWindow
@@ -506,11 +507,24 @@ class AnnotationTableDialog(QDialog):
             new_by_pid.setdefault(pid, []).append(ann)
 
         imported = 0
+        history = getattr(self._main, "history", None)
         for pid, new_items in new_by_pid.items():
             existing = load_annotations(pid, project_path=project)
             merged = existing + new_items
             save_annotations(pid, merged, project_path=project)
             imported += len(new_items)
+            # Record one history action per imported annotation so the
+            # generated recipe replays the same per-row attachments. We
+            # swallow recorder exceptions per-row — a logging glitch
+            # must not abort a 1000-row import.
+            if history is not None:
+                for ann in new_items:
+                    try:
+                        history.record(
+                            AddAnnotation(pid=pid, t=float(ann.t), label=str(ann.text))
+                        )
+                    except Exception:  # pragma: no cover - defensive
+                        pass
             self._sync_active_panel_if_needed(pid)
 
         self._refresh()

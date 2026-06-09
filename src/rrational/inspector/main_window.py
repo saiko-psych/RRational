@@ -35,6 +35,13 @@ from rrational.gui.project import (
 )
 from rrational.inspector import persistence, settings
 from rrational.inspector.data_loader import Dataset, InspectorData
+from rrational.inspector.history import (
+    BatchPreprocess,
+    HistoryRecorder,
+    LoadRecording,
+    OpenProject,
+    to_script,
+)
 from rrational.inspector.results_store import ResultsStore
 from rrational.inspector.tabs import (
     AnalysisTab,
@@ -120,6 +127,13 @@ class MainWindow(QMainWindow):
         # All HRV results accumulated this session. The Analysis tab
         # appends; the Results tab reads.
         self._results_store = ResultsStore()
+
+        # Reproducible-action ledger (MNELAB-style): every workflow
+        # mutation gets pushed here so File -> Save recipe... can dump a
+        # runnable .py script that replays the session. Held as a public
+        # attribute so panels / dialogs can record without going through
+        # extra plumbing.
+        self.history = HistoryRecorder()
 
         # Currently-open project (or None for the global / "ad-hoc" workspace).
         # When set, the persistence layer redirects sequence/group state into
@@ -604,6 +618,17 @@ class MainWindow(QMainWindow):
         # walking the menu hierarchy.
         self._export_html_act = export_html_act
         self._export_md_act = export_md_act
+
+        file_menu.addSeparator()
+
+        # ----- Reproducible recipe export -------------------------------
+        save_recipe_act = QAction("&Save recipe…", self)
+        save_recipe_act.setStatusTip(
+            "Export the current GUI actions as a runnable Python script"
+        )
+        save_recipe_act.triggered.connect(self._on_save_recipe_clicked)
+        file_menu.addAction(save_recipe_act)
+        self._save_recipe_act = save_recipe_act
 
         file_menu.addSeparator()
 
@@ -1187,6 +1212,13 @@ class MainWindow(QMainWindow):
             persistence.set_active_project_config_dir(None)
         else:
             persistence.set_active_project_config_dir(pm.get_config_dir())
+            # Record the project-open into the reproducible action log
+            # (only on actual opens — closing emits no recipe entry, the
+            # script implicitly ends with the last opened project).
+            try:
+                self.history.record(OpenProject(path=str(pm.project_path)))
+            except Exception:  # pragma: no cover - history must not break open
+                pass
             if not self.test_mode:
                 add_recent_project(pm.project_path, pm.metadata.name)
                 settings.write_setting("last_dir", str(pm.project_path))
@@ -1647,6 +1679,14 @@ class MainWindow(QMainWindow):
         idx = self.add_dataset(ds)
         if self._active_idx is None:
             self.set_active_dataset(idx)
+        # Record load into the reproducible-action history. The format
+        # is left as ``None`` so the rendered recipe re-runs the same
+        # auto-detect that the GUI performed; a future Phase can pass
+        # the resolved format if Dataset starts surfacing it.
+        try:
+            self.history.record(LoadRecording(path=str(path), fmt=None))
+        except Exception:  # pragma: no cover - history must not break load
+            pass
         return idx
 
     def add_dataset(self, ds: Dataset) -> int:
@@ -2070,6 +2110,24 @@ class MainWindow(QMainWindow):
             5000,
         )
 
+        # Record the batch into the reproducible-action log. We capture
+        # the source paths (not the dataset names) so the rendered
+        # recipe can re-load the same files; datasets without a path
+        # (e.g. demo / synthetic) are skipped from the recorded tuple.
+        try:
+            recording_paths = tuple(
+                str(ds.path) for ds in self._datasets if ds.path is not None
+            )
+            if recording_paths:
+                self.history.record(
+                    BatchPreprocess(
+                        recording_paths=recording_paths,
+                        method="lipponen2019",
+                    )
+                )
+        except Exception:  # pragma: no cover - history must not break batch
+            pass
+
         if not results:
             return
         self._show_quality_triage(results)
@@ -2256,6 +2314,41 @@ class MainWindow(QMainWindow):
             self._critical("Export failed", f"Could not write report:\n\n{e}")
             return
         self.statusBar().showMessage(f"Wrote Markdown report → {out_path.name}", 4000)
+
+    # ------------------------------------------------------------------
+    # Reproducible recipe export (MNELAB-style action history -> .py)
+    # ------------------------------------------------------------------
+    def _on_save_recipe_clicked(self) -> None:
+        """Render :attr:`history` to a runnable Python script on disk.
+
+        Default destination = the report-export directory (project
+        ``analysis/`` when a project is active, otherwise the cached
+        ``last_dir``). In ``test_mode`` we accept the suggestion path
+        directly so headless tests can exercise the write path without
+        clicking through a modal QFileDialog.
+        """
+        default_dir = self._report_default_dir()
+        suggested = str(default_dir / "rrational_recipe.py")
+        if self.test_mode:
+            path_str = suggested
+        else:
+            path_str, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save recipe",
+                suggested,
+                "Python files (*.py);;All files (*.*)",
+            )
+        if not path_str:
+            return
+        out_path = Path(path_str)
+        try:
+            out_path.write_text(to_script(self.history), encoding="utf-8")
+        except OSError as e:
+            self._critical("Save recipe failed", f"Could not write recipe:\n\n{e}")
+            return
+        self.statusBar().showMessage(
+            f"Saved {len(self.history)} action(s) to {out_path.name}", 4000
+        )
 
     # ------------------------------------------------------------------
     # Dialog helpers — silenced in test_mode so pytest-qt doesn't block.
