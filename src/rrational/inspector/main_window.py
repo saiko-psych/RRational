@@ -873,6 +873,15 @@ class MainWindow(QMainWindow):
         self._bids_export_act.triggered.connect(self._on_bids_export_clicked)
         tools_menu.addAction(self._bids_export_act)
 
+        # ----- Tools: PRISM Studio biometrics export ----------------------
+        self._prism_export_act = QAction("Export to &PRISM biometrics…", self)
+        self._prism_export_act.setStatusTip(
+            "Write the active recording's HRV summary metrics as a "
+            "PRISM-Studio biometrics TSV + JSON sidecar"
+        )
+        self._prism_export_act.triggered.connect(self._on_prism_export_clicked)
+        tools_menu.addAction(self._prism_export_act)
+
         # ----- Help menu --------------------------------------------------
         help_menu = menubar.addMenu("&Help")
         # Workflow-walkthrough is the FIRST help entry — most useful for new users.
@@ -2204,6 +2213,127 @@ class MainWindow(QMainWindow):
             6000,
         )
         self._latest_bids_paths = paths
+
+    def _on_prism_export_clicked(self) -> None:
+        """Tools -> Export to PRISM biometrics... — writes HRV summary."""
+        if self._data is None:
+            self.statusBar().showMessage("PRISM export: no active dataset.", 3000)
+            return
+        active_ds = self._datasets[self._active_idx]
+        from pathlib import Path as _Path
+
+        default_pid = (
+            "".join(c for c in _Path(active_ds.name).stem if c.isalnum()) or "001"
+        )
+
+        if self.test_mode:
+            participant_id = default_pid
+            task = "rest"
+            out_dir = _Path(
+                getattr(self, "_test_prism_dir", _Path.cwd() / "_prism_test")
+            )
+        else:
+            from qtpy.QtWidgets import QFileDialog, QInputDialog
+
+            participant_id, ok = QInputDialog.getText(
+                self,
+                "PRISM participant id",
+                "PRISM sub-<pid> (alphanumeric only):",
+                text=default_pid,
+            )
+            if not ok or not participant_id:
+                return
+            task, ok = QInputDialog.getText(
+                self,
+                "PRISM task",
+                "PRISM task-<task> (alphanumeric only):",
+                text="rest",
+            )
+            if not ok or not task:
+                return
+            chosen = QFileDialog.getExistingDirectory(
+                self, "Choose PRISM output directory", str(_Path.home())
+            )
+            if not chosen:
+                return
+            out_dir = _Path(chosen)
+
+        # Compute HRV summary metrics from the active dataset's RR series.
+        # We use the same hrv_compute pipeline the AnalysisTab Single mode
+        # drives so PRISM and the on-screen metrics stay numerically
+        # consistent. Any exception is surfaced to the status bar — never
+        # silently dropped.
+        try:
+            metrics = self._compute_hrv_summary_for_prism()
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(
+                f"PRISM export: HRV compute failed: {exc}", 6000
+            )
+            return
+
+        try:
+            from rrational.inspector.prism_export import export_prism_biometrics
+
+            paths = export_prism_biometrics(
+                metrics,
+                out_dir,
+                participant_id=participant_id,
+                task=task,
+                data=self._data,
+            )
+        except (ValueError, OSError) as exc:
+            self.statusBar().showMessage(f"PRISM export failed: {exc}", 6000)
+            return
+        self.statusBar().showMessage(
+            f"PRISM export: wrote {paths.tsv.name} + sidecar to {paths.tsv.parent}",
+            6000,
+        )
+        self._latest_prism_paths = paths
+
+    def _compute_hrv_summary_for_prism(self) -> dict:
+        """Compute the per-recording HRV metrics for a PRISM export.
+
+        Pulls finite RR-ms values out of the active dataset, runs them
+        through ``rrational.analysis.hrv_compute.calculate_hrv_metrics``
+        in single-segment mode, and returns the dict the PRISM exporter
+        expects (column-name -> value). Time-domain + frequency-domain +
+        Poincare metrics are all populated when sufficient data is
+        present; sparse recordings get sensible NaN-fallbacks via the
+        underlying compute.
+        """
+        import numpy as _np
+
+        from rrational.analysis.hrv_compute import calculate_hrv_metrics
+
+        rr = self._data.v[_np.isfinite(self._data.v)].astype(float)
+        n_beats = int(rr.size)
+        duration_s = float(self._data.t_end - self._data.t_start)
+        if n_beats == 0:
+            return {"n_beats": 0, "duration_s": duration_s}
+
+        results, _stds, _n = calculate_hrv_metrics(rr, use_windows=False)
+
+        # calculate_hrv_metrics returns keys MeanNN / SDNN / RMSSD /
+        # pNN50 / MeanHR / LF / HF / LF_HF / SD1 / SD2 — map them to the
+        # PRISM exporter's canonical column names.
+        def _g(k):
+            v = results.get(k)
+            return None if v is None or (isinstance(v, float) and _np.isnan(v)) else v
+
+        return {
+            "n_beats": n_beats,
+            "duration_s": round(duration_s, 3),
+            "mean_hr_bpm": _g("MeanHR"),
+            "mean_nn_ms": _g("MeanNN"),
+            "sdnn_ms": _g("SDNN"),
+            "rmssd_ms": _g("RMSSD"),
+            "pnn50_pct": _g("pNN50"),
+            "lf_ms2": _g("LF"),
+            "hf_ms2": _g("HF"),
+            "lf_hf_ratio": _g("LF_HF"),
+            "sd1_ms": _g("SD1"),
+            "sd2_ms": _g("SD2"),
+        }
 
     def _on_quality_triage_clicked(self) -> None:
         """Tools → Quality triage. Recomputes grades WITHOUT exporting."""
