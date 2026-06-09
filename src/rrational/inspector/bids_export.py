@@ -78,10 +78,16 @@ def _sidecar_for(data: "InspectorData") -> dict:
     mean_rate = n_samples / duration_s
 
     sidecar = {
+        # BIDS REQUIRED fields.
         "SamplingFrequency": round(mean_rate, 6),
         "StartTime": float(data.t_start),
         "Columns": ["cardiac"],
+        # BIDS RECOMMENDED + the OPTIONAL but high-utility per-column
+        # block. ``LongName`` surfaces in BIDS-aware UI labels; without
+        # it, downstream tools fall back to the bare column name.
+        "PhysioType": "generic",
         "cardiac": {
+            "LongName": "RR interval",
             "Description": (
                 "RR interval (ms) between consecutive R peaks. Variable "
                 "sample interval — SamplingFrequency reports the mean "
@@ -89,11 +95,13 @@ def _sidecar_for(data: "InspectorData") -> dict:
             ),
             "Units": "ms",
         },
-        "RecordingType": "continuous",
     }
 
-    # BIDS-prep fields populated from QW2 metadata when present. Empty
-    # strings / None get dropped so the sidecar stays clean.
+    # Optional QW2 metadata. Empty strings / None get dropped so the
+    # sidecar stays clean. ``Manufacturer`` is the BIDS-blessed key for
+    # hardware provenance; ``Experimenter`` and ``TaskDescription`` are
+    # tolerated "additional metadata" — BIDS permits arbitrary extra
+    # keys provided the REQUIRED ones above are present.
     if data.experimenter:
         sidecar["Experimenter"] = data.experimenter
     if data.description:

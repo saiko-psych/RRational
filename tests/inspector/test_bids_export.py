@@ -130,6 +130,39 @@ def test_task_must_be_alphanumeric(tmp_path: Path):
         )
 
 
+def test_sidecar_does_not_emit_non_spec_RecordingType_key(tmp_path: Path):
+    from rrational.inspector.bids_export import export_bids_physio
+
+    paths = export_bids_physio(
+        _make_data(), tmp_path, participant_id="001", task="rest"
+    )
+    sidecar = json.loads(paths.json.read_text())
+    # BIDS-physio JSON does not define RecordingType — keeping it would
+    # be a non-spec key. Drop it (audited in bids_cardiac_compat.md).
+    assert "RecordingType" not in sidecar
+
+
+def test_sidecar_emits_PhysioType_generic(tmp_path: Path):
+    from rrational.inspector.bids_export import export_bids_physio
+
+    paths = export_bids_physio(
+        _make_data(), tmp_path, participant_id="001", task="rest"
+    )
+    sidecar = json.loads(paths.json.read_text())
+    # RECOMMENDED field per BIDS spec; explicit > implicit.
+    assert sidecar["PhysioType"] == "generic"
+
+
+def test_cardiac_column_block_has_LongName(tmp_path: Path):
+    from rrational.inspector.bids_export import export_bids_physio
+
+    paths = export_bids_physio(
+        _make_data(), tmp_path, participant_id="001", task="rest"
+    )
+    sidecar = json.loads(paths.json.read_text())
+    assert sidecar["cardiac"]["LongName"] == "RR interval"
+
+
 def test_out_dir_is_created_when_missing(tmp_path: Path):
     from rrational.inspector.bids_export import export_bids_physio
 
