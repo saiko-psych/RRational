@@ -1302,21 +1302,19 @@ class PreprocessingPanel(QWidget):
         )
 
     def _on_plot_range_selected(self, t0: float, t1: float) -> None:
-        """Annotation-mode drag finished — pin annotation at the midpoint.
+        """Annotation-mode drag finished — pin a range annotation.
 
-        The Annotation model is point-based (single ``t``); a drag is
-        UX sugar that gives users an easier target than a precise click.
-        We capture the midpoint so the on-plot marker visually sits
-        centered on what the user selected.
+        Stores onset + duration directly (MNE-style) so the annotation
+        round-trips as a real range through persistence, the table
+        dialog, the recipe export, and any future BIDS-physio export.
         """
         from rrational.inspector.annotations import Annotation as _Annotation
 
         if not self._toggle_annotation_mode.isChecked():
             return
-        t_mid = (float(t0) + float(t1)) / 2.0
         width_s = abs(float(t1) - float(t0))
         if self._main_window.test_mode:
-            text = f"auto-test range @ {t_mid:.0f} ({width_s:.1f}s)"
+            text = f"auto-test range @ {min(t0, t1):.0f} ({width_s:.1f}s)"
             ok = True
         else:
             text, ok = QInputDialog.getText(
@@ -1327,9 +1325,12 @@ class PreprocessingPanel(QWidget):
         if not ok or not str(text).strip():
             return
         text = str(text).strip()
-        ann = _Annotation.create(t=t_mid, text=text)
+        ann = _Annotation.create_range(t_start=float(t0), t_end=float(t1), text=text)
         self._annotations.append(ann)
         plot = self._main_window._browse_tab._plot
+        # The marker is still pinned at the onset — the duration shows
+        # up in the table dialog + tooltip rather than as a band on the
+        # plot (which we keep visually distinct from exclusion zones).
         plot.add_annotation_marker(ann.t, ann.text)
         self._persist_annotations()
         self._refresh_annotation_label()

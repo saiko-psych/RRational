@@ -117,11 +117,12 @@ class AddExclusionZone(Action):
 
 @dataclass(frozen=True)
 class AddAnnotation(Action):
-    """User attached a free-text annotation at a timestamp."""
+    """User attached a free-text annotation at a timestamp or range."""
 
     pid: str
     t: float
     label: str
+    duration: float = 0.0  # 0.0 = point annotation; > 0 = range
 
     def to_python(self) -> str:
         # Persist through the same on-disk path the GUI uses so the
@@ -136,7 +137,7 @@ class AddAnnotation(Action):
             f"_pid = {self.pid!r}\n"
             "_existing = load_annotations(_pid)\n"
             f"_existing.append(Annotation.create(t={self.t}, "
-            f"text={self.label!r}))\n"
+            f"text={self.label!r}, duration={self.duration}))\n"
             "save_annotations(_pid, _existing)"
         )
 

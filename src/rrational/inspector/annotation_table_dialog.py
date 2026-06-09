@@ -241,10 +241,12 @@ class AnnotationTableDialog(QDialog):
 
         # Numeric columns — read-only display. We do not let the user
         # retime an annotation via this table; that's the job of the
-        # plot click + edit dialog in PreprocessingPanel.
+        # plot click + edit dialog in PreprocessingPanel. ``duration``
+        # comes straight from the Annotation; legacy point annotations
+        # report 0.0 so the schema stays uniform.
         start = float(ann.t)
-        end = float(ann.t)  # point-like, no end-time on Annotation today
-        duration = end - start
+        duration = float(getattr(ann, "duration", 0.0))
+        end = start + duration
 
         for col, val in (
             (self.COL_START, start),
@@ -530,7 +532,17 @@ class AnnotationTableDialog(QDialog):
                 skipped += 1
                 continue
             text = (row.get("label") or "").strip()
-            ann = Annotation.create(t=t, text=text)
+            # Range support: prefer end_s when present + sane, else
+            # fall back to a point annotation. Negative durations (end
+            # before start) are clamped to 0 — a typo shouldn't crash.
+            duration = 0.0
+            end_raw = row.get("end_s")
+            if end_raw not in (None, ""):
+                try:
+                    duration = max(0.0, float(end_raw) - t)
+                except (TypeError, ValueError):
+                    duration = 0.0
+            ann = Annotation.create(t=t, text=text, duration=duration)
             new_by_pid.setdefault(pid, []).append(ann)
 
         imported = 0
