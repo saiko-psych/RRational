@@ -53,16 +53,21 @@ class LoadRecording(Action):
     fmt: str | None = None  # auto-detect when None
 
     def to_python(self) -> str:
+        # Also bind ``rr_intervals`` so the DetectArtifacts block that
+        # typically follows can call clean_rr_intervals(rr_intervals,
+        # ...) without re-importing or re-attribute-walking.
         if self.fmt:
             return (
                 "from rrational.io.generic_rr import load_generic_rr\n"
                 f"recording = load_generic_rr("
-                f"Path({self.path!r}), source_app={self.fmt!r})"
+                f"Path({self.path!r}), source_app={self.fmt!r})\n"
+                "rr_intervals = recording.rr_intervals"
             )
         return (
             "from rrational.io.generic_rr import detect_format, load_generic_rr\n"
             f"_p = Path({self.path!r})\n"
-            "recording = load_generic_rr(_p, source_app=detect_format(_p))"
+            "recording = load_generic_rr(_p, source_app=detect_format(_p))\n"
+            "rr_intervals = recording.rr_intervals"
         )
 
 
@@ -91,11 +96,22 @@ class AddExclusionZone(Action):
     reason: str = ""
 
     def to_python(self) -> str:
+        # Persisted via the inspector's exclusion_persistence module —
+        # the recipe instantiates a real ExclusionZone and saves it via
+        # the same code path the GUI uses on drag-release.
         return (
-            f"# pid={self.pid!r}\n"
-            f"exclusion_zone("
-            f"t_start={self.t_start}, t_end={self.t_end}, "
-            f"reason={self.reason!r})"
+            "from rrational.inspector.exclusion_persistence import (\n"
+            "    ExclusionZone,\n"
+            "    load_exclusion_zones,\n"
+            "    save_exclusion_zones,\n"
+            ")\n"
+            f"_pid = {self.pid!r}\n"
+            "_existing = load_exclusion_zones(_pid)\n"
+            "_existing.append(ExclusionZone(\n"
+            f"    t_start={self.t_start}, t_end={self.t_end},\n"
+            f"    reason={self.reason!r},\n"
+            "))\n"
+            "save_exclusion_zones(_pid, _existing)"
         )
 
 
@@ -108,10 +124,20 @@ class AddAnnotation(Action):
     label: str
 
     def to_python(self) -> str:
+        # Persist through the same on-disk path the GUI uses so the
+        # recipe truly reproduces session state — not just a dataclass
+        # instance left dangling in memory.
         return (
             "from rrational.inspector.annotations import Annotation\n"
-            f"ann = Annotation.create(t={self.t}, text={self.label!r})\n"
-            f"# attach to participant {self.pid!r}"
+            "from rrational.inspector.annotation_persistence import (\n"
+            "    load_annotations,\n"
+            "    save_annotations,\n"
+            ")\n"
+            f"_pid = {self.pid!r}\n"
+            "_existing = load_annotations(_pid)\n"
+            f"_existing.append(Annotation.create(t={self.t}, "
+            f"text={self.label!r}))\n"
+            "save_annotations(_pid, _existing)"
         )
 
 
@@ -125,12 +151,21 @@ class SaveRRationalExport(Action):
     n_beats: int
 
     def to_python(self) -> str:
+        # ``inspector_data`` is whatever the previous DetectArtifacts /
+        # cleaning step produced. We leave the body referencing it as a
+        # symbol so a user adapting the recipe can plug in their own
+        # InspectorData; the trailing comment makes the assumption
+        # explicit instead of letting it surface as a NameError after
+        # the script is half-way through.
         return (
             "from rrational.inspector.export import (\n"
             "    export_inspector_to_rrational,\n"
             ")\n"
-            f"# save {self.n_beats} beats of {self.section!r} "
-            f"for {self.pid!r}\n"
+            "# inspector_data must be an InspectorData built from the\n"
+            "# previous cleaning step. Wire it up before running this\n"
+            "# block when adapting the recipe.\n"
+            f"# Saves {self.n_beats} beats of section "
+            f"{self.section!r} for participant {self.pid!r}.\n"
             "export = export_inspector_to_rrational(\n"
             "    inspector_data,\n"
             f"    Path({self.out_path!r}),\n"
