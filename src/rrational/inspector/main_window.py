@@ -862,6 +862,17 @@ class MainWindow(QMainWindow):
         self._quality_triage_act.triggered.connect(self._on_quality_triage_clicked)
         tools_menu.addAction(self._quality_triage_act)
 
+        tools_menu.addSeparator()
+
+        # ----- Tools: BIDS-physio export ----------------------------------
+        self._bids_export_act = QAction("Export to &BIDS-physio…", self)
+        self._bids_export_act.setStatusTip(
+            "Write the active recording as a BIDS-spec cardiac "
+            "physio TSV.GZ + JSON sidecar pair"
+        )
+        self._bids_export_act.triggered.connect(self._on_bids_export_clicked)
+        tools_menu.addAction(self._bids_export_act)
+
         # ----- Help menu --------------------------------------------------
         help_menu = menubar.addMenu("&Help")
         # Workflow-walkthrough is the FIRST help entry — most useful for new users.
@@ -2131,6 +2142,68 @@ class MainWindow(QMainWindow):
         if not results:
             return
         self._show_quality_triage(results)
+
+    def _on_bids_export_clicked(self) -> None:
+        """Tools -> Export to BIDS-physio... — writes the active dataset."""
+        if self._data is None:
+            self.statusBar().showMessage("BIDS export: no active dataset.", 3000)
+            return
+        active_ds = self._datasets[self._active_idx]
+        # Default participant id = filename stem with non-alphanumerics
+        # stripped (BIDS rule); the user can override via the input box.
+        from pathlib import Path as _Path
+
+        default_pid = (
+            "".join(c for c in _Path(active_ds.name).stem if c.isalnum()) or "001"
+        )
+        if self.test_mode:
+            participant_id = default_pid
+            task = "rest"
+            out_dir = _Path(getattr(self, "_test_bids_dir", _Path.cwd() / "_bids_test"))
+        else:
+            from qtpy.QtWidgets import QFileDialog, QInputDialog
+
+            participant_id, ok = QInputDialog.getText(
+                self,
+                "BIDS participant id",
+                "BIDS sub-<pid> (alphanumeric only):",
+                text=default_pid,
+            )
+            if not ok or not participant_id:
+                return
+            task, ok = QInputDialog.getText(
+                self,
+                "BIDS task",
+                "BIDS task-<task> (alphanumeric only):",
+                text="rest",
+            )
+            if not ok or not task:
+                return
+            chosen = QFileDialog.getExistingDirectory(
+                self, "Choose BIDS output directory", str(_Path.home())
+            )
+            if not chosen:
+                return
+            out_dir = _Path(chosen)
+
+        try:
+            from rrational.inspector.bids_export import export_bids_physio
+
+            paths = export_bids_physio(
+                self._data,
+                out_dir,
+                participant_id=participant_id,
+                task=task,
+            )
+        except (ValueError, OSError) as exc:
+            self.statusBar().showMessage(f"BIDS export failed: {exc}", 6000)
+            return
+        self.statusBar().showMessage(
+            f"BIDS export: wrote {paths.tsv_gz.name} + sidecar to "
+            f"{paths.tsv_gz.parent}",
+            6000,
+        )
+        self._latest_bids_paths = paths
 
     def _on_quality_triage_clicked(self) -> None:
         """Tools → Quality triage. Recomputes grades WITHOUT exporting."""
