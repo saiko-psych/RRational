@@ -53,12 +53,25 @@ class InspectorData:
     ``t`` and ``v`` together form the full concatenated timeline:
     seconds-since-epoch on x, RR-ms on y, with NaN gaps where sections
     don't abut. ``t`` is monotonically non-decreasing (NaN-aware).
+
+    The optional ``experimenter`` / ``description`` / ``line_freq``
+    fields mirror the BIDS-physio sidecar so a future BIDS export can
+    populate the JSON without re-prompting the user. ``device`` is a
+    free-text marker (e.g. "Polar H10", "Empatica E4") that downstream
+    reports can surface in a methods section.
     """
 
     t: np.ndarray  # shape (N,), float64 — seconds since epoch
     v: np.ndarray  # shape (N,), float64 — RR ms, NaN at gaps
     sections: list[SectionMeta] = field(default_factory=list)
     events: list[EventMeta] = field(default_factory=list)
+
+    # BIDS-prep metadata (all optional — older .rrational v2 files
+    # without these fields load fine).
+    experimenter: str = ""
+    description: str = ""
+    device: str = ""
+    line_freq: float | None = None  # Hz — None when irrelevant (no AC mains)
 
     @property
     def t_start(self) -> float:
