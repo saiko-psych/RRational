@@ -96,3 +96,33 @@ def test_grid_click_unknown_subject_is_noop(main_window):
     # No raise + active stays at 0.
     pane._on_grid_subject_click("does-not-exist")
     assert main_window._active_idx == 0
+
+
+def test_grid_hidden_when_workspace_has_fewer_than_two_datasets(main_window):
+    """Round 16 — grid stays hidden at n<=1 (nothing to compare).
+
+    Uses ``isVisibleTo(parent)`` so the assertion holds regardless of
+    whether the Participants tab is currently the foreground tab —
+    only the widget's own visibility flag is under test here.
+    """
+    from rrational.inspector.data_loader import Dataset
+
+    pane = main_window._participants_tab
+    # Empty workspace -> grid hidden.
+    assert pane._grid.isVisibleTo(pane) is False
+
+    # n=1 -> still hidden; single thumbnail isn't a comparison view.
+    main_window.add_dataset(Dataset(name="alpha.rrational", data=_make_data()))
+    main_window.set_active_dataset(0)
+    assert pane._grid.isVisibleTo(pane) is False
+
+
+def test_grid_visible_once_workspace_has_two_or_more_datasets(main_window):
+    """n>=2 -> grid widget is marked visible (independent of tab focus)."""
+    from rrational.inspector.data_loader import Dataset
+
+    pane = main_window._participants_tab
+    for n in ("alpha.rrational", "bravo.rrational"):
+        main_window.add_dataset(Dataset(name=n, data=_make_data()))
+    main_window.set_active_dataset(0)
+    assert pane._grid.isVisibleTo(pane) is True

@@ -340,6 +340,12 @@ class ParticipantsTab(InspectorTab):
         Pulls ``(subject_id, t_seconds, rr_ms)`` triplets from each
         currently-loaded dataset. NaN gaps are preserved so the grid's
         ``connect='finite'`` path can render them as gaps.
+
+        Round 16 — the contact-sheet grid only earns its 300px of
+        vertical real estate when there is more than one participant to
+        compare. With 0 or 1 datasets the grid hides entirely so the
+        editor table doesn't fight a stretched-out single thumbnail
+        for screen space.
         """
         triplets: list[tuple[str, np.ndarray, np.ndarray]] = []
         for ds in self._main_window._datasets:
@@ -349,6 +355,7 @@ class ParticipantsTab(InspectorTab):
             pid = self._dataset_subject_id(ds)
             triplets.append((pid, np.asarray(data.t), np.asarray(data.v)))
         self._grid.set_datasets(triplets)
+        self._grid.setVisible(len(triplets) >= 2)
 
     def _on_grid_subject_click(self, subject_id: str) -> None:
         """Activate the dataset whose stem matches ``subject_id``."""

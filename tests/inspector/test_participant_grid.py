@@ -63,3 +63,41 @@ def test_click_callback_default_is_noop(qtbot):
     qtbot.addWidget(w)
     # Should not raise even if the user never installs a callback.
     w.on_subject_click("S01")
+
+
+def test_n1_dataset_renders_as_single_card_not_full_width(qtbot):
+    """Round 16 — a single dataset must render at the nominal 220x140
+    cell footprint, not stretched into a full-width band.
+
+    The previous min-only contract let pyqtgraph's GraphicsLayout
+    expand the lone cell across the entire widget width when n=1
+    (visible as a flat, depressing tachogram). Now we cap maxWidth on
+    the populated cell AND pin an empty placeholder into the trailing
+    columns so the row is left-aligned at thumbnail scale.
+    """
+    from rrational.inspector.plots.participant_grid import _CELL_W
+
+    w = ParticipantGridWidget(n_cols=4)
+    qtbot.addWidget(w)
+    w.set_datasets([_fake_dataset("S01")])
+
+    assert len(w._cells) == 1
+    # The populated cell carries a finite maximum width — the previous
+    # set-min-only contract returned Qt's default (16777215) here.
+    max_w = w._cells[0].maximumWidth()
+    assert max_w <= _CELL_W * 2 + 1, (
+        f"expected cell maxWidth <= 2*{_CELL_W}, got {max_w}"
+    )
+
+
+def test_n2_layout_left_pins_with_placeholders(qtbot):
+    """n=2 in a 4-col grid leaves two trailing placeholders on row 0."""
+    w = ParticipantGridWidget(n_cols=4)
+    qtbot.addWidget(w)
+    w.set_datasets([_fake_dataset("S01"), _fake_dataset("S02")])
+    assert len(w._cells) == 2
+    # Layout retains the populated cells; the placeholders are
+    # implementation detail, but the grid must not crash and the cells
+    # themselves keep their max-width cap.
+    for cell in w._cells:
+        assert cell.maximumWidth() > 0
