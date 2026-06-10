@@ -78,8 +78,14 @@ def test_preprocessing_dock_hosts_the_panel(main_window):
 
 
 def test_docks_are_visible_by_default(main_window):
+    """Round 16 — Datasets dock is always on; Preprocessing dock is on
+    once a recording is loaded (hidden at the welcome state so the
+    empty-state landing screen isn't surrounded by disabled controls).
+    """
     bt = main_window._browse_tab
     assert bt._datasets_dock.isVisible()
+    main_window.add_dataset(_make_synthetic())
+    main_window.set_active_dataset(0)
     assert bt._preprocessing_dock.isVisible()
 
 

@@ -238,6 +238,10 @@ class MainWindow(QMainWindow):
 
         # Initial tab-label refresh once everything is wired up.
         self._refresh_tab_labels()
+        # Round 16 — at the welcome state (no datasets) hide the
+        # Preprocessing + Info docks so the empty-state landing screen
+        # isn't surrounded by disabled controls.
+        self._update_docks_for_welcome_state()
 
         # First-run walkthrough. Use a deferred QTimer + a NON-MODAL
         # show() so __init__ never blocks (the modal exec() path hangs
@@ -1883,6 +1887,44 @@ class MainWindow(QMainWindow):
             tab.on_workspace_changed()
         self._refresh_visualisation_actions()
         self._refresh_tab_labels()
+        self._update_docks_for_welcome_state()
+
+    def _update_docks_for_welcome_state(self) -> None:
+        """Hide side docks at the welcome state (no datasets loaded).
+
+        Round 16 — when the user has no recordings open the BrowseTab
+        shows the WelcomeWidget; the Preprocessing + Info docks have
+        nothing to act on and only clutter the empty-state screen with
+        disabled controls (Detect artifacts, Exclusion zones, etc.).
+        Hide both while ``_datasets`` is empty, restore them — respecting
+        the persisted QSettings show_*_dock preferences — as soon as the
+        user loads a recording.
+        """
+        has_data = bool(self._datasets)
+        # Preprocessing dock lives inside BrowseTab. Tolerate missing
+        # attributes during the brief window before __init__ finishes.
+        browse = getattr(self, "_browse_tab", None)
+        prep_dock = getattr(browse, "_preprocessing_dock", None)
+        if prep_dock is not None:
+            if has_data:
+                try:
+                    show_prep = bool(settings.read_setting("show_preprocessing_dock"))
+                except (KeyError, TypeError):  # pragma: no cover - defensive
+                    show_prep = True
+                prep_dock.setVisible(show_prep)
+            else:
+                prep_dock.setVisible(False)
+        # MainWindow-level right-side info dock.
+        info_dock = getattr(self, "_info_dock", None)
+        if info_dock is not None:
+            if has_data:
+                try:
+                    show_info = bool(settings.read_setting("show_info_dock"))
+                except (KeyError, TypeError):  # pragma: no cover - defensive
+                    show_info = True
+                info_dock.setVisible(show_info)
+            else:
+                info_dock.setVisible(False)
 
     # Per-tab status-bar context hints. Map by class name so we don't
     # have to import the optional DataTab / ParticipantTab at module-load
