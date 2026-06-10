@@ -2,6 +2,60 @@
 
 All notable changes to RRational are documented here.
 
+## [Unreleased] — main (Rounds 11-14, MNE-deep-integration)
+
+Strukturierte Implementierung der MNE-Gap-Analyse-Roadmap (Cluster A-D)
+aus der Recherche vom 10. Juni 2026. Etwa 12 Commits zwischen
+`cbcca6a..4304af7` auf `main`. Fokus: jedes load-bearing MNE-Python-Idiom
+spiegeln (Epochs, Reports, describe / to_data_frame, dock-heavy Layout,
+strukturierte History) plus Streamlit-Lücken schließen.
+
+### Added — Cluster A (UI quick-wins, Round 11)
+- Workflow-Stepper-Polish + Cluster-A1 bis A8 in einem Sprint: Statusbar-
+  context-Widget, Cursor-Readout (Zeit + RR), Grid-Toggle im View-Menu,
+  colorblind-safe Okabe-Ito-Palette per Preferences, Plot-Hover-Pfad,
+  Workflow-Stepper-Label-Wrapping (commit `a4c9328`).
+
+### Added — Cluster B (MNE concepts, Round 12)
+- `InspectorData.to_data_frame()` + `describe()` — pandas-Frame mit
+  Sektion-Spalte und Per-Sektion-Summary-Tabelle, kompatibel mit
+  `mne.io.Raw.to_data_frame()` (commits `16da83f`, `ff1101f`).
+- Compare-Curves-Dialog (Mehrfach-Overlay auf einer Plot-Achse).
+- Overview-Bar-Stripes per Sektion (Streifenmuster zur Sichtbarkeit
+  zwischen abutting Sections).
+
+### Added — Cluster C (Strukturelle Erweiterungen, Round 13)
+- **C1 RREpochs** + **C2 MNE-Report-style HTML** (commit `ae6d805`) —
+  Epochs-Datenstruktur über RR-Series plus ein HTML-Report im Stil von
+  `mne.Report` mit reproduzierbarem Recipe-Block.
+- **C3 ParticipantGrid** + **C4 EmptyStateWidget** (commit `16679a2`) —
+  Karten-Grid für Multi-Probanden-Übersicht und gestrichelter
+  Drop-Target für leere Workspaces.
+- **C5 InfoDock** (commit `353a157`) — rechts angedockter Info-Panel
+  mit Dateiname, Approx-Sampling-Frequenz (60000/mean_RR), Länge mm:ss,
+  Window-/Exclusion-/Annotation-Counts und Pre-Processing-Chain aus
+  dem HistoryRecorder.
+- **C6 WorkspaceTreeWidget** (commit `8656f9b`) — Tree-Sidebar mit
+  custom `_BadgeDelegate` für rounded Pill-Badges (`PROC`, `N-WIN`,
+  `BAD-Q`, `KUBIOS`, `BIDS`), getintet aus `theme.palette_tokens()`.
+- **C7 Report.save/load** + **C8 CachedBIDSPipeline** (commit `9c4ad79`)
+  — `ReportBuilder.save(path)` / `Report.load(path)` als STUBS (h5py
+  noch nicht in pyproject.toml) plus content-addressed BIDS-Cache mit
+  stdlib `hashlib` + `json` (kein joblib).
+
+### Added — Cluster D (Streamlit-Parität, Round 14)
+- **D1 _SequencesPane VERIFIED** — bereits vollständig implementiert
+  in `setup_tab.py` mit Add/Edit/Delete + Reordering.
+- **D2 RepetitiveEventsDialog VERIFIED** — Button "Add repetitive
+  sequence..." im PreprocessingPanel des ParticipantTab vorhanden.
+- **D3 VNS use_corrected toggle** (commit `4304af7`) — `load_generic_rr`
+  propagiert ein `use_corrected` Keyword durch `_parse_vns_analyse` zum
+  Loader; Default auf `True` geflippt (wissenschaftliche Norm).
+
+### Infrastructure
+- CI hardening: preflight job + pre-push hook + libEGL libs (commits
+  `d4be003`, `926911c` aus dem Vorlauf).
+
 ## [Unreleased] — main (Rounds 7-10, MNE-inspired feature parity + BIDS/PRISM interop)
 
 Continued from Sprint 6. Forty-five commits on `main` between `00e29b7..cbcca6a`. Theme: import MNE-Python's interaction patterns and persistence formats so the Inspector behaves like a familiar EEG-lab tool, plus first-class round-trip with BIDS-physio and PRISM Studio so RR datasets can move into multi-modal workflows without bespoke glue code.
