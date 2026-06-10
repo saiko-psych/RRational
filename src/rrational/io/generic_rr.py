@@ -153,6 +153,8 @@ def load_generic_rr(
     path: Path,
     participant_id: str = "",
     source_app: str = "",
+    *,
+    use_corrected: bool = True,
 ) -> GenericRecording:
     """Load RR intervals from any supported format.
 
@@ -164,6 +166,10 @@ def load_generic_rr(
         source_app: Force a specific format ('polar_sensor_logger', 'polar_flow',
                     'empatica', 'elite_hrv', 'kubios', 'plain_rr').
                     Auto-detected if empty.
+        use_corrected: For VNS Analyse files only — when True (default),
+                      load the corrected/cleaned RR series VNS exports
+                      alongside the raw values. Ignored for every other
+                      format.
 
     Returns:
         GenericRecording with RR intervals and metadata
@@ -192,7 +198,9 @@ def load_generic_rr(
     if fmt == "hrv_logger_events":
         rr_companion = _find_hrv_logger_rr_companion(path)
         if rr_companion is not None:
-            return load_generic_rr(rr_companion, participant_id, "hrv_logger")
+            return load_generic_rr(
+                rr_companion, participant_id, "hrv_logger", use_corrected=use_corrected
+            )
         raise ValueError(
             f"{path.name} is an HRV Logger Events file. Could not find the "
             "matching '_RR' or '_RRIntervals' file in the same folder. "
@@ -204,7 +212,12 @@ def load_generic_rr(
     if parser is None:
         raise ValueError(f"Unknown format: {fmt}")
 
-    rr_intervals, metadata = parser(path)
+    # D3 — only the VNS parser honours use_corrected; others would
+    # raise TypeError on the keyword arg.
+    if fmt == "vns_analyse":
+        rr_intervals, metadata = _parse_vns_analyse(path, use_corrected=use_corrected)
+    else:
+        rr_intervals, metadata = parser(path)
     metadata["format"] = fmt
     metadata["file"] = path.name
 
@@ -683,12 +696,23 @@ def _load_events_flexible(ev_path: Path) -> list[dict]:
     return []
 
 
-def _parse_vns_analyse(path: Path) -> tuple[list[RRInterval], dict]:
-    """Load a VNS Analyse text file via the shared loader."""
+def _parse_vns_analyse(
+    path: Path, *, use_corrected: bool = True
+) -> tuple[list[RRInterval], dict]:
+    """Load a VNS Analyse text file via the shared loader.
+
+    ``use_corrected`` defaults to True so the inspector's Open dialog
+    matches the most common scientific workflow (use the artefact-
+    corrected RR column when one is available). Set to False to pull
+    the raw RR section instead.
+    """
     from rrational.io.vns_analyse import _load_single_vns_file
 
-    intervals, events, header_info = _load_single_vns_file(path, use_corrected=False)
+    intervals, events, header_info = _load_single_vns_file(
+        path, use_corrected=use_corrected
+    )
     metadata: dict = dict(header_info)
+    metadata["use_corrected"] = use_corrected
     metadata["events"] = [
         {"label": e.label, "timestamp": e.timestamp}
         for e in events
