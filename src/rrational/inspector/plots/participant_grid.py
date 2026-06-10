@@ -99,10 +99,15 @@ class ParticipantGridWidget(pg.GraphicsLayoutWidget):
                 )
                 # Pin to right edge — we use ViewBox coordinates via
                 # the plot range; setting after data plot means
-                # autoRange has resolved a sensible x-extent.
+                # autoRange has resolved a sensible x-extent. Use *args
+                # rather than fixed positional names because pyqtgraph's
+                # sigRangeChanged emits (viewbox, ranges) OR (viewbox,
+                # ranges, changed_axes) depending on version — a fixed
+                # signature lets the third arg overwrite our default
+                # ``b=badge`` and pass a list into setPos.
                 vb = plot.getViewBox()
                 vb.sigRangeChanged.connect(
-                    lambda _vb, _r, b=badge, p=plot: _pin_top_right(b, p)
+                    lambda *_args, b=badge, p=plot: _pin_top_right(b, p)
                 )
                 plot.addItem(badge)
                 _pin_top_right(badge, plot)
@@ -116,7 +121,17 @@ class ParticipantGridWidget(pg.GraphicsLayoutWidget):
 
 
 def _pin_top_right(item: pg.TextItem, plot: pg.PlotItem) -> None:
-    """Reposition a TextItem to the top-right corner of a PlotItem's view."""
+    """Reposition a TextItem to the top-right corner of a PlotItem's view.
+
+    ``ViewBox.viewRange()`` returns ``[[x_lo, x_hi], [y_lo, y_hi]]`` —
+    two nested lists, not a tuple. The previous unpacking treated the
+    outer container as a (xtuple, ytuple) tuple and then indexed the
+    INNER as if it were a TextItem (chained method-resolution failure
+    that surfaced as ``'list' object has no attribute 'setPos'`` when
+    ``item`` got swapped for ``x_range`` in the signal callback).
+    """
     vb = plot.getViewBox()
-    x_range, y_range = vb.viewRange()
-    item.setPos(x_range[1], y_range[1])
+    rng = vb.viewRange()
+    x_hi = float(rng[0][1])
+    y_hi = float(rng[1][1])
+    item.setPos(x_hi, y_hi)

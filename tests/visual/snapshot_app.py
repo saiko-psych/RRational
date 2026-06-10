@@ -117,9 +117,15 @@ def snapshot_all_tabs() -> list[Path]:
     win = MainWindow()
     win.test_mode = True
     # Keep resolution under 2000px so the Read tool can display the PNGs
-    # without rejecting them as too large.
+    # without rejecting them as too large. On the offscreen QPA platform
+    # ``resize`` before ``show`` is silently ignored — the offscreen
+    # window manager picks a default ~1280x420 frame regardless. Forcing
+    # geometry AFTER show + waiting for the layout pass keeps every
+    # snapshot at the intended 1280x800.
     win.resize(1280, 800)
     win.show()
+    app.processEvents()
+    win.setGeometry(0, 0, 1280, 800)
     app.processEvents()
 
     written: list[Path] = []
