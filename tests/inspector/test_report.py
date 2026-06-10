@@ -347,3 +347,49 @@ def test_audit_trail_section_appears_even_when_empty(main_window):
     html = ReportBuilder(main_window).build_html()
     assert "id='audit'" in html
     assert "(no audit entries" in html
+
+
+# ---------------------------------------------------------------------
+# Cluster C2 — Bootstrap layout, sidebar TOC, tag-filter, add_section
+# ---------------------------------------------------------------------
+def test_html_includes_sticky_topbar_and_sidebar(main_window):
+    from rrational.inspector.report import ReportBuilder
+
+    html = ReportBuilder(main_window).build_html()
+    assert "class='topbar'" in html
+    assert "class='sidebar'" in html
+    assert "bootstrap@5.3.3" in html
+
+
+def test_add_section_renders_custom_section(main_window):
+    from rrational.inspector.report import ReportBuilder
+
+    rb = ReportBuilder(main_window)
+    rb.add_section("Quality Notes", "<p>Looks good.</p>", tag="qa")
+    html = rb.build_html()
+    assert "Quality Notes" in html
+    assert "Looks good." in html
+    assert "data-tag='qa'" in html
+
+
+def test_tag_filter_dropdown_lists_added_tags(main_window):
+    from rrational.inspector.report import ReportBuilder
+
+    rb = ReportBuilder(main_window)
+    rb.add_section("A", "<p>x</p>", tag="qa")
+    rb.add_section("B", "<p>y</p>", tag="methods")
+    html = rb.build_html()
+    assert "id='tagFilter'" in html
+    assert "<option value='qa'>" in html
+    assert "<option value='methods'>" in html
+
+
+def test_add_section_without_tag_omits_data_attribute(main_window):
+    from rrational.inspector.report import ReportBuilder
+
+    rb = ReportBuilder(main_window)
+    rb.add_section("Untagged", "<p>z</p>")
+    html = rb.build_html()
+    assert "Untagged" in html
+    # No data-tag means it always shows (no pill, no attribute).
+    assert "data-tag=''" not in html

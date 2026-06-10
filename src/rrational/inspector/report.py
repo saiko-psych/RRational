@@ -332,16 +332,73 @@ _BASE_CSS = """
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                  "Helvetica Neue", Arial, sans-serif;
-    max-width: 960px;
-    margin: 2em auto;
-    padding: 0 1em;
+    margin: 0;
+    padding: 0;
     color: #1a1a1a;
     line-height: 1.5;
+    background: #f6f8fa;
 }
-h1 { border-bottom: 2px solid #2E86AB; padding-bottom: .3em; }
+/* Sticky top navigation -- mirrors MNE's report header. */
+nav.topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: #2E86AB; color: #fff;
+    padding: .6em 1.2em;
+    display: flex; align-items: center; gap: 1em;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
+}
+nav.topbar .brand { font-weight: 700; font-size: 1.1em; }
+nav.topbar .ts { margin-left: auto; opacity: .85; font-size: .9em; }
+nav.topbar select.tag-filter {
+    padding: .25em .5em; border-radius: 4px; border: 1px solid #1a5db4;
+    background: #fff; color: #1a1a1a; font-size: .9em;
+}
+/* Layout: collapsible left sidebar + main content. */
+.layout { display: flex; min-height: calc(100vh - 3em); }
+aside.sidebar {
+    flex: 0 0 240px;
+    background: #fff;
+    border-right: 1px solid #e1e4e8;
+    padding: 1em 0;
+    position: sticky;
+    top: 3em;
+    align-self: flex-start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+}
+aside.sidebar h4 {
+    margin: 0 1em .5em; font-size: .82em; text-transform: uppercase;
+    color: #586069; letter-spacing: .04em;
+}
+aside.sidebar ul { list-style: none; margin: 0; padding: 0; }
+aside.sidebar li a {
+    display: block; padding: .4em 1.2em;
+    text-decoration: none; color: #24292e; border-left: 3px solid transparent;
+}
+aside.sidebar li a:hover { background: #f6f8fa; border-left-color: #2E86AB; }
+aside.sidebar details { padding: 0 1em; }
+aside.sidebar details summary {
+    cursor: pointer; padding: .4em 0; font-weight: 600;
+    color: #2E86AB; font-size: .9em;
+}
+main.content {
+    flex: 1;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 1.5em 2em;
+    background: #fff;
+}
+h1 { border-bottom: 2px solid #2E86AB; padding-bottom: .3em; margin-top: 0; }
 h2 { color: #2E86AB; margin-top: 2em; border-bottom: 1px solid #ddd;
-     padding-bottom: .2em; }
+     padding-bottom: .2em; scroll-margin-top: 4em; }
 h3 { margin-top: 1.5em; color: #444; }
+/* Tag pills used to filter custom sections. */
+section[data-tag] { transition: opacity .15s ease; }
+section[data-tag].hidden { display: none; }
+.tag-pill {
+    display: inline-block; background: #eef3f7; color: #1a5db4;
+    border-radius: 10px; padding: 1px 8px; font-size: .75em;
+    margin-left: .5em; vertical-align: middle;
+}
 table {
     border-collapse: collapse;
     width: 100%;
@@ -367,6 +424,10 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .toc ol { margin: 0; padding-left: 1.4em; }
 .toc a { text-decoration: none; color: #1a5db4; }
 .toc a:hover { text-decoration: underline; }
+/* Hide the legacy inline TOC when a sticky sidebar is present so we
+   don't render the same anchors twice. The sidebar nav becomes the
+   canonical navigator. */
+.layout nav.toc { display: none; }
 .plot { text-align: center; margin: 1.5em 0; }
 .plot img { max-width: 100%; height: auto; border: 1px solid #ddd; }
 .refs { font-size: 0.9em; }
@@ -458,6 +519,9 @@ class ReportBuilder:
 
     def __init__(self, main_window: "MainWindow") -> None:
         self._mw = main_window
+        # Cluster C2: user-added sections via add_section(title, html, tag).
+        # Each entry is {title, content_html, tag, anchor}.
+        self._custom_sections: list[dict] = []
 
     # ------------------------------------------------------------------
     # Helpers — share data extraction across HTML + Markdown paths
@@ -546,25 +610,44 @@ class ReportBuilder:
         parts.append("<head>")
         parts.append("<meta charset='utf-8'>")
         parts.append("<title>RRational Report</title>")
+        # Bootstrap 5 grid + utilities -- loaded from jsdelivr CDN for
+        # responsive layout polish. Self-contained fall-through CSS in
+        # _BASE_CSS keeps the report readable offline.
+        parts.append(
+            "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/"
+            "bootstrap@5.3.3/dist/css/bootstrap.min.css' "
+            "integrity='sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH' "
+            "crossorigin='anonymous'>"
+        )
         parts.append(f"<style>{_BASE_CSS}</style>")
         parts.append("</head>")
         parts.append("<body>")
 
-        # ----- Title + metadata -----
+        # ----- Sticky top-bar with brand + tag filter dropdown -----
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        parts.append("<h1>RRational Report</h1>")
-        parts.append("<div class='meta'>")
-        parts.append(
-            f"Project: <b>{_html_escape(self._project_name())}</b> &middot; "
-            f"Generated: {ts} &middot; "
-            f"RRational v{_get_version()} &middot; "
-            f"Inspector phase: 18"
-        )
-        parts.append("</div>")
+        custom_tags = sorted({t for t in self._collect_custom_tags() if t})
+        parts.append("<nav class='topbar'>")
+        parts.append("<span class='brand'>RRational Report</span>")
+        if custom_tags:
+            parts.append(
+                "<label for='tagFilter' class='visually-hidden'>Filter sections</label>"
+            )
+            parts.append(
+                "<select id='tagFilter' class='tag-filter' onchange='_rrFilterTag(this.value)'>"
+            )
+            parts.append("<option value=''>All sections</option>")
+            for tag in custom_tags:
+                parts.append(
+                    f"<option value='{_html_escape(tag)}'>{_html_escape(tag)}</option>"
+                )
+            parts.append("</select>")
+        parts.append(f"<span class='ts'>{ts}</span>")
+        parts.append("</nav>")
 
-        # ----- TOC -----
-        parts.append("<nav class='toc'><b>Contents</b>")
-        parts.append("<ol>")
+        # ----- Layout: sidebar TOC + main content -----
+        parts.append("<div class='layout'>")
+        parts.append("<aside class='sidebar'>")
+        parts.append("<details open><summary>Standard sections</summary><ul>")
         for anchor, label in [
             ("datasets", "Datasets"),
             ("metrics", "HRV metrics"),
@@ -577,7 +660,29 @@ class ReportBuilder:
             ("recipe", "Reproducible recipe"),
         ]:
             parts.append(f"<li><a href='#{anchor}'>{label}</a></li>")
-        parts.append("</ol></nav>")
+        parts.append("</ul></details>")
+        custom_sections = list(self._custom_sections)
+        if custom_sections:
+            parts.append("<details><summary>Custom sections</summary><ul>")
+            for sec in custom_sections:
+                parts.append(
+                    f"<li><a href='#{sec['anchor']}'>"
+                    f"{_html_escape(sec['title'])}</a></li>"
+                )
+            parts.append("</ul></details>")
+        parts.append("</aside>")
+        parts.append("<main class='content'>")
+
+        # ----- Title + metadata -----
+        parts.append("<h1>RRational Report</h1>")
+        parts.append("<div class='meta'>")
+        parts.append(
+            f"Project: <b>{_html_escape(self._project_name())}</b> &middot; "
+            f"Generated: {ts} &middot; "
+            f"RRational v{_get_version()} &middot; "
+            f"Inspector phase: 18"
+        )
+        parts.append("</div>")
 
         # ----- Datasets -----
         parts.append("<h2 id='datasets'>Datasets</h2>")
@@ -812,8 +917,64 @@ class ReportBuilder:
                 f"<pre class='code'><code>{_highlight_python(recipe_code)}</code></pre>"
             )
 
+        # ----- User-added custom sections -----
+        for sec in self._custom_sections:
+            tag_attr = (
+                f" data-tag='{_html_escape(sec['tag'])}'" if sec.get("tag") else ""
+            )
+            pill = (
+                f" <span class='tag-pill'>{_html_escape(sec['tag'])}</span>"
+                if sec.get("tag")
+                else ""
+            )
+            parts.append(f"<section{tag_attr}>")
+            parts.append(
+                f"<h2 id='{sec['anchor']}'>{_html_escape(sec['title'])}{pill}</h2>"
+            )
+            parts.append(sec["content_html"])
+            parts.append("</section>")
+
+        # Close <main> + <div class='layout'>
+        parts.append("</main></div>")
+
+        # Tag-filter behaviour: tiny inline script. No external JS load.
+        parts.append(
+            "<script>"
+            "function _rrFilterTag(tag){"
+            "document.querySelectorAll('section[data-tag]').forEach(function(s){"
+            "if(!tag||s.dataset.tag===tag){s.classList.remove('hidden');}"
+            "else{s.classList.add('hidden');}});"
+            "}"
+            "</script>"
+        )
+
         parts.append("</body></html>")
         return "\n".join(parts)
+
+    # ------------------------------------------------------------------
+    # User-extensible sections (Cluster C2)
+    # ------------------------------------------------------------------
+    def add_section(self, title: str, content_html: str, tag: str = "") -> None:
+        """Append a custom section to the report.
+
+        ``tag`` lets the user filter the report's sticky top-bar
+        dropdown ("All sections" / one entry per unique tag); empty
+        tag means the section always shows.
+        """
+        anchor = "sec-" + "".join(
+            c if c.isalnum() else "-" for c in title.lower()
+        ).strip("-")
+        self._custom_sections.append(
+            {
+                "title": title,
+                "content_html": content_html,
+                "tag": tag,
+                "anchor": anchor,
+            }
+        )
+
+    def _collect_custom_tags(self) -> set[str]:
+        return {sec["tag"] for sec in self._custom_sections}
 
     # ------------------------------------------------------------------
     # Markdown
