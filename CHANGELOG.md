@@ -2,7 +2,7 @@
 
 All notable changes to RRational are documented here.
 
-## [Unreleased] — main (Rounds 11-14, MNE-deep-integration)
+## [Unreleased] — main (Rounds 11-15, MNE-deep-integration + Visual/Coverage P0)
 
 Strukturierte Implementierung der MNE-Gap-Analyse-Roadmap (Cluster A-D)
 aus der Recherche vom 10. Juni 2026. Etwa 12 Commits zwischen
@@ -51,6 +51,36 @@ strukturierte History) plus Streamlit-Lücken schließen.
 - **D3 VNS use_corrected toggle** (commit `4304af7`) — `load_generic_rr`
   propagiert ein `use_corrected` Keyword durch `_parse_vns_analyse` zum
   Loader; Default auf `True` geflippt (wissenschaftliche Norm).
+
+### Fixed — Round 15 (Visual + Coverage P0-Fixes)
+- **Sprint 1 — Hardcoded white plot backgrounds entfernt** (commit
+  `cf292d3`) — 8 Plot-Dateien (tachogram, poincare, psd, hr_distribution,
+  participant_grid, drop_log, compare_curves, overview_bar) deferenzieren
+  jetzt auf den globalen pyqtgraph-Theme statt einer fixen `#FFFFFF`
+  Background; behebt unleserliche Plots im Dark-Mode.
+- **Sprint 2 — WorkspaceTreeWidget in BrowseTab verdrahtet** (commit
+  `b99a9a8`) — Cluster-C6-Sidebar mit Status-Badges (`PROC`, `N-WIN`,
+  `BAD-Q`, `KUBIOS`, `BIDS`) ist jetzt im BrowseTab eingebunden, nicht
+  mehr ein toter Widget-Konstruktor.
+- **Sprint 3 — EmptyStateWidget theme-aware QSS + Drop-Target**
+  (commit `68b9b32`) — Cluster-C4-Drop-Zone übernimmt
+  `theme.palette_tokens()` für Border + Hintergrund + Hover; Drag-and-drop
+  echter `.rrational`/CSV-Dateien wird in der leeren BrowseTab akzeptiert.
+- **Sprint 4 — ParticipantGridWidget in ParticipantsTab verdrahtet**
+  (commit `e64df16`) — Cluster-C3-Multi-Probanden-Grid (300 px hoch,
+  4-spaltig) sitzt jetzt über der Editor-Tabelle und refresht auf jeder
+  Workspace-Änderung; Cell-Click aktiviert das passende Dataset via
+  `main_window.set_active_dataset`.
+- **Sprint 5 — InfoDock minimum width + View menu HUD/Zen toggles**
+  (commit `85a9002`) — InfoDock kollabierte beim Erststart auf einen
+  1-px-Spalt, weil das Plot-Central-Widget den gesamten horizontalen
+  Platz griff; `setMinimumWidth(280)` liefert eine brauchbare
+  Initialgröße. Plus: `Show HUD readout` + `Zen mode` als
+  View-Menu-Einträge (die H/Z-QShortcuts auf dem Plot bleiben aktiv).
+- **Sprint 6 — Test-Coverage für palette + drop_log** (commit `04b2cf1`)
+  — 13 neue Tests schließen die Tier-1-Lücke: Okabe-Ito 8-Farben-
+  Invarianz + Cycling-Verhalten + Hex-Format; drop_log Pareto-Sortierung,
+  Cumulative-Overlay, Reason-Labels, Min-Height-Skalierung.
 
 ### Infrastructure
 - CI hardening: preflight job + pre-push hook + libEGL libs (commits
