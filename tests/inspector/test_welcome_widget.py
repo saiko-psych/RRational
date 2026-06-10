@@ -104,3 +104,38 @@ def test_file_menu_try_demo_action_loads_dataset(main_window):
     assert len(main_window._datasets) == 1
     assert main_window._datasets[0].name == DEMO_DATASET_NAME
     assert main_window._active_idx == 0
+
+
+def test_welcome_layout_is_vertically_centered(main_window, qtbot):
+    """Round 16 (L2) — outer QVBoxLayout must bracket the content with
+    equal-weight stretchers so the title block sits on the optical
+    centre instead of the upper third.
+    """
+    from qtpy.QtWidgets import QSpacerItem
+    from rrational.inspector.welcome_widget import WelcomeWidget
+
+    welcome = WelcomeWidget(main_window)
+    qtbot.addWidget(welcome)
+    root = welcome.layout()
+
+    # First and last items must both be stretches.
+    first = root.itemAt(0)
+    last = root.itemAt(root.count() - 1)
+    # A QSpacerItem with stretch=1 has the same isEmpty()/spacerItem()
+    # signature regardless of which addStretch() variant produced it.
+    assert isinstance(first.spacerItem(), QSpacerItem)
+    assert isinstance(last.spacerItem(), QSpacerItem)
+    # Stretch factors must match (1:1) so the content stays centered.
+    assert root.stretch(0) == root.stretch(root.count() - 1)
+
+
+def test_welcome_empty_recent_label_is_italic(main_window, qtbot):
+    """Round 16 (L4) — empty-state hint reads as a deliberate state."""
+    from rrational.inspector.welcome_widget import WelcomeWidget
+
+    welcome = WelcomeWidget(main_window)
+    qtbot.addWidget(welcome)
+    assert welcome._empty_recent_label.font().italic() is True
+    # Carries the QSS ``hint`` property so the theme paints it in
+    # the muted-secondary colour.
+    assert welcome._empty_recent_label.property("hint") is True

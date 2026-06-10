@@ -116,9 +116,10 @@ class WelcomeWidget(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(40, 30, 40, 30)
         root.setSpacing(20)
-        # Slightly heavier bottom spacer (2:1) lifts the title block to
-        # the optical-centre / upper-third sweet spot — eye lands on the
-        # title naturally without the "content sinking" feel.
+        # Round 16 — equal-weight top + bottom stretchers center the
+        # content block vertically. The previous 1:2 ratio lifted the
+        # title to the upper-third which the post-R15 visual inspection
+        # flagged as "sitting above the optical center" (issue L2).
         root.addStretch(1)
 
         # ----- Title block -----------------------------------------------
@@ -217,12 +218,23 @@ class WelcomeWidget(QWidget):
         self._recent_layout.setAlignment(Qt.AlignHCenter)
         root.addWidget(self._recent_container, alignment=Qt.AlignHCenter)
 
-        self._empty_recent_label = QLabel("(no recent files)")
+        # Round 16 — italicise + slightly enlarge the empty-state hint
+        # so "(no recent files)" reads as a deliberate state rather than
+        # an anonymous gap below the header. Colour pulls from the
+        # ``hint`` QSS property which is wired to ``text_muted`` in
+        # both dark + light themes.
+        self._empty_recent_label = QLabel("No recordings opened yet.")
         self._empty_recent_label.setProperty("hint", True)
         self._empty_recent_label.setAlignment(Qt.AlignCenter)
+        empty_font = QFont()
+        empty_font.setPointSize(11)
+        empty_font.setItalic(True)
+        self._empty_recent_label.setFont(empty_font)
         root.addWidget(self._empty_recent_label)
 
-        root.addStretch(2)
+        # Equal-weight stretchers above + below the content block
+        # vertically center the whole welcome screen. Round 16 (L2).
+        root.addStretch(1)
 
     def _make_action_button(
         self, label: str, tooltip: str, primary: bool = False
