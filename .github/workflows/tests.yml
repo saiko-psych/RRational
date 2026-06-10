@@ -14,11 +14,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Preflight: tiny smoke test that verifies the package and its test
+  # collection import cleanly. Catches setup-class failures (missing OS
+  # libs, broken plugin configure, import-time syntax errors) in ~15s
+  # so the fast tier doesn't waste 3 minutes failing for the same
+  # reason on five jobs in parallel. Treated as a hard gate via
+  # ``needs:`` — fast and inspector skip if this fails.
+  preflight:
+    name: Preflight (imports + collection)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install minimal Qt runtime libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Import smoke
+        # Anything dlopen-style broken (missing libEGL etc.) trips this
+        # one-liner inside 1s, with a clear ImportError instead of an
+        # opaque pytest INTERNALERROR. If this passes, real test runs
+        # below are guaranteed to at least reach collection.
+        run: |
+          uv run python -c "import rrational; import pytest; import pytestqt; print('imports OK')"
+
+      - name: Collect-only sweep
+        # `--collect-only` reaches the same plugin-configure path as a
+        # real run but skips test execution — a ~10s sanity check that
+        # every test file in the fast tier parses and discovers cleanly.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          uv run pytest \
+            tests/analysis tests/cleaning tests/io tests/prep \
+            tests/segments tests/gui tests/streamlit tests/test_cli.py \
+            --collect-only -q
+
   # Fast tier: pure-Python tests + Streamlit AppTest smoke. Runs on every
   # push + PR. Should finish in ~3-5 minutes.
   fast:
     name: Fast (analysis + io + streamlit smoke)
     runs-on: ubuntu-22.04
+    needs: preflight
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

@@ -4,8 +4,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.9.2-green.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-101%20passing-brightgreen.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-0.9.3-green.svg)](CHANGELOG.md)
+[![Tests](https://github.com/saiko-psych/RRational/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/saiko-psych/RRational/actions/workflows/tests.yml)
 [![Documentation](https://readthedocs.org/projects/rrational/badge/?version=latest)](https://rrational.readthedocs.io)
 
 **A rational approach to Heart Rate Variability analysis**

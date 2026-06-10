@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Pre-push collect-only sweep. Mirrors the preflight CI job locally.
+# Catches import errors, missing dependencies, and plugin-configure
+# breakage before they ship to GitHub. Runs in ~5-10s; if you need to
+# skip on a known-broken WIP push, use `git push --no-verify`.
+#
+# Activation:
+#   git config core.hooksPath .githooks
+# (Run once per checkout — git does not auto-activate hooks from a
+#  tracked directory, by design, so this hook only runs after you opt
+#  in.)
+#
+# CI mirror: this hook intentionally does NOT execute tests — only the
+# pytest --collect-only path that the preflight job runs. Full local
+# test runs belong in `make test` or `pytest` directly.
+
+set -e
+
+# Skip if not in a uv-managed project (e.g. someone has a non-uv venv).
+if ! command -v uv >/dev/null 2>&1; then
+    echo "pre-push: uv not on PATH, skipping local preflight." >&2
+    exit 0
+fi
+
+echo "pre-push: collect-only sweep (mirrors CI preflight job)..."
+uv run pytest \
+    tests/analysis tests/cleaning tests/io tests/prep \
+    tests/segments tests/gui tests/streamlit tests/test_cli.py \
+    --collect-only -q --no-header 2>&1 | tail -5
+
+echo "pre-push: OK"
