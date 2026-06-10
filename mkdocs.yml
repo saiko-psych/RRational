@@ -116,6 +116,9 @@ nav:
     - Data Formats: user-guide/data-formats.md
     - Configuration & Projects: user-guide/configuration.md
     - Kubios Compatibility: user-guide/kubios-compatibility.md
+    - Inspector Features: user-guide/inspector-features.md
+    - Inspector Keyboard Shortcuts: user-guide/inspector-keyboard-shortcuts.md
+    - Inspector Workflows: user-guide/inspector-workflows.md
   - Methodology:
     - Recommended Workflow: science/recommended-workflow.md
     - HRV Guidelines: science/guidelines.md
@@ -127,3 +130,4 @@ nav:
     - Issue Handling: development/issue-handling.md
   - Reference:
     - Glossary: reference/glossary.md
+    - Inspector Menu Reference: reference/inspector-menu-reference.md
