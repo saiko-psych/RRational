@@ -977,6 +977,40 @@ class ReportBuilder:
         return {sec["tag"] for sec in self._custom_sections}
 
     # ------------------------------------------------------------------
+    # HDF5 persistence (Cluster C7) — STUB until h5py lands.
+    #
+    # The MNE-Report API exposes ``report.save("file.h5", overwrite=True)``
+    # and ``Report.load("file.h5")`` for round-trippable storage. We
+    # mirror the signatures here so callers can wire UI menu items
+    # against the API today even though the dependency is not yet
+    # bundled; the methods raise a NotImplementedError that points the
+    # user at the install fix.
+    # ------------------------------------------------------------------
+    def save(self, path) -> None:
+        """Persist the report's custom sections to an HDF5 file.
+
+        Raises NotImplementedError until ``h5py`` is added to the
+        project's optional dependencies. Add ``h5py`` under
+        ``pyproject.toml`` ``[project.optional-dependencies] reports``
+        and reinstall with ``pip install -e .[reports]`` to enable.
+        """
+        raise NotImplementedError(
+            "h5py is not installed. Add `h5py` to pyproject.toml "
+            "[project.optional-dependencies] reports and reinstall."
+        )
+
+    @classmethod
+    def load(cls, path) -> "ReportBuilder":
+        """Read a previously-saved HDF5 report back into a builder.
+
+        Symmetric stub — see :meth:`save` for the dependency note.
+        """
+        raise NotImplementedError(
+            "h5py is not installed. Add `h5py` to pyproject.toml "
+            "[project.optional-dependencies] reports and reinstall."
+        )
+
+    # ------------------------------------------------------------------
     # Markdown
     # ------------------------------------------------------------------
     def build_markdown(self) -> str:
