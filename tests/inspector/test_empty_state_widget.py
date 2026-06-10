@@ -54,6 +54,33 @@ def test_drop_event_emits_files_dropped(qtbot, tmp_path):
     assert paths[0].name == "demo.csv"
 
 
+def test_qss_uses_palette_tokens(qtbot):
+    """The dashed-border QSS pulls from palette_tokens, not hardcoded hex."""
+    from rrational.inspector.empty_state_widget import _dashed_qss
+    from rrational.inspector.style.theme import palette_tokens
+
+    dark_tokens = palette_tokens("dark")
+    light_tokens = palette_tokens("light")
+    dark_qss = _dashed_qss("dark")
+    light_qss = _dashed_qss("light")
+    # The dashed border colour for each mode must appear in the rendered QSS.
+    assert dark_tokens["border_strong"] in dark_qss
+    assert light_tokens["border_strong"] in light_qss
+    # And the two stylesheets must actually differ — proof that the
+    # palette switch flows through to the QSS string.
+    assert dark_qss != light_qss
+
+
+def test_set_theme_mode_reapplies_stylesheet(qtbot):
+    """``set_theme_mode`` flips the active stylesheet without rebuilding."""
+    w = EmptyStateWidget("Drop here", theme_mode="dark")
+    qtbot.addWidget(w)
+    dark_qss = w._frame.styleSheet()
+    w.set_theme_mode("light")
+    light_qss = w._frame.styleSheet()
+    assert dark_qss != light_qss
+
+
 def test_drop_event_without_urls_is_silent(qtbot):
     w = EmptyStateWidget("Drop files here")
     qtbot.addWidget(w)

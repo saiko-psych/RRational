@@ -20,26 +20,36 @@ from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPixmap
 from qtpy.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
+from rrational.inspector.style.theme import palette_tokens
 
-_DASHED_QSS = """
-QFrame#emptyStateFrame {
-    border: 2px dashed #b0b8c1;
-    border-radius: 12px;
-    background: #fafbfc;
-    padding: 32px;
-}
-QFrame#emptyStateFrame[dragOver="true"] {
-    border-color: #2E86AB;
-    background: #eaf2f7;
-}
-QLabel#emptyStateMessage {
-    color: #586069;
-    font-size: 14px;
-}
-QLabel#emptyStateIcon {
-    padding-bottom: 12px;
-}
-"""
+
+def _dashed_qss(mode: str = "dark") -> str:
+    """Render the dashed-border QSS using palette tokens for the given mode.
+
+    Pulled from :func:`palette_tokens` so the empty-state dashboard tracks
+    the app theme: dark mode uses charcoal surface + amber drag-hover,
+    light mode uses ivory + soft accent.
+    """
+    t = palette_tokens(mode)
+    return f"""
+    QFrame#emptyStateFrame {{
+        border: 2px dashed {t["border_strong"]};
+        border-radius: 12px;
+        background: {t["bg_surface"]};
+        padding: 32px;
+    }}
+    QFrame#emptyStateFrame[dragOver="true"] {{
+        border-color: {t["accent"]};
+        background: {t["accent_soft"]};
+    }}
+    QLabel#emptyStateMessage {{
+        color: {t["text_secondary"]};
+        font-size: 14px;
+    }}
+    QLabel#emptyStateIcon {{
+        padding-bottom: 12px;
+    }}
+    """
 
 
 class EmptyStateWidget(QWidget):
@@ -52,9 +62,16 @@ class EmptyStateWidget(QWidget):
 
     files_dropped = Signal(list)
 
-    def __init__(self, message: str, icon: QIcon | None = None, parent=None) -> None:
+    def __init__(
+        self,
+        message: str,
+        icon: QIcon | None = None,
+        parent=None,
+        theme_mode: str = "dark",
+    ) -> None:
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self._theme_mode = theme_mode
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -63,7 +80,7 @@ class EmptyStateWidget(QWidget):
         self._frame = QFrame(self)
         self._frame.setObjectName("emptyStateFrame")
         self._frame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self._frame.setStyleSheet(_DASHED_QSS)
+        self._frame.setStyleSheet(_dashed_qss(self._theme_mode))
 
         frame_layout = QVBoxLayout(self._frame)
         frame_layout.setAlignment(Qt.AlignCenter)
@@ -92,6 +109,11 @@ class EmptyStateWidget(QWidget):
 
     def set_icon(self, icon: QIcon) -> None:
         self._icon_label.setPixmap(icon.pixmap(64, 64))
+
+    def set_theme_mode(self, mode: str) -> None:
+        """Re-render the dashed-border QSS for ``mode`` ("dark"/"light")."""
+        self._theme_mode = mode
+        self._frame.setStyleSheet(_dashed_qss(self._theme_mode))
 
     # ------------------------------------------------------------------
     # Drag + drop
