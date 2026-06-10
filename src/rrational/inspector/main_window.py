@@ -189,6 +189,11 @@ class MainWindow(QMainWindow):
 
         self._info_dock = InfoDock(self)
         self.addDockWidget(Qt.RightDockWidgetArea, self._info_dock)
+        # Cluster C5 visual fix — ensure the dock has a usable initial
+        # width. Qt computes 0-width docks when the central widget is
+        # greedy (our plot is), so without this the dock collapses to a
+        # 1-px slit and looks broken on first launch.
+        self._info_dock.setMinimumWidth(280)
         # Honour the persisted show/hide preference on startup.
         try:
             show_info = bool(settings.read_setting("show_info_dock"))
@@ -716,6 +721,24 @@ class MainWindow(QMainWindow):
             settings_key="show_crosshair",
             on_change=self._plot.set_crosshair_visible,
         )
+        # Cluster A2/A7 — HUD readout + Zen-mode toggles. The plot
+        # widget already binds H/Z as QShortcuts, but exposing them in
+        # the View menu makes the feature discoverable. Shortcuts on
+        # the QActions are intentionally omitted to avoid duplicate
+        # firing with the plot's existing QShortcut(WindowShortcut)
+        # bindings.
+        self._toggle_hud_act = QAction("Show &HUD readout", self)
+        self._toggle_hud_act.setCheckable(True)
+        self._toggle_hud_act.setChecked(True)
+        self._toggle_hud_act.toggled.connect(self._plot.set_hud_visible)
+        view_menu.addAction(self._toggle_hud_act)
+        self._toggle_zen_act = QAction("&Zen mode", self)
+        self._toggle_zen_act.setCheckable(True)
+        self._toggle_zen_act.setChecked(False)
+        self._toggle_zen_act.triggered.connect(
+            lambda _checked: self._plot._toggle_zen_mode()
+        )
+        view_menu.addAction(self._toggle_zen_act)
 
         # Dockable BrowseTab panels (Datasets + Preprocessing).
         view_menu.addSeparator()
