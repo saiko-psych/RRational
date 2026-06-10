@@ -672,6 +672,48 @@ class ParticipantTab(InspectorTab):
                 ),
             )
         )
+        outer.addWidget(
+            HelpExpander(
+                "Keyboard shortcuts",
+                (
+                    "<h4>Plot keyboard shortcuts</h4>"
+                    "<table>"
+                    "<tr><th>Key</th><th>Action</th></tr>"
+                    "<tr><td><b>R</b></td><td>Reset zoom to full recording</td></tr>"
+                    "<tr><td><b>1 / 2 / 3</b></td>"
+                    "<td>Jump to last 1 min / 10 min / full</td></tr>"
+                    "<tr><td><b>&larr; / &rarr;</b></td>"
+                    "<td>Pan 25% of visible window</td></tr>"
+                    "<tr><td><b>&uarr; / &darr;</b></td>"
+                    "<td>Zoom out / in</td></tr>"
+                    "<tr><td><b>Home / End</b></td>"
+                    "<td>First / last 60 s</td></tr>"
+                    "<tr><td><b>A</b></td>"
+                    "<td>Toggle Annotation mode (drag to create range)</td></tr>"
+                    "<tr><td><b>E</b></td>"
+                    "<td>Toggle Exclusion mode (drag to mark bad time)</td></tr>"
+                    "<tr><td><b>H</b></td><td>Toggle HUD readout</td></tr>"
+                    "<tr><td><b>C</b></td><td>Toggle Crosshair</td></tr>"
+                    "<tr><td><b>Z</b></td>"
+                    "<td>Zen mode (HUD + Crosshair off)</td></tr>"
+                    "</table>"
+                ),
+            )
+        )
+        outer.addWidget(
+            HelpExpander(
+                "Overview bar",
+                (
+                    "<h4>Overview bar</h4>"
+                    "<p>Below the tachogram, the <b>Overview Bar</b> shows the "
+                    "whole recording at reduced scale. The light rectangle is "
+                    "the current viewport &mdash; drag it left/right to pan, "
+                    "drag the edges to zoom in/out.</p>"
+                    "<p>Colored stripes mirror the main plot: <b>warm gray</b> "
+                    "for exclusion zones, <b>magenta</b> for annotations.</p>"
+                ),
+            )
+        )
         outer.addWidget(self._dock_host)
 
     def _build_header_metrics_row(self) -> None:
