@@ -109,3 +109,163 @@ class Annotation:
         """
         a, b = sorted((float(t_start), float(t_end)))
         return cls.create(t=a, text=text, duration=b - a)
+
+
+# ---------------------------------------------------------------------
+# Cluster B3 / B4 — MNE-style helpers on annotation lists.
+#
+# These mirror ``mne.Annotations`` methods but operate on plain
+# ``list[Annotation]`` containers (the format the inspector persists
+# and passes around) so callers don't need to wrap their data in a
+# new class.
+# ---------------------------------------------------------------------
+
+
+def crop(annotations: list[Annotation], tmin: float, tmax: float) -> list[Annotation]:
+    """Return annotations whose onset falls within ``[tmin, tmax]``.
+
+    Range annotations are clipped: if the original onset/end straddles
+    the window, the returned annotation's duration is shrunk to the
+    overlap region. Annotations entirely outside the window drop.
+
+    Mirrors ``mne.Annotations.crop`` (without the ``emit_warning``
+    side-effect). ``tmin > tmax`` raises — matching MNE's contract.
+    """
+    if tmin > tmax:
+        raise ValueError(f"tmin ({tmin}) must be <= tmax ({tmax})")
+    out: list[Annotation] = []
+    for ann in annotations:
+        # Treat the annotation as the inclusive interval [t, t_end].
+        a_start = float(ann.t)
+        a_end = float(ann.t_end)
+        if a_end < tmin or a_start > tmax:
+            continue
+        clipped_start = max(a_start, tmin)
+        clipped_end = min(a_end, tmax)
+        new_duration = max(0.0, clipped_end - clipped_start)
+        out.append(
+            Annotation(
+                t=clipped_start,
+                text=ann.text,
+                created_at=ann.created_at,
+                duration=new_duration,
+            )
+        )
+    return out
+
+
+def rename(annotations: list[Annotation], mapping: dict[str, str]) -> list[Annotation]:
+    """Return a new list with annotation ``text`` rewritten via ``mapping``.
+
+    Annotations whose ``text`` is not a mapping key are passed through
+    unchanged. Mirrors ``mne.Annotations.rename`` — useful for batch-
+    relabelling protocols like ``{"baseline": "rest"}``.
+    """
+    out: list[Annotation] = []
+    for ann in annotations:
+        new_text = mapping.get(ann.text, ann.text)
+        out.append(
+            Annotation(
+                t=ann.t,
+                text=new_text,
+                created_at=ann.created_at,
+                duration=ann.duration,
+            )
+        )
+    return out
+
+
+def count(annotations: list[Annotation]) -> dict[str, int]:
+    """Return a ``{text: count}`` histogram of annotation labels.
+
+    Mirrors ``mne.Annotations.count``. Empty texts are bucketed under
+    the literal empty string so the user can spot un-labelled markers.
+    """
+    counts: dict[str, int] = {}
+    for ann in annotations:
+        counts[ann.text] = counts.get(ann.text, 0) + 1
+    return counts
+
+
+def set_durations(
+    annotations: list[Annotation], mapping: dict[str, float]
+) -> list[Annotation]:
+    """Return a new list with ``duration`` rewritten by label mapping.
+
+    Annotations whose ``text`` does not appear in ``mapping`` keep
+    their original duration. Mirrors ``mne.Annotations.set_durations``
+    — handy for replacing point-marker placeholders with the real
+    epoch length after the fact.
+    """
+    out: list[Annotation] = []
+    for ann in annotations:
+        new_duration = float(mapping.get(ann.text, ann.duration))
+        out.append(
+            Annotation(
+                t=ann.t,
+                text=ann.text,
+                created_at=ann.created_at,
+                duration=max(0.0, new_duration),
+            )
+        )
+    return out
+
+
+def chunk_annotations(
+    annotation: Annotation,
+    chunk_duration_s: float,
+    overlap_s: float = 0.0,
+) -> list[Annotation]:
+    """Slice a long range annotation into N shorter overlapping chunks.
+
+    Cluster B4 — mirrors ``mne.events_from_annotations(chunk_duration=)``
+    on the ``Epochs`` side: take a long ``BAD_movement`` annotation and
+    fan it out into 30-second epochs you can compute HRV on.
+
+    The original ``text`` is preserved on every chunk. ``created_at``
+    is propagated unchanged so the audit trail still points to the
+    parent annotation's creation. Point annotations (duration == 0)
+    return a one-element list (the original) since there is nothing to
+    chunk.
+
+    Parameters
+    ----------
+    annotation
+        A range annotation (duration > 0). Point annotations are
+        returned unchanged in a single-element list.
+    chunk_duration_s
+        Length of each sub-event in seconds. Must be > 0.
+    overlap_s
+        Per-chunk overlap in seconds. ``0.0`` (default) gives
+        non-overlapping sub-events. Must be ``< chunk_duration_s``.
+    """
+    if chunk_duration_s <= 0:
+        raise ValueError("chunk_duration_s must be > 0")
+    if overlap_s < 0 or overlap_s >= chunk_duration_s:
+        raise ValueError("overlap_s must be in [0, chunk_duration_s)")
+    if annotation.duration <= 0:
+        return [annotation]
+
+    step = chunk_duration_s - overlap_s
+    out: list[Annotation] = []
+    t_cursor = float(annotation.t)
+    t_end = float(annotation.t_end)
+    # Use a half-open interval [t_cursor, t_cursor + chunk_duration_s)
+    # so the last chunk gets emitted even when it would extend exactly
+    # to t_end (no fractional rounding silent-drop).
+    while t_cursor < t_end:
+        chunk_end = min(t_cursor + chunk_duration_s, t_end)
+        # Skip degenerate trailing chunks (< 1ms) — they're nearly
+        # always rounding artefacts and never useful to analysis.
+        if chunk_end - t_cursor < 1e-3:
+            break
+        out.append(
+            Annotation(
+                t=t_cursor,
+                text=annotation.text,
+                created_at=annotation.created_at,
+                duration=chunk_end - t_cursor,
+            )
+        )
+        t_cursor += step
+    return out

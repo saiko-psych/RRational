@@ -170,3 +170,63 @@ def test_out_dir_is_created_when_missing(tmp_path: Path):
     paths = export_bids_physio(_make_data(), out, participant_id="001", task="rest")
     assert paths.tsv_gz.parent == out
     assert out.exists()
+
+
+# ---------------------------------------------------------------------
+# Cluster B6 — anonymize={"daysback": N}
+# ---------------------------------------------------------------------
+def test_anonymize_shifts_starttime_back(tmp_path: Path):
+    from rrational.inspector.bids_export import export_bids_physio
+
+    data = _make_data()
+    paths_plain = export_bids_physio(
+        data, tmp_path / "plain", participant_id="001", task="rest"
+    )
+    paths_anon = export_bids_physio(
+        data,
+        tmp_path / "anon",
+        participant_id="001",
+        task="rest",
+        anonymize={"daysback": 365},
+    )
+    plain = json.loads(paths_plain.json.read_text())
+    anon = json.loads(paths_anon.json.read_text())
+    # 365 days in seconds.
+    assert plain["StartTime"] - anon["StartTime"] == pytest.approx(365 * 86400.0)
+
+
+def test_anonymize_drops_freetext_pii(tmp_path: Path):
+    from rrational.inspector.bids_export import export_bids_physio
+
+    data = _make_data(experimenter="Dr. Smith", device="Polar H10")
+    data.description = "Pilot recording, subject ID redacted"
+    paths = export_bids_physio(
+        data,
+        tmp_path,
+        participant_id="001",
+        task="rest",
+        anonymize={"daysback": 30},
+    )
+    sidecar = json.loads(paths.json.read_text())
+    assert "Experimenter" not in sidecar
+    assert "TaskDescription" not in sidecar
+    # Hardware manufacturer is equipment metadata, not PII — keeps.
+    assert sidecar.get("Manufacturer") == "Polar H10"
+
+
+def test_anonymize_without_daysback_only_strips_pii(tmp_path: Path):
+    from rrational.inspector.bids_export import export_bids_physio
+
+    data = _make_data(experimenter="Dr. Smith")
+    paths = export_bids_physio(
+        data,
+        tmp_path,
+        participant_id="001",
+        task="rest",
+        anonymize={},
+    )
+    sidecar = json.loads(paths.json.read_text())
+    # Daysback omitted → StartTime unchanged from the raw data anchor.
+    assert sidecar["StartTime"] == pytest.approx(float(data.t_start))
+    # PII still stripped even without a daysback override.
+    assert "Experimenter" not in sidecar

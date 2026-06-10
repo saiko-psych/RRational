@@ -85,6 +85,91 @@ class InspectorData:
         finite = np.isfinite(self.t)
         return float(self.t[finite][-1])
 
+    # ------------------------------------------------------------------
+    # Cluster B10 — MNE-style ``to_data_frame`` + ``describe``.
+    #
+    # Mirrors ``mne.io.Raw.to_data_frame()`` and the ``RRSeries``
+    # describe pattern: surface the timeline as a pandas frame keyed
+    # by timestamp so users can pipe into seaborn / statsmodels
+    # without re-implementing the NaN-gap handling.
+    # ------------------------------------------------------------------
+    def to_data_frame(self):
+        """Return a ``(time, rr_ms, section)`` DataFrame of the timeline.
+
+        ``time`` carries the wall-clock seconds-since-epoch (matching
+        ``self.t``), ``rr_ms`` carries the RR interval, and ``section``
+        labels each row with the SectionMeta name covering that
+        timestamp (or empty string for inter-section gaps). NaN gaps
+        are preserved so groupby aggregates honour MNE-style
+        "ignore between-section gaps" semantics.
+
+        Pandas is imported lazily — the inspector's core analysis path
+        does not require pandas, and we keep imports symmetric with
+        the rest of the data_loader module.
+        """
+        import pandas as pd
+
+        section_label = np.full(self.t.shape, "", dtype=object)
+        for sec in self.sections:
+            mask = (self.t >= sec.t_start) & (self.t <= sec.t_end)
+            section_label[mask] = sec.name
+
+        return pd.DataFrame(
+            {
+                "time": self.t,
+                "rr_ms": self.v,
+                "section": section_label,
+            }
+        )
+
+    def describe(self):
+        """Return a per-section summary DataFrame (count / mean / std / min / max).
+
+        Counts ignore NaN gaps. Sections with zero finite samples drop
+        from the result so the table only reports useful rows. When
+        ``sections`` is empty, returns a single-row "all" summary so
+        callers can rely on a non-empty frame.
+        """
+        import pandas as pd
+
+        rows = []
+        if self.sections:
+            for sec in self.sections:
+                mask = (
+                    (self.t >= sec.t_start)
+                    & (self.t <= sec.t_end)
+                    & np.isfinite(self.v)
+                )
+                values = self.v[mask]
+                if values.size == 0:
+                    continue
+                rows.append(
+                    {
+                        "section": sec.name,
+                        "count": int(values.size),
+                        "mean": float(values.mean()),
+                        "std": float(values.std(ddof=1)) if values.size > 1 else 0.0,
+                        "min": float(values.min()),
+                        "max": float(values.max()),
+                    }
+                )
+        if not rows:
+            # No sections → whole-recording summary so the call still
+            # produces a usable frame (mirrors RRSeries.describe()).
+            finite = self.v[np.isfinite(self.v)]
+            if finite.size > 0:
+                rows.append(
+                    {
+                        "section": "all",
+                        "count": int(finite.size),
+                        "mean": float(finite.mean()),
+                        "std": (float(finite.std(ddof=1)) if finite.size > 1 else 0.0),
+                        "min": float(finite.min()),
+                        "max": float(finite.max()),
+                    }
+                )
+        return pd.DataFrame(rows)
+
 
 @dataclass
 class Dataset:

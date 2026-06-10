@@ -67,8 +67,20 @@ def _bids_basename(participant_id: str, task: str, session: str | None) -> str:
     return "_".join(parts)
 
 
-def _sidecar_for(data: "InspectorData") -> dict:
-    """Build the BIDS-physio JSON sidecar dict for ``data``."""
+def _sidecar_for(data: "InspectorData", *, anonymize: dict | None = None) -> dict:
+    """Build the BIDS-physio JSON sidecar dict for ``data``.
+
+    Cluster B6 — ``anonymize`` is a dict-shaped option matching
+    ``mne_bids.write.write_raw_bids(anonymize={...})``. Recognised key:
+
+    * ``daysback`` (int) — number of days to shift ``StartTime``
+      backwards. Same offset applied to every recording in an export
+      keeps relative timings intact while removing the wall-clock anchor.
+
+    When ``anonymize`` is set, ``Experimenter`` and ``TaskDescription``
+    are dropped so the sidecar contains no free-text PII either.
+    Hardware ``Manufacturer`` is kept (not PII per BIDS guidance).
+    """
     # Coerce NaN gaps out of the timeline before doing duration math —
     # otherwise t_end - t_start blows up to NaN and SamplingFrequency
     # follows. We use the InspectorData properties which already drop
@@ -77,10 +89,21 @@ def _sidecar_for(data: "InspectorData") -> dict:
     n_samples = int(np.isfinite(data.v).sum())
     mean_rate = n_samples / duration_s
 
+    # ``anonymize is not None`` (not truthiness) — an empty dict is
+    # still an explicit "anonymize on, default everything" request and
+    # must strip PII even when no daysback override is supplied.
+    anonymizing = anonymize is not None
+
+    start_time = float(data.t_start)
+    if anonymizing:
+        daysback = anonymize.get("daysback")
+        if daysback is not None:
+            start_time -= float(daysback) * 86400.0
+
     sidecar = {
         # BIDS REQUIRED fields.
         "SamplingFrequency": round(mean_rate, 6),
-        "StartTime": float(data.t_start),
+        "StartTime": start_time,
         "Columns": ["cardiac"],
         # BIDS RECOMMENDED + the OPTIONAL but high-utility per-column
         # block. ``LongName`` surfaces in BIDS-aware UI labels; without
@@ -96,6 +119,15 @@ def _sidecar_for(data: "InspectorData") -> dict:
             "Units": "ms",
         },
     }
+
+    if anonymizing:
+        # Free-text PII dropped under anonymization. Manufacturer is
+        # equipment metadata (not a participant identifier) and stays.
+        if data.device:
+            sidecar["Manufacturer"] = data.device
+        if data.line_freq is not None:
+            sidecar["PowerLineFrequency"] = float(data.line_freq)
+        return sidecar
 
     # Optional QW2 metadata. Empty strings / None get dropped so the
     # sidecar stays clean. ``Manufacturer`` is the BIDS-blessed key for
@@ -120,6 +152,7 @@ def export_bids_physio(
     participant_id: str,
     task: str = "rest",
     session: str | None = None,
+    anonymize: dict | None = None,
 ) -> BIDSExportPaths:
     """Write a BIDS-physio TSV.GZ + JSON sidecar for ``data``.
 
@@ -140,6 +173,11 @@ def export_bids_physio(
     session
         Optional BIDS ``ses-<ses>`` value. Omitted entirely when None
         or empty.
+    anonymize
+        Optional ``{"daysback": int}`` dict — Cluster B6. When set,
+        ``StartTime`` in the JSON sidecar is shifted back by the given
+        days and free-text PII fields (Experimenter / TaskDescription)
+        are dropped. Matches the ``mne_bids.write_raw_bids`` shape.
 
     Returns
     -------
@@ -170,7 +208,7 @@ def export_bids_physio(
         f.write("\n")
 
     json_path.write_text(
-        json.dumps(_sidecar_for(data), indent=2) + "\n",
+        json.dumps(_sidecar_for(data, anonymize=anonymize), indent=2) + "\n",
         encoding="utf-8",
     )
     return BIDSExportPaths(tsv_gz=tsv_path, json=json_path)
