@@ -20,6 +20,8 @@ dev = [
     "black>=24.4",
     "ruff>=0.5",
     "pytest-qt>=4.4",
+    "pytest-xdist>=3.8.0",
+    "pytest-timeout>=2.4.0",
 ]
 
 [project.scripts]
@@ -51,6 +53,18 @@ source-include = ["src/rrational/inspector/assets/*"]
 [tool.black]
 line-length = 88
 target-version = ["py311"]
+
+[tool.pytest.ini_options]
+# pytest-xdist parallelisation: ``loadgroup`` keeps tests sharing a
+# ``pytest.mark.xdist_group("name")`` marker on the same worker, which
+# is what we need for the QSS theme + ProjectManager + standalone-entry
+# tests that touch the QApplication singleton. ``loadscope`` is the
+# next-best fallback (groups by module) but is too coarse for the
+# Inspector suite where many widget tests live in the same module.
+addopts = "--dist=loadgroup"
+markers = [
+    "xdist_group: pin tests sharing the same group name to one xdist worker",
+]
 
 [tool.ruff]
 line-length = 88

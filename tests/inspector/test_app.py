@@ -27,6 +27,16 @@ def _force_offscreen_qpa(monkeypatch):
     yield
 
 
+# All theme tests in this module share QSS-application state through the
+# process-wide QApplication singleton. When pytest-xdist parallelises the
+# suite across workers, a worker that ran an unrelated widget test first
+# pollutes ``app.styleSheet()`` and lets the next ``apply_app_theme``
+# call wedge on Qt's internal style-cache invalidation. Pinning the
+# module to a named xdist group routes every theme test to the same
+# worker, in order, with no foreign QSS state in between.
+pytestmark = pytest.mark.xdist_group("inspector_theme")
+
+
 def test_apply_dark_theme_sets_stylesheet(qtbot):
     """``apply_app_theme(app, "dark")`` runs and leaves a non-empty QSS."""
     from qtpy.QtWidgets import QApplication

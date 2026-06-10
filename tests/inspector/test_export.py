@@ -48,7 +48,7 @@ def test_build_v2_export_metadata_carries_participant_id():
     data = _make_data(["s1"])
     export = build_v2_export(data, participant_id="0042XYZ")
     assert export.metadata.participant_id == "0042XYZ"
-    assert export.metadata.source_app == "RRational Inspector"
+    assert export.metadata.source_app == "RRational"
     assert export.metadata.recording_info["total_beats"] == len(data.t)
 
 

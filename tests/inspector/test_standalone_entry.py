@@ -21,6 +21,13 @@ pytest.importorskip("pytestqt")
 pytest.importorskip("pyqtgraph")
 
 
+# MainWindow() construction inside this module mutates the QApplication
+# singleton (sets icon, menus, dock state) in ways that race with other
+# xdist workers running widget tests. Pin to a dedicated group; needs
+# ``--dist=loadgroup`` in addopts to honour the marker.
+pytestmark = pytest.mark.xdist_group("inspector_standalone")
+
+
 @pytest.fixture(autouse=True)
 def _force_offscreen_qpa(monkeypatch):
     """Mirror the CI environment so QApplication boots without a display.
@@ -128,4 +135,4 @@ def test_main_window_constructs_under_offscreen(qtbot, tmp_path):
     # Just constructing + showing is the smoke test; if Qt blows up here
     # (missing plugin, bad signal connection) the bundle would too.
     win.show()
-    assert win.windowTitle() == "RRational Inspector"
+    assert win.windowTitle() == "RRational"

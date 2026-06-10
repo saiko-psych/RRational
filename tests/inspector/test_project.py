@@ -8,6 +8,15 @@ pytest.importorskip("pytestqt")
 pytest.importorskip("pyqtgraph")
 
 
+# These tests instantiate a full MainWindow + ProjectManager, which
+# leaves QApplication singleton + Inspector persistence dirs in a state
+# that pollutes neighbour tests when pytest-xdist parallelises the
+# suite. Pinning to a named group routes them all to the same worker
+# in known order. Require ``--dist=loadgroup`` (set in pyproject.toml
+# pytest config) for the marker to take effect.
+pytestmark = pytest.mark.xdist_group("inspector_project")
+
+
 @pytest.fixture(autouse=True)
 def isolated_settings(qapp, tmp_path, monkeypatch):
     """Isolate all persistence sources: Qt settings, inspector YAML store,
