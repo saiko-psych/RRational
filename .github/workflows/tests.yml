@@ -30,10 +30,28 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
 
+      - name: Install minimal Qt runtime libs
+        # uv sync pulls pytest-qt as a dev dependency. pytest-qt's
+        # pytest_configure imports QtGui unconditionally, which dlopens
+        # libEGL.so.1 even when the actual tests in this job touch only
+        # plain Python / Streamlit AppTest. Without this step the suite
+        # crashes during pytest configure with "libEGL.so.1: cannot open
+        # shared object file" before any test runs.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libgl1 \
+            libxkbcommon0 \
+            libfontconfig1 \
+            libdbus-1-3
+
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
       - name: Run fast suites
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
           uv run pytest \
             tests/analysis \
