@@ -73,6 +73,40 @@ A bare positional argument is also accepted for backwards compatibility
 Both apps read the same project folder layout, so you can use them
 side-by-side on the same data without conversion.
 
+## Features overview
+
+A quick tour of the Inspector's headline capabilities — see the
+[Inspector feature reference](../user-guide/inspector-features.md) for
+detail.
+
+- **HUD readout** (`H`) — live `t / RR / HR` panel in the plot corner.
+- **Crosshair** (`C`) — vertical reference line that follows the cursor.
+- **Zen mode** (`Z`) — one-stroke "hide overlays" toggle for demos and
+  screenshots.
+- **Overview bar** — reduced-scale strip showing the whole recording
+  with a draggable viewport rectangle.
+- **Compare HRV curves** — overlay RR curves from multiple datasets
+  with bootstrap 95% CI bands (`Tools → Compare HRV curves…`).
+- **Annotation and exclusion stripes** — drag-select to mark labeled
+  time ranges (annotations) or skip bad sections (exclusions).
+- **Colorblind-safe palette** — default Okabe-Ito scheme, switchable
+  under `Edit → Preferences → Color Scheme`.
+- **BIDS-physio + PRISM exports** — standards-compliant export of
+  cardiac physio + HRV summary metrics via the `Tools` menu.
+
+## Keyboard shortcuts
+
+The Inspector is built for keyboard-driven review. Press `F1` from
+inside the app to open the full shortcut reference, or see the
+[Inspector keyboard shortcuts](../user-guide/inspector-keyboard-shortcuts.md)
+cheat sheet.
+
+## Learn more
+
+- [Inspector feature reference](../user-guide/inspector-features.md)
+- [Inspector keyboard shortcuts](../user-guide/inspector-keyboard-shortcuts.md)
+- `Help → Workflow walkthrough` (in the app) — interactive 11-page tour.
+
 ## Running from source
 
 If you prefer to run the inspector from the source tree instead of a
