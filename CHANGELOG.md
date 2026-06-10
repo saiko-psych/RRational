@@ -2,6 +2,66 @@
 
 All notable changes to RRational are documented here.
 
+## [Unreleased] — Round 17 (Tutorial + Documentation)
+
+Schließt die Discoverability-Lücke aus dem Tutorial-Gap-Audit (etwa 91%
+der Cluster-A-D + R15+R16 Features waren bisher nicht dokumentiert).
+Sechs Sprints zwischen `0bb11ed..febce79`.
+
+### Added — In-app discoverability
+- **Walkthrough-Wizard erweitert auf 11 Seiten** (commit `0bb11ed`) —
+  drei neue Seiten für Distraction-free viewing (Zen mode + HUD +
+  Crosshair), Compare HRV curves Workflow, und Colorblind-safe palette
+  (Okabe-Ito).
+- **Tooltips auf 7 Menu-Actions** (commit `1e1a814`) — `Show HUD
+  readout`, `Show crosshair`, `Show Info panel`, `Zen mode`, `Compare
+  HRV curves...`, `Export to BIDS-physio...`, `Export to PRISM
+  biometrics...` zeigen jetzt hover-tips inklusive Keyboard-Shortcut.
+- **Zwei zusätzliche HelpExpanders im ParticipantTab** (commit
+  `1244c18`) — "Keyboard shortcuts" mit voller Cluster-A-Tabelle und
+  "Overview bar" mit Erklärung der Viewport-Rechteck-Interaktion.
+
+### Added — Published documentation (RTD)
+- **docs/user-guide/inspector-features.md** (commit `778cd19`, ~215
+  lines) — Feature-by-feature Reference: HUD/Crosshair/Zen mode,
+  Color schemes, Overview bar, Zoom presets, Keyboard panning,
+  Compare HRV curves Dialog, Annotation+Exclusion Stripes, Info dock,
+  Participant grid, Empty state, Workspace tree badges, Status bar,
+  At-a-glance shortcut table.
+- **docs/user-guide/inspector-keyboard-shortcuts.md** (commit
+  `26fcc90`, ~120 lines) — Druckbarer Single-Page-Cheat-Sheet mit
+  vollständiger Tabelle (Navigation / Modes / Display / File /
+  Edit / Global) plus Tips & tricks Sektion.
+- **docs/getting-started/inspector.md** (commit `26fcc90`) — Neue
+  Sections "Features overview" + "Keyboard shortcuts" + "Learn more"
+  mit Cross-Links.
+- **docs/user-guide/inspector-workflows.md** (commit `febce79`, ~180
+  lines) — Sechs End-to-end-Recipes: Quick review, Multi-participant
+  survey, Group comparison, Detailed review, Presentation mode,
+  Exploratory analysis. Plus Inspector-vs-Streamlit Best-Practice-
+  Cheat-Sheet.
+- **docs/reference/inspector-menu-reference.md** (commit `febce79`,
+  ~220 lines) — Vollständige File/Edit/View/Tools/Help Menu-Doku,
+  Compare-HRV-Curves Dialog Reference, Sidebar-Elemente (Workspace
+  Tree + Info Dock), Status Bar, Keyboard-Shortcut-Summary.
+
+### Added — Tests
+- `tests/inspector/test_help.py::test_walkthrough_contains_round17_pages`
+  — asserts new walkthrough page titles present.
+- `tests/inspector/test_tooltips.py` (NEW, 7 tests) — verifies every
+  R17 tooltip carries non-empty text + the expected shortcut hint.
+- `tests/inspector/test_help_widgets.py` (NEW, 4 tests) — walks
+  ParticipantTab widget tree, asserts new HelpExpander titles +
+  body tokens (R, 1/2/3, A, E, H, C, Z, Home/End).
+
+### Notes
+- Sprache des Pakets bleibt Englisch (Code/UI/Commits); CHANGELOG +
+  internal memory bleiben Deutsch.
+- Drei Discoverability-Schichten alignen jetzt: Walkthrough (in-app
+  wizard) -> In-tab HelpExpander -> Published RTD docs. Jeder
+  Cluster-A Keyboard-Shortcut, jeder Tools-Menu Export und jedes
+  visuelle Feature ist in beiden Ebenen dokumentiert.
+
 ## [Unreleased] — main (Rounds 11-15, MNE-deep-integration + Visual/Coverage P0)
 
 Strukturierte Implementierung der MNE-Gap-Analyse-Roadmap (Cluster A-D)
