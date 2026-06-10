@@ -164,30 +164,46 @@ class ParticipantsTab(InspectorTab):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
 
+        # Round 16 (L8) — header was a single inline paragraph with the
+        # config path baked in: "Participants — saved to ~/.rrational
+        # /config/participants.yml. (no project open) (filename: shared).
+        # Each entry can be linked to a group or to an event sequence."
+        # Split into two-line title + muted secondary description; the
+        # path moves into a hover tooltip on the heading.
+        self._heading_label = QLabel("<b>Participants</b>")
+        self._heading_label.setToolTip(self._build_path_tooltip())
+        outer.addWidget(self._heading_label)
+
         self._info_label = QLabel(
-            f"<b>Participants</b> — saved to "
-            f"{self.format_config_path('config/participants.yml')} "
-            f"(Streamlit-shared). Each entry can be linked to a group "
-            f"and to an event sequence."
+            "Link each participant ID to a group and an event sequence."
         )
         self._info_label.setWordWrap(True)
-        self._info_label.setStyleSheet("color: #777;")
+        self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
 
+        # Round 16 (L9) — toolbar buttons given a uniform minimum-width
+        # plus consistent padding so the Add / Edit / Remove / Import
+        # row reads as one button group rather than four ad-hoc sizes.
         btn_row = QHBoxLayout()
-        self._add_btn = QPushButton("Add participant…")
+        btn_row.setSpacing(8)
+        self._add_btn = QPushButton("Add…")
+        self._add_btn.setToolTip("Add a new participant entry")
         self._add_btn.clicked.connect(self._on_add)
         self._edit_btn = QPushButton("Edit…")
+        self._edit_btn.setToolTip("Edit the selected participant entry")
         self._edit_btn.clicked.connect(self._on_edit)
         self._remove_btn = QPushButton("Remove")
+        self._remove_btn.setToolTip("Delete the selected participant entry")
         self._remove_btn.clicked.connect(self._on_remove)
-        self._import_btn = QPushButton("Import from workspace")
+        self._import_btn = QPushButton("Import…")
         self._import_btn.setToolTip(
-            "Create participant entries for every currently-loaded dataset "
-            "(ID = dataset filename stem). Existing entries are skipped."
+            "Import from workspace — create entries for every currently-"
+            "loaded dataset (ID = dataset filename stem). Existing entries "
+            "are skipped."
         )
         self._import_btn.clicked.connect(self._on_import_workspace)
         for b in (self._add_btn, self._edit_btn, self._remove_btn, self._import_btn):
+            b.setMinimumWidth(110)
             btn_row.addWidget(b)
         btn_row.addStretch()
         outer.addLayout(btn_row)
@@ -284,15 +300,26 @@ class ParticipantsTab(InspectorTab):
     def on_workspace_changed(self) -> None:
         # Re-read in case the project changed
         self._participants = self._load()
-        self._info_label.setText(
-            f"<b>Participants</b> — saved to "
-            f"{self.format_config_path('config/participants.yml')} "
-            f"(Streamlit-shared). Each entry can be linked to a group "
-            f"and to an event sequence."
-        )
+        # Refresh the heading tooltip — the active project's config
+        # path may have changed since construction (project open/close).
+        self._heading_label.setToolTip(self._build_path_tooltip())
         self._refresh_table()
         self._refresh_grid()
         self._refresh_buttons()
+
+    def _build_path_tooltip(self) -> str:
+        """Compose the file-path hover tooltip for the heading label.
+
+        The config path used to be inlined into the visible description
+        which made the header read as a wall of metadata. Round 16
+        moves it into a tooltip so the header stays terse but the user
+        can still discover where the data is persisted.
+        """
+        return (
+            "Saved to "
+            f"{self.format_config_path('config/participants.yml')} "
+            "(Streamlit-shared)"
+        )
 
     def on_active_dataset_changed(self, _data: "InspectorData | None") -> None:
         # Participants are workspace-independent, no per-dataset refresh

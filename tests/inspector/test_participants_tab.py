@@ -294,3 +294,49 @@ def test_protocol_reset_to_defaults_persists(main_window):
     on_disk = load_protocol()
     assert on_disk["expected_duration_min"] == 90.0  # back to default
     assert on_disk["mismatch_strategy"] == "flag_only"
+
+
+# ---------------------------------------------------------------------
+# Round 16 / Sprint 5 — header + toolbar polish (L8 + L9)
+# ---------------------------------------------------------------------
+def test_header_label_does_not_inline_config_path(main_window):
+    """L8 — the config path moved into a tooltip; the visible header
+    must not contain ``participants.yml`` or ``no project open``.
+    """
+    pane = main_window._participants_tab
+    visible = pane._heading_label.text() + " " + pane._info_label.text()
+    assert "participants.yml" not in visible
+    assert "no project open" not in visible
+    assert "filename: shared" not in visible
+
+
+def test_header_tooltip_carries_the_config_path(main_window):
+    """The config path is discoverable as a hover tooltip on the heading."""
+    pane = main_window._participants_tab
+    tip = pane._heading_label.toolTip()
+    assert "participants.yml" in tip
+
+
+def test_toolbar_buttons_share_minimum_width(main_window):
+    """L9 — Add / Edit / Remove / Import all carry the same min-width
+    so the toolbar reads as one uniform button group.
+    """
+    pane = main_window._participants_tab
+    widths = [
+        pane._add_btn.minimumWidth(),
+        pane._edit_btn.minimumWidth(),
+        pane._remove_btn.minimumWidth(),
+        pane._import_btn.minimumWidth(),
+    ]
+    assert len(set(widths)) == 1
+    assert widths[0] >= 100
+
+
+def test_import_button_uses_compact_label_with_tooltip(main_window):
+    """``Import from workspace`` -> ``Import…`` with the full text in
+    the tooltip so the button row stays balanced.
+    """
+    pane = main_window._participants_tab
+    assert "Import" in pane._import_btn.text()
+    assert "workspace" not in pane._import_btn.text().lower()
+    assert "workspace" in pane._import_btn.toolTip().lower()
