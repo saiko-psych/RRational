@@ -835,11 +835,21 @@ class MainWindow(QMainWindow):
         self._hr_dist_act.setStatusTip("Open a heart rate distribution histogram + KDE")
         self._hr_dist_act.triggered.connect(self._on_hr_distribution_clicked)
         tools_menu.addAction(self._hr_dist_act)
+        # Cluster B1: cross-dataset HRV-curve comparison with bootstrap CI bands.
+        self._compare_curves_act = QAction("&Compare HRV curves…", self)
+        self._compare_curves_act.setStatusTip(
+            "Overlay HRV tachograms across loaded recordings, grouped with "
+            "bootstrap confidence bands"
+        )
+        self._compare_curves_act.triggered.connect(self._on_compare_curves_clicked)
+        tools_menu.addAction(self._compare_curves_act)
+
         self._visualisation_actions = [
             self._tachogram_act,
             self._poincare_act,
             self._psd_act,
             self._hr_dist_act,
+            self._compare_curves_act,
         ]
         self._refresh_visualisation_actions()
 
@@ -2057,6 +2067,23 @@ class MainWindow(QMainWindow):
             test_mode=self.test_mode,
         )
         self._latest_visualisation_dialog = dlg
+
+    # ------------------------------------------------------------------
+    # Cluster B1 — Compare HRV curves across loaded datasets
+    # ------------------------------------------------------------------
+    def _on_compare_curves_clicked(self) -> None:
+        """Tools -> Compare HRV curves… — group-overlay with bootstrap CI."""
+        from rrational.inspector.compare_curves_dialog import CompareCurvesDialog
+
+        if not self._datasets:
+            self._info("Compare HRV curves", "Load at least one recording first.")
+            return
+        dlg = CompareCurvesDialog(self._datasets, parent=self)
+        self._compare_curves_dialog = dlg  # keep alive for headless tests
+        if self.test_mode:
+            dlg.show()
+        else:
+            dlg.exec()
 
     # ------------------------------------------------------------------
     # Cross-recording annotation table

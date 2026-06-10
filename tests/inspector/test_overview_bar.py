@@ -151,6 +151,46 @@ def test_view_toggle_hides_overview_bar(main_window):
     assert main_window._overview_bar.isVisible() is True
 
 
+# ---------------------------------------------------------------------
+# Cluster B2 — mirror stripes for exclusion zones + annotations
+# ---------------------------------------------------------------------
+def test_set_exclusion_zones_adds_stripes(main_window):
+    bar = main_window._overview_bar
+    bar.set_exclusion_zones([(100.0, 110.0), (200.0, 220.0)])
+    assert len(bar._exclusion_items) == 2
+
+
+def test_set_exclusion_zones_replaces_previous(main_window):
+    bar = main_window._overview_bar
+    bar.set_exclusion_zones([(1.0, 2.0)])
+    bar.set_exclusion_zones([(5.0, 6.0), (10.0, 11.0)])
+    assert len(bar._exclusion_items) == 2
+
+
+def test_set_annotations_adds_stripes(main_window):
+    bar = main_window._overview_bar
+    bar.set_annotations([(50.0, 55.0), (100.0, 100.0)])
+    assert len(bar._annotation_items) == 2
+
+
+def test_clear_overlays_removes_both_families(main_window):
+    bar = main_window._overview_bar
+    bar.set_exclusion_zones([(1.0, 2.0)])
+    bar.set_annotations([(3.0, 4.0)])
+    bar.clear_overlays()
+    assert bar._exclusion_items == []
+    assert bar._annotation_items == []
+
+
+def test_clear_data_also_clears_overlays(main_window):
+    bar = main_window._overview_bar
+    bar.set_exclusion_zones([(1.0, 2.0)])
+    bar.set_annotations([(3.0, 4.0)])
+    bar.clear_data()
+    assert bar._exclusion_items == []
+    assert bar._annotation_items == []
+
+
 def test_view_toggle_overview_persists(main_window):
     """Toggle state must round-trip through QSettings."""
     from rrational.inspector import settings

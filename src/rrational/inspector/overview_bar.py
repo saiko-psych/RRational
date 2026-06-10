@@ -29,6 +29,10 @@ _BAR_HEIGHT = 80
 _LINE_COLOR = "#7FB3D5"  # paler than main plot, so eyes land on main first
 _VIEWPORT_FILL = (46, 134, 171, 60)
 _VIEWPORT_BORDER = (46, 134, 171, 200)
+# Mirror stripes — same families as the main-plot overlays, slightly
+# muted so they don't compete with the viewport rectangle.
+_EXCLUSION_STRIPE = (125, 131, 144, 120)  # warm-gray, matches drop-log palette
+_ANNOTATION_STRIPE = (203, 70, 175, 160)  # magenta-ish, matches main annotations
 
 
 class OverviewBar(pg.PlotWidget):
@@ -81,6 +85,11 @@ class OverviewBar(pg.PlotWidget):
         self._main_plot: "RRPlotWidget" | None = None
         # Re-entrancy guard for the bidirectional sync (see notes above).
         self._syncing = False
+        # Stripe items mirroring the main-plot overlays. We hold them in
+        # lists so ``clear_overlays`` can remove them without touching
+        # the curve or viewport region.
+        self._exclusion_items: list[pg.LinearRegionItem] = []
+        self._annotation_items: list[pg.LinearRegionItem] = []
 
     # ------------------------------------------------------------------
     # Wiring
@@ -106,6 +115,63 @@ class OverviewBar(pg.PlotWidget):
 
     def clear_data(self) -> None:
         self._curve.clear()
+        self.clear_overlays()
+
+    # ------------------------------------------------------------------
+    # Mirror overlays — exclusion zones + annotations
+    # ------------------------------------------------------------------
+    def clear_overlays(self) -> None:
+        """Remove all stripe mirrors. Called before a fresh set_overlays."""
+        for item in self._exclusion_items + self._annotation_items:
+            self.removeItem(item)
+        self._exclusion_items.clear()
+        self._annotation_items.clear()
+
+    def set_exclusion_zones(self, zones) -> None:
+        """Mirror the main-plot exclusion zones as warm-gray stripes.
+
+        ``zones`` is any iterable of ``(t_start, t_end)`` tuples in the
+        same coordinate frame as the curve (seconds since epoch).
+        Re-calls fully replace the previous mirror so the bar always
+        reflects the current truth.
+        """
+        # Drop only the exclusion family; annotations stay put.
+        for item in self._exclusion_items:
+            self.removeItem(item)
+        self._exclusion_items.clear()
+        for t0, t1 in zones:
+            stripe = pg.LinearRegionItem(
+                values=(float(t0), float(t1)),
+                orientation="vertical",
+                brush=QColor(*_EXCLUSION_STRIPE),
+                pen=pg.mkPen(QColor(*_EXCLUSION_STRIPE), width=0),
+                movable=False,
+            )
+            stripe.setZValue(1)  # below the viewport rectangle
+            self.addItem(stripe)
+            self._exclusion_items.append(stripe)
+
+    def set_annotations(self, spans) -> None:
+        """Mirror annotation spans as magenta stripes.
+
+        ``spans`` is any iterable of ``(t_start, t_end)`` tuples (use
+        ``t_end == t_start`` for point annotations — they'll render as
+        a 1px line via pyqtgraph's degenerate-region behaviour).
+        """
+        for item in self._annotation_items:
+            self.removeItem(item)
+        self._annotation_items.clear()
+        for t0, t1 in spans:
+            stripe = pg.LinearRegionItem(
+                values=(float(t0), float(t1)),
+                orientation="vertical",
+                brush=QColor(*_ANNOTATION_STRIPE),
+                pen=pg.mkPen(QColor(*_ANNOTATION_STRIPE), width=0),
+                movable=False,
+            )
+            stripe.setZValue(2)
+            self.addItem(stripe)
+            self._annotation_items.append(stripe)
 
     # ------------------------------------------------------------------
     # Sync handlers
