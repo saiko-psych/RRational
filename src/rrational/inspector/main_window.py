@@ -725,6 +725,9 @@ class MainWindow(QMainWindow):
             settings_key="show_crosshair",
             on_change=self._plot.set_crosshair_visible,
         )
+        self._toggle_crosshair_act.setToolTip(
+            "Toggle vertical reference line at cursor. Shortcut: C"
+        )
         # Cluster A2/A7 — HUD readout + Zen-mode toggles. The plot
         # widget already binds H/Z as QShortcuts, but exposing them in
         # the View menu makes the feature discoverable. Shortcuts on
@@ -734,11 +737,17 @@ class MainWindow(QMainWindow):
         self._toggle_hud_act = QAction("Show &HUD readout", self)
         self._toggle_hud_act.setCheckable(True)
         self._toggle_hud_act.setChecked(True)
+        self._toggle_hud_act.setToolTip(
+            "Toggle data-cursor readout (t / RR / HR). Shortcut: H"
+        )
         self._toggle_hud_act.toggled.connect(self._plot.set_hud_visible)
         view_menu.addAction(self._toggle_hud_act)
         self._toggle_zen_act = QAction("&Zen mode", self)
         self._toggle_zen_act.setCheckable(True)
         self._toggle_zen_act.setChecked(False)
+        self._toggle_zen_act.setToolTip(
+            "Hide HUD + Crosshair for a clean view. Shortcut: Z"
+        )
         self._toggle_zen_act.triggered.connect(
             lambda _checked: self._plot._toggle_zen_mode()
         )
@@ -777,6 +786,9 @@ class MainWindow(QMainWindow):
             else None,
             on_change=self._set_info_dock_visible,
             default=True,
+        )
+        self._toggle_info_dock_act.setToolTip(
+            "Show or hide the right-side metadata panel"
         )
 
         # View → Layout submenu (Streamlit / MNE-LAB modes).
@@ -897,6 +909,9 @@ class MainWindow(QMainWindow):
             "Overlay HRV tachograms across loaded recordings, grouped with "
             "bootstrap confidence bands"
         )
+        self._compare_curves_act.setToolTip(
+            "Overlay HRV curves from multiple datasets with bootstrap CI bands"
+        )
         self._compare_curves_act.triggered.connect(self._on_compare_curves_clicked)
         tools_menu.addAction(self._compare_curves_act)
 
@@ -945,6 +960,9 @@ class MainWindow(QMainWindow):
             "Write the active recording as a BIDS-spec cardiac "
             "physio TSV.GZ + JSON sidecar pair"
         )
+        self._bids_export_act.setToolTip(
+            "Export the active dataset as BIDS-compliant TSV.GZ + JSON sidecar"
+        )
         self._bids_export_act.triggered.connect(self._on_bids_export_clicked)
         tools_menu.addAction(self._bids_export_act)
 
@@ -953,6 +971,9 @@ class MainWindow(QMainWindow):
         self._prism_export_act.setStatusTip(
             "Write the active recording's HRV summary metrics as a "
             "PRISM-Studio biometrics TSV + JSON sidecar"
+        )
+        self._prism_export_act.setToolTip(
+            "Export HRV summary metrics for the PRISM Studio research framework"
         )
         self._prism_export_act.triggered.connect(self._on_prism_export_clicked)
         tools_menu.addAction(self._prism_export_act)
