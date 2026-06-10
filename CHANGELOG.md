@@ -82,6 +82,54 @@ strukturierte History) plus Streamlit-Lücken schließen.
   Invarianz + Cycling-Verhalten + Hex-Format; drop_log Pareto-Sortierung,
   Cumulative-Overlay, Reason-Labels, Min-Height-Skalierung.
 
+### Fixed — Round 16 (Layout polish post visual inspection)
+- **Sprint 1 — Welcome-State Dock-Visibility** (commit `b5a9afd`) —
+  Preprocessing- und InfoDock werden im Welcome-State (kein Dataset
+  geladen) ausgeblendet, damit der Landing-Screen nicht von
+  disabled-Controls (Detect artifacts, Exclusion zones, Section
+  editing) umrahmt wird. Neuer Helper
+  `MainWindow._update_docks_for_welcome_state()` läuft nach
+  `_notify_tabs_workspace_changed` und einmal am Ende von `__init__`,
+  respektiert die persisted QSettings `show_*_dock` Präferenzen
+  beim Restore.
+- **Sprint 2 — ParticipantGrid n<4 Layout + Subject-Label** (commit
+  `3c64d68`) — Fixe Cell-Größe 220x140 mit `setMaximumWidth`/
+  `setMaximumHeight` zusätzlich zum min-only-Contract; trailing
+  Placeholder-Labels konsumieren den Slack-Space sodass populated
+  Cells link-pin statt full-width zu stretchen (vorher: n=1 als
+  einzige flache Tachogram-Band über die ganze Widget-Breite).
+  Subject-ID Badge promoted zu 12pt bold weiß auf translucent-dark
+  Fill, lesbar auf beiden Theme-Modes. ParticipantsTab versteckt
+  das gesamte Grid wenn n<=1 (kein Vergleichs-View bei einem
+  Thumbnail).
+- **Sprint 3 — Welcome Vertical Centering + Recent-Files Polish**
+  (commit `5d3c0b9`) — Outer QVBoxLayout mit 1:1-Stretchern
+  zentriert den Content-Block vertikal (vorher 1:2 hob ihn ins
+  obere Drittel). "(no recent files)" -> "No recordings opened yet."
+  in italic 11pt mit `hint`-QSS-Property für muted-secondary-Color.
+- **Sprint 4 — Unified Tab-Counter Format** (commit `0340ce3`) —
+  Vorher inkonsistent: `Browse (empty)`, `Setup (8 groups, 2 seqs)`,
+  `Participants (44)`, `Analysis (1 loaded)`, `Results` (kein
+  Counter). Jetzt einheitlich `(N)` wenn N>0, leer sonst, für alle
+  Tabs (Setup summiert Groups+Sequences, Results summiert
+  metric+group+sequence rows, Data summiert participants+datasets).
+  ParticipantTab bleibt außerhalb dieses Vertrags (contextuelles
+  Subject-Label).
+- **Sprint 5 — ParticipantsTab Header + Toolbar** (commit `4193768`)
+  — Header in zwei Zeilen aufgeteilt: bold "Participants" plus
+  muted "Link each participant ID to a group and an event sequence";
+  Config-Path verschoben in Hover-Tooltip auf dem Heading. Toolbar-
+  Buttons (Add / Edit / Remove / Import) bekommen gemeinsame 110px
+  min-width plus 8px Spacing, "Import from workspace" verkürzt zu
+  "Import…" mit Volltext im Tooltip.
+- **Sprint 6 — Snapshot Harness erweitert** (commit `717c162`) —
+  Vier neue Passes: `info_dock_isolated.png` (Dock als Standalone-
+  Widget), `compare_curves_dialog.png` (Multi-Curve-Overlay gegen
+  2-Dataset-Workspace), `tab_04_ParticipantsTab_multi.png`
+  (6 synthetische Datasets, 4x2 Grid-Layout-Verifikation),
+  `light_00..05_*.png` (Light-Mode-Re-Snap der vier wichtigsten
+  Tabs). Harness emittiert jetzt 30 PNGs (vorher 22).
+
 ### Infrastructure
 - CI hardening: preflight job + pre-push hook + libEGL libs (commits
   `d4be003`, `926911c` aus dem Vorlauf).
