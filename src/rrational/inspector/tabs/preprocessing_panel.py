@@ -530,6 +530,11 @@ class PreprocessingPanel(QWidget):
             self._main_window.statusBar().showMessage(
                 "Exclusion mode ON — drag on the plot to mark a zone", 4000
             )
+        # Cluster A8 — refresh persistent context label so the mode
+        # change is visible in the status bar even after the transient
+        # showMessage hint times out.
+        if hasattr(self._main_window, "_refresh_status_context"):
+            self._main_window._refresh_status_context()
 
     def _on_zones_changed(self) -> None:
         """Plot fired ``exclusion_zones_changed`` — refresh + auto-save.
@@ -548,6 +553,9 @@ class PreprocessingPanel(QWidget):
         self._history_zone_count = len(zones)
         self._refresh_zones_table()
         self._autosave_exclusion_zones()
+        # Cluster A8 — keep the status-bar counts in sync.
+        if hasattr(self._main_window, "_refresh_status_context"):
+            self._main_window._refresh_status_context()
 
     def _refresh_zones_table(self) -> None:
         plot = self._main_window._browse_tab._plot
@@ -942,6 +950,8 @@ class PreprocessingPanel(QWidget):
             else "Section edit mode OFF"
         )
         self._main_window.statusBar().showMessage(msg, 2500)
+        if hasattr(self._main_window, "_refresh_status_context"):
+            self._main_window._refresh_status_context()
 
     def _on_toggle_use_corrected(self, checked: bool) -> None:
         if self._last_result is None or self._last_result.corrected_v is None:
@@ -970,6 +980,8 @@ class PreprocessingPanel(QWidget):
             )
         else:
             self._main_window.statusBar().showMessage("Manual mark mode OFF", 1500)
+        if hasattr(self._main_window, "_refresh_status_context"):
+            self._main_window._refresh_status_context()
 
     def _on_manual_artifact_changed(self, idx: int, action: str) -> None:
         """Plot tells us a beat-index was just marked / unmarked.
@@ -1218,6 +1230,8 @@ class PreprocessingPanel(QWidget):
             )
         else:
             self._main_window.statusBar().showMessage("Annotation mode off.", 2000)
+        if hasattr(self._main_window, "_refresh_status_context"):
+            self._main_window._refresh_status_context()
 
     def _active_pid(self) -> str | None:
         """Stem of the active dataset's filename, used as persistence key."""
@@ -1240,6 +1254,11 @@ class PreprocessingPanel(QWidget):
             self._annotation_count_label.setText(
                 f"<b>{n}</b> annotation(s) on this dataset."
             )
+        # Cluster A8 — keep the status-bar count in sync. Centralised
+        # here so create / delete / restore paths all flow through one
+        # status update site.
+        if hasattr(self._main_window, "_refresh_status_context"):
+            self._main_window._refresh_status_context()
 
     def _persist_annotations(self) -> None:
         from rrational.inspector.annotation_persistence import (

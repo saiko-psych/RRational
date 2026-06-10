@@ -19,6 +19,7 @@ from collections.abc import Callable
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QDialog,
@@ -37,6 +38,8 @@ from rrational.inspector.color_scheme_persistence import (
     CUSTOM_PRESET_NAME,
     save_color_scheme,
 )
+from rrational.inspector.palette import OKABE_ITO
+from rrational.inspector.settings import read_setting, write_setting
 
 # Per-element fields exposed as swatches. Order = display order.
 _SCALAR_FIELDS: list[tuple[str, str]] = [
@@ -175,6 +178,18 @@ class PreferencesDialog(QDialog):
         self._sync_combo_to_state()
         self._preset_combo.currentTextChanged.connect(self._on_preset_changed)
         preset_layout.addRow("Preset:", self._preset_combo)
+
+        # Cluster A5 — Okabe-Ito colorblind-safe toggle. Persists via
+        # QSettings (so the choice survives across sessions even when
+        # the active preset is swapped) and re-writes the working-copy
+        # group_palette immediately for live preview.
+        self._cb_safe = QCheckBox("Colorblind-safe palette (Okabe-Ito)")
+        try:
+            self._cb_safe.setChecked(bool(read_setting("colorblind_safe_palette")))
+        except KeyError:
+            self._cb_safe.setChecked(False)
+        self._cb_safe.toggled.connect(self._on_colorblind_toggled)
+        preset_layout.addRow("", self._cb_safe)
         outer.addWidget(preset_box)
 
         # ----- Per-element swatches -------------------------------------------
@@ -248,6 +263,33 @@ class PreferencesDialog(QDialog):
         self._preset_name = name
         # Deep copy the preset so subsequent swatch edits don't mutate it.
         self._scheme = ColorScheme.from_dict(PRESET_THEMES[name].to_dict())
+        # If the user has the colorblind-safe palette enabled, the preset
+        # swap should respect that — overwrite the preset's group_palette
+        # with the Okabe-Ito set rather than silently ignoring the toggle.
+        if self._cb_safe.isChecked():
+            self._scheme.group_palette = list(OKABE_ITO)
+        self._refresh_swatches_from_scheme()
+
+    def _on_colorblind_toggled(self, enabled: bool) -> None:
+        """Swap the working-copy group_palette to/from Okabe-Ito.
+
+        Persists the flag immediately so the next session opens in the
+        same state even if the user dismisses the dialog with Cancel.
+        Switching off restores the active preset's native palette
+        (or leaves the working copy alone if the preset is "Custom").
+        Does NOT switch the preset name to "Custom" — the Okabe-Ito
+        swap is a meta-overlay on top of any preset, not a custom
+        per-element edit.
+        """
+        write_setting("colorblind_safe_palette", bool(enabled))
+        if enabled:
+            self._scheme.group_palette = list(OKABE_ITO)
+        elif self._preset_name in PRESET_THEMES:
+            preset = PRESET_THEMES[self._preset_name]
+            self._scheme.group_palette = list(preset.group_palette)
+        # When _preset_name is "Custom" with the toggle going off, we
+        # leave the current swatches alone: the user has explicit colour
+        # choices we should not silently overwrite.
         self._refresh_swatches_from_scheme()
 
     def _on_scalar_swatch_picked(self, field: str) -> Callable[[QColor], None]:

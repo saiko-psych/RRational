@@ -68,6 +68,13 @@ _DEFAULTS: dict[str, object] = {
     # Participant ID regex used when extracting an ID from raw-file
     # stems. Default mirrors ``rrational.io.DEFAULT_ID_PATTERN``.
     "participant_id_pattern": r"(?P<participant>\d{4}[A-Z]{4})",
+    # Cluster A5 — Okabe-Ito colorblind-safe palette swap. When True,
+    # ``PreferencesDialog`` substitutes the loaded ColorScheme's
+    # ``group_palette`` with ``palette.OKABE_ITO`` before saving, and
+    # the preset dropdown defaults to applying the same swap when the
+    # user picks a built-in preset. Off-by-default keeps the existing
+    # ColorScheme look stable for users who have not opted in.
+    "colorblind_safe_palette": False,
 }
 
 

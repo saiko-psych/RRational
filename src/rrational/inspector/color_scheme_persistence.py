@@ -89,27 +89,59 @@ def load_color_scheme() -> tuple[str, ColorScheme]:
     - missing file
     - unreadable / malformed YAML
     - unknown preset name with no usable ``custom_scheme`` payload
+
+    Cluster A5 — when the ``colorblind_safe_palette`` QSetting is True,
+    the returned scheme has its ``group_palette`` overwritten with the
+    Okabe-Ito 8-colour palette regardless of preset choice. The preset
+    name is preserved so the Preferences dialog still shows the user's
+    chosen base preset.
     """
     default = (DEFAULT_PRESET_NAME, PRESET_THEMES[DEFAULT_PRESET_NAME])
     path = _color_scheme_path()
     if not path.exists():
-        return default
+        return _apply_colorblind_overlay(*default)
     try:
         with path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError):
-        return default
+        return _apply_colorblind_overlay(*default)
     if not isinstance(raw, dict):
-        return default
+        return _apply_colorblind_overlay(*default)
 
     preset_name = raw.get("preset_name") or DEFAULT_PRESET_NAME
     custom = raw.get("custom_scheme")
 
     if preset_name in PRESET_THEMES:
-        return preset_name, PRESET_THEMES[preset_name]
+        return _apply_colorblind_overlay(preset_name, PRESET_THEMES[preset_name])
     if isinstance(custom, dict):
         try:
-            return CUSTOM_PRESET_NAME, ColorScheme.from_dict(custom)
+            return _apply_colorblind_overlay(
+                CUSTOM_PRESET_NAME, ColorScheme.from_dict(custom)
+            )
         except (TypeError, ValueError, KeyError):
-            return default
-    return default
+            return _apply_colorblind_overlay(*default)
+    return _apply_colorblind_overlay(*default)
+
+
+def _apply_colorblind_overlay(
+    preset_name: str, scheme: ColorScheme
+) -> tuple[str, ColorScheme]:
+    """If the global colorblind-safe flag is on, swap to Okabe-Ito palette.
+
+    Reading QSettings here keeps the policy in one place — every caller
+    of ``load_color_scheme`` gets the overlay applied. Import is local
+    so this module does not pull in inspector.settings (and transitively
+    qtpy) when used from non-Qt contexts like CLI tooling.
+    """
+    try:
+        from rrational.inspector.palette import OKABE_ITO
+        from rrational.inspector.settings import read_setting
+
+        if read_setting("colorblind_safe_palette"):
+            # Deep-copy so we don't mutate the PRESET_THEMES dict in place.
+            patched = ColorScheme.from_dict(scheme.to_dict())
+            patched.group_palette = list(OKABE_ITO)
+            return preset_name, patched
+    except (ImportError, KeyError, RuntimeError):  # pragma: no cover - defensive
+        pass
+    return preset_name, scheme

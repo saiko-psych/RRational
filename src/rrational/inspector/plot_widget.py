@@ -241,8 +241,11 @@ class RRPlotWidget(pg.PlotWidget):
         #     (used for inter-section gaps from data_loader)
         # skipFiniteCheck is OFF because connect="finite" requires the
         # finite check to know where to break.
+        # Cluster A1 — penWidth 1.5 reads noticeably crisper than 1px on
+        # HiDPI displays without bleeding into a fat "marker pen" look.
+        # Matches mne_qt_browser's default trace width.
         self._curve = pg.PlotDataItem(
-            pen=pg.mkPen(LINE_COLOR, width=1),
+            pen=pg.mkPen(LINE_COLOR, width=1.5),
             connect="finite",
             clipToView=True,
             autoDownsample=True,
@@ -343,22 +346,64 @@ class RRPlotWidget(pg.PlotWidget):
             QKeySequence(Qt.Key_E),
             lambda: self.mode_toggle_requested.emit("exclusion"),
         )
+        # Cluster A7 — MNE-Python keyboard aliases. Users coming from
+        # mne_qt_browser/mnelab expect these to "just work". They don't
+        # collide with the RRational-specific R/1/2/3/A/E set.
+        #   z: zen mode  (toggle HUD + crosshair off for distraction-free)
+        #   h: HUD toggle (data-cursor readout on/off)
+        #   c: crosshair toggle (cursor-following vertical line on/off)
+        self._make_shortcut(QKeySequence(Qt.Key_Z), self._toggle_zen_mode)
+        self._make_shortcut(
+            QKeySequence(Qt.Key_H),
+            lambda: self.set_hud_visible(not self._hud_enabled),
+        )
+        self._make_shortcut(
+            QKeySequence(Qt.Key_C),
+            lambda: self.set_crosshair_visible(not self._crosshair_enabled),
+        )
 
         # ----- Crosshair ----------------------------------------------------
-        # Vertical InfiniteLine that tracks the cursor X position. Hidden
-        # by default until set_crosshair_visible(True) is called by the
-        # MainWindow (based on the View menu toggle). Z above section
-        # bands but below the user's right-click menu — so the cursor
-        # stays visible without blocking interaction.
+        # Vertical InfiniteLine that tracks the cursor X position. Cluster
+        # A2/A3 — default ENABLED so first-launch users see the data-cursor
+        # without having to discover the View menu toggle. The MainWindow's
+        # View > Crosshair toggle still gates visibility on demand.
+        # Pen sized to track the curve weight (width 1.5) so it reads as
+        # "part of the plot frame" rather than a chunky overlay.
         self._crosshair = pg.InfiniteLine(
             angle=90,
-            pen=pg.mkPen(QColor(70, 70, 70, 160), width=1, style=Qt.DashLine),
+            pen=pg.mkPen(QColor(232, 161, 58, 140), width=1, style=Qt.DashLine),
             movable=False,
         )
         self._crosshair.setZValue(20)
         self._crosshair.setVisible(False)
         self.addItem(self._crosshair)
-        self._crosshair_enabled = False
+        self._crosshair_enabled = True  # A3 — on by default
+
+        # ----- Heads-Up Display (Cluster A2) --------------------------------
+        # Persistent overlay top-right showing t / RR / HR / window# under
+        # the cursor. mne_qt_browser SignalProxy-pattern (rate-limited
+        # mouse-move handler). The TextItem is anchored to the upper-right
+        # corner of the visible ViewBox range via setPos in the move
+        # handler, so it stays "stuck" while the user pans/zooms.
+        self._hud = pg.TextItem(
+            anchor=(1.0, 0.0),
+            color=QColor("#eaecef"),
+            fill=QColor(26, 29, 34, 220),
+            border=pg.mkPen(QColor(232, 161, 58, 90), width=1),
+        )
+        self._hud.setZValue(30)
+        self._hud.setVisible(False)
+        self.addItem(self._hud, ignoreBounds=True)
+        self._hud_enabled = True
+        self._hud_html_template = (
+            '<div style="font-family: Consolas, monospace; font-size: 11px;'
+            ' padding: 4px 8px; line-height: 1.4;">'
+            '<span style="color:#a8adb5;">t&nbsp;&nbsp;</span> {t}<br>'
+            '<span style="color:#a8adb5;">RR&nbsp;</span> '
+            '<span style="color:#e8a13a;">{rr}&nbsp;ms</span><br>'
+            '<span style="color:#a8adb5;">HR&nbsp;</span> {hr}&nbsp;bpm'
+            "</div>"
+        )
 
         # The PyQtGraph scene exposes a mouse-moved signal that gives us
         # pixel coordinates; we'll convert to data coords in the handler.
@@ -959,21 +1004,69 @@ class RRPlotWidget(pg.PlotWidget):
         self._crosshair_enabled = visible
         self._crosshair.setVisible(False)  # hidden until next mouse move
 
+    def set_hud_visible(self, visible: bool) -> None:
+        """Enable / disable the HUD readout (Cluster A2)."""
+        self._hud_enabled = bool(visible)
+        if not self._hud_enabled:
+            self._hud.setVisible(False)
+
+    def _toggle_zen_mode(self) -> None:
+        """Distraction-free toggle (Cluster A7).
+
+        Z-key shortcut. When either HUD or crosshair is on, turns both
+        off. When both are off, turns both back on. Mirrors the
+        mne_qt_browser "z = clean view" mental model.
+        """
+        zen = self._hud_enabled or self._crosshair_enabled
+        self.set_hud_visible(not zen)
+        self.set_crosshair_visible(not zen)
+
     def _on_scene_mouse_moved(self, scene_pos) -> None:
-        """Map cursor scene pos → data coords, update crosshair + emit signal."""
-        if not self._crosshair_enabled or self._times is None:
+        """Map cursor scene pos → data coords, update crosshair + HUD + signal."""
+        if self._times is None:
             return
         vb = self.getViewBox()
         if not self.sceneBoundingRect().contains(scene_pos):
             self._crosshair.setVisible(False)
+            self._hud.setVisible(False)
             self.cursor_left.emit()
             return
         data_pos = vb.mapSceneToView(scene_pos)
         t_cursor = data_pos.x()
         v_cursor = self._value_at(t_cursor)
-        self._crosshair.setPos(t_cursor)
-        self._crosshair.setVisible(True)
+        if self._crosshair_enabled:
+            self._crosshair.setPos(t_cursor)
+            self._crosshair.setVisible(True)
+        if self._hud_enabled:
+            self._update_hud(t_cursor, v_cursor)
         self.cursor_moved.emit(t_cursor, v_cursor)
+
+    def _update_hud(self, t_cursor: float, v_cursor: float) -> None:
+        """Reposition + refresh the HUD top-right of the visible ViewBox.
+
+        Anchored to the upper-right of the current view range (not the
+        widget) so it tracks pan/zoom without overlaying axis ticks.
+        """
+        import math
+        from datetime import datetime as _dt
+
+        try:
+            t_label = _dt.fromtimestamp(t_cursor).strftime("%H:%M:%S")
+        except (ValueError, OSError, OverflowError):
+            t_label = f"{t_cursor:.1f}s"
+        if math.isnan(v_cursor):
+            rr_label, hr_label = "—", "—"
+        else:
+            rr_label = f"{v_cursor:.0f}"
+            hr_label = f"{60000.0 / v_cursor:.1f}" if v_cursor > 0 else "—"
+
+        self._hud.setHtml(
+            self._hud_html_template.format(t=t_label, rr=rr_label, hr=hr_label)
+        )
+        (x_lo, x_hi), (y_lo, y_hi) = self.getViewBox().viewRange()
+        # Slight inset (1% of range) keeps the HUD off the very edge.
+        self._hud.setPos(x_hi - (x_hi - x_lo) * 0.01, y_hi - (y_hi - y_lo) * 0.01)
+        self._hud.setVisible(True)
 
     def _value_at(self, t_cursor: float) -> float:
         """Linearly-interpolated RR value at ``t_cursor``.

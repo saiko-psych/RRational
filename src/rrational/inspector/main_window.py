@@ -195,6 +195,15 @@ class MainWindow(QMainWindow):
         self._project_badge.mousePressEvent = self._on_project_badge_clicked
         self.statusBar().addPermanentWidget(self._project_badge)
         self._refresh_project_badge()
+        # Cluster A8 — context info widget. Always shows mode +
+        # annotation/exclusion counts + active dataset so the user can
+        # answer "what am I editing right now?" without hunting through
+        # toolbars. Built BEFORE cursor_readout so they sit in this
+        # order left→right: project badge, context, cursor readout.
+        from rrational.inspector.status_bar_context import StatusBarContext
+
+        self._status_context = StatusBarContext()
+        self.statusBar().addPermanentWidget(self._status_context)
         # Permanent (always-visible) widget on the right side of the
         # status bar. addPermanentWidget keeps it visible even when
         # showMessage() displays a transient message on the left.
@@ -2446,6 +2455,52 @@ class MainWindow(QMainWindow):
         data = self._data  # None when no active dataset
         for tab in self._tabs:
             tab.on_active_dataset_changed(data)
+        self._refresh_status_context()
+
+    def _refresh_status_context(self) -> None:
+        """Recompute + push the status-bar context label (Cluster A8).
+
+        Pulls counts + mode from the active dataset and the BrowseTab's
+        PlotWidget. Safe to call at any time — when nothing is loaded,
+        everything reads as zero / em-dash.
+        """
+        if not hasattr(self, "_status_context"):
+            return
+        plot = getattr(getattr(self, "_browse_tab", None), "_plot", None)
+        mode = "normal"
+        n_excl = 0
+        n_ann = 0
+        if plot is not None:
+            if getattr(plot, "_exclusion_mode", False):
+                mode = "exclusion"
+            elif getattr(plot, "_annotation_mode", False):
+                mode = "annotation"
+            elif getattr(plot, "_manual_mark_mode", False):
+                mode = "manual_mark"
+            elif getattr(plot, "_section_edit_mode", False):
+                mode = "section_edit"
+            n_excl = len(getattr(plot, "_exclusion_zones", []) or [])
+            n_ann = len(getattr(plot, "_annotation_markers", []) or [])
+        # Fall back to active dataset's annotation store if the plot
+        # hasn't materialised markers yet (e.g. immediately after load).
+        if n_ann == 0 and self._active_idx is not None:
+            try:
+                data = self._datasets[self._active_idx].data
+                n_ann = len(getattr(data, "annotations", None) or [])
+            except (IndexError, AttributeError):
+                pass
+        ds_label = None
+        if self._active_idx is not None:
+            try:
+                ds_label = self._datasets[self._active_idx].name
+            except (IndexError, AttributeError):
+                ds_label = None
+        self._status_context.refresh_all(
+            mode=mode,
+            dataset=ds_label,
+            n_annotations=n_ann,
+            n_exclusions=n_excl,
+        )
 
     # ------------------------------------------------------------------
     # Report export (HTML / Markdown)

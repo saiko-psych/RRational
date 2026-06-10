@@ -19,10 +19,46 @@ from qtpy.QtWidgets import QApplication
 from rrational.inspector.assets import app_icon
 from rrational.inspector.main_window import MainWindow
 
-# White background matches Streamlit-side theme + scientific-plotting convention.
-# antialias=False is intentional: on long signals (10k+ points) antialiasing
-# halves the frame rate. Turn it on for screenshot exports only.
-pg.setConfigOptions(background="w", foreground="k", antialias=False)
+# Cluster A1 — Render-Quality-Quartett.
+#
+# Background tuned to the dark-theme surface so the plot sits flush with
+# the surrounding QSS panel (was white-on-graphite — looked like a print
+# preview floating in the app). Light-theme callers override at runtime
+# via ``set_plot_theme()`` below.
+#
+# antialias=True on by default: at the typical Inspector data scale
+# (1k-50k beats) the frame-rate cost is invisible to the human eye, and
+# the visual upgrade for 1px tachogram lines is substantial. The original
+# 10k+ caveat held for full EEG streams (mne-qt-browser territory) — for
+# RR we trade negligible perf for sharper rendering.
+#
+# useOpenGL=True opts into hardware-accelerated rendering. PyQtGraph
+# falls back to software paths cleanly when GL is unavailable (CI VMs,
+# minimal Linux installs), so the flag is safe to leave on.
+pg.setConfigOptions(
+    background="#1a1d22",
+    foreground="#eaecef",
+    antialias=True,
+    useOpenGL=True,
+)
+
+
+def set_plot_theme(mode: str) -> None:
+    """Re-skin PyQtGraph's global bg/fg to match the active app theme.
+
+    Called from ``apply_app_theme`` so swapping QSS modes at runtime
+    keeps the plot panel from suddenly looking out of place. Falls back
+    silently for unknown ``mode`` strings — the QSettings reader already
+    clamps to dark/light, but defensive matching keeps this safe to call
+    from migration code with stale values.
+    """
+    if mode == "light":
+        pg.setConfigOption("background", "#f8f6f1")
+        pg.setConfigOption("foreground", "#1f2228")
+    else:
+        pg.setConfigOption("background", "#1a1d22")
+        pg.setConfigOption("foreground", "#eaecef")
+
 
 # QSettings key for the app-wide QSS theme mode ("dark" or "light"). Lives
 # outside ``settings._DEFAULTS`` because it must be read BEFORE MainWindow
@@ -104,7 +140,11 @@ def run(argv: list[str] | None = None) -> int:
     # Mode is read from QSettings; defaults to dark on first launch.
     from rrational.inspector.style import apply_app_theme
 
-    apply_app_theme(app, mode=_resolve_theme_mode())
+    theme_mode = _resolve_theme_mode()
+    apply_app_theme(app, mode=theme_mode)
+    # Match the global plot bg/fg to the same theme so the central plot
+    # panel reads as part of the QSS surface stack, not a print preview.
+    set_plot_theme(theme_mode)
 
     window = MainWindow(initial_path=initial_path)
     window.show()

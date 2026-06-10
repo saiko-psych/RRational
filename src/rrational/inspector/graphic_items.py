@@ -292,6 +292,11 @@ class EventMarker(pg.InfiniteLine):
 # Visual constants for artifact overlay. Orange picked to contrast with
 # the blue tachogram and the cooler section-band palette.
 _ARTIFACT_COLOR = "#ff7f0e"
+# Cluster A6 — warm-gray for excluded artifacts. Reads as "muted /
+# de-emphasised" without the red-orange "alert" signal of the active
+# artifact colour. Picked on the cool side of gray so it harmonises
+# with both light and dark themes.
+_EXCLUDED_COLOR = "#7d8390"
 _ARTIFACT_SIZE = 8  # pixel diameter of each dot
 
 
@@ -366,16 +371,17 @@ class ManualArtifactOverlay(pg.ScatterPlotItem):
 class ExcludedArtifactOverlay(pg.ScatterPlotItem):
     """Scatter overlay for algorithm artifacts the user has excluded.
 
-    When the user clicks an algorithm-detected artifact, it becomes
-    "excluded" — still visible but rendered hollow + dimmed so the eye
-    can tell which beats the analysis should ignore. Drawn as an
-    outline circle (no fill) with reduced opacity.
+    Cluster A6 — rendered in warm-gray (``_EXCLUDED_COLOR``) instead of
+    the orange artifact colour so excluded beats read as "muted" rather
+    than "still alarming". The ColorScheme-driven ``apply_color`` path
+    is therefore deliberately a no-op: we never want excluded markers
+    to inherit the artifact colour, regardless of theme.
     """
 
     def __init__(self) -> None:
         super().__init__(
             size=_ARTIFACT_SIZE,
-            pen=pg.mkPen(_ARTIFACT_COLOR, width=1),
+            pen=pg.mkPen(_EXCLUDED_COLOR, width=1),
             brush=pg.mkBrush(0, 0, 0, 0),  # transparent fill
             symbol="o",
             pxMode=True,
@@ -391,10 +397,19 @@ class ExcludedArtifactOverlay(pg.ScatterPlotItem):
         self.setData(x=[], y=[])
 
     def apply_color(self, color: QColor) -> None:
-        c = QColor(color)
-        c.setAlpha(120)  # dimmed so excluded reads as "muted"
+        """No-op kept for API parity with the other overlays.
+
+        Cluster A6 — excluded markers are deliberately decoupled from
+        the ColorScheme's ``artifact`` colour so they stay warm-gray
+        regardless of which preset the user picks. Argument retained so
+        ``RRPlotWidget.set_color_scheme`` can call ``apply_color`` on
+        every overlay uniformly.
+        """
+        # Force warm-gray regardless of scheme. Brush stays transparent
+        # — hollow outline is the visual cue for "excluded".
+        c = QColor(_EXCLUDED_COLOR)
+        c.setAlpha(180)
         self.setPen(pg.mkPen(c, width=1))
-        # Brush stays transparent — hollow appearance is the whole point.
         self.setBrush(pg.mkBrush(0, 0, 0, 0))
 
 
@@ -426,13 +441,24 @@ class ExclusionRegion(pg.LinearRegionItem):
     ) -> None:
         fill = QColor(color)
         fill.setAlpha(EXCLUSION_ALPHA)
+        hover_fill = QColor(color)
+        # Cluster A4 — hoverBrush bumps alpha to ~70% so the region
+        # visibly "lights up" when the cursor is over it; otherwise the
+        # default LinearRegionItem hoverBrush is the same as the resting
+        # one (no visual feedback at all).
+        hover_fill.setAlpha(min(255, EXCLUSION_ALPHA + 90))
         border = QColor(color)
         border.setAlpha(EXCLUSION_BORDER_ALPHA)
+        # Cluster A6 — dashed border lines up with the warm-gray excluded
+        # artifact dots: both communicate "muted / excluded from analysis"
+        # via a dashed/hollow visual.
         super().__init__(
             values=(t_start, t_end),
             orientation="vertical",
             brush=fill,
-            pen=pg.mkPen(border, width=2),
+            hoverBrush=hover_fill,
+            pen=pg.mkPen(border, width=2, style=Qt.DashLine),
+            hoverPen=pg.mkPen(border, width=2),
             movable=True,
         )
         self.reason = str(reason or "")
@@ -440,14 +466,31 @@ class ExclusionRegion(pg.LinearRegionItem):
         # of them. Below EventMarker (z=0) and ArtifactOverlay (z=5).
         self.setZValue(-5)
 
+        # Cluster A4 — explicit SizeHorCursor on the edge handles. The
+        # parent LinearRegionItem only sets this on hover via the child
+        # InfiniteLines, but on Qt6 / pyqtgraph 0.13 the cursor is
+        # sometimes left at ArrowCursor until the user has actually
+        # started dragging. Set it on construction as a fall-back.
+        for line in self.lines:
+            try:
+                line.setCursor(Qt.SizeHorCursor)
+            except Exception:
+                pass
+
     def apply_color(self, color: QColor) -> None:
         """Re-paint fill + border from ``color`` (used by set_color_scheme)."""
         fill = QColor(color)
         fill.setAlpha(EXCLUSION_ALPHA)
+        hover_fill = QColor(color)
+        hover_fill.setAlpha(min(255, EXCLUSION_ALPHA + 90))
         border = QColor(color)
         border.setAlpha(EXCLUSION_BORDER_ALPHA)
         self.setBrush(fill)
-        border_pen = pg.mkPen(border, width=2)
+        try:
+            self.setHoverBrush(hover_fill)
+        except AttributeError:  # pragma: no cover - older pyqtgraph
+            pass
+        border_pen = pg.mkPen(border, width=2, style=Qt.DashLine)
         for line in self.lines:
             line.setPen(border_pen)
 
