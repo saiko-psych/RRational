@@ -124,6 +124,23 @@ PAGES: tuple[WalkthroughPage, ...] = (
         try_label="Open the Participant tab",
     ),
     WalkthroughPage(
+        title="Distraction-free viewing: Zen mode, HUD, Crosshair",
+        illustration="[ Plot with HUD readout top-right ]",
+        body_html=(
+            "<p>While reviewing a tachogram you'll want to switch between "
+            "<b>data inspection</b> and <b>distraction-free viewing</b>.</p>"
+            "<p><b>HUD (Heads-Up Display)</b> — a small panel at the top-right "
+            "shows three live values as your cursor moves: <code>t</code> "
+            "(time), <code>RR</code> (interval in ms), <code>HR</code> "
+            "(instantaneous heart rate). Toggle with <b>H</b> or "
+            "<i>View → Show HUD readout</i>.</p>"
+            "<p><b>Crosshair</b> — a vertical reference line follows the cursor. "
+            "Useful for aligning events on the timeline. Toggle with <b>C</b>.</p>"
+            "<p><b>Zen mode</b> — press <b>Z</b> to hide HUD + Crosshair in one "
+            "stroke, giving a clean view for screenshots or presentations.</p>"
+        ),
+    ),
+    WalkthroughPage(
         title="4. Study structure: events, sections, groups, sequences",
         illustration="[ Setup sub-tabs ]",
         body_html=(
@@ -169,6 +186,27 @@ PAGES: tuple[WalkthroughPage, ...] = (
         try_label="Open the Analysis tab",
     ),
     WalkthroughPage(
+        title="Compare HRV curves across datasets",
+        illustration="[ Two-group overlay with bootstrap CI bands ]",
+        body_html=(
+            "<p>Once you have several .rrational files loaded, you can "
+            "overlay their RR curves side by side with bootstrap confidence "
+            "intervals.</p>"
+            "<ol>"
+            "<li>Open <i>Tools → Compare HRV curves…</i></li>"
+            "<li>Check datasets for <b>Group A</b> and (optionally) "
+            "<b>Group B</b></li>"
+            "<li>Adjust the <b>Confidence level</b> spinbox (default 95%)</li>"
+            "<li>Click <b>Plot</b> to render the overlay</li>"
+            "</ol>"
+            "<p>The shaded band around each mean curve is the bootstrap "
+            "95% CI — wider bands mean more variability across the group, "
+            "non-overlapping bands suggest a likely group difference.</p>"
+            "<p>This is a <i>visual</i> comparison only — confirm any group "
+            "differences with the formal tests in the Analysis tab.</p>"
+        ),
+    ),
+    WalkthroughPage(
         title="6. Results and export",
         illustration="[ Results table ]",
         body_html=(
@@ -203,6 +241,21 @@ PAGES: tuple[WalkthroughPage, ...] = (
             "</ul>"
             "<p>That's it — close this dialog and start exploring. You can "
             "always come back via <i>Help &rarr; Workflow walkthrough</i>.</p>"
+        ),
+    ),
+    WalkthroughPage(
+        title="Colorblind-safe palette",
+        illustration="[ Eight Okabe-Ito swatches ]",
+        body_html=(
+            "<p>By default RRational uses the <b>Okabe-Ito palette</b> for "
+            "group/condition colors — a Nature-recommended set that is "
+            "distinguishable for the ~8% of readers with red-green colorblindness "
+            "(deuteranopia / protanopia).</p>"
+            "<p>You can switch palettes or build a custom scheme under "
+            "<i>Edit → Preferences → Color Scheme</i>. Changes apply "
+            "immediately to every plot in the inspector.</p>"
+            "<p>For publication: keep the default Okabe-Ito unless your "
+            "journal mandates otherwise — peer reviewers will thank you.</p>"
         ),
     ),
 )

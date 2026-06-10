@@ -62,6 +62,17 @@ def test_walkthrough_dialog_opens_with_multiple_pages(qtbot, main_window):
     assert dlg._next_btn.isEnabled() is True
 
 
+def test_walkthrough_contains_round17_pages():
+    """Round 17 adds 3 new pages: Zen mode, Compare-curves, Okabe-Ito."""
+    from rrational.inspector.walkthrough import PAGES
+
+    titles = [p.title for p in PAGES]
+    assert len(PAGES) == 11
+    assert any("Zen mode" in t for t in titles)
+    assert any("Compare HRV curves" in t for t in titles)
+    assert any("Colorblind-safe palette" in t for t in titles)
+
+
 def test_walkthrough_next_and_previous(qtbot, main_window):
     """Clicking next then previous flips the stacked-widget index."""
     from rrational.inspector.walkthrough import WalkthroughDialog
