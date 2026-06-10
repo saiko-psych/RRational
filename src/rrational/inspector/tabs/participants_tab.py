@@ -23,8 +23,10 @@ pane can pick up new participant-to-group bindings.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -45,7 +47,7 @@ from qtpy.QtWidgets import (
 from rrational.inspector.tabs.base import InspectorTab
 
 if TYPE_CHECKING:
-    from rrational.inspector.data_loader import InspectorData
+    from rrational.inspector.data_loader import Dataset, InspectorData
 
 
 class _ParticipantEditDialog(QDialog):
@@ -190,6 +192,20 @@ class ParticipantsTab(InspectorTab):
         btn_row.addStretch()
         outer.addLayout(btn_row)
 
+        # Cluster C3 — at-a-glance participant grid above the editor
+        # table. Each cell is a mini-tachogram for one workspace dataset
+        # so the user can spot outliers without round-tripping through
+        # the Browse tab. Click a cell to jump to that dataset.
+        from rrational.inspector.plots.participant_grid import (
+            ParticipantGridWidget,
+        )
+
+        self._grid = ParticipantGridWidget(n_cols=4, parent=self)
+        self._grid.setFixedHeight(300)
+        self._grid.on_subject_click = self._on_grid_subject_click
+        outer.addWidget(self._grid)
+        self._refresh_grid()
+
         self._table = QTableWidget(0, 5, self)
         self._table.setHorizontalHeaderLabels(
             ["ID", "Label", "Group", "Sequence", "# manual events"]
@@ -275,6 +291,7 @@ class ParticipantsTab(InspectorTab):
             f"and to an event sequence."
         )
         self._refresh_table()
+        self._refresh_grid()
         self._refresh_buttons()
 
     def on_active_dataset_changed(self, _data: "InspectorData | None") -> None:
@@ -305,6 +322,40 @@ class ParticipantsTab(InspectorTab):
         self._edit_btn.setEnabled(has_selection)
         self._remove_btn.setEnabled(has_selection)
         self._import_btn.setEnabled(len(self._main_window._datasets) > 0)
+
+    # ------------------------------------------------------------------
+    # Cluster C3 — multi-participant grid wiring
+    # ------------------------------------------------------------------
+    def _dataset_subject_id(self, ds: "Dataset") -> str:
+        """Honour the Data tab's ID-pattern picker for grid labels."""
+        try:
+            from rrational.inspector.tabs.data_tab import extract_participant_id
+        except ImportError:  # pragma: no cover - defensive
+            return Path(ds.name).stem
+        return extract_participant_id(Path(ds.name))
+
+    def _refresh_grid(self) -> None:
+        """Rebuild the per-subject mini-tachogram grid from the workspace.
+
+        Pulls ``(subject_id, t_seconds, rr_ms)`` triplets from each
+        currently-loaded dataset. NaN gaps are preserved so the grid's
+        ``connect='finite'`` path can render them as gaps.
+        """
+        triplets: list[tuple[str, np.ndarray, np.ndarray]] = []
+        for ds in self._main_window._datasets:
+            data = getattr(ds, "data", None)
+            if data is None:
+                continue
+            pid = self._dataset_subject_id(ds)
+            triplets.append((pid, np.asarray(data.t), np.asarray(data.v)))
+        self._grid.set_datasets(triplets)
+
+    def _on_grid_subject_click(self, subject_id: str) -> None:
+        """Activate the dataset whose stem matches ``subject_id``."""
+        for idx, ds in enumerate(self._main_window._datasets):
+            if self._dataset_subject_id(ds) == subject_id:
+                self._main_window.set_active_dataset(idx)
+                return
 
     def _selected_id(self) -> str | None:
         row = self._table.currentRow()
