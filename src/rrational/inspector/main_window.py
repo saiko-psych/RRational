@@ -181,6 +181,21 @@ class MainWindow(QMainWindow):
                 obj.set_color_scheme(self._color_scheme)
 
         self._build_menu()
+
+        # Cluster C5 — persistent right-side info panel. Built BEFORE
+        # the status bar so it sits in the MainWindow's right dock area
+        # without competing with the central tab widget.
+        from rrational.inspector.info_dock import InfoDock
+
+        self._info_dock = InfoDock(self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._info_dock)
+        # Honour the persisted show/hide preference on startup.
+        try:
+            show_info = bool(settings.read_setting("show_info_dock"))
+        except (KeyError, TypeError):  # pragma: no cover - defensive
+            show_info = True
+        self._info_dock.setVisible(show_info)
+
         self.setStatusBar(QStatusBar())
         # Permanent project badge on the left of the status bar. Always
         # visible so the user can tell at a glance which project is
@@ -722,6 +737,20 @@ class MainWindow(QMainWindow):
             on_change=self._browse_tab.set_preprocessing_dock_visible,
             default=True,
         )
+        # Cluster C5 — info-dock toggle. The dock itself is built later
+        # in __init__, so we resolve through ``self`` lazily and tolerate
+        # the brief window before it exists (defensive, mainly for
+        # incremental refactors and tests that exercise _build_menu in
+        # isolation).
+        self._toggle_info_dock_act = self._make_view_toggle(
+            view_menu,
+            "Show &Info panel",
+            settings_key="show_info_dock"
+            if "show_info_dock" in settings._DEFAULTS
+            else None,
+            on_change=self._set_info_dock_visible,
+            default=True,
+        )
 
         # View → Layout submenu (Streamlit / MNE-LAB modes).
         # QActionGroup with exclusive=True gives the entries radio
@@ -981,6 +1010,17 @@ class MainWindow(QMainWindow):
             self._overview_bar.setVisible(True)
         else:
             self._overview_bar.setVisible(False)
+
+    def _set_info_dock_visible(self, visible: bool) -> None:
+        """Toggle the right-side info dock (Cluster C5).
+
+        Called from the View-menu action's ``triggered`` signal. The
+        dock is built after ``_build_menu`` runs, so we tolerate the
+        attribute being absent during the initial wiring pass.
+        """
+        dock = getattr(self, "_info_dock", None)
+        if dock is not None:
+            dock.setVisible(bool(visible))
 
     def _on_preferences_clicked(self) -> None:
         """Open the Preferences dialog (suppressed in test_mode)."""
@@ -2483,6 +2523,41 @@ class MainWindow(QMainWindow):
         for tab in self._tabs:
             tab.on_active_dataset_changed(data)
         self._refresh_status_context()
+        self._refresh_info_dock()
+
+    def _refresh_info_dock(self) -> None:
+        """Push a fresh snapshot to the right-side InfoDock (Cluster C5).
+
+        Safe to call at any time — the dock attribute may not exist
+        yet during very early construction and we tolerate that.
+        """
+        dock = getattr(self, "_info_dock", None)
+        if dock is None:
+            return
+        if self._active_idx is None:
+            dock.set_dataset(None)
+            return
+        ds = self._datasets[self._active_idx]
+        # Pull counts from the BrowseTab's plot so the values agree
+        # with the status-bar context widget (single source of truth).
+        plot = getattr(getattr(self, "_browse_tab", None), "_plot", None)
+        n_excl = (
+            len(getattr(plot, "_exclusion_zones", []) or []) if plot is not None else 0
+        )
+        n_ann = (
+            len(getattr(plot, "_annotation_markers", []) or [])
+            if plot is not None
+            else 0
+        )
+        if n_ann == 0:
+            n_ann = len(getattr(ds.data, "annotations", None) or [])
+        dock.set_dataset(
+            ds.data,
+            filename=ds.name,
+            recorder=self.history,
+            n_exclusions=n_excl,
+            n_annotations=n_ann,
+        )
 
     def _refresh_status_context(self) -> None:
         """Recompute + push the status-bar context label (Cluster A8).

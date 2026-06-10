@@ -40,6 +40,8 @@ _DEFAULTS: dict[str, object] = {
     "show_datasets_dock": True,
     "show_preprocessing_dock": True,
     "browse_dock_state": None,  # QByteArray — saveState() of BrowseTab's QMainWindow
+    # Cluster C5 — persistent right-side info panel.
+    "show_info_dock": True,
     # Top-level layout mode.
     # "streamlit" — Data / Participant / Setup / Analysis / Results tabs (Browse hidden)
     # "mnelab"    — Browse / Setup / Participants / Analysis / Results (dock-heavy)
