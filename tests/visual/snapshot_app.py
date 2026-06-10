@@ -51,8 +51,13 @@ def _let_layout_settle(app: QApplication, ms: int = 200) -> None:
     app.processEvents()
 
 
-def _save_grab(win: MainWindow, path: Path) -> None:
-    """Grab the window, downscale to <=1600px wide, save PNG."""
+def _save_grab(win, path: Path) -> None:
+    """Grab the window/widget, downscale to <=1600px wide, save PNG.
+
+    ``win`` is typed loosely so we can grab arbitrary QWidgets in
+    addition to the main MainWindow (e.g. the InfoDock in isolation,
+    a Compare-Curves dialog, etc.).
+    """
     pix = win.grab()
     if pix.width() > _MAX_WIDTH:
         pix = pix.scaledToWidth(_MAX_WIDTH, mode=Qt.SmoothTransformation)
@@ -60,10 +65,15 @@ def _save_grab(win: MainWindow, path: Path) -> None:
     print(f"wrote {path}")
 
 
-def _make_synthetic_dataset(name: str) -> Dataset:
-    """Build a realistic-ish dataset so the participant view actually renders."""
+def _make_synthetic_dataset(name: str, seed: int = 42) -> Dataset:
+    """Build a realistic-ish dataset so the participant view actually renders.
+
+    ``seed`` is exposed so callers building a multi-dataset workspace
+    get visually distinct tachograms in each cell instead of identical
+    sine-wave copies.
+    """
     n = 600
-    rng = np.random.default_rng(seed=42)
+    rng = np.random.default_rng(seed=seed)
     rr_ms = 800 + 30 * rng.standard_normal(n)
     base = 1_700_000_000
     t = base + np.cumsum(rr_ms) / 1000.0
@@ -253,6 +263,108 @@ def snapshot_all_tabs() -> list[Path]:
                     tabs.setTabVisible(data_idx, False)
         except Exception as exc:  # noqa: BLE001
             print(f"skipped explicit DataTab capture: {exc!r}")
+
+    # Round 16 / Sprint 6 — extra Pass E targeting the post-R15 visual
+    # findings: dock isolation, the Compare-Curves dialog, the
+    # multi-dataset ParticipantsGrid layout, and the Light-Mode look.
+    # Each capture is wrapped in try/except so a single failure does
+    # not sink the whole harness.
+
+    # E1 — InfoDock isolated. Grabs the right-side dock as a standalone
+    # widget so we can eyeball its width + content rendering without
+    # the surrounding MainWindow chrome dominating the frame.
+    try:
+        win.set_ui_layout("mnelab")
+        app.processEvents()
+        _let_layout_settle(app, 200)
+        info_dock = getattr(win, "_info_dock", None)
+        if info_dock is not None and info_dock.isVisible():
+            path = _OUT_DIR / "info_dock_isolated.png"
+            _save_grab(info_dock, path)
+            written.append(path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"skipped info-dock isolated capture: {exc!r}")
+
+    # E2 — Compare-Curves dialog. Stack a second dataset into the
+    # workspace + open the dialog so it has multiple curves to overlay.
+    try:
+        from rrational.inspector.compare_curves_dialog import CompareCurvesDialog
+
+        # Add a second dataset if we only have one — Compare-Curves
+        # needs at least two to be useful.
+        if len(win._datasets) < 2:
+            win.add_dataset(_make_synthetic_dataset("0105LYMA.csv", seed=11))
+        cc_dlg = CompareCurvesDialog(win._datasets, parent=win)
+        cc_dlg.resize(900, 520)
+        cc_dlg.show()
+        _let_layout_settle(app, 250)
+        path = _OUT_DIR / "compare_curves_dialog.png"
+        _save_grab(cc_dlg, path)
+        written.append(path)
+        cc_dlg.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"skipped compare-curves dialog capture: {exc!r}")
+
+    # E3 — Multi-dataset ParticipantsTab (6 synthetic datasets).
+    # Verifies the 4xN ParticipantGrid layout post-Sprint-2: cells stay
+    # at their nominal footprint, second row populates on n > n_cols.
+    try:
+        # Pad the workspace up to 6 distinct datasets.
+        seeds = [1, 7, 13, 21, 34, 55]
+        while len(win._datasets) < len(seeds):
+            i = len(win._datasets)
+            win.add_dataset(_make_synthetic_dataset(f"S{i:03d}.csv", seed=seeds[i]))
+        win.set_ui_layout("mnelab")
+        app.processEvents()
+        # Switch to ParticipantsTab so the grab captures it.
+        pt = getattr(win, "_participants_tab", None)
+        if pt is not None:
+            idx = tabs.indexOf(pt)
+            if idx >= 0 and tabs.isTabVisible(idx):
+                tabs.setCurrentIndex(idx)
+                _let_layout_settle(app, 300)
+                # Match the natural snapshot filename pattern.
+                widget_name = type(pt).__name__
+                path = _OUT_DIR / f"tab_04_{widget_name}_multi.png"
+                _save_grab(win, path)
+                written.append(path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"skipped multi-dataset participants capture: {exc!r}")
+
+    # E4 — Light-mode pass. Reapply the QSS theme in light mode and
+    # re-snap the four most diagnostic tabs so dark/light parity can
+    # be eyeballed side-by-side.
+    try:
+        from rrational.inspector.style import apply_app_theme
+
+        apply_app_theme(app, mode="light")
+        app.processEvents()
+        _let_layout_settle(app, 250)
+        for i in range(tabs.count()):
+            if not tabs.isTabVisible(i):
+                continue
+            tabs.setCurrentIndex(i)
+            app.processEvents()
+            _let_layout_settle(app, 150)
+            widget_name = type(tabs.widget(i)).__name__
+            # Cover Browse / Setup / Participants / Analysis — skip
+            # the rest so the light-mode pass stays small.
+            if widget_name not in {
+                "BrowseTab",
+                "SetupTab",
+                "ParticipantsTab",
+                "AnalysisTab",
+            }:
+                continue
+            path = _OUT_DIR / f"light_{i:02d}_{widget_name}.png"
+            _save_grab(win, path)
+            written.append(path)
+        # Restore dark mode for the dialog passes below.
+        apply_app_theme(app, mode="dark")
+        app.processEvents()
+        _let_layout_settle(app, 150)
+    except Exception as exc:  # noqa: BLE001
+        print(f"skipped light-mode pass: {exc!r}")
 
     # Pass D — Round-8 MNE-inspired dialogs. Each one is opened
     # programmatically against the synthetic dataset that's already in
