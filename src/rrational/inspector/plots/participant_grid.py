@@ -36,7 +36,7 @@ class ParticipantGridWidget(pg.GraphicsLayoutWidget):
 
     def __init__(self, n_cols: int = 4, parent=None) -> None:
         super().__init__(parent)
-        self.setBackground("w")
+        # Background defers to the global pyqtgraph config (dark/light theme).
         self._n_cols = max(1, int(n_cols))
         # Keep cell handles so we can pop them on clear/reset.
         self._cells: list[pg.PlotItem] = []

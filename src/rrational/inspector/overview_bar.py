@@ -53,7 +53,7 @@ class OverviewBar(pg.PlotWidget):
         self.setMenuEnabled(False)
         self.hideAxis("left")
         self.hideAxis("bottom")
-        self.setBackground("w")
+        # Background defers to the global pyqtgraph config (dark/light theme).
 
         self._curve = pg.PlotDataItem(
             pen=pg.mkPen(_LINE_COLOR, width=1),

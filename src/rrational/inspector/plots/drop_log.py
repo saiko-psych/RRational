@@ -40,7 +40,7 @@ def build_drop_log_widget(counts: Mapping[str, int]) -> pg.PlotWidget:
     so the caller does not need to branch on emptiness.
     """
     widget = pg.PlotWidget()
-    widget.setBackground("w")
+    # Background defers to the global pyqtgraph config (dark/light theme).
     widget.showGrid(x=True, y=False, alpha=0.3)
     if not counts:
         # Placeholder: empty drop-log is the happy path — show a label

@@ -83,7 +83,8 @@ class PSDPlot(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._pw = pg.PlotWidget(background="w")
+        # Background follows the global pyqtgraph config (dark/light theme).
+        self._pw = pg.PlotWidget()
         self._pw.setMinimumHeight(320)
         self._pw.showGrid(x=True, y=True, alpha=0.3)
         self._pw.setLabel("bottom", "Frequency (Hz)")

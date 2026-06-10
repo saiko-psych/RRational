@@ -122,7 +122,8 @@ def compare_hrv_curves(
         raise ValueError(f"n_boot must be >= 1; got {n_boot!r}")
 
     widget = ax if ax is not None else pg.PlotWidget()
-    widget.setBackground("w")
+    # Background defers to the global pyqtgraph config (dark/light theme);
+    # callers may pre-style ``ax`` differently if they need to.
     widget.showGrid(x=True, y=True, alpha=0.3)
     widget.setLabel("left", "RR (ms)")
     widget.setLabel("bottom", "Sample index")
