@@ -190,10 +190,11 @@ class BrowseTab(InspectorTab):
     # Tab-label state badge
     # ------------------------------------------------------------------
     def tab_label_state(self) -> str:
+        """Round 16 — unified format ``(N)``; empty workspace shows no
+        suffix at all so the tab label reads as plain "Browse" instead
+        of the louder "(empty)" hint."""
         n = len(self._main_window._datasets)
-        if n == 0:
-            return "(empty)"
-        return f"({n} dataset{'s' if n != 1 else ''})"
+        return f"({n})" if n else ""
 
     # ------------------------------------------------------------------
     # Notification hooks from MainWindow

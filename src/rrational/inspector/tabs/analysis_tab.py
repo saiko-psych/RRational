@@ -2175,8 +2175,9 @@ class AnalysisTab(InspectorTab):
     # Notification hooks
     # ------------------------------------------------------------------
     def tab_label_state(self) -> str:
+        """Round 16 — unified ``(N)`` format; dropped " loaded" suffix."""
         n = len(self._main_window._datasets)
-        return f"({n} loaded)" if n else ""
+        return f"({n})" if n else ""
 
     def on_workspace_changed(self) -> None:
         self._single_pane.refresh_workspace()

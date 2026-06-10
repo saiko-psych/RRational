@@ -1069,14 +1069,10 @@ class DataTab(InspectorTab):
         pass
 
     def tab_label_state(self) -> str:
-        n_participants = len(self._collect_participants())
-        n_datasets = len(self._main_window._datasets)
-        if n_participants == 0 and n_datasets == 0:
-            return "(empty)"
-        return (
-            f"({n_participants} participant{'s' if n_participants != 1 else ''}, "
-            f"{n_datasets} dataset{'s' if n_datasets != 1 else ''})"
-        )
+        """Round 16 — unified ``(N)`` format; sums participants +
+        loaded datasets into one integer."""
+        n = len(self._collect_participants()) + len(self._main_window._datasets)
+        return f"({n})" if n else ""
 
     # ------------------------------------------------------------------
     # Refresh helpers

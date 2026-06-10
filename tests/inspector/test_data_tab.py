@@ -297,7 +297,9 @@ def test_bulk_assign_enabled_when_workspace_has_datasets(main_window, data_tab):
 # Tab label state badge
 # ---------------------------------------------------------------------
 def test_tab_label_state_empty_when_no_data(data_tab):
-    assert data_tab.tab_label_state() == "(empty)"
+    """Round 16 — unified ``(N)`` format; empty workspace shows no
+    suffix (was ``(empty)`` pre-R16)."""
+    assert data_tab.tab_label_state() == ""
 
 
 def test_tab_label_state_counts_participants_and_datasets(main_window, data_tab):
@@ -321,9 +323,9 @@ def test_tab_label_state_counts_participants_and_datasets(main_window, data_tab)
         "manual_events": [],
     }
 
-    label = data_tab.tab_label_state()
-    assert "2 participant" in label
-    assert "1 dataset" in label
+    # Round 16 — unified ``(N)`` format sums participants + datasets
+    # into one integer; here 2 + 1 = 3.
+    assert data_tab.tab_label_state() == "(3)"
 
 
 # ---------------------------------------------------------------------

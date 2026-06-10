@@ -704,18 +704,16 @@ class ResultsTab(InspectorTab):
         self._refresh_cache_status()
 
     def tab_label_state(self) -> str:
+        """Round 16 — unified ``(N)`` format; sums the three result row
+        types into one integer so every top-level tab speaks the same
+        counter dialect."""
         store = self._main_window._results_store
-        m = len(store.metric_rows)
-        g = len(store.group_test_rows)
-        s = len(store.sequence_test_rows)
-        parts = []
-        if m:
-            parts.append(f"{m} metric")
-        if g:
-            parts.append(f"{g} group")
-        if s:
-            parts.append(f"{s} seq")
-        return "(" + ", ".join(parts) + ")" if parts else ""
+        n = (
+            len(store.metric_rows)
+            + len(store.group_test_rows)
+            + len(store.sequence_test_rows)
+        )
+        return f"({n})" if n else ""
 
     def on_workspace_changed(self) -> None:
         # No-op: results are not tied to the workspace. Keeping a row
