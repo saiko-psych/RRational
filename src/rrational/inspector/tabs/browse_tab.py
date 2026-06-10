@@ -13,31 +13,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
 from qtpy.QtCore import Qt
-from qtpy.QtGui import QFont
 from qtpy.QtWidgets import (
     QDockWidget,
-    QLabel,
     QMainWindow,
-    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from rrational.inspector.empty_state_widget import EmptyStateWidget
 from rrational.inspector.overview_bar import OverviewBar
 from rrational.inspector.plot_widget import RRPlotWidget
 from rrational.inspector.tabs.base import InspectorTab
+from rrational.inspector.workspace_tree import (
+    ROLE_DATASET_IDX,
+    ROLE_SECTION_NAME,
+    WorkspaceItem,
+    WorkspaceTreeWidget,
+)
 
 if TYPE_CHECKING:
     from qtpy.QtCore import QByteArray
 
     from rrational.inspector.data_loader import Dataset, InspectorData
-
-# UserRole payload tags so itemClicked can distinguish "dataset node"
-# from "section node" without sniffing the parent.
-ROLE_DATASET_IDX = Qt.UserRole + 1
-ROLE_SECTION_NAME = Qt.UserRole + 2
 
 
 class BrowseTab(InspectorTab):
@@ -58,9 +58,11 @@ class BrowseTab(InspectorTab):
         # the parent tab, which looks like a window-in-a-window.
         self._dock_host.setWindowFlags(Qt.Widget)
 
-        self._dataset_tree = QTreeWidget()
-        self._dataset_tree.setHeaderHidden(True)
-        self._dataset_tree.setIndentation(14)
+        # Cluster-C6 sidebar: tree with status-pill badges + theme-aware
+        # delegate. ``WorkspaceTreeWidget`` is a QTreeWidget subclass so
+        # external callers (proxy properties, navigation helpers, tests)
+        # that talk QTreeWidget API keep working without changes.
+        self._dataset_tree = WorkspaceTreeWidget()
         self._dataset_tree.itemClicked.connect(self._on_tree_item_clicked)
         # Width is now governed by the dock — no maximum cap.
 
@@ -77,15 +79,30 @@ class BrowseTab(InspectorTab):
         self._overview_bar.link_to(self._plot)
 
         # Actionable WelcomeWidget — 4 large action buttons +
-        # recent-files list — replaces the bare empty-state QLabel. The
-        # label is kept as a hidden fallback for any code path that
-        # might still toggle it.
+        # recent-files list — primary empty-state UI. The EmptyStateWidget
+        # below provides the drag-and-drop affordance: it sits inside the
+        # WelcomeWidget area as a secondary drop target, surfaces a clear
+        # call-to-action ("Drop files here"), and forwards dropped paths
+        # to ``MainWindow.open_path``.
+        from rrational.inspector.assets import app_icon
         from rrational.inspector.welcome_widget import WelcomeWidget
 
         self._welcome_widget = WelcomeWidget(self._main_window, parent=self)
 
-        self._empty_label = QLabel("")
-        self._empty_label.setVisible(False)
+        # Cluster-C4 drop target. ``files_dropped`` carries Path objects;
+        # we route them one-by-one to the canonical ``open_path`` handler
+        # so the same code path that powers File-Open also serves drag-drop.
+        self._empty_state = EmptyStateWidget(
+            message="Drop RR or .rrational files here",
+            icon=app_icon(),
+            parent=self,
+        )
+        self._empty_state.files_dropped.connect(self._on_files_dropped)
+        self._empty_state.setVisible(False)
+
+        # Back-compat alias: callers used to flip ``_empty_label.setVisible``
+        # on / off — that no-op fallback is preserved through this alias.
+        self._empty_label = self._empty_state
 
         # Right-side preprocessing panel (artifact detection + summary).
         # Defer the import so importing browse_tab.py at module load
@@ -183,9 +200,12 @@ class BrowseTab(InspectorTab):
     # ------------------------------------------------------------------
     def on_workspace_changed(self) -> None:
         """Dataset list changed: rebuild the sidebar tree."""
-        self._dataset_tree.clear()
-        for i, ds in enumerate(self._main_window._datasets):
-            self._add_dataset_to_tree(i, ds)
+        items = [
+            self._build_workspace_item(i, ds)
+            for i, ds in enumerate(self._main_window._datasets)
+        ]
+        self._dataset_tree.set_items(items)
+        self._update_tree_active_marker()
         if not self._main_window._datasets:
             self._show_empty_state()
 
@@ -246,6 +266,9 @@ class BrowseTab(InspectorTab):
         self._plot.setVisible(False)
         self._overview_bar.clear_data()
         self._overview_bar.setVisible(False)
+        # Drop target is part of the empty-state UI — show it so drag-drop
+        # delivers files to ``MainWindow.open_path``.
+        self._empty_state.setVisible(True)
         # Welcome widget replaces the bare empty label.
         self._welcome_widget.setVisible(True)
         self._welcome_widget.refresh()  # refresh recent-files list
@@ -253,26 +276,118 @@ class BrowseTab(InspectorTab):
     # ------------------------------------------------------------------
     # Sidebar tree management
     # ------------------------------------------------------------------
-    def _add_dataset_to_tree(self, idx: int, ds: "Dataset") -> None:
-        top = QTreeWidgetItem(self._dataset_tree, [ds.name])
-        top.setData(0, ROLE_DATASET_IDX, idx)
-        top.setToolTip(0, str(ds.path) if ds.path else "(synthetic)")
+    def _build_workspace_item(self, idx: int, ds: "Dataset") -> WorkspaceItem:
+        """Translate one Dataset into a tree-ready WorkspaceItem with badges."""
+        children: list[WorkspaceItem] = []
         for meta in ds.data.sections:
-            label = f"{meta.name}  ({meta.beat_count} beats, {meta.t_end - meta.t_start:.0f}s)"
-            child = QTreeWidgetItem(top, [label])
-            child.setData(0, ROLE_DATASET_IDX, idx)
-            child.setData(0, ROLE_SECTION_NAME, meta.name)
-        top.setExpanded(True)
+            label = (
+                f"{meta.name}  ({meta.beat_count} beats, "
+                f"{meta.t_end - meta.t_start:.0f}s)"
+            )
+            children.append(
+                WorkspaceItem(
+                    name=label,
+                    dataset_idx=idx,
+                    section_name=meta.name,
+                )
+            )
+        return WorkspaceItem(
+            name=ds.name,
+            dataset_idx=idx,
+            badges=self._compute_badges_for(ds),
+            tooltip=str(ds.path) if ds.path else "(synthetic)",
+            children=children,
+        )
+
+    def _compute_badges_for(self, ds: "Dataset") -> list[str]:
+        """Derive status-pill tags for one dataset row.
+
+        Heuristic-driven so missing optional attributes never raise; the
+        sidebar is a status surface, not a strict spec.
+
+        Tags
+        ----
+        ``PROC``    — preprocessing has run (cached artifacts present).
+        ``N-WIN``   — number of windowed/segmented sections > 1.
+        ``BAD-Q``   — artifact ratio above the 5% triage threshold.
+        ``KUBIOS``  — recording originated from a Kubios-format source.
+        ``BIDS``    — file path matches the BIDS physio naming convention.
+        """
+        badges: list[str] = []
+
+        # PROC — any cached artifact result attached to the dataset?
+        has_proc = (
+            getattr(ds, "preprocessing_result", None) is not None
+            or getattr(ds, "artifact_indices", None) is not None
+            or getattr(ds.data, "preprocessing_result", None) is not None
+        )
+        if has_proc:
+            badges.append("PROC")
+
+        # N-WIN — only badge multi-section recordings, single-section is the
+        # uninteresting common case.
+        n_sections = len(getattr(ds.data, "sections", []) or [])
+        if n_sections > 1:
+            badges.append("N-WIN")
+
+        # BAD-Q — artifact ratio from cache or NaN-fraction in the timeline
+        # as a coarse fallback (full preprocessing summary lives elsewhere).
+        ratio = getattr(ds, "artifact_ratio", None)
+        if ratio is None:
+            v = getattr(ds.data, "v", None)
+            if v is not None and len(v) > 0:
+                try:
+                    ratio = float(np.isnan(v).sum()) / float(len(v))
+                except (TypeError, ValueError):  # pragma: no cover - defensive
+                    ratio = None
+        if ratio is not None and ratio > 0.05:
+            badges.append("BAD-Q")
+
+        # KUBIOS — explicit source-app marker on either the dataset or the
+        # underlying recording metadata.
+        source_app = getattr(ds, "source_app", "") or getattr(ds.data, "source_app", "")
+        if isinstance(source_app, str) and "kubios" in source_app.lower():
+            badges.append("KUBIOS")
+
+        # BIDS — recognise BIDS-physio TSVs by their canonical suffix.
+        path = getattr(ds, "path", None)
+        if path is not None and str(path).endswith("_recording-cardiac_physio.tsv.gz"):
+            badges.append("BIDS")
+
+        return badges
+
+    def _add_dataset_to_tree(self, idx: int, ds: "Dataset") -> None:
+        """Append a single Dataset to the sidebar tree.
+
+        Kept for backward compatibility with any caller / test that still
+        invokes it directly. The new code path rebuilds the tree wholesale
+        via :meth:`on_workspace_changed`.
+        """
+        self._dataset_tree.add_item(self._build_workspace_item(idx, ds))
         self._update_tree_active_marker()
 
     def _update_tree_active_marker(self) -> None:
-        active = self._main_window._active_idx
-        for i in range(self._dataset_tree.topLevelItemCount()):
-            top = self._dataset_tree.topLevelItem(i)
-            font = top.font(0)
-            font.setBold(i == active)
-            font.setWeight(QFont.Bold if i == active else QFont.Normal)
-            top.setFont(0, font)
+        self._dataset_tree.set_active_index(self._main_window._active_idx)
+
+    def _on_files_dropped(self, paths: list) -> None:
+        """Route drag-and-drop file paths through ``MainWindow.open_path``.
+
+        ``paths`` arrives as a list of ``pathlib.Path``. We open each in
+        turn — the canonical handler already manages dedup, error
+        dialogs, and the recent-files MRU list.
+        """
+        from pathlib import Path
+
+        open_path = getattr(self._main_window, "open_path", None)
+        if open_path is None:  # pragma: no cover - defensive
+            return
+        for raw in paths:
+            try:
+                open_path(Path(raw))
+            except Exception as exc:  # noqa: BLE001 - keep loop going
+                self._main_window.statusBar().showMessage(
+                    f"Could not open {raw}: {exc}", 4000
+                )
 
     def _on_tree_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         idx = item.data(0, ROLE_DATASET_IDX)
