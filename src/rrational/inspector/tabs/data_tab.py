@@ -1748,8 +1748,10 @@ class DataTab(InspectorTab):
     # Group / Sequence mapping CSV importer
     # ------------------------------------------------------------------
     def _on_import_mapping_clicked(self) -> None:
+        from qtpy.QtWidgets import QDialog
+
         dlg = ImportParticipantMappingDialog(self._main_window, parent=self)
-        if dlg.exec() != dlg.Accepted:
+        if dlg.exec() != QDialog.Accepted:
             return
         result = dlg.result
         if result is None:

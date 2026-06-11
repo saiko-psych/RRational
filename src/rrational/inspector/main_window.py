@@ -1298,7 +1298,7 @@ class MainWindow(QMainWindow):
             return
         default_parent_str = settings.read_setting("last_dir") or str(Path.home())
         dlg = NewProjectDialog(self, default_parent_dir=Path(default_parent_str))
-        if dlg.exec() != dlg.Accepted:
+        if dlg.exec() != QDialog.Accepted:
             return
         pm = dlg.project_manager()
         if pm is None:
