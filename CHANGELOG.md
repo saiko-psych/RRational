@@ -2,6 +2,47 @@
 
 All notable changes to RRational are documented here.
 
+## [Unreleased] — Round 21 (Tutorial-Komplettierung BIDS/PRISM/Recipe)
+
+Schließt die Tutorial-Lücke für die R7-R10-Features die R17 nicht
+adressiert hatte. Sechs Commits zwischen `b504822..af31737`.
+
+### Added — In-app discoverability
+- **Walkthrough auf 14 Seiten erweitert** (commit `b504822`) — drei neue
+  Pages:
+  - "Reproducible recipe — save your work as Python" (zwischen
+    Per-participant review und Study structure)
+  - "Sharing data — BIDS-physio export" (zwischen Results & export und
+    Tips & tricks)
+  - "Sharing data — PRISM Studio biometrics export" (direkt darauf
+    folgend)
+- **Tooltips für File-Menu + Tools-Menu BIDS/PRISM/Recipe-Einträge**
+  (commit `9684283`) — Save recipe, Export to BIDS-physio, Export to
+  PRISM biometrics. R17 hatte diese teilweise, R21 hat sie auf den
+  exakten Spec-Wortlaut (Anonymize-Hint, "multi-modal") gebracht plus
+  Recipe-Action mit `setToolTip` ergänzt (vorher nur `setStatusTip`).
+- **Setup-Tab Help-Expander** (commit `abbad07`) — zwei neue Expander:
+  "Event synonyms with regex" (canonical name + regex synonyms, live
+  validation) und "How sections are defined" (start/end event pairs,
+  drives Single-Participant + Repeating + Group analysis).
+
+### Added — Published docs
+- **`docs/user-guide/inspector-bids-workflow.md`** (commit `bb39937`,
+  133 Zeilen) — Step-by-step Tools → Export to BIDS-physio, Sidecar
+  fields (REQUIRED + RECOMMENDED + Anonymize), Round-trip (re-import
+  via File → Open recording), PRISM Studio biometrics als separater
+  Export-Pfad. In `mkdocs.yml` nav unter User Guide.
+- **`docs/user-guide/inspector-recipe-replay.md`** (commit `af31737`,
+  128 Zeilen) — Was ist ein recipe, implicit recording, Save via File
+  → Save recipe…, Replay mit `python recipe.py`, Limitations
+  (Path-Dependencies). In `mkdocs.yml` nav unter User Guide.
+
+### Test updates
+- `test_walkthrough_v2.py` + `test_help.py` Page-Count-Assertions von
+  11 auf 14 nachgezogen + Title-Assertions für die drei neuen Pages.
+- `test_tooltips.py` um drei neue Assertions für die R21-Tooltips
+  erweitert (8/8 grün).
+
 ## [Unreleased] — Round 20 (P1 Visual Polish)
 
 Vier Polish-Items aus dem Visual-Audit, die in Round 15/16 nicht
