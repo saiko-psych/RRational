@@ -2,6 +2,93 @@
 
 All notable changes to RRational are documented here.
 
+## [Unreleased] — Round 20 (P1 Visual Polish)
+
+Vier Polish-Items aus dem Visual-Audit, die in Round 15/16 nicht
+adressiert wurden. Ein Commit, vier diskrete Änderungen.
+
+### Changed
+- **Self-contained MNE-Report HTML** (commit `5ff9d6c`) — Bootstrap 5
+  CDN-link aus dem Report-Template entfernt. Stattdessen ein
+  `_INLINE_BOOTSTRAP_UTILS`-Block mit der einen tatsächlich
+  verwendeten Utility-Klasse (`.visually-hidden`). Reports sind nun
+  byte-für-byte self-contained — überleben Offline-Viewing, restriktive
+  E-Mail-Gateways und die `feedback_published_docs_self_contained`-Regel.
+- **Report Brand-Farbe Refined Laboratory Amber** (commit `5ff9d6c`) —
+  Topbar / Sidebar-Hover / Headings / Audit-Card-Border von
+  Legacy-Scientific-Blue (`#2E86AB`) auf Amber (`#e8a13a`) im
+  `_BASE_CSS` durchgängig umgestellt. Bringt die HTML-Ausgabe in
+  Einklang mit dem Inspector-Theme.
+
+### Fixed
+- **OverviewBar Trace-Farbe themenbewusst** (commit `5ff9d6c`) — pullt
+  beim Konstruktor `palette_tokens()["text_secondary"]` statt
+  hardcoded sky-blue `#7FB3D5`. Fallback auf den alten Wert, wenn die
+  Theme-Module nicht importierbar sind (CI / Headless-Tests).
+- **Compare-Curves Dialog Placeholder muted-token** (commit `5ff9d6c`)
+  — `QLabel.setProperty("muted", True)` statt inline `color: #888`, so
+  dass QSS den richtigen Theme-Token in Dark + Light auflöst.
+
+## [Unreleased] — Round 19 (Tier-1 Coverage Gap-Fill)
+
+Fünf bisher ungetestete Inspector-Module mit Smoke-Coverage versorgt.
+40 neue Tests verteilt auf fünf Commits zwischen `eae80c6..efe9c41`.
+
+### Added — Tests
+- **`tests/inspector/test_graphic_items_extra.py`** (commit `eae80c6`,
+  9 tests) — SectionRegion (Konstruktor + highlight-alpha), EventMarker
+  (label + color), ArtifactOverlay (set_points + clear), AnnotationMarker
+  (24-char-Truncation + Tooltip-Update), ExclusionRegion (apply_color).
+- **`tests/inspector/test_results_store.py`** (commit `d518ea3`, 7 tests)
+  — In-memory Container-Smoke (empty/append/clear/Filter). YAML-IO ist
+  in `results_persistence.py` (schon getestet).
+- **`tests/inspector/test_walkthrough_v2.py`** (commit `897c15c`,
+  10 tests) — Dialog-Konstruktion mit Mock-MainWindow, Next/Previous-
+  Signale, Progress-Bar-Position, Try-Target-Routing.
+- **`tests/inspector/test_prep_summary.py`** (commit `24b3cbd`, 7 tests)
+  — `compute_inspector_summary` + Cache (None-on-empty, stem-fallback,
+  events_detected, id(dataset)-Cache, Config-Signatur-Wechsel).
+- **`tests/inspector/test_data_loader_extra.py`** (commit `efe9c41`,
+  7 tests) — Dataclass-Shapes (t_start/t_end Properties, Empty-Array
+  Konstruktion, Dataset Round-Trip, Unicode-Labels).
+
+### Notes
+- `ResultsStore` selbst hat KEIN YAML-IO — das macht
+  `results_persistence.py`. Tests pinnen den in-memory contract.
+- `prep_summary.py` ist ein **compute-helper**, KEIN Widget — die
+  Tests pinnen die Computing- und Caching-Semantik.
+- `SectionMeta` hat keine `duration`-Property — `t_end - t_start`
+  Arithmetik wird stattdessen getestet (damit ein zukünftiger
+  Schema-Wechsel auffliegt).
+
+## [Unreleased] — Round 18 (Test-Quality TOP-5)
+
+Fünf Items aus dem Test-Quality-Audit, der die meisten existierenden
+Tests als SMOKE oder SHALLOW klassifizierte. Fünf Commits zwischen
+`7f2ad8d..fd01cf1`.
+
+### Added — Deep Tests
+- **Recipe semantic executability** (commit `7f2ad8d`) — Recipes von
+  `to_script(history)` werden in einem Subprocess via Python-`-c` real
+  ausgeführt. Bestätigt dass die emittierte Quelle nicht nur
+  Python-parseable ist sondern auch semantisch korrekt: Load + Detect +
+  Annotation in Sequence → identische Resultate.
+- **BIDS-physio Round-Trip** (commit `ad22b5c`) — kombiniert
+  `export_bids_physio()` + `load_generic_rr()` und assertet RR-Werte
+  innerhalb 1 ms, Metadata-Felder identisch, Anonymize-Modus erhält
+  Daten aber strippt PII, RRBIDSPath.match() findet exportierte
+  Session-Files.
+- **SampEn / ApEn vs scipy reference** (commit `19cbfe4`) — Sample
+  Entropy auf logistic-map (r=4, seed=42, N=500) gegen publizierten
+  Wert (~0.6 ± 0.2). ApEn ≥ SampEn Property-Check, NaN-Returns für zu
+  kurze Reihen, finite-Returns für extreme `r`.
+- **Concurrent Writes** (commit `cfeb5c5`) — ThreadPoolExecutor mit
+  5 Workers für BIDS-Export (distinct files), Pipeline-Cache (gleicher
+  Key → genau 1 Write), Annotation-Save (final-YAML parsebar).
+- **Annotation-Filter Composition** (commit `fd01cf1`) — crop +
+  reject_by_annotation Reihenfolgenunabhängigkeit, chunk_annotations
+  → filter Chain, overlapping BAD-Regions Union (idempotent).
+
 ## [Unreleased] — Round 17 (Tutorial + Documentation)
 
 Schließt die Discoverability-Lücke aus dem Tutorial-Gap-Audit (etwa 91%
