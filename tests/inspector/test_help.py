@@ -67,10 +67,14 @@ def test_walkthrough_contains_round17_pages():
     from rrational.inspector.walkthrough import PAGES
 
     titles = [p.title for p in PAGES]
-    assert len(PAGES) == 11
+    # Round 21 adds 3 more pages: Recipe, BIDS-physio, PRISM biometrics.
+    assert len(PAGES) == 14
     assert any("Zen mode" in t for t in titles)
     assert any("Compare HRV curves" in t for t in titles)
     assert any("Colorblind-safe palette" in t for t in titles)
+    assert any("Reproducible recipe" in t for t in titles)
+    assert any("BIDS-physio" in t for t in titles)
+    assert any("PRISM Studio biometrics" in t for t in titles)
 
 
 def test_walkthrough_next_and_previous(qtbot, main_window):

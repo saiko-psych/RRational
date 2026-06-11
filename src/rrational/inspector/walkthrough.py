@@ -141,6 +141,22 @@ PAGES: tuple[WalkthroughPage, ...] = (
         ),
     ),
     WalkthroughPage(
+        title="Reproducible recipe — save your work as Python",
+        illustration="[ Recipe Python code preview ]",
+        body_html=(
+            "<p>Every action you take in the inspector (load, detect "
+            "artifacts, add annotations, export) is silently recorded "
+            "as a <b>recipe</b>. At any time, choose "
+            "<i>File &rarr; Save recipe&hellip;</i> to write a runnable Python file "
+            "that re-creates your entire session from a fresh start.</p>"
+            "<p>Replay it later with <code>python recipe.py</code> &mdash; "
+            "useful for reproducibility audits, sharing analysis steps "
+            "with colleagues, or batching the same workflow across "
+            "additional recordings.</p>"
+        ),
+        try_target_attr=None,
+    ),
+    WalkthroughPage(
         title="4. Study structure: events, sections, groups, sequences",
         illustration="[ Setup sub-tabs ]",
         body_html=(
@@ -222,6 +238,39 @@ PAGES: tuple[WalkthroughPage, ...] = (
         ),
         try_target_attr="_results_tab",
         try_label="Open the Results tab",
+    ),
+    WalkthroughPage(
+        title="Sharing data — BIDS-physio export",
+        illustration="[ BIDS folder structure ]",
+        body_html=(
+            "<p>For multi-modal studies (EEG / fMRI + cardiac), RRational "
+            "can export the active recording in <b>BIDS Physiological "
+            "Recordings</b> format. Choose "
+            "<i>Tools &rarr; Export to BIDS-physio&hellip;</i>.</p>"
+            "<p>Output: <code>sub-&lt;pid&gt;[_ses-&lt;ses&gt;]_task-&lt;task&gt;"
+            "_recording-cardiac_physio.tsv.gz</code> + matching JSON "
+            "sidecar with required BIDS metadata. The sampling-frequency "
+            "field uses the mean beat rate per the BIDS spec's "
+            "documented workaround for event-spaced cardiac data.</p>"
+            "<p>For DSGVO-compliant data sharing, tick "
+            "<b>Anonymize</b> to shift the recording date back by N days "
+            "and strip experimenter/description fields.</p>"
+        ),
+        try_target_attr=None,
+    ),
+    WalkthroughPage(
+        title="Sharing data — PRISM Studio biometrics export",
+        illustration="[ PRISM TSV + JSON sidecar ]",
+        body_html=(
+            "<p>For psychological-research workflows in the <b>PRISM "
+            "Studio</b> framework, RRational exports HRV summary metrics "
+            "(MeanNN, SDNN, RMSSD, LF, HF, SD1, SD2, etc.) as a single-row "
+            "TSV + JSON sidecar with PRISM's Technical / Study / Metadata "
+            "blocks. Choose <i>Tools &rarr; Export to PRISM biometrics&hellip;</i>.</p>"
+            "<p>This is summary-metrics-only &mdash; the time-series itself "
+            "stays in your project as .rrational v2.</p>"
+        ),
+        try_target_attr=None,
     ),
     WalkthroughPage(
         title="Tips and tricks",

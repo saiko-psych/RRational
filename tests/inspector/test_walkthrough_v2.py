@@ -22,8 +22,9 @@ from rrational.inspector.walkthrough import (  # noqa: E402
 # PAGES tuple shape
 # ---------------------------------------------------------------------
 def test_pages_has_expected_count():
-    # 11 pages cover the full Welcome -> Tips and tricks -> Colorblind flow.
-    assert len(PAGES) == 11
+    # 14 pages cover the full Welcome -> Tips and tricks -> Colorblind flow
+    # (Round 21 added 3 pages: Recipe, BIDS-physio, PRISM biometrics).
+    assert len(PAGES) == 14
 
 
 def test_pages_are_walkthrough_page_instances():
