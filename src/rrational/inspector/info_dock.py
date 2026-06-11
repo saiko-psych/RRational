@@ -204,8 +204,11 @@ class InfoDock(QDockWidget):
         outer.addWidget(self._chain_label, 1)
 
         outer.addStretch(0)
-        container.setMinimumWidth(220)
-        container.setMaximumWidth(360)
+        # Round 22 — slimmer dock so the inspection plot keeps as much
+        # horizontal real estate as possible. Users can still drag the
+        # splitter handle to widen it on demand.
+        container.setMinimumWidth(170)
+        container.setMaximumWidth(280)
         self.setWidget(container)
 
     # ------------------------------------------------------------------
@@ -283,4 +286,19 @@ class InfoDock(QDockWidget):
         tags = list(tags)
         if not tags:
             return _EMPTY
-        return "\n".join(f"• {t}" for t in tags)
+        # Round 22 — collapse adjacent duplicate action names with a
+        # ``(xN)`` multiplier. Without this the chain shows visual noise
+        # for repeated calls (e.g. ``set_active_project`` firing twice
+        # during auto-load-then-user-open) and clutters the dock with
+        # near-identical lines.
+        collapsed: list[str] = []
+        for t in tags:
+            if collapsed and collapsed[-1].split(" ×")[0] == t:
+                head = collapsed[-1].split(" ×")[0]
+                count = (
+                    int(collapsed[-1].split(" ×")[1]) if " ×" in collapsed[-1] else 1
+                )
+                collapsed[-1] = f"{head} ×{count + 1}"
+            else:
+                collapsed.append(t)
+        return "\n".join(f"• {t}" for t in collapsed)

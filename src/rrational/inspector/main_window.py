@@ -193,7 +193,12 @@ class MainWindow(QMainWindow):
         # width. Qt computes 0-width docks when the central widget is
         # greedy (our plot is), so without this the dock collapses to a
         # 1-px slit and looks broken on first launch.
-        self._info_dock.setMinimumWidth(280)
+        # Round 22 — Info dock was eating ~280px of plot real estate. The
+        # min-width fix from R15 was overly defensive; 180px is enough to
+        # render the label list legibly and gives the inspection plot back
+        # 100px of horizontal space. The dock is still user-resizable via
+        # the splitter handle and toggleable via View -> Show Info dock.
+        self._info_dock.setMinimumWidth(180)
         # Honour the persisted show/hide preference on startup.
         try:
             show_info = bool(settings.read_setting("show_info_dock"))
