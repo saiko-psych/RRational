@@ -329,9 +329,13 @@ class WalkthroughDialog(QDialog):
         outer.setContentsMargins(18, 16, 18, 14)
         outer.setSpacing(12)
 
+        # Round 22 — progress bar showed "Page 0 of 13" for a 14-page
+        # walkthrough. Range is now 1-based and ends at the real page
+        # count so the user sees the intuitive "Page 1 of 14" ... "Page 14
+        # of 14" instead of an off-by-one index.
         self._progress = QProgressBar(self)
-        self._progress.setRange(0, max(1, len(self._pages) - 1))
-        self._progress.setValue(0)
+        self._progress.setRange(1, max(1, len(self._pages)))
+        self._progress.setValue(1)
         self._progress.setFormat("Page %v of %m")
         outer.addWidget(self._progress)
 
@@ -377,12 +381,20 @@ class WalkthroughDialog(QDialog):
         title.setWordWrap(True)
         layout.addWidget(title)
 
-        if page.illustration:
+        # Round 22 — the illustration field is a string placeholder
+        # ("[ Inspector overview ]" etc.) that never got real images
+        # before launch. The previous hard-coded light-mode QSS painted
+        # a glaring white card in the dark theme; skip rendering the
+        # placeholder entirely until real graphics land. The body_html
+        # already carries every word the user actually needs.
+        if page.illustration and not (
+            page.illustration.startswith("[") and page.illustration.endswith("]")
+        ):
             illus = QLabel(page.illustration)
             illus.setAlignment(Qt.AlignCenter)
+            illus.setProperty("muted", True)
             illus.setStyleSheet(
-                "QLabel { color: #888; background: #f4f4f4; "
-                "border: 1px dashed #ccc; padding: 18px; }"
+                "QLabel { border: 1px dashed; padding: 18px; border-radius: 4px; }"
             )
             layout.addWidget(illus)
 
@@ -440,7 +452,10 @@ class WalkthroughDialog(QDialog):
             self._stack.setCurrentIndex(idx + 1)
 
     def _on_page_changed(self, idx: int) -> None:
-        self._progress.setValue(idx)
+        # Round 22 — progress bar is 1-based ("Page 1 of 14"), stack
+        # index is 0-based. Add 1 so the value lands inside the
+        # (1, n_pages) range we set during construction.
+        self._progress.setValue(idx + 1)
         self._prev_btn.setEnabled(idx > 0)
         # On the last page the Next button is disabled; encourage Close.
         self._next_btn.setEnabled(idx < self._stack.count() - 1)
