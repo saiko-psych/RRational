@@ -266,6 +266,27 @@ class _EventsPane(QWidget):
             )
         )
 
+        outer.addWidget(
+            HelpExpander(
+                "Event synonyms with regex",
+                (
+                    "<h4>Event synonyms — what they do</h4>"
+                    "<p>Each event has a <b>canonical name</b> "
+                    "(e.g. <code>rest_pre_start</code>) plus optional "
+                    "<b>synonyms</b> matched as Python regex "
+                    "(case-insensitive). When loading data, ANY line "
+                    "matching a synonym gets normalised to the canonical "
+                    "name.</p>"
+                    "<p>Example: synonyms <code>start_ruhe</code>, "
+                    "<code>ruhe_pre.*</code> both map to "
+                    "<code>rest_pre_start</code>.</p>"
+                    "<p>The dialog validates your regex live — red border + "
+                    "tooltip on errors. The OK button stays disabled until "
+                    "the pattern parses.</p>"
+                ),
+            )
+        )
+
         self._info_label = QLabel(
             f"<b>Defined events</b> (saved to "
             f"{format_config_path('config/events.yml')}, Streamlit-shared)"
@@ -571,6 +592,24 @@ class _SectionsPane(QWidget):
                     "<p><b>Tip:</b> ensure your sections have at least ~100 "
                     "beats for time-domain metrics and ~300 beats for "
                     "frequency-domain metrics (Quigley 2024).</p>"
+                ),
+            )
+        )
+
+        outer.addWidget(
+            HelpExpander(
+                "How sections are defined",
+                (
+                    "<h4>Sections — start/end event pairs</h4>"
+                    "<p>A <b>section</b> is a named time window bounded by "
+                    "two events. Pick one or more &quot;start&quot; events "
+                    "and one or more &quot;end&quot; events; if any start "
+                    "fires followed by any end, that interval becomes the "
+                    "section.</p>"
+                    "<p>Sections drive Single-Participant analysis, "
+                    "Repeating-Section batch, and Group/Sequence "
+                    "comparisons. Define them once, reuse across all "
+                    "loaded recordings.</p>"
                 ),
             )
         )
