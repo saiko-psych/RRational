@@ -119,6 +119,7 @@ nav:
     - Inspector Features: user-guide/inspector-features.md
     - Inspector Keyboard Shortcuts: user-guide/inspector-keyboard-shortcuts.md
     - Inspector Workflows: user-guide/inspector-workflows.md
+    - Inspector BIDS Workflow: user-guide/inspector-bids-workflow.md
   - Methodology:
     - Recommended Workflow: science/recommended-workflow.md
     - HRV Guidelines: science/guidelines.md
