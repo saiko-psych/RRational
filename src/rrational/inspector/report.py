@@ -324,6 +324,20 @@ def _token_css_class(tok) -> str | None:
 
 
 # ----------------------------------------------------------------------
+# Inlined-Bootstrap subset (Round 20): the only Bootstrap class the
+# report template uses is ``.visually-hidden`` on the tag-filter label.
+# Inlining the one rule lets us drop the entire CDN link block and ship
+# a truly self-contained HTML (offline, email-safe, RTD-publishable).
+# ----------------------------------------------------------------------
+_INLINE_BOOTSTRAP_UTILS = (
+    ".visually-hidden{position:absolute!important;width:1px!important;"
+    "height:1px!important;padding:0!important;margin:-1px!important;"
+    "overflow:hidden!important;clip:rect(0,0,0,0)!important;"
+    "white-space:nowrap!important;border:0!important;}"
+)
+
+
+# ----------------------------------------------------------------------
 # Built-in CSS — single string concatenated into <style> at the top of
 # every HTML report. Compact, print-friendly, no external fonts.
 # ----------------------------------------------------------------------
@@ -341,7 +355,7 @@ body {
 /* Sticky top navigation -- mirrors MNE's report header. */
 nav.topbar {
     position: sticky; top: 0; z-index: 100;
-    background: #2E86AB; color: #fff;
+    background: #e8a13a; color: #fff;
     padding: .6em 1.2em;
     display: flex; align-items: center; gap: 1em;
     box-shadow: 0 1px 4px rgba(0,0,0,.15);
@@ -374,11 +388,11 @@ aside.sidebar li a {
     display: block; padding: .4em 1.2em;
     text-decoration: none; color: #24292e; border-left: 3px solid transparent;
 }
-aside.sidebar li a:hover { background: #f6f8fa; border-left-color: #2E86AB; }
+aside.sidebar li a:hover { background: #f6f8fa; border-left-color: #e8a13a; }
 aside.sidebar details { padding: 0 1em; }
 aside.sidebar details summary {
     cursor: pointer; padding: .4em 0; font-weight: 600;
-    color: #2E86AB; font-size: .9em;
+    color: #e8a13a; font-size: .9em;
 }
 main.content {
     flex: 1;
@@ -387,8 +401,8 @@ main.content {
     padding: 1.5em 2em;
     background: #fff;
 }
-h1 { border-bottom: 2px solid #2E86AB; padding-bottom: .3em; margin-top: 0; }
-h2 { color: #2E86AB; margin-top: 2em; border-bottom: 1px solid #ddd;
+h1 { border-bottom: 2px solid #e8a13a; padding-bottom: .3em; margin-top: 0; }
+h2 { color: #e8a13a; margin-top: 2em; border-bottom: 1px solid #ddd;
      padding-bottom: .2em; scroll-margin-top: 4em; }
 h3 { margin-top: 1.5em; color: #444; }
 /* Tag pills used to filter custom sections. */
@@ -432,7 +446,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .plot img { max-width: 100%; height: auto; border: 1px solid #ddd; }
 .refs { font-size: 0.9em; }
 .refs li { margin: .5em 0; }
-.audit { background: #f8f9fb; border-left: 3px solid #2E86AB;
+.audit { background: #f8f9fb; border-left: 3px solid #e8a13a;
          padding: .5em 1em; margin: .5em 0; font-size: 0.9em; }
 .note { font-style: italic; color: #555; font-size: 0.9em; }
 .hint { color: #555; font-size: 0.9em; margin-top: .25em; }
@@ -502,7 +516,7 @@ def _render_tachogram_png(data, max_points: int = 2000) -> str | None:
         plt.resize(800, 240)
         plt.setLabel("left", "RR", "ms")
         plt.setLabel("bottom", "Time", "s")
-        plt.plot(t - t[0], v, pen=pg.mkPen("#2E86AB", width=1), connect="finite")
+        plt.plot(t - t[0], v, pen=pg.mkPen("#e8a13a", width=1), connect="finite")
         exporter = ImageExporter(plt.plotItem)
         exporter.parameters()["width"] = 800
         qimg = exporter.export(toBytes=True)
@@ -610,16 +624,12 @@ class ReportBuilder:
         parts.append("<head>")
         parts.append("<meta charset='utf-8'>")
         parts.append("<title>RRational Report</title>")
-        # Bootstrap 5 grid + utilities -- loaded from jsdelivr CDN for
-        # responsive layout polish. Self-contained fall-through CSS in
-        # _BASE_CSS keeps the report readable offline.
-        parts.append(
-            "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/"
-            "bootstrap@5.3.3/dist/css/bootstrap.min.css' "
-            "integrity='sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH' "
-            "crossorigin='anonymous'>"
-        )
-        parts.append(f"<style>{_BASE_CSS}</style>")
+        # Round 20: dropped Bootstrap 5 CDN link in favour of the
+        # already-inlined ``_BASE_CSS`` plus a tiny utility-class block.
+        # Reports are now byte-for-byte self-contained — they survive
+        # offline viewing, restrictive email gateways, and the
+        # feedback_published_docs_self_contained rule.
+        parts.append(f"<style>{_BASE_CSS}{_INLINE_BOOTSTRAP_UTILS}</style>")
         parts.append("</head>")
         parts.append("<body>")
 
@@ -1302,7 +1312,7 @@ _GROUP_REPORT_CSS = (
     "th,td{border:1px solid #ccc;padding:6px 12px;text-align:left;}"
     "th{background:#f5f5f5;}"
     "h1{color:#222;}"
-    "h2{color:#2E86AB;margin-top:2em;}"
+    "h2{color:#e8a13a;margin-top:2em;}"
     ".meta{color:#666;}"
     ".empty{color:#888;font-style:italic;}"
 )

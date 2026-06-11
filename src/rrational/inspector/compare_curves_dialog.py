@@ -65,7 +65,11 @@ class CompareCurvesDialog(QDialog):
         # consistent dimensions.
         self._plot_holder = QVBoxLayout()
         placeholder = QLabel("Pick datasets for at least one group, then press Plot.")
-        placeholder.setStyleSheet("color: #888; padding: 24px;")
+        # Round 20: muted-text colour pulled from the active theme so the
+        # placeholder reads correctly in dark + light modes instead of
+        # always rendering at the legacy ``#888`` mid-grey.
+        placeholder.setProperty("muted", True)
+        placeholder.setStyleSheet("padding: 24px;")
         self._plot_holder.addWidget(placeholder)
         outer.addLayout(self._plot_holder, stretch=1)
         self._plot_widget = None

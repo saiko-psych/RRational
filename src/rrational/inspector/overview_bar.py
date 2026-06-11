@@ -25,10 +25,30 @@ if TYPE_CHECKING:
 
 # Visual constants — tuned so the bar reads as "subordinate to main plot"
 # without disappearing. Matches mne-qt-browser's overview-bar fade level.
+# Round 20: the trace colour is no longer a hardcoded sky-blue. We read
+# the active theme's secondary-text token at construct time so the bar
+# follows the user's Okabe-Ito / preset choice and stays legible in both
+# dark and light modes.
 _BAR_HEIGHT = 80
-_LINE_COLOR = "#7FB3D5"  # paler than main plot, so eyes land on main first
 _VIEWPORT_FILL = (46, 134, 171, 60)
 _VIEWPORT_BORDER = (46, 134, 171, 200)
+
+
+def _resolve_line_color() -> str:
+    """Pull a theme-aware curve colour from the active palette tokens.
+
+    Falls back to the legacy sky-blue ``#7FB3D5`` when the theme module
+    is not importable (e.g. headless tests that bypass the inspector
+    style stack), so existing tests stay stable.
+    """
+    try:
+        from rrational.inspector.style.theme import palette_tokens
+
+        return palette_tokens()["text_secondary"]
+    except (ImportError, KeyError):
+        return "#7FB3D5"
+
+
 # Mirror stripes — same families as the main-plot overlays, slightly
 # muted so they don't compete with the viewport rectangle.
 _EXCLUSION_STRIPE = (125, 131, 144, 120)  # warm-gray, matches drop-log palette
@@ -56,7 +76,7 @@ class OverviewBar(pg.PlotWidget):
         # Background defers to the global pyqtgraph config (dark/light theme).
 
         self._curve = pg.PlotDataItem(
-            pen=pg.mkPen(_LINE_COLOR, width=1),
+            pen=pg.mkPen(_resolve_line_color(), width=1),
             connect="finite",
             clipToView=True,
             autoDownsample=True,

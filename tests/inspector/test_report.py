@@ -358,7 +358,12 @@ def test_html_includes_sticky_topbar_and_sidebar(main_window):
     html = ReportBuilder(main_window).build_html()
     assert "class='topbar'" in html
     assert "class='sidebar'" in html
-    assert "bootstrap@5.3.3" in html
+    # Round 20: the CDN Bootstrap link was replaced by an inlined utility
+    # subset so the report is self-contained for offline / email use.
+    assert "cdn.jsdelivr.net" not in html
+    assert "bootstrap@" not in html
+    # The single Bootstrap utility class we still rely on is inlined.
+    assert ".visually-hidden" in html
 
 
 def test_add_section_renders_custom_section(main_window):
