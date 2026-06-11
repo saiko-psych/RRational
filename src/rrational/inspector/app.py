@@ -32,14 +32,19 @@ from rrational.inspector.main_window import MainWindow
 # 10k+ caveat held for full EEG streams (mne-qt-browser territory) — for
 # RR we trade negligible perf for sharper rendering.
 #
-# useOpenGL=True opts into hardware-accelerated rendering. PyQtGraph
-# falls back to software paths cleanly when GL is unavailable (CI VMs,
-# minimal Linux installs), so the flag is safe to leave on.
+# Round 22 — useOpenGL was True since R11/A1 but produced an entirely
+# black plot pane for real user recordings on Windows + PySide6. The
+# hardware-accelerated path interacted badly with the nested QMainWindow
+# hosting the BrowseTab plot, so curves rendered to the GL context but
+# the surrounding QWidget paint cycle never composited the GL pixels
+# into the visible widget. Antialias stays on (no measurable cost at
+# RR-scale, ~10k points typical) but GL goes back off so the standard
+# QPainter pipeline draws everything in the same paint pass.
 pg.setConfigOptions(
     background="#1a1d22",
     foreground="#eaecef",
     antialias=True,
-    useOpenGL=True,
+    useOpenGL=False,
 )
 
 

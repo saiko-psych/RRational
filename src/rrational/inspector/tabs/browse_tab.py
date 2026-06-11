@@ -116,10 +116,18 @@ class BrowseTab(InspectorTab):
         middle_pane = QWidget()
         middle_layout = QVBoxLayout(middle_pane)
         middle_layout.setContentsMargins(0, 0, 0, 0)
-        middle_layout.addWidget(self._welcome_widget)
-        middle_layout.addWidget(self._empty_label)
-        middle_layout.addWidget(self._overview_bar)
-        middle_layout.addWidget(self._plot)
+        # Round 22 — without an explicit ``stretch`` factor on the plot,
+        # the VBoxLayout split the available height evenly across welcome
+        # widget, empty label, overview bar and plot. When welcome +
+        # empty hide on first load, the layout *kept* their reserved
+        # vertical slots and squeezed the plot down to a thin band that
+        # rendered as a totally black middle pane in user reports.
+        # Giving the plot stretch=1 (welcome stretch=0) makes it consume
+        # all leftover height the moment the welcome widget hides.
+        middle_layout.addWidget(self._welcome_widget, 0)
+        middle_layout.addWidget(self._empty_label, 0)
+        middle_layout.addWidget(self._overview_bar, 0)
+        middle_layout.addWidget(self._plot, 1)
         self._plot.setVisible(False)
         self._overview_bar.setVisible(False)
         self._dock_host.setCentralWidget(middle_pane)
