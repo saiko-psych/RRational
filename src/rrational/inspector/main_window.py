@@ -659,6 +659,10 @@ class MainWindow(QMainWindow):
         save_recipe_act.setStatusTip(
             "Export the current GUI actions as a runnable Python script"
         )
+        save_recipe_act.setToolTip(
+            "Export the recorded session as a runnable Python script "
+            "(see Help → Workflow walkthrough)"
+        )
         save_recipe_act.triggered.connect(self._on_save_recipe_clicked)
         file_menu.addAction(save_recipe_act)
         self._save_recipe_act = save_recipe_act
@@ -961,7 +965,8 @@ class MainWindow(QMainWindow):
             "physio TSV.GZ + JSON sidecar pair"
         )
         self._bids_export_act.setToolTip(
-            "Export the active dataset as BIDS-compliant TSV.GZ + JSON sidecar"
+            "Export the active dataset as BIDS-compliant TSV.GZ + JSON sidecar "
+            "with optional anonymization"
         )
         self._bids_export_act.triggered.connect(self._on_bids_export_clicked)
         tools_menu.addAction(self._bids_export_act)
@@ -973,7 +978,8 @@ class MainWindow(QMainWindow):
             "PRISM-Studio biometrics TSV + JSON sidecar"
         )
         self._prism_export_act.setToolTip(
-            "Export HRV summary metrics for the PRISM Studio research framework"
+            "Export HRV summary metrics for the PRISM Studio multi-modal "
+            "research framework"
         )
         self._prism_export_act.triggered.connect(self._on_prism_export_clicked)
         tools_menu.addAction(self._prism_export_act)

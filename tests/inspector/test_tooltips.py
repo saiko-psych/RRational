@@ -81,9 +81,23 @@ def test_bids_export_action_has_tooltip(main_window):
     tip = main_window._bids_export_act.toolTip()
     assert tip
     assert "BIDS" in tip
+    # Round 21 — anonymize affordance must be surfaced in the tooltip.
+    assert "anonymiz" in tip.lower()
 
 
 def test_prism_export_action_has_tooltip(main_window):
     tip = main_window._prism_export_act.toolTip()
     assert tip
     assert "PRISM" in tip
+    # Round 21 — "multi-modal research framework" framing.
+    assert "multi-modal" in tip.lower()
+
+
+# ---------------------------------------------------------------------
+# File menu — recipe export (Round 21)
+# ---------------------------------------------------------------------
+def test_save_recipe_action_has_tooltip(main_window):
+    tip = main_window._save_recipe_act.toolTip()
+    assert tip
+    assert "Python" in tip
+    assert "walkthrough" in tip.lower()
