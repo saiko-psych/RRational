@@ -194,7 +194,26 @@ class Dataset:
         - ``load_raw_rr`` for raw RR formats (Polar / Empatica / Kubios /
           Elite HRV / plain text), auto-detected via
           ``io.generic_rr.detect_format``
+
+        Round 22 — HRV Logger ships RR + Events as separate companion
+        CSVs (``*_RRIntervals.csv`` plus ``*_Events_*.csv``); the events
+        file has a single ``timestamp`` column and the loader was happy
+        to interpret those POSIX-ms values as 1.7e12 RR intervals,
+        producing a phantom 'dataset' with thousands of junk beats and
+        an unreadable plot. Reject companion files early with a hint
+        pointing at the RR file.
         """
+        name_lower = path.name.lower()
+        if path.suffix.lower() != ".rrational" and (
+            "_events" in name_lower or name_lower.endswith("events.csv")
+        ):
+            raise ValueError(
+                f"'{path.name}' looks like an event-marker companion file "
+                "(timestamps only, no RR column). Open the matching "
+                "*_RRIntervals.csv / *_RR_*.csv recording instead - the "
+                "events will be picked up automatically as section + event "
+                "markers when the recording is loaded."
+            )
         if path.suffix.lower() == ".rrational":
             data = load_inspector_data(path)
         else:

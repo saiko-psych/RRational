@@ -423,23 +423,65 @@ class WalkthroughDialog(QDialog):
 
     # ------------------------------------------------------------------
     def _on_try(self, target_attr: str) -> None:
-        """Switch the main window to ``target_attr`` (e.g. ``"_data_tab"``)."""
+        """Switch the main window to ``target_attr`` (e.g. ``"_data_tab"``).
+
+        Round 22 — used to silently return when the requested tab was
+        hidden in the active layout (DataTab is MNE-LAB-hidden), so the
+        'Open the Data tab' button on the walkthrough did literally
+        nothing for users on the default layout. Now we try a fallback
+        target, and if both are hidden we surface a status-bar hint so
+        the user knows the click registered AND why nothing happened.
+        """
         if self._main_window is None:
-            return
-        target = getattr(self._main_window, target_attr, None)
-        if target is None:
             return
         tabs = getattr(self._main_window, "_tabs_widget", None)
         if tabs is None:
             return
-        idx = tabs.indexOf(target)
-        if idx < 0:
+
+        # Try the requested target first, then a sensible fallback so a
+        # 'Data tab' button still does something useful in MNE-LAB mode
+        # (where DataTab is hidden but BrowseTab is the equivalent).
+        fallback_map = {
+            "_data_tab": "_browse_tab",
+            "_participant_tab": "_browse_tab",
+            "_browse_tab": "_data_tab",
+        }
+        candidates: list[str] = [target_attr]
+        fb = fallback_map.get(target_attr)
+        if fb is not None and fb not in candidates:
+            candidates.append(fb)
+
+        for attr in candidates:
+            target = getattr(self._main_window, attr, None)
+            if target is None:
+                continue
+            idx = tabs.indexOf(target)
+            if idx < 0:
+                continue
+            if hasattr(tabs, "isTabVisible") and not tabs.isTabVisible(idx):
+                continue
+            tabs.setCurrentIndex(idx)
+            if attr != target_attr:
+                # We swapped to a fallback — tell the user why.
+                bar = getattr(self._main_window, "statusBar", None)
+                if callable(bar):
+                    bar().showMessage(
+                        f"'{target_attr.lstrip('_').replace('_', ' ').title()}'"
+                        f" is hidden in this layout - jumped to '{attr.lstrip('_').replace('_', ' ').title()}'"
+                        " instead. Switch via View -> Layout to see both.",
+                        7000,
+                    )
             return
-        # Only switch if the tab is currently visible in the active
-        # layout mode; otherwise the user would see a blank tab.
-        if hasattr(tabs, "isTabVisible") and not tabs.isTabVisible(idx):
-            return
-        tabs.setCurrentIndex(idx)
+
+        # Both target and fallback are unreachable - never leave the
+        # button feeling unresponsive.
+        bar = getattr(self._main_window, "statusBar", None)
+        if callable(bar):
+            bar().showMessage(
+                f"Could not jump to '{target_attr}' (hidden in this layout). "
+                "Try View -> Layout to switch layouts.",
+                7000,
+            )
 
     def _on_prev(self) -> None:
         idx = self._stack.currentIndex()
