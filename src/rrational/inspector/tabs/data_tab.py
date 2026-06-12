@@ -1202,14 +1202,13 @@ class DataTab(InspectorTab):
             # active" inline at the right context; do not echo it into
             # the status bar where it would persist across every tab.
             return
-        name = (
-            proj.metadata.name if proj.metadata is not None else proj.project_path.name
-        )
         n_participants = len(self._collect_participants())
         n_datasets = len(mw._datasets)
+        # Status-bar permanent badge already shows "Project: {name}" — we
+        # only echo the workspace counters on the left so the same string
+        # isn't shown twice in the same status bar.
         bar.showMessage(
-            f"Project: {name}  ·  {n_participants} participant(s)  "
-            f"·  {n_datasets} dataset(s) loaded.",
+            f"{n_participants} participant(s)  ·  {n_datasets} dataset(s) loaded.",
             0,
         )
 

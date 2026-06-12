@@ -11,7 +11,7 @@ from rrational.inspector.data_loader import EventMeta, InspectorData, SectionMet
 from rrational.inspector.history import HistoryRecorder, LoadRecording
 from rrational.inspector.info_dock import (
     InfoDock,
-    _approx_sfreq_hz,
+    _approx_hr_bpm,
     _format_duration,
 )
 
@@ -36,16 +36,16 @@ def test_format_duration_handles_minutes_and_hours():
     assert _format_duration(-5) == "—"
 
 
-def test_approx_sfreq_uses_60000_over_mean_rr():
-    data = _make_data()  # mean RR = 850 ms → 60000/850 ≈ 70.59 Hz proxy
-    sf = _approx_sfreq_hz(data)
-    assert sf is not None
-    assert sf == pytest.approx(60000.0 / 850.0, rel=1e-6)
+def test_approx_hr_uses_60000_over_mean_rr():
+    data = _make_data()  # mean RR = 850 ms → 60000/850 ≈ 70.59 BPM
+    hr = _approx_hr_bpm(data)
+    assert hr is not None
+    assert hr == pytest.approx(60000.0 / 850.0, rel=1e-6)
 
 
-def test_approx_sfreq_returns_none_for_all_nan():
+def test_approx_hr_returns_none_for_all_nan():
     data = InspectorData(t=np.array([0.0, 1.0]), v=np.array([np.nan, np.nan]))
-    assert _approx_sfreq_hz(data) is None
+    assert _approx_hr_bpm(data) is None
 
 
 def test_info_dock_constructs(qtbot):
@@ -53,7 +53,7 @@ def test_info_dock_constructs(qtbot):
     qtbot.addWidget(dock)
     assert dock.objectName() == "InfoDock"
     # All labels start at the em-dash placeholder.
-    assert dock._sfreq_label.text() == "—"
+    assert dock._hr_label.text() == "—"
     assert dock._length_label.text() == "—"
     assert dock._windows_label.text() == "—"
 
@@ -78,8 +78,8 @@ def test_info_dock_set_dataset_populates_rows(qtbot):
     assert dock._windows_label.text() == "1"
     assert dock._exclusions_label.text() == "2"
     assert dock._annotations_label.text() == "3"
-    # Approximate sf string contains "Hz"
-    assert "Hz" in dock._sfreq_label.text()
+    # Approximate HR string contains "BPM"
+    assert "BPM" in dock._hr_label.text()
     # Chain contains the LoadRecording action tag.
     assert "LoadRecording" in dock._chain_label.text()
 

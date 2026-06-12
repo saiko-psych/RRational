@@ -105,6 +105,7 @@ xdist_*.log
 
 # Per-session inspector snapshot harness output.
 tests/visual/snapshots/
+tests/visual/e2e_snapshots/
 
 # Local-only validation script (E2E + Kubios smoke, manually run).
 tests/workflow_verification.py

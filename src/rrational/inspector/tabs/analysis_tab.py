@@ -751,7 +751,7 @@ class _SingleParticipantPane(QWidget):
         self._result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self._result_stack = _wrap_table_with_hint(
             self._result_table,
-            "Click <b>Compute HRV metrics</b> below to populate this table.",
+            "Click <b>Compute HRV metrics</b> above to populate this table.",
         )
         outer.addWidget(self._result_stack)
 

@@ -1,8 +1,8 @@
 """Persistent right-side info panel (Cluster C5).
 
 A dockable, MNE-LAB-style metadata sidebar that summarises the active
-``InspectorData`` at a glance: filename, approximate sampling
-frequency, length, window count, exclusions, annotations and the
+``InspectorData`` at a glance: filename, approximate mean heart rate
+(BPM), length, window count, exclusions, annotations and the
 pre-processing chain of recorded :class:`Action` tags.
 
 Why a dock and not a plain widget? The user repeatedly opens datasets
@@ -42,13 +42,17 @@ from rrational.inspector.history.recorder import HistoryRecorder
 _EMPTY = "—"
 
 
-def _approx_sfreq_hz(data: InspectorData) -> float | None:
-    """Approximate Hz from mean RR (ms): ``f = 60000 / mean_RR_ms``.
+def _approx_hr_bpm(data: InspectorData) -> float | None:
+    """Approximate mean heart rate (BPM) from mean RR (ms): ``HR = 60000 / mean_RR_ms``.
 
-    RR series are unevenly sampled by nature, but a "instantaneous-HR"
-    style proxy (60000 / mean) gives the user a familiar number to
-    sanity-check device output (e.g. ~1 Hz for resting adults).
+    RR series are unevenly sampled by nature; HR is the meaningful
+    sanity-check metric (e.g. ~75 BPM for resting adults).
     Returns None when no finite values are available.
+
+    Earlier builds shipped this as ``_approx_sfreq_hz`` and labelled
+    the value "Hz" — that was a unit mislabel: 60000/mean_RR yields
+    beats per minute, not samples per second. RR-derived sampling
+    frequency would be ``1000 / mean_RR_ms``.
     """
     import numpy as np
 
@@ -175,8 +179,8 @@ class InfoDock(QDockWidget):
         self._file_label = _CopyableLabel(container)
         form.addRow("File:", self._file_label)
 
-        self._sfreq_label = QLabel(_EMPTY, container)
-        form.addRow("Approx. sf:", self._sfreq_label)
+        self._hr_label = QLabel(_EMPTY, container)
+        form.addRow("Approx. HR:", self._hr_label)
 
         self._length_label = QLabel(_EMPTY, container)
         form.addRow("Length:", self._length_label)
@@ -241,12 +245,12 @@ class InfoDock(QDockWidget):
         # InspectorData does not carry its source path.
         self._file_label.setText(filename or _EMPTY)
 
-        # Sampling-frequency approximation.
-        sfreq = _approx_sfreq_hz(data)
-        if sfreq is None:
-            self._sfreq_label.setText(_EMPTY)
+        # Mean-HR approximation (60000 / mean_RR_ms).
+        hr = _approx_hr_bpm(data)
+        if hr is None:
+            self._hr_label.setText(_EMPTY)
         else:
-            self._sfreq_label.setText(f"{sfreq:.2f} Hz")
+            self._hr_label.setText(f"{hr:.1f} BPM")
 
         # Length: t_end - t_start in seconds (may be 0 for an
         # all-NaN dataset; the formatter handles that case).
@@ -271,7 +275,7 @@ class InfoDock(QDockWidget):
     def clear(self) -> None:
         """Reset every row to the empty placeholder."""
         self._file_label.setText(_EMPTY)
-        self._sfreq_label.setText(_EMPTY)
+        self._hr_label.setText(_EMPTY)
         self._length_label.setText(_EMPTY)
         self._windows_label.setText(_EMPTY)
         self._exclusions_label.setText(_EMPTY)

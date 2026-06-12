@@ -112,7 +112,12 @@ class ParticipantGridWidget(pg.GraphicsLayoutWidget):
 
             # Subject-ID label (top-left). Round 16 — bumped font size +
             # bold + filled background so the ID stays readable against
-            # both light and dark tachogram backgrounds.
+            # both light and dark tachogram backgrounds. Round 23 — pin
+            # to the view range like the HR badge so the badge stays in
+            # the visible viewport: setPos in data coords previously
+            # placed it at (0, 0), which is BELOW the visible y range
+            # for any RR signal (y in [~600, ~900] ms). The badge was
+            # rendered but off-screen, leaving cells looking captionless.
             id_item = pg.TextItem(
                 subject_id,
                 anchor=(0, 0),
@@ -120,8 +125,12 @@ class ParticipantGridWidget(pg.GraphicsLayoutWidget):
                 fill=QColor(*_BADGE_BG),
             )
             id_item.setFont(id_font)
-            id_item.setPos(0, 0)
             plot.addItem(id_item)
+            vb_id = plot.getViewBox()
+            vb_id.sigRangeChanged.connect(
+                lambda *_args, b=id_item, p=plot: _pin_top_left(b, p)
+            )
+            _pin_top_left(id_item, plot)
 
             # Mean-HR badge (top-right). Converts mean RR -> mean HR.
             finite = rr_arr[np.isfinite(rr_arr)]
@@ -193,3 +202,19 @@ def _pin_top_right(item: pg.TextItem, plot: pg.PlotItem) -> None:
     x_hi = float(rng[0][1])
     y_hi = float(rng[1][1])
     item.setPos(x_hi, y_hi)
+
+
+def _pin_top_left(item: pg.TextItem, plot: pg.PlotItem) -> None:
+    """Reposition a TextItem to the top-left corner of a PlotItem's view.
+
+    Mirrors :func:`_pin_top_right` for the subject-ID badge. In pyqtgraph
+    a TextItem placed at static data-coords (0, 0) sits BELOW the visible
+    y-range for any positive-valued RR signal, so the badge needs to
+    re-pin every time autoRange resolves a new view bounds (load / pan /
+    zoom).
+    """
+    vb = plot.getViewBox()
+    rng = vb.viewRange()
+    x_lo = float(rng[0][0])
+    y_hi = float(rng[1][1])
+    item.setPos(x_lo, y_hi)
