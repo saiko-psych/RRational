@@ -1167,6 +1167,19 @@ class MainWindow(QMainWindow):
             "<tr><td><b>Mouse wheel</b></td><td>Zoom around cursor</td></tr>"
             "<tr><td><b>Right-click</b></td><td>Plot context menu</td></tr>"
             "<tr><td colspan='2'><hr></td></tr>"
+            # Round 25 — the F1 reference was missing the plot shortcuts
+            # that walkthrough page 3 actually documents (A/E/R/1/2/3)
+            # plus the HUD/Zen toggles. A keyboard user pressing F1
+            # expecting completeness got an incomplete reference.
+            "<tr><td><b>R</b></td><td>Reset zoom to full recording</td></tr>"
+            "<tr><td><b>1 / 2 / 3</b></td><td>Last 1 min / 10 min / full window</td></tr>"
+            "<tr><td><b>A</b></td><td>Toggle annotation mode</td></tr>"
+            "<tr><td><b>E</b></td><td>Toggle exclusion mode</td></tr>"
+            "<tr><td><b>C</b></td><td>Toggle crosshair</td></tr>"
+            "<tr><td><b>H</b></td><td>Toggle HUD overlay</td></tr>"
+            "<tr><td><b>Z</b></td><td>Toggle zen mode</td></tr>"
+            "<tr><td><b>Delete</b></td><td>Delete selected exclusion zone</td></tr>"
+            "<tr><td colspan='2'><hr></td></tr>"
             "<tr><td><b>F1</b></td><td>This dialog</td></tr>"
             "</table>"
         )

@@ -662,6 +662,16 @@ def _compute_metrics_with_settings(
     try:
         metrics, _, _ = calculate_hrv_metrics(nn_ms_list=rr_ms.tolist(), **kwargs)
     except Exception:
+        # Silent NaN fallback used to hide every compute error — a SciPy
+        # version mismatch, a shape bug, an import error all produced a
+        # table full of em-dashes with no clue to the user OR developer.
+        # Log via the central logger so the verbose flag surfaces the
+        # traceback without forcing a popup on the user.
+        import logging
+
+        logging.getLogger("rrational.inspector.analysis").warning(
+            "HRV compute failed; returning NaN placeholder.", exc_info=True
+        )
         metrics = {m: float("nan") for m in selected}
     return metrics, selected
 
@@ -1819,11 +1829,13 @@ class _SequenceComparisonPane(QWidget):
         outer.addWidget(QLabel("<b>Per-dataset trajectories</b>"))
         import pyqtgraph as pg
 
-        self._plot_widget = pg.PlotWidget(background="w")
+        # Inherit the global pyqtgraph theme so the panel stays usable
+        # under the dark QSS — the previous hardcoded white background +
+        # black axis pens rendered as an unreadable bright box in dark
+        # mode (same regression class as Round 24's group_charts fix).
+        self._plot_widget = pg.PlotWidget()
         self._plot_widget.setMinimumHeight(220)
         self._plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        self._plot_widget.getAxis("left").setPen("k")
-        self._plot_widget.getAxis("bottom").setPen("k")
         outer.addWidget(self._plot_widget, 1)
 
         # ---- Post-hoc table ------------------------------------------

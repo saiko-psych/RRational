@@ -369,6 +369,19 @@ class WalkthroughDialog(QDialog):
         self._stack.currentChanged.connect(self._on_page_changed)
         self._on_page_changed(0)
 
+        # Round 25 — keyboard-only navigation. Left / Right arrow keys
+        # mirror the Previous / Next buttons so a screen-reader user
+        # doesn't have to Tab around the dialog every page turn.
+        # PgUp / PgDn match the wizard-style convention many users expect.
+        from qtpy.QtGui import QKeySequence, QShortcut
+
+        for key in (Qt.Key_Left, Qt.Key_PageUp):
+            sc = QShortcut(QKeySequence(key), self)
+            sc.activated.connect(self._on_prev)
+        for key in (Qt.Key_Right, Qt.Key_PageDown):
+            sc = QShortcut(QKeySequence(key), self)
+            sc.activated.connect(self._on_next)
+
     # ------------------------------------------------------------------
     def _build_page(self, page: WalkthroughPage) -> QWidget:
         """Construct a QWidget for a single ``WalkthroughPage`` entry."""

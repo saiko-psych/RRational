@@ -437,7 +437,14 @@ class RRPlotWidget(pg.PlotWidget):
     # ------------------------------------------------------------------
     def _make_shortcut(self, key_seq: QKeySequence, slot) -> QShortcut:
         sc = QShortcut(key_seq, self)
-        sc.setContext(Qt.WindowShortcut)
+        # Round 25 — was Qt.WindowShortcut, which made A / E / R / 1 / 2
+        # / 3 / Z / H / C / Delete fire from ANY tab. A user typing into
+        # the Analysis tab's text fields would silently flip the Browse
+        # plot's annotation/exclusion mode every time they pressed "a"
+        # or "e". WidgetWithChildrenShortcut scopes activation to the
+        # plot widget or its focus chain, so typing in other tabs no
+        # longer hijacks plot state.
+        sc.setContext(Qt.WidgetWithChildrenShortcut)
         sc.activated.connect(slot)
         return sc
 

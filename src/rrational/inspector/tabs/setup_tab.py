@@ -50,8 +50,18 @@ if TYPE_CHECKING:
 
 
 def _fmt_time(t: float) -> str:
-    """seconds-since-epoch → HH:MM:SS for human-readable tables."""
-    return datetime.fromtimestamp(t).strftime("%H:%M:%S")
+    """seconds-since-epoch → HH:MM:SS for human-readable tables.
+
+    Defensive against negative / out-of-range timestamps: Windows raises
+    ``OSError`` from ``datetime.fromtimestamp(neg)``, which previously
+    crashed the entire Setup-tab refresh and left the sections table
+    empty with no message. Falls back to a hyphen placeholder so the
+    row still renders.
+    """
+    try:
+        return datetime.fromtimestamp(t).strftime("%H:%M:%S")
+    except (OverflowError, OSError, ValueError):
+        return "—"
 
 
 def _fmt_duration(seconds: float) -> str:
@@ -291,7 +301,7 @@ class _EventsPane(QWidget):
             f"<b>Defined events</b> (saved to "
             f"{format_config_path('config/events.yml')}, Streamlit-shared)"
         )
-        self._info_label.setStyleSheet("color: #777;")
+        self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
 
         btn_row = QHBoxLayout()
@@ -521,7 +531,7 @@ class _SectionDefinitionDialog(QDialog):
                 "then return to define which events bound this section.</i>"
             )
             note.setWordWrap(True)
-            note.setStyleSheet("color: #888;")
+            note.setProperty("muted", True)
             outer.addWidget(note)
 
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -618,7 +628,7 @@ class _SectionsPane(QWidget):
             f"<b>Defined sections</b> (saved to "
             f"{format_config_path('config/sections.yml')}, Streamlit-shared)"
         )
-        self._info_label.setStyleSheet("color: #777;")
+        self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
 
         btn_row = QHBoxLayout()
@@ -854,7 +864,7 @@ class _GroupEditDialog(QDialog):
                 "this group with files open.</i>"
             )
             note.setWordWrap(True)
-            note.setStyleSheet("color: #888;")
+            note.setProperty("muted", True)
             members_layout.addWidget(note)
         outer.addWidget(members_box)
 
@@ -928,7 +938,7 @@ class _GroupsPane(QWidget):
             f"Shared with the Streamlit app.</i>"
         )
         self._info_label.setWordWrap(True)
-        self._info_label.setStyleSheet("color: #777;")
+        self._info_label.setProperty("muted", True)
         layout.addWidget(self._info_label)
 
         btn_row = QHBoxLayout()
@@ -1258,7 +1268,7 @@ class _SequencesPane(QWidget):
             "available to the Analysis tab's Sequence-Comparison mode.</i>"
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #777;")
+        info.setProperty("muted", True)
         outer.addWidget(info)
 
         # Buttons
@@ -1504,7 +1514,7 @@ class _ProtocolPane(QWidget):
             f"Streamlit-shared)."
         )
         self._info_label.setWordWrap(True)
-        self._info_label.setStyleSheet("color: #777;")
+        self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
 
         from qtpy.QtWidgets import QDoubleSpinBox, QSpinBox
