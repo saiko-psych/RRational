@@ -89,6 +89,13 @@ class PSDPlot(QWidget):
         self._pw.showGrid(x=True, y=True, alpha=0.3)
         self._pw.setLabel("bottom", "Frequency (Hz)")
         self._pw.setLabel("left", "Power (ms^2/Hz)")
+        # HRV bands sit in [0.003 .. 0.5] Hz — pyqtgraph's auto SI-prefix
+        # rescales the visible tick values to 40 / 150 / 400 with a
+        # "(x0.001)" suffix on the axis label, which is unreadable for
+        # a clinical user expecting 0.04 / 0.15 / 0.40. Disable on both
+        # axes so the displayed numbers match the units shown in the label.
+        self._pw.getAxis("bottom").enableAutoSIPrefix(False)
+        self._pw.getAxis("left").enableAutoSIPrefix(False)
         if section_label:
             self._pw.setTitle(f"Power spectral density — {section_label}")
         else:
