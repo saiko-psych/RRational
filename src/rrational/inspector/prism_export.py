@@ -200,6 +200,11 @@ def export_prism_biometrics(
             raise ValueError(
                 f"PRISM entity labels must be alphanumeric. Got: {label!r}"
             )
+    # ``session`` flows into the file stem alongside the other entities —
+    # same alphanumeric guard so path-traversal payloads cannot escape
+    # ``out_dir``. None / empty is fine: _prism_basename drops the entity.
+    if session and not str(session).isalnum():
+        raise ValueError(f"PRISM session labels must be alphanumeric. Got: {session!r}")
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -234,7 +239,16 @@ def export_prism_biometrics(
 
 
 def _fmt_value(v) -> str:
-    """Stringify a numeric metric for TSV output without locale drift."""
+    """Stringify a numeric metric for TSV output without locale drift.
+
+    NaN and inf are mapped to the BIDS-spec ``"n/a"`` token. Without this
+    guard a short recording with missing frequency-domain metrics would
+    write the literal string ``"nan"`` into the TSV — invalid for
+    downstream PRISM-Studio validators that expect either a number or
+    ``n/a``.
+    """
+    import math
+
     if v is None:
         return "n/a"
     if isinstance(v, bool):
@@ -242,6 +256,9 @@ def _fmt_value(v) -> str:
     if isinstance(v, int):
         return str(v)
     try:
-        return f"{float(v):.6g}"
+        f = float(v)
     except (TypeError, ValueError):
         return str(v)
+    if math.isnan(f) or math.isinf(f):
+        return "n/a"
+    return f"{f:.6g}"

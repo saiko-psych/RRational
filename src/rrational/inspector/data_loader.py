@@ -73,6 +73,26 @@ class InspectorData:
     device: str = ""
     line_freq: float | None = None  # Hz — None when irrelevant (no AC mains)
 
+    def __post_init__(self) -> None:
+        # Round 24 — radical E2E surfaced a class of bugs where a caller
+        # built InspectorData with t.shape != v.shape (e.g. one-beat test
+        # fixtures). The mismatch slipped through add_dataset() and then
+        # crashed pyqtgraph deep inside the render path with the cryptic
+        # ``"X and Y arrays must be the same shape--got (2,) and (1,)"``.
+        # Fail fast at construction so the wrong layer owns the error.
+        t = np.asarray(self.t)
+        v = np.asarray(self.v)
+        if t.ndim != 1 or v.ndim != 1:
+            raise ValueError(
+                f"InspectorData.t and v must be 1-D arrays; got shapes "
+                f"{t.shape} and {v.shape}."
+            )
+        if t.shape != v.shape:
+            raise ValueError(
+                f"InspectorData.t and v must have the same length; got "
+                f"len(t)={t.shape[0]} and len(v)={v.shape[0]}."
+            )
+
     @property
     def t_start(self) -> float:
         """Timestamp of first non-gap sample."""

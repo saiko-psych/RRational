@@ -109,7 +109,7 @@ class GroupBarChart(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._pw = pg.PlotWidget(background="w")
+        self._pw = pg.PlotWidget()
         self._pw.setMinimumHeight(360)
         self._pw.showGrid(x=True, y=True, alpha=0.3)
         self._pw.setLabel("bottom", "Group")
@@ -165,11 +165,16 @@ class GroupBarChart(QWidget):
                 if show_points and len(vals) > 0:
                     jitter = rng.uniform(-slot * 0.15, slot * 0.15, size=len(vals))
                     pts_x = (g_idx + offset) + jitter
+                    # Theme-aware point overlay: pure black is invisible on
+                    # the dark theme. Use the foreground colour pyqtgraph
+                    # picks up from the global config so the point dots
+                    # contrast with whichever background the user has set.
+                    fg = pg.getConfigOption("foreground")
                     scatter = pg.ScatterPlotItem(
                         x=pts_x,
                         y=vals,
                         size=4,
-                        brush=pg.mkBrush(pg.mkColor(0, 0, 0, 160)),
+                        brush=pg.mkBrush(pg.mkColor(fg)),
                         pen=pg.mkPen(None),
                     )
                     self._pw.addItem(scatter)
@@ -189,12 +194,15 @@ class GroupBarChart(QWidget):
             self._bar_count += len(xs)
 
             if error_bar_type != "None":
+                # Error bar pen matches foreground so it stays visible
+                # against either dark or light backgrounds (previously
+                # hardcoded "#333", invisible on the dark theme).
                 err_item = pg.ErrorBarItem(
                     x=np.asarray(xs, dtype=float),
                     y=np.asarray(heights, dtype=float),
                     top=np.asarray(err_hi, dtype=float),
                     bottom=np.asarray(err_lo, dtype=float),
-                    pen=pg.mkPen("#333", width=1),
+                    pen=pg.mkPen(pg.getConfigOption("foreground"), width=1),
                     beam=bar_width * 0.4,
                 )
                 self._pw.addItem(err_item)
@@ -263,7 +271,7 @@ class GroupBoxPlot(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._pw = pg.PlotWidget(background="w")
+        self._pw = pg.PlotWidget()
         self._pw.setMinimumHeight(360)
         self._pw.showGrid(x=True, y=True, alpha=0.3)
         self._pw.setLabel("bottom", "Group")
@@ -382,7 +390,7 @@ class GroupViolinPlot(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._pw = pg.PlotWidget(background="w")
+        self._pw = pg.PlotWidget()
         self._pw.setMinimumHeight(360)
         self._pw.showGrid(x=True, y=True, alpha=0.3)
         self._pw.setLabel("bottom", "Group")
@@ -493,7 +501,7 @@ class SD1SD2Scatter(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._pw = pg.PlotWidget(background="w")
+        self._pw = pg.PlotWidget()
         self._pw.setMinimumHeight(360)
         self._pw.showGrid(x=True, y=True, alpha=0.3)
         self._pw.setLabel("bottom", "SD2 (ms) — long-term")
@@ -517,12 +525,14 @@ class SD1SD2Scatter(QWidget):
         categories = sorted(df[color_by].astype(str).unique().tolist())
         for i, cat in enumerate(categories):
             subset = df[df[color_by].astype(str) == cat]
+            # Drop the white separator pen — invisible in light theme.
+            # The category-coloured brush already discriminates clusters.
             scatter = pg.ScatterPlotItem(
                 x=subset["sd2"].to_numpy(dtype=float),
                 y=subset["sd1"].to_numpy(dtype=float),
                 size=10,
                 brush=pg.mkBrush(palette[i % len(palette)]),
-                pen=pg.mkPen("#FFFFFF", width=1),
+                pen=pg.mkPen(None),
                 name=str(cat),
             )
             self._pw.addItem(scatter)

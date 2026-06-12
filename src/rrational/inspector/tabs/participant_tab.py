@@ -479,9 +479,18 @@ class ParticipantTab(InspectorTab):
         self._plot.setMinimumSize(400, 300)
 
         self._nn_summary = QLabel("No artifact detection run yet on this participant.")
+        # objectName routes the QSS rule through the app-wide theme so
+        # dark mode picks up its own AlternateBase/Mid palette instead of
+        # the previously hardcoded light grey-on-light-grey block that
+        # rendered as a jarring band in dark theme.
+        self._nn_summary.setObjectName("nnSummaryLabel")
         self._nn_summary.setStyleSheet(
-            "color: #555; padding: 4px 8px; background: #f4f4f4; "
-            "border-top: 1px solid #ccc;"
+            "QLabel#nnSummaryLabel { "
+            "padding: 4px 8px; "
+            "border-top: 1px solid palette(mid); "
+            "color: palette(window-text); "
+            "background: palette(alternate-base); "
+            "}"
         )
         self._nn_summary.setWordWrap(True)
 

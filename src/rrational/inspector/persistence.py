@@ -114,8 +114,18 @@ def load_sequences() -> list[Sequence]:
 
 
 def save_sequences(sequences: list[Sequence]) -> None:
-    """Overwrite the on-disk sequence list."""
+    """Overwrite the on-disk sequence list atomically.
+
+    ``open("w")`` truncates immediately, leaving a window where a
+    concurrent Streamlit reader sees an empty/partial file and silently
+    drops every sequence. Write to a sibling temp file first, then
+    ``Path.replace()`` — atomic on POSIX, near-atomic on NTFS.
+    """
     p = _sequences_path()
     payload = {"sequences": [s.to_dict() for s in sequences]}
-    with p.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(payload, f, default_flow_style=False, allow_unicode=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(
+        yaml.safe_dump(payload, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    tmp.replace(p)

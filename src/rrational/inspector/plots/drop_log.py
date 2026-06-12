@@ -45,10 +45,12 @@ def build_drop_log_widget(counts: Mapping[str, int]) -> pg.PlotWidget:
     if not counts:
         # Placeholder: empty drop-log is the happy path — show a label
         # rather than a degenerate empty axes plot.
+        # Placeholder text colour follows the theme-aware foreground —
+        # "#555" was unreadable on the dark plot background.
         widget.addItem(
             pg.TextItem(
                 "No drops recorded.",
-                color=QColor("#555"),
+                color=QColor(pg.getConfigOption("foreground")),
                 anchor=(0.5, 0.5),
             )
         )

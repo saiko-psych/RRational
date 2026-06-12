@@ -191,6 +191,24 @@ def export_bids_physio(
         )
     if not task.isalnum():
         raise ValueError(f"BIDS task labels must be alphanumeric. Got: {task!r}")
+    # ``session`` flows directly into the file stem — apply the same
+    # alphanumeric guard so an attacker-supplied ``"../../../etc/passwd"``
+    # cannot escape ``out_dir`` via path traversal.
+    if session and not str(session).isalnum():
+        raise ValueError(
+            "BIDS session labels must be alphanumeric (a-z, A-Z, 0-9). "
+            f"Got: {session!r}"
+        )
+
+    # Refuse to export a recording with no finite timestamps — _sidecar_for
+    # would call ``data.t_start`` (which indexes the first finite element)
+    # and raise IndexError on an all-NaN array, leaking a confusing trace
+    # to the user. Surface a clear domain error instead.
+    if int(np.isfinite(data.t).sum()) == 0:
+        raise ValueError(
+            "Recording contains no finite timestamps; cannot derive BIDS "
+            "StartTime / SamplingFrequency."
+        )
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

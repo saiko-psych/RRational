@@ -30,13 +30,55 @@ _CELL_H = 140
 # Tachogram line — sky-blue to stay neutral against the Okabe-Ito
 # palette and not collide with stress-bands the user might overlay.
 _LINE_COLOR = "#2E86AB"
-# Round 16 — subject-ID badge was barely legible at thumbnail scale.
-# Promote to a bold white-on-translucent-dark fill so it stays readable
-# on top of both light and dark cell backgrounds.
-_BADGE_COLOR = "#ffffff"
-_BADGE_BG = (24, 26, 30, 220)
-_HR_BADGE_COLOR = "#1a1a1a"
-_HR_BADGE_BG = (255, 255, 255, 220)
+# Round 16 — subject-ID badge needed a bold + filled background to stay
+# legible at thumbnail scale. Round 24 — make the fill theme-aware via
+# ``_resolve_badge_colors`` so the badge contrast inverts with the
+# pyqtgraph background config (no jarring light blocks on dark theme,
+# no invisible white-on-white on light theme).
+_BADGE_TEXT_DARK = "#ffffff"
+_BADGE_FILL_DARK = (24, 26, 30, 220)
+_BADGE_TEXT_LIGHT = "#1a1a1a"
+_BADGE_FILL_LIGHT = (244, 246, 241, 220)
+
+
+def _resolve_badge_colors() -> tuple[
+    str, tuple[int, int, int, int], str, tuple[int, int, int, int]
+]:
+    """Return ``(id_text, id_fill, hr_text, hr_fill)`` for the active theme.
+
+    pyqtgraph's global ``background`` config is set by
+    ``rrational.inspector.app.set_plot_theme`` whenever the user flips
+    the QSS theme — we read it here so the badges stay readable on
+    both surfaces without forcing every caller to thread the theme
+    through.
+    """
+    bg = pg.getConfigOption("background")
+    # Heuristic: hex strings like "#f8f6f1" (light) start with f/e;
+    # dark surfaces like "#1a1d22" start with 0/1/2. ``QColor`` would
+    # be more robust but a string compare keeps this module dependency-free.
+    is_light = isinstance(bg, str) and bg.lower().lstrip("#")[:2] in (
+        "f0",
+        "f1",
+        "f2",
+        "f3",
+        "f4",
+        "f5",
+        "f6",
+        "f7",
+        "f8",
+        "f9",
+        "fa",
+        "fb",
+        "fc",
+        "fd",
+        "fe",
+        "ff",
+    )
+    if is_light:
+        return _BADGE_TEXT_LIGHT, _BADGE_FILL_LIGHT, _BADGE_TEXT_DARK, _BADGE_FILL_DARK
+    return _BADGE_TEXT_DARK, _BADGE_FILL_DARK, _BADGE_TEXT_LIGHT, _BADGE_FILL_LIGHT
+
+
 # Subject-ID label font (top-left). 12pt bold is comfortably readable at
 # the 220x140 thumbnail footprint without dominating the tachogram.
 _ID_FONT_PT = 12
@@ -82,6 +124,10 @@ class ParticipantGridWidget(pg.GraphicsLayoutWidget):
         id_font.setPointSize(_ID_FONT_PT)
         id_font.setBold(True)
 
+        # Resolve theme-aware badge colours once per render so dark/light
+        # surface swaps produce contrasting badges immediately.
+        id_text, id_fill, hr_text, hr_fill = _resolve_badge_colors()
+
         n = len(datasets)
         for i, (subject_id, t, rr) in enumerate(datasets):
             row, col = divmod(i, self._n_cols)
@@ -121,8 +167,8 @@ class ParticipantGridWidget(pg.GraphicsLayoutWidget):
             id_item = pg.TextItem(
                 subject_id,
                 anchor=(0, 0),
-                color=_BADGE_COLOR,
-                fill=QColor(*_BADGE_BG),
+                color=id_text,
+                fill=QColor(*id_fill),
             )
             id_item.setFont(id_font)
             plot.addItem(id_item)
@@ -139,8 +185,8 @@ class ParticipantGridWidget(pg.GraphicsLayoutWidget):
                 badge = pg.TextItem(
                     f"{mean_hr:.0f} bpm",
                     anchor=(1, 0),
-                    color=_HR_BADGE_COLOR,
-                    fill=QColor(*_HR_BADGE_BG),
+                    color=hr_text,
+                    fill=QColor(*hr_fill),
                 )
                 # Pin to right edge — we use ViewBox coordinates via
                 # the plot range; setting after data plot means

@@ -562,7 +562,10 @@ class ReportBuilder:
         exact code the user would download via the menu.
         """
         recorder = getattr(self._mw, "history", None)
-        if recorder is None or not getattr(recorder, "actions", None):
+        # HistoryRecorder exposes len() — getattr(recorder, "actions") read
+        # a non-existent attribute name (the real one is _actions, kept
+        # private) and silently shipped reports with an empty recipe.
+        if recorder is None or len(recorder) == 0:
             return None
         try:
             from rrational.inspector.history import to_script

@@ -128,8 +128,13 @@ class CompareCurvesDialog(QDialog):
         if b:
             groups["Group B"] = b
         if not groups:
+            # One populated group is enough for an overlay (the n=1 vs
+            # n=many cases handled by compare_hrv_curves itself); the
+            # error fires only when BOTH groups are empty.
             QMessageBox.information(
-                self, "Compare HRV curves", "Select at least one dataset per group."
+                self,
+                "Compare HRV curves",
+                "Select at least one dataset in Group A or Group B.",
             )
             return
 
