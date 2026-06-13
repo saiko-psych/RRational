@@ -219,7 +219,14 @@ class SectionRegion(pg.LinearRegionItem):
             pass
 
     def set_highlighted(self, highlighted: bool) -> None:
-        """Bump alpha when this section is the one selected in the sidebar."""
+        """Bump alpha when this section is the one selected in the sidebar.
+
+        Round 27 — verified ``LinearRegionItem.brush`` IS a QBrush
+        attribute (not a method) in pyqtgraph 0.13+. The reviewer's
+        flagged "AttributeError on .brush" was a false positive — the
+        attribute path works and is exercised by
+        test_section_region_set_highlighted_increases_alpha.
+        """
         fill = self.brush.color()
         fill.setAlpha(SECTION_ALPHA * 3 if highlighted else SECTION_ALPHA)
         self.setBrush(fill)
@@ -256,6 +263,15 @@ class EventMarker(pg.InfiniteLine):
         pen_color = QColor(color)
         pen_color.setAlpha(EVENT_LINE_ALPHA)
 
+        # Round 27 — label fill was hardcoded white-at-70% which became
+        # invisible against the light theme (white on near-white). Derive
+        # from the global pyqtgraph background so the fill stays a
+        # contrasting card on either theme.
+        bg = pg.getConfigOption("background")
+        bg_color = QColor(bg) if isinstance(bg, str) else QColor(255, 255, 255)
+        fill_color = QColor(bg_color)
+        fill_color.setAlpha(200)
+
         super().__init__(
             pos=t,
             angle=90,  # vertical
@@ -264,7 +280,12 @@ class EventMarker(pg.InfiniteLine):
             labelOpts={
                 "position": 0.95,  # near the top of the visible y-range
                 "color": pen_color,
-                "fill": (255, 255, 255, 180),
+                "fill": (
+                    fill_color.red(),
+                    fill_color.green(),
+                    fill_color.blue(),
+                    fill_color.alpha(),
+                ),
                 "movable": False,
             },
             movable=False,

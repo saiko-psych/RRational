@@ -120,11 +120,22 @@ class _Swatch(QPushButton):
 
     def set_color(self, color: QColor) -> None:
         self._color = QColor(color)
-        # Inline stylesheet so the colour is visible even on themes that
-        # otherwise paint the button background uniformly.
+        # Round 27 — ``self._color.name(QColor.HexRgb)`` silently strips
+        # the alpha channel. A translucent field like ``section_fill``
+        # (10% alpha) was rendered as a fully opaque swatch, and on the
+        # first innocent re-click the picker re-opened with alpha=1.00,
+        # permanently destroying the transparency on round-trip. Emit
+        # rgba() so the displayed swatch matches the underlying value.
+        # Note: Qt 8-digit hex parses as #AARRGGBB so we MUST NOT use
+        # HexArgb here — see [[feedback_qt_css_hex]].
+        r, g, b, a = (
+            self._color.red(),
+            self._color.green(),
+            self._color.blue(),
+            self._color.alphaF(),
+        )
         self.setStyleSheet(
-            f"background-color: {self._color.name(QColor.HexRgb)};"
-            " border: 1px solid #555;"
+            f"background-color: rgba({r}, {g}, {b}, {a:.3f}); border: 1px solid #555;"
         )
 
     def color(self) -> QColor:

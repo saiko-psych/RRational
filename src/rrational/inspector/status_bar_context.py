@@ -96,9 +96,14 @@ class StatusBarContext(QLabel):
     # ------------------------------------------------------------------
     def _render(self) -> None:
         # Pipe separators read more cleanly than commas in a narrow
-        # status bar and let the eye skim segments.
+        # status bar and let the eye skim segments. ``.get()`` with a
+        # fallback survives a future direct assignment to ``self._mode``
+        # that bypasses the normalisation in set_mode / refresh_all —
+        # Qt swallows exceptions from event-handler-triggered renders,
+        # so a KeyError here would crash the status bar silently.
+        mode_label = _MODE_LABELS.get(self._mode, _MODE_LABELS["normal"])
         self.setText(
-            f"{_MODE_LABELS[self._mode]}  |  "
+            f"{mode_label}  |  "
             f"Annotations: {self._n_annotations}  |  "
             f"Exclusions: {self._n_exclusions}  |  "
             f"Active: {self._dataset}"
