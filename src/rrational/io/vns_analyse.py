@@ -40,11 +40,13 @@ VNS_FILENAME_PATTERN = re.compile(r"(\d{2})\.(\d{2})\.(\d{4})\s+(\d{1,2})\.(\d{2
 # The participant ID is typically between the time and duration (e.g., "VP01", "P001", "SUB123")
 VNS_PARTICIPANT_PATTERN = re.compile(
     r"\d{2}\.\d{2}\.\d{4}\s+\d{1,2}\.\d{2}\s+(?P<participant>[A-Za-z0-9_-]+?)(?:\s+\d+h|\s+\d+min|\.txt)",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
 
 
-def extract_vns_participant_id(filename: str, fallback_pattern: str = DEFAULT_ID_PATTERN) -> str:
+def extract_vns_participant_id(
+    filename: str, fallback_pattern: str = DEFAULT_ID_PATTERN
+) -> str:
     """Extract participant ID from VNS filename.
 
     VNS filename format: "dd.mm.yyyy hh.mm <participant_id> xh xxmin.txt"
@@ -195,7 +197,7 @@ def discover_vns_recordings(
 def _load_single_vns_file(
     path: Path,
     *,
-    use_corrected: bool = False,
+    use_corrected: bool = True,
 ) -> tuple[list[RRInterval], list[EventMarker], dict[str, str]]:
     """Load a single VNS Analyse file.
 
@@ -268,11 +270,13 @@ def _load_single_vns_file(
                 # Calculate timestamp based on cumulative RR values
                 timestamp = base_time + timedelta(milliseconds=cumulative_ms)
 
-                rr_intervals.append(RRInterval(
-                    timestamp=timestamp,
-                    rr_ms=rr_ms,
-                    elapsed_ms=cumulative_ms,
-                ))
+                rr_intervals.append(
+                    RRInterval(
+                        timestamp=timestamp,
+                        rr_ms=rr_ms,
+                        elapsed_ms=cumulative_ms,
+                    )
+                )
 
                 # Check for note (Notiz: or just Notiz)
                 if len(parts) > 1:
@@ -282,18 +286,22 @@ def _load_single_vns_file(
                         # Use "marker" as default label if no text provided
                         if not note_label:
                             note_label = "marker"
-                        events.append(EventMarker(
-                            label=note_label,
-                            timestamp=timestamp,
-                            offset_s=cumulative_ms / 1000.0,
-                        ))
+                        events.append(
+                            EventMarker(
+                                label=note_label,
+                                timestamp=timestamp,
+                                offset_s=cumulative_ms / 1000.0,
+                            )
+                        )
                     elif note_text == "Notiz":
                         # Handle case where user forgot to add text (just "Notiz")
-                        events.append(EventMarker(
-                            label="marker",
-                            timestamp=timestamp,
-                            offset_s=cumulative_ms / 1000.0,
-                        ))
+                        events.append(
+                            EventMarker(
+                                label="marker",
+                                timestamp=timestamp,
+                                offset_s=cumulative_ms / 1000.0,
+                            )
+                        )
 
                 cumulative_ms += rr_ms
 
@@ -306,13 +314,19 @@ def _load_single_vns_file(
 def load_vns_recording(
     bundle: VNSRecordingBundle,
     *,
-    use_corrected: bool = False,
+    use_corrected: bool = True,
 ) -> VNSRecording:
     """Load VNS Analyse file(s) and return parsed data.
 
     Supports multiple files per participant (merges all files).
     Data is sorted by timestamp after merging.
     Detects gaps and overlaps between files.
+
+    Round 28 — default flipped from False to True so the Streamlit
+    legacy app produces the SAME beat series as the Inspector's
+    ``load_generic_rr`` (which has always defaulted to corrected).
+    Before the fix, identical VNS files produced different RMSSD
+    values depending on which app loaded them.
 
     VNS format:
     - Header sections with tab-separated key-value pairs
@@ -342,13 +356,15 @@ def load_vns_recording(
         if start_time and duration_ms > 0:
             end_time = start_time + timedelta(milliseconds=duration_ms)
 
-        file_segments.append(VNSFileSegment(
-            file_path=path,
-            start_time=start_time,
-            end_time=end_time,
-            duration_ms=duration_ms,
-            beat_count=len(rr_intervals),
-        ))
+        file_segments.append(
+            VNSFileSegment(
+                file_path=path,
+                start_time=start_time,
+                end_time=end_time,
+                duration_ms=duration_ms,
+                beat_count=len(rr_intervals),
+            )
+        )
 
         all_rr_intervals.extend(rr_intervals)
         all_events.extend(events)
@@ -362,8 +378,7 @@ def load_vns_recording(
     if len(file_segments) > 1:
         # Sort segments by start time
         sorted_segments = sorted(
-            file_segments,
-            key=lambda s: s.start_time if s.start_time else datetime.min
+            file_segments, key=lambda s: s.start_time if s.start_time else datetime.min
         )
 
         for i in range(len(sorted_segments) - 1):
@@ -374,24 +389,32 @@ def load_vns_recording(
                 if seg1.end_time < seg2.start_time:
                     # Gap detected
                     gap_duration = (seg2.start_time - seg1.end_time).total_seconds()
-                    gaps.append(VNSRecordingGap(
-                        after_file=seg1.file_path,
-                        before_file=seg2.file_path,
-                        gap_start=seg1.end_time,
-                        gap_end=seg2.start_time,
-                        gap_duration_s=gap_duration,
-                    ))
+                    gaps.append(
+                        VNSRecordingGap(
+                            after_file=seg1.file_path,
+                            before_file=seg2.file_path,
+                            gap_start=seg1.end_time,
+                            gap_end=seg2.start_time,
+                            gap_duration_s=gap_duration,
+                        )
+                    )
                 elif seg1.end_time > seg2.start_time:
                     # Overlap detected
-                    overlap_end = min(seg1.end_time, seg2.end_time) if seg2.end_time else seg1.end_time
+                    overlap_end = (
+                        min(seg1.end_time, seg2.end_time)
+                        if seg2.end_time
+                        else seg1.end_time
+                    )
                     overlap_duration = (overlap_end - seg2.start_time).total_seconds()
-                    overlaps.append(VNSRecordingOverlap(
-                        file1=seg1.file_path,
-                        file2=seg2.file_path,
-                        overlap_start=seg2.start_time,
-                        overlap_end=overlap_end,
-                        overlap_duration_s=overlap_duration,
-                    ))
+                    overlaps.append(
+                        VNSRecordingOverlap(
+                            file1=seg1.file_path,
+                            file2=seg2.file_path,
+                            overlap_start=seg2.start_time,
+                            overlap_end=overlap_end,
+                            overlap_duration_s=overlap_duration,
+                        )
+                    )
 
     # Sort RR intervals by timestamp (handles merged files from restarts)
     all_rr_intervals.sort(

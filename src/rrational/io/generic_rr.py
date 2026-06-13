@@ -609,7 +609,12 @@ def _parse_hrv_logger(path: Path) -> tuple[list[RRInterval], dict]:
                     continue
                 try:
                     ts_ms = int(float(row[ts_idx].strip()))
-                    rr_ms = float(row[rr_idx].strip())
+                    # Round 28 — RRInterval.rr_ms is declared ``int`` in
+                    # the slots dataclass; storing float here silently
+                    # broke every downstream ``%d`` format and any int
+                    # arithmetic. Every other parser uses int(round(...))
+                    # — match that contract.
+                    rr_ms = int(round(float(row[rr_idx].strip())))
                 except (ValueError, IndexError):
                     continue
                 elapsed = None

@@ -128,7 +128,21 @@ def detect_time_gaps(
         if not np.any(valid_mask):
             return empty
 
-        ts_seconds = np.array([t.timestamp() if t else np.nan for t in timestamps])
+        # Round 28 — datetime.timestamp() on a naive datetime uses the
+        # LOCAL system timezone, so a DST transition can falsely show as
+        # a 1-hour gap (or a backward fold producing a negative diff).
+        # Use calendar.timegm() for naive datetimes (treats as UTC) and
+        # the canonical .timestamp() only for tz-aware inputs.
+        import calendar
+
+        def _safe_epoch(t):
+            if t is None:
+                return np.nan
+            if t.tzinfo is not None:
+                return t.timestamp()
+            return float(calendar.timegm(t.timetuple()))
+
+        ts_seconds = np.array([_safe_epoch(t) for t in timestamps])
         ts_diff = np.diff(ts_seconds)
 
         if rr_values is not None and len(rr_values) == len(timestamps):
@@ -171,7 +185,19 @@ def detect_time_gaps(
             "total_gap_duration_s": total_gap_duration,
             "gap_ratio": gap_ratio,
         }
-    except Exception:
+    except (AttributeError, TypeError, ValueError) as exc:
+        # Round 28 — bare ``except Exception`` previously hid every
+        # bug class including KeyboardInterrupt, NameError, and any
+        # future numpy API regression. Narrow to the actual recoverable
+        # cases (malformed timestamps / non-numeric values), log the
+        # rest so silent corruption stops happening.
+        import logging
+
+        logging.getLogger("rrational.cleaning.quality").warning(
+            "detect_time_gaps recovered from %s; returning empty result.",
+            type(exc).__name__,
+            exc_info=True,
+        )
         return empty
 
 
@@ -213,7 +239,11 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
 
     try:
         rr_array = np.array(rr_values, dtype=float)
-        peak_indices = np.cumsum(rr_array).astype(int)
+        # Round 28 — astype(int) defaults to the platform native int
+        # (32-bit on Windows builds), which silently wraps to negative
+        # for any cumulative ms total > 2^31 (~25 days). Explicit int64
+        # so 24h+ Holter recordings keep monotonic peak indices.
+        peak_indices = np.cumsum(rr_array).astype(np.int64)
         peak_indices = np.insert(peak_indices, 0, 0)
 
         # Detection: iterative=False finds ALL artifacts

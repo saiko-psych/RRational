@@ -64,8 +64,14 @@ def _try(label, fn):
 
 
 def _one_beat_dataset() -> Dataset:
-    """Single RR interval — every windowed metric should degenerate."""
-    t = np.array([0.0, 0.8])
+    """Single RR interval — every windowed metric should degenerate.
+
+    Round 28 — fixture had mismatched shapes (t=2, v=1) which now
+    correctly fails the Round 24 InspectorData validation guard. Use
+    matching one-element arrays so we still exercise the n=1 edge case
+    without tripping the dimension check.
+    """
+    t = np.array([0.0])
     v = np.array([800.0])
     return Dataset(name="degenerate_1_beat.csv", data=InspectorData(t=t, v=v))
 

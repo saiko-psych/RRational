@@ -13,13 +13,19 @@ from rrational.io.hrv_logger import RRInterval
 class CleaningConfig:
     """Thresholds used for RR filtering.
 
-    Note: sudden_change_pct=1.0 (100%) effectively disables sudden change detection.
-    Use NeuroKit2's artifact correction for proper artifact detection instead.
+    Note: sudden_change_pct=1.0 is lenient (100% threshold) — it only
+    catches beats that more than DOUBLE or HALVE the previous RR. True
+    ectopic / artefact bursts in the 30-90% range pass through. Use
+    NeuroKit2's artifact correction (DetectArtifacts action) for proper
+    physiological screening.
     """
 
     rr_min_ms: int = 200
     rr_max_ms: int = 2000
-    sudden_change_pct: float = 1.0  # Disabled by default - use NeuroKit2 artifact correction
+    # 1.0 = lenient (>100% relative change). See class docstring; the
+    # earlier comment "Disabled by default" was inaccurate — a 100%
+    # threshold still flags 2x / 0.5x jumps. Round 28 documentation fix.
+    sudden_change_pct: float = 1.0
 
 
 @dataclass(slots=True)
@@ -46,6 +52,7 @@ def _artifact_ratio(total: int, removed: int) -> float:
 @dataclass(slots=True)
 class FlaggedRRInterval:
     """An RR interval with its flag status."""
+
     interval: RRInterval
     is_flagged: bool
     flag_reason: str | None = None  # "out_of_range" or "sudden_change"
@@ -129,11 +136,11 @@ def clean_rr_intervals_with_flags(
                 reasons["sudden_change"] += 1
 
         is_flagged = flag_reason is not None
-        result.append(FlaggedRRInterval(
-            interval=sample,
-            is_flagged=is_flagged,
-            flag_reason=flag_reason
-        ))
+        result.append(
+            FlaggedRRInterval(
+                interval=sample, is_flagged=is_flagged, flag_reason=flag_reason
+            )
+        )
 
         if not is_flagged:
             retained += 1
@@ -187,4 +194,11 @@ def rr_summary(samples: Sequence[RRInterval]) -> dict[str, float]:
     }
 
 
-__all__ = ["CleaningConfig", "CleaningStats", "FlaggedRRInterval", "clean_rr_intervals", "clean_rr_intervals_with_flags", "rr_summary"]
+__all__ = [
+    "CleaningConfig",
+    "CleaningStats",
+    "FlaggedRRInterval",
+    "clean_rr_intervals",
+    "clean_rr_intervals_with_flags",
+    "rr_summary",
+]

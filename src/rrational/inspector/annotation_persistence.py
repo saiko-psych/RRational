@@ -75,13 +75,47 @@ def save_annotations(
     # Atomic write — same pattern as save_sequences / save_exclusion_zones
     # in Round 24/26. A concurrent Streamlit reader between truncate and
     # flush previously saw an empty file and silently dropped the list.
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # Round 28 — Windows holds an exclusive lock on the destination file
+    # while a reader has it open, so a plain ``tmp.replace()`` raises
+    # PermissionError under contention. Retry with exponential backoff
+    # so the legitimate concurrent-read case eventually wins.
+    _atomic_replace(path, payload)
+    return path
+
+
+def _atomic_replace(path: Path, payload: dict) -> None:
+    """Write ``payload`` to ``path`` atomically, with Windows-safe retries.
+
+    Uses a per-call unique tmp suffix (pid + nanoseconds) so concurrent
+    writers don't trample each other's staging file. The earlier shared
+    ``.tmp`` suffix lost a race when two threads saved simultaneously —
+    one wrote, the other overwrote, the first ``replace()`` then failed
+    with FileNotFoundError.
+    """
+    import os
+    import time
+
+    tmp = path.with_suffix(f"{path.suffix}.{os.getpid()}.{time.time_ns()}.tmp")
     tmp.write_text(
         yaml.safe_dump(payload, default_flow_style=False, allow_unicode=True),
         encoding="utf-8",
     )
-    tmp.replace(path)
-    return path
+    last_exc: BaseException | None = None
+    for attempt in range(5):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            # 20 ms, 40 ms, 80 ms, 160 ms, 320 ms — total < 0.7 s
+            time.sleep(0.02 * (2**attempt))
+    if last_exc is not None:
+        # Best-effort cleanup of the stranded tmp file before re-raising.
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise last_exc
 
 
 def load_annotations(

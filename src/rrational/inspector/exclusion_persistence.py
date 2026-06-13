@@ -173,12 +173,34 @@ def save_exclusion_zones(
     # Atomic write: a concurrent Streamlit reader between truncate
     # and flush previously saw an empty file and silently dropped
     # every exclusion. Same pattern as Round 24's save_sequences fix.
-    tmp = p.with_suffix(p.suffix + ".tmp")
+    # Round 28 — Windows rejects ``replace()`` if the target is open
+    # by another process; retry with backoff so the concurrent-read
+    # contention case actually wins instead of crashing the GUI. Use
+    # a per-call unique tmp suffix so concurrent writers from the same
+    # process don't trample each other's staging file (the earlier
+    # shared ``.tmp`` lost the race with FileNotFoundError).
+    import os
+    import time
+
+    tmp = p.with_suffix(f"{p.suffix}.{os.getpid()}.{time.time_ns()}.tmp")
     tmp.write_text(
         yaml.safe_dump(payload, default_flow_style=False, allow_unicode=True),
         encoding="utf-8",
     )
-    tmp.replace(p)
+    last_exc: BaseException | None = None
+    for attempt in range(5):
+        try:
+            tmp.replace(p)
+            return p
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.02 * (2**attempt))
+    if last_exc is not None:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise last_exc
     return p
 
 

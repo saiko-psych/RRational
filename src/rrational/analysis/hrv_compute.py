@@ -149,7 +149,9 @@ def calculate_hrv_metrics(
         freq_method: Frequency-domain pipeline. "neurokit" uses NK2 defaults
             (normalized PSD, 100 Hz interpolation). "kubios" matches Kubios
             HRV Scientific (absolute ms², 4 Hz interpolation, bands
-            VLF 0-0.04, LF 0.04-0.15, HF 0.15-0.40 Hz).
+            VLF 0.0033-0.04, LF 0.04-0.15, HF 0.15-0.40 Hz). The VLF
+            lower bound deliberately excludes the ULF band per Task Force
+            1996 — earlier docstring incorrectly said "VLF 0-0.04".
 
     Returns:
         (metrics_dict, std_dict_or_None, n_windows)

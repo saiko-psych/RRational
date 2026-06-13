@@ -121,11 +121,30 @@ def save_sequences(sequences: list[Sequence]) -> None:
     drops every sequence. Write to a sibling temp file first, then
     ``Path.replace()`` — atomic on POSIX, near-atomic on NTFS.
     """
+    import os
+    import time
+
     p = _sequences_path()
     payload = {"sequences": [s.to_dict() for s in sequences]}
-    tmp = p.with_suffix(p.suffix + ".tmp")
+    # Round 28 — per-call unique tmp suffix so concurrent writers
+    # don't share a staging file (FileNotFoundError race) AND retry
+    # the replace on Windows PermissionError (concurrent reader lock).
+    tmp = p.with_suffix(f"{p.suffix}.{os.getpid()}.{time.time_ns()}.tmp")
     tmp.write_text(
         yaml.safe_dump(payload, default_flow_style=False, allow_unicode=True),
         encoding="utf-8",
     )
-    tmp.replace(p)
+    last_exc: BaseException | None = None
+    for attempt in range(5):
+        try:
+            tmp.replace(p)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.02 * (2**attempt))
+    if last_exc is not None:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise last_exc
