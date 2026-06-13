@@ -88,6 +88,12 @@ def generate_segments(
     ends = np.minimum(ends, total_ms)
 
     # vectorized boundary lookup
+    # Round 29 — verified that side="left" on BOTH starts and ends is
+    # the intended convention: adjacent windows share the same beat
+    # index (segs[0].beat_end == segs[1].beat_start) so a 300 s / 800 ms
+    # window produces 375 beats, not 376. The agent's "off-by-one"
+    # claim was a misread of the dataclass docstring. See
+    # tests/segments/test_segmentation.py for the encoded invariant.
     beat_starts = np.searchsorted(elapsed, starts, side="left")
     beat_ends = np.searchsorted(elapsed, ends, side="left")
 

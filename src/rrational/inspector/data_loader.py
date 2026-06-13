@@ -276,8 +276,19 @@ def load_inspector_data(filepath: Path) -> InspectorData:
         if not sec.validation or not sec.validation.start_event:
             continue
 
+        # Round 29 — datetime.fromisoformat() on an ISO string without
+        # offset returns a naive datetime; .timestamp() then uses LOCAL
+        # tz, so the epoch values for events recorded across a DST
+        # transition drift by 3600 s vs. each other. Convert via
+        # calendar.timegm() (treats naive as UTC) so cross-section
+        # alignment stays DST-stable.
+        import calendar
+
         start_dt = datetime.fromisoformat(sec.validation.start_event.timestamp)
-        start_epoch = start_dt.timestamp()
+        if start_dt.tzinfo is not None:
+            start_epoch = start_dt.timestamp()
+        else:
+            start_epoch = float(calendar.timegm(start_dt.timetuple()))
 
         # Each row: [offset_ms_from_section_start, rr_ms, is_corrected]
         rows = np.asarray(sec.nn_intervals.data, dtype=np.float64)
@@ -304,10 +315,14 @@ def load_inspector_data(filepath: Path) -> InspectorData:
         )
         if sec.validation.end_event:
             end_dt = datetime.fromisoformat(sec.validation.end_event.timestamp)
+            if end_dt.tzinfo is not None:
+                end_epoch = end_dt.timestamp()
+            else:
+                end_epoch = float(calendar.timegm(end_dt.timetuple()))
             raw_events.append(
                 EventMeta(
                     label=sec.validation.end_event.label,
-                    t=end_dt.timestamp(),
+                    t=end_epoch,
                 )
             )
 

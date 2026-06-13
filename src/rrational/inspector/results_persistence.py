@@ -83,6 +83,9 @@ def save_results(store: ResultsStore, project_path: Path | None = None) -> Path:
     Empty stores still write a valid (empty-lists) file so the
     "Clear cache" button has something to delete.
     """
+    import os
+    import time
+
     target = _resolve_path(project_path)
     payload = {
         "saved_at": datetime.now().isoformat(),
@@ -91,8 +94,29 @@ def save_results(store: ResultsStore, project_path: Path | None = None) -> Path:
         "group_test_rows": [_sanitize(asdict(r)) for r in store.group_test_rows],
         "sequence_test_rows": [_sanitize(asdict(r)) for r in store.sequence_test_rows],
     }
-    with target.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(payload, f, default_flow_style=False, allow_unicode=True)
+    # Round 29 — atomic write via per-call unique tmp + retry (same
+    # pattern as Round 28 annotation_persistence / exclusion_persistence).
+    # A crash mid-write previously left a zero-byte YAML that load_results
+    # silently treated as empty store — every prior compute row lost.
+    tmp = target.with_suffix(f"{target.suffix}.{os.getpid()}.{time.time_ns()}.tmp")
+    tmp.write_text(
+        yaml.safe_dump(payload, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    last_exc: BaseException | None = None
+    for attempt in range(5):
+        try:
+            tmp.replace(target)
+            return target
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.02 * (2**attempt))
+    if last_exc is not None:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise last_exc
     return target
 
 

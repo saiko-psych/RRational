@@ -19,6 +19,7 @@ from qtpy.QtCore import QEvent, QObject, Qt
 from qtpy.QtGui import QAction, QKeySequence
 from qtpy.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QLabel,
     QMainWindow,
