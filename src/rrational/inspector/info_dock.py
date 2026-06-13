@@ -101,29 +101,61 @@ class _CopyableLabel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._full_text = ""
         self._label = QLabel(_EMPTY, self)
         self._label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self._label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        # Round 29 — Don't allow the label to push the layout wider than
+        # the dock; let Qt elide visually instead. Round 28 visual review
+        # caught the filename "negative_rr.csv" rendering as "negative_r".
+        self._label.setMinimumWidth(0)
+        # paintEvent below handles eliding; the label text stays the
+        # full string so selection-copy still gives the user the
+        # unabbreviated name.
 
-        self._copy_btn = QPushButton("⧉", self)  # square copy glyph
+        self._copy_btn = QPushButton("⧉", self)
         self._copy_btn.setFlat(True)
-        self._copy_btn.setFixedWidth(24)
+        self._copy_btn.setFixedWidth(22)
+        self._copy_btn.setFixedHeight(22)
         self._copy_btn.setToolTip("Copy filename to clipboard")
         self._copy_btn.setVisible(False)
         self._copy_btn.clicked.connect(self._on_copy)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
         layout.addWidget(self._label, 1)
         layout.addWidget(self._copy_btn, 0, Qt.AlignRight)
 
     def setText(self, text: str) -> None:  # noqa: N802 - Qt convention
-        self._label.setText(text)
-        # Only offer copy when there's an actual filename behind it.
+        self._full_text = text
+        self._refresh_display()
+        # Round 29 — tooltip carries the FULL filename so users can hover
+        # to see what the elided label truncated.
+        self.setToolTip(text if text and text != _EMPTY else "")
         self._copy_btn.setVisible(bool(text) and text != _EMPTY)
 
     def text(self) -> str:
-        return self._label.text()
+        return self._full_text or self._label.text()
+
+    def _refresh_display(self) -> None:
+        """Elide ``self._full_text`` to fit the label's current width."""
+        from qtpy.QtGui import QFontMetrics
+
+        if not self._full_text or self._full_text == _EMPTY:
+            self._label.setText(_EMPTY)
+            return
+        # Leave room for the copy-button column when computing available width.
+        avail = max(40, self._label.width() - 4)
+        fm = QFontMetrics(self._label.font())
+        elided = fm.elidedText(self._full_text, Qt.ElideMiddle, avail)
+        self._label.setText(elided)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt convention
+        # Re-elide on dock resize so the filename keeps using all the
+        # space that's available without overflowing.
+        self._refresh_display()
+        super().resizeEvent(event)
 
     def enterEvent(self, event) -> None:  # noqa: N802 - Qt convention
         if self._label.text() and self._label.text() != _EMPTY:
@@ -166,15 +198,33 @@ class InfoDock(QDockWidget):
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         container = QWidget(self)
+        container.setObjectName("InfoDockContent")
         outer = QVBoxLayout(container)
-        outer.setContentsMargins(8, 8, 8, 8)
-        outer.setSpacing(6)
+        # Round 29 — more breathing room around the edges so the rows
+        # don't kiss the dock frame; the previous 8px felt cramped at
+        # the slim widths.
+        outer.setContentsMargins(14, 12, 14, 12)
+        outer.setSpacing(10)
 
-        # ---- Form rows ----------------------------------------------------
+        # ---- "Dataset" section header -----------------------------------
+        dataset_header = QLabel("Dataset", container)
+        dataset_header.setObjectName("infoSectionHeader")
+        dataset_header.setStyleSheet(
+            "QLabel#infoSectionHeader { "
+            "font-weight: bold; "
+            "padding-bottom: 2px; "
+            "border-bottom: 1px solid palette(mid); "
+            "}"
+        )
+        outer.addWidget(dataset_header)
+
+        # ---- Form rows --------------------------------------------------
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         form.setFormAlignment(Qt.AlignTop | Qt.AlignLeft)
-        form.setSpacing(4)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(7)
 
         self._file_label = _CopyableLabel(container)
         form.addRow("File:", self._file_label)
@@ -196,23 +246,38 @@ class InfoDock(QDockWidget):
 
         outer.addLayout(form)
 
-        # ---- Preprocessing chain (separate block, scrollable label) ------
+        # ---- Visual divider before chain block --------------------------
+        outer.addSpacing(8)
+
+        # ---- Preprocessing chain header --------------------------------
         chain_title = QLabel("Pre-processing chain", container)
-        chain_title.setStyleSheet("font-weight: bold; margin-top: 6px;")
+        chain_title.setObjectName("infoSectionHeader")
+        chain_title.setStyleSheet(
+            "QLabel#infoSectionHeader { "
+            "font-weight: bold; "
+            "padding-bottom: 2px; "
+            "border-bottom: 1px solid palette(mid); "
+            "}"
+        )
         outer.addWidget(chain_title)
 
         self._chain_label = QLabel(_EMPTY, container)
         self._chain_label.setWordWrap(True)
         self._chain_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self._chain_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        # Muted styling so the empty-state em-dash doesn't shout louder
+        # than the actual data above it.
+        self._chain_label.setProperty("muted", True)
         outer.addWidget(self._chain_label, 1)
 
         outer.addStretch(0)
-        # Round 22 — slimmer dock so the inspection plot keeps as much
-        # horizontal real estate as possible. Users can still drag the
-        # splitter handle to widen it on demand.
-        container.setMinimumWidth(170)
-        container.setMaximumWidth(280)
+        # Round 29 — slightly wider min so medium filenames (e.g.
+        # "negative_rr.csv", "0405SAAD_170325_MEL_0.00-0.40_RRIntervals.csv")
+        # have enough room to elide reasonably without dropping every
+        # information-bearing character. Users can still drag the dock
+        # to a wider split if they need the full path visible.
+        container.setMinimumWidth(220)
+        container.setMaximumWidth(320)
         self.setWidget(container)
 
     # ------------------------------------------------------------------

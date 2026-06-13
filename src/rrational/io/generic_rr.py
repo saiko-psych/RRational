@@ -17,6 +17,26 @@ from pathlib import Path
 from rrational.io.hrv_logger import RRInterval
 
 
+def _read_text_with_fallback(path: Path) -> str:
+    """Read ``path`` trying UTF-8-sig → UTF-8 → Windows-1252 → Latin-1.
+
+    Round 28 — every loader previously used ``errors="ignore"`` on UTF-8,
+    which silently dropped every umlaut-bearing byte for the
+    German-market VNS Analyse exports + Windows-1252 CSVs from Excel.
+    Headers with participant names or notes were corrupted but no
+    error fired, so callers believed the load succeeded. The new
+    fallback chain decodes cleanly across all three common encodings.
+    """
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return path.read_text(encoding=enc)
+        except UnicodeDecodeError:
+            continue
+    # Last resort: utf-8 with replacement so the caller still gets a
+    # string (some bytes garbled) instead of an exception bubbling up.
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
 @dataclass(slots=True)
 class GenericRecording:
     """Recording loaded from a generic RR interval file."""
@@ -65,7 +85,7 @@ def detect_format(path: Path) -> str | None:
             return "bids_physio"
 
     try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        text = _read_text_with_fallback(path)
     except Exception:
         return None
 
@@ -305,7 +325,7 @@ def _parse_polar_sensor_logger(path: Path) -> tuple[list[RRInterval], dict]:
     Format: Phone timestamp,RR-interval [ms]
     Example: 2026-04-01 09:00:00.000,832
     """
-    text = path.read_text(encoding="utf-8", errors="ignore")
+    text = _read_text_with_fallback(path)
     reader = csv.DictReader(io.StringIO(text))
     intervals = []
     elapsed = 0
@@ -348,7 +368,7 @@ def _parse_polar_flow(path: Path) -> tuple[list[RRInterval], dict]:
     Format: elapsed_seconds<TAB>rr_ms
     Example: 0.997\t832
     """
-    text = path.read_text(encoding="utf-8", errors="ignore")
+    text = _read_text_with_fallback(path)
     intervals = []
 
     for line in text.strip().splitlines():
@@ -385,7 +405,7 @@ def _parse_empatica(path: Path) -> tuple[list[RRInterval], dict]:
       1775181600.000000, IBI
       7.734375,0.875000
     """
-    text = path.read_text(encoding="utf-8", errors="ignore")
+    text = _read_text_with_fallback(path)
     lines = text.strip().splitlines()
 
     if not lines:
@@ -440,7 +460,7 @@ def _parse_plain_rr(path: Path) -> tuple[list[RRInterval], dict]:
       845
       798
     """
-    text = path.read_text(encoding="utf-8", errors="ignore")
+    text = _read_text_with_fallback(path)
     values = []
 
     for line in text.strip().splitlines():
@@ -465,7 +485,7 @@ def _parse_kubios(path: Path) -> tuple[list[RRInterval], dict]:
     Extracts RR intervals from the data section and analysis results from
     the report sections.
     """
-    text = path.read_text(encoding="utf-8", errors="ignore")
+    text = _read_text_with_fallback(path)
     lines = text.strip().splitlines()
 
     metadata = {"source": "Kubios HRV"}
