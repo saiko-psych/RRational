@@ -159,14 +159,26 @@ def save_exclusion_zones(
     Use :func:`delete_exclusion_zones` to remove the file entirely.
     """
     p = _zones_path(pid, project_path)
+    # Sort by start_t so YAML diffs stay deterministic — drag order
+    # previously bled into the on-disk representation, producing
+    # spurious commits when two sessions added the same zones in
+    # different order.
+    sorted_zones = sorted(zones, key=lambda z: z.start_t)
     payload = {
         "format_version": "1.0",
         "participant_id": str(pid),
-        "exclusion_zones": [z.to_dict() for z in zones],
+        "exclusion_zones": [z.to_dict() for z in sorted_zones],
         "last_modified": datetime.now().isoformat(),
     }
-    with p.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(payload, f, default_flow_style=False, allow_unicode=True)
+    # Atomic write: a concurrent Streamlit reader between truncate
+    # and flush previously saw an empty file and silently dropped
+    # every exclusion. Same pattern as Round 24's save_sequences fix.
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(
+        yaml.safe_dump(payload, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    tmp.replace(p)
     return p
 
 

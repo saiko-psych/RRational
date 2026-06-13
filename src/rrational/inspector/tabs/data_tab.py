@@ -519,7 +519,7 @@ class DataTab(InspectorTab):
         # Live match counter — kept on the main form because it's the
         # quickest signal that the pattern actually works.
         self._id_pattern_status = QLabel("")
-        self._id_pattern_status.setStyleSheet("color: #555;")
+        self._id_pattern_status.setProperty("muted", True)
         form.addRow("", self._id_pattern_status)
 
         outer.addLayout(form)
@@ -544,7 +544,7 @@ class DataTab(InspectorTab):
         self._id_pattern_combo.setCurrentIndex(sel_idx)
 
         self._advanced_toggle = _CheckBox("Show raw regex (advanced)")
-        self._advanced_toggle.setStyleSheet("color: #666;")
+        self._advanced_toggle.setProperty("muted", True)
         # Reuse QFrame (already imported) so we don't need a fresh
         # QWidget import just for the collapsible advanced panel.
         self._advanced_panel = QFrame()
@@ -670,7 +670,7 @@ class DataTab(InspectorTab):
         layout.setSpacing(4)
 
         self._processed_info = QLabel()
-        self._processed_info.setStyleSheet("color: #666;")
+        self._processed_info.setProperty("muted", True)
         self._processed_info.setWordWrap(True)
         layout.addWidget(self._processed_info)
 
@@ -764,7 +764,7 @@ class DataTab(InspectorTab):
         layout.addWidget(self._project_label)
 
         self._project_path_label = QLabel()
-        self._project_path_label.setStyleSheet("color: #666;")
+        self._project_path_label.setProperty("muted", True)
         self._project_path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self._project_path_label.setWordWrap(True)
         layout.addWidget(self._project_path_label)
@@ -827,7 +827,7 @@ class DataTab(InspectorTab):
         layout.addLayout(analyze_row)
 
         self._sources_label = QLabel()
-        self._sources_label.setStyleSheet("color: #666;")
+        self._sources_label.setProperty("muted", True)
         self._sources_label.setWordWrap(True)
         layout.addWidget(self._sources_label)
 
@@ -947,14 +947,14 @@ class DataTab(InspectorTab):
         layout.setSpacing(6)
 
         self._participants_summary = QLabel()
-        self._participants_summary.setStyleSheet("color: #666;")
+        self._participants_summary.setProperty("muted", True)
         layout.addWidget(self._participants_summary)
 
         # Issues Summary row sits above the table. Each metric is a
         # clickable link that filters the table to those rows; clicking
         # the "show all" link resets the filter.
         self._issues_label = QLabel("")
-        self._issues_label.setStyleSheet("color: #555;")
+        self._issues_label.setProperty("muted", True)
         self._issues_label.setTextFormat(Qt.RichText)
         self._issues_label.setOpenExternalLinks(False)
         self._issues_label.linkActivated.connect(self._on_issues_link)

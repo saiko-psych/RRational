@@ -107,8 +107,11 @@ class AddExclusionZone(Action):
             ")\n"
             f"_pid = {self.pid!r}\n"
             "_existing = load_exclusion_zones(_pid)\n"
+            # ExclusionZone's dataclass uses start_t/end_t (not t_start/t_end);
+            # the previous code emitted the wrong keyword names so every
+            # replayed recipe raised TypeError on the constructor call.
             "_existing.append(ExclusionZone(\n"
-            f"    t_start={self.t_start}, t_end={self.t_end},\n"
+            f"    start_t={self.t_start}, end_t={self.t_end},\n"
             f"    reason={self.reason!r},\n"
             "))\n"
             "save_exclusion_zones(_pid, _existing)"

@@ -62,7 +62,12 @@ _DARK: dict[str, str] = {
     # rings. The "soft" suffix is the same hue at ~13% alpha so hovers
     # tint without overpowering.
     "accent": "#e8a13a",
-    "accent_soft": "#e8a13a22",
+    # Qt CSS parses 8-digit hex as #AARRGGBB, NOT #RRGGBBAA — the previous
+    # "#e8a13a22" was interpreted as alpha=0xe8 + colour #a13a22 (blood
+    # red at 91% opacity), which turned every QListWidget selection into
+    # what looked like a hard error highlight. Use explicit rgba() so
+    # the alpha channel is unambiguous.
+    "accent_soft": "rgba(232, 161, 58, 0.13)",
     "accent_hover": "#f0ad4d",
     "accent_pressed": "#c98a2a",
     # Status colours — desaturated to feel like instrument LEDs instead
@@ -91,7 +96,11 @@ _LIGHT: dict[str, str] = {
     "text_secondary": "#4a5160",
     "text_muted": "#7d8390",
     "accent": "#b87214",
-    "accent_soft": "#b8721422",
+    # See dark theme comment — Qt parses #RRGGBBAA as #AARRGGBB so the
+    # previous "#b8721422" rendered as alpha=0xb8 + colour #721422
+    # (dark plum at 72% opacity) on every selection. rgba() keeps the
+    # intent explicit.
+    "accent_soft": "rgba(184, 114, 20, 0.13)",
     "accent_hover": "#c98423",
     "accent_pressed": "#9c5f0f",
     "success": "#2f8669",

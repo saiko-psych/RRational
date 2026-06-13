@@ -72,8 +72,15 @@ def save_annotations(
         "format_version": "1.0",
         "annotations": [a.to_dict() for a in annotations],
     }
-    with path.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(payload, f, default_flow_style=False, allow_unicode=True)
+    # Atomic write — same pattern as save_sequences / save_exclusion_zones
+    # in Round 24/26. A concurrent Streamlit reader between truncate and
+    # flush previously saw an empty file and silently dropped the list.
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        yaml.safe_dump(payload, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
     return path
 
 

@@ -247,7 +247,12 @@ def _toolbar_walk(app, win, container: QWidget, label: str, max_clicks=4):
             break
         if not tb.isVisible() or not tb.isEnabled():
             continue
-        txt = (tb.text() or tb.toolTip() or "tool").strip().replace("&", "")
+        # ASCII-strip BOTH text() and tooltip() so the cp1252 console
+        # doesn't choke on glyphs like the circled "(i)" info icon
+        # (U+24D8). Without the strip, every print() of a unicode-laden
+        # toolbutton aborted the sweep mid-run.
+        raw_txt = (tb.text() or tb.toolTip() or "tool").strip().replace("&", "")
+        txt = raw_txt.encode("ascii", "ignore").decode("ascii").strip()
         if not txt:
             txt = "icon"
         try:
