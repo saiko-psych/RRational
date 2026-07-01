@@ -2666,8 +2666,14 @@ class MainWindow(QMainWindow):
             if plot is not None
             else 0
         )
+        # Round 33 (A3) — the old fallback read ds.data.annotations, which
+        # InspectorData does not have, so it was dead code that always
+        # returned 0. Fall back to the preprocessing panel's _annotations
+        # list — the true source of truth — which is populated on load even
+        # before the plot has painted its markers.
         if n_ann == 0:
-            n_ann = len(getattr(ds.data, "annotations", None) or [])
+            panel = getattr(self._browse_tab, "_preprocessing_panel", None)
+            n_ann = len(getattr(panel, "_annotations", []) or [])
         dock.set_dataset(
             ds.data,
             filename=ds.name,

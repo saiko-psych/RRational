@@ -372,6 +372,19 @@ class PreprocessingPanel(QWidget):
         plot = self._main_window._browse_tab._plot
         plot.set_manual_artifact_indices(added=set(), removed=set())
         plot.set_manual_mark_mode(False)
+        # Round 33 (E3) — exclusion mode must also reset OFF on dataset
+        # switch; otherwise the next dataset opens with drag-create silently
+        # active and the checkbox reflects the previous dataset's state.
+        self._toggle_exclusion_mode.blockSignals(True)
+        self._toggle_exclusion_mode.setChecked(False)
+        self._toggle_exclusion_mode.blockSignals(False)
+        if hasattr(plot, "set_exclusion_mode"):
+            plot.set_exclusion_mode(False)
+        # Round 33 (E2) — reset the undo-history zone counter so the first
+        # zone created on the NEW dataset is correctly detected as an
+        # addition (it kept the previous dataset's count and swallowed the
+        # first new zone).
+        self._history_zone_count = 0
         self._update_undo_redo_actions()
 
         # Annotation toggle follows dataset availability + auto-restore
@@ -1329,6 +1342,11 @@ class PreprocessingPanel(QWidget):
             plot.add_annotation_marker(ann.t, ann.text)
         self._refresh_annotation_label()
 
+    def _annotation_exists_at(self, t: float, tol: float = 1e-6) -> bool:
+        """Round 33 (A2) — True if an annotation already sits within ``tol``
+        of ``t`` (the same tolerance the marker lookup uses)."""
+        return any(abs(a.t - t) < tol for a in self._annotations)
+
     def _on_plot_clicked(self, t: float) -> None:
         """Annotation-mode left-click on the timeline: pop input dialog."""
         from rrational.inspector.annotations import Annotation as _Annotation
@@ -1344,6 +1362,15 @@ class PreprocessingPanel(QWidget):
             return
         text = str(text).strip()
         ann = _Annotation.create(t=t, text=text)
+        # Round 33 (A2) — a second annotation within 1e-6 of an existing one
+        # would collide with the tolerance used everywhere else: the marker
+        # lookup returns only the first, so the second becomes unreachable
+        # yet is persisted + counted. Refuse the duplicate.
+        if self._annotation_exists_at(ann.t):
+            self._main_window.statusBar().showMessage(
+                "An annotation already exists at that point.", 3000
+            )
+            return
         self._annotations.append(ann)
         plot = self._main_window._browse_tab._plot
         plot.add_annotation_marker(ann.t, ann.text)
@@ -1379,6 +1406,12 @@ class PreprocessingPanel(QWidget):
             return
         text = str(text).strip()
         ann = _Annotation.create_range(t_start=float(t0), t_end=float(t1), text=text)
+        # Round 33 (A2) — reject a duplicate onset (see _on_plot_clicked).
+        if self._annotation_exists_at(ann.t):
+            self._main_window.statusBar().showMessage(
+                "An annotation already exists at that point.", 3000
+            )
+            return
         self._annotations.append(ann)
         plot = self._main_window._browse_tab._plot
         # The marker is still pinned at the onset — the duration shows

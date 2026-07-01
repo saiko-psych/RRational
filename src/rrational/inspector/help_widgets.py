@@ -87,6 +87,9 @@ class InfoButton(QToolButton):
         # Unicode 'circled information source' — readable, no emoji.
         self.setText("ⓘ Help")
         self.setToolTip(f"Show help: {title}")
+        # Round 33 (W5) — screen readers otherwise announce the raw circled-i
+        # glyph; give an explicit accessible name (R30 icon-button pattern).
+        self.setAccessibleName(f"Help: {title}")
         self.setAutoRaise(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
