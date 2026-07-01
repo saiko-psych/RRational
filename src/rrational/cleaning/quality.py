@@ -255,6 +255,18 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
             show=False,
         )
 
+        # Round 30 — peak-space -> RR-space index conversion.
+        # NK2's Kubios detector (_find_artifacts) works on
+        # ``rr = ediff1d(peaks, to_begin=0)``, which is PEAKS-space: it has
+        # the same length as ``peak_indices`` (N+1) and ``rr_nk[i]`` is the
+        # interval ENDING at peak i, i.e. ``rr_nk[i] == rr_values[i-1]``
+        # (rr_nk[0] is a synthetic mean, not a real interval). So an NK2
+        # artifact index k refers to ``rr_values[k-1]``. The previous code
+        # stored k directly, which (a) shifted every flagged beat one
+        # position later and (b) silently dropped a real artifact on the
+        # final beat (NK2 index N failed the ``< len(rr_values)`` guard).
+        # Verified empirically against NK2 0.2.13: an ectopic injected at
+        # rr_values[100] is reported by NK2 at index 101.
         artifacts = {}
         artifact_indices: set[int] = set()
         for key in ["ectopic", "missed", "extra", "longshort"]:
@@ -264,14 +276,16 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
             elif not isinstance(indices, list):
                 indices = []
             artifacts[key] = len(indices)
-            # Keep only indices that are valid positions in rr_values.
+            # Map peaks-space index k -> RR-space index k-1, keeping only
+            # indices that are valid positions in rr_values.
             for raw_idx in indices:
                 try:
                     idx_int = int(raw_idx)
                 except (TypeError, ValueError):
                     continue
-                if 0 <= idx_int < len(rr_values):
-                    artifact_indices.add(idx_int)
+                rr_idx = idx_int - 1
+                if 0 <= rr_idx < len(rr_values):
+                    artifact_indices.add(rr_idx)
 
         total_artifacts = sum(artifacts.values())
         artifact_ratio = total_artifacts / len(rr_values) if rr_values else 0
