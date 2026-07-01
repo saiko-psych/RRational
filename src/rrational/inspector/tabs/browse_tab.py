@@ -73,7 +73,9 @@ class BrowseTab(InspectorTab):
         # space. Without this, the snapshot harness occasionally captured
         # the plot at ~400 px wide on first paint before the layout had
         # a chance to settle.
-        self._plot.setMinimumSize(400, 300)
+        # Modest plot floor so the Browse dock host — and thus the whole
+        # window — can shrink; 300 px still shows a usable tachogram.
+        self._plot.setMinimumSize(300, 260)
 
         self._overview_bar = OverviewBar()
         self._overview_bar.link_to(self._plot)
@@ -144,7 +146,7 @@ class BrowseTab(InspectorTab):
         # Bug B4: hint the dock area to give the sidebar a fixed-ish slice
         # rather than the default 50/50 split, so the central plot keeps
         # the bulk of the horizontal real estate.
-        self._dataset_tree.setMinimumWidth(220)
+        self._dataset_tree.setMinimumWidth(170)
         self._dataset_tree.setMaximumWidth(320)
         self._dock_host.addDockWidget(Qt.LeftDockWidgetArea, self._datasets_dock)
 

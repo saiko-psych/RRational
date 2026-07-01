@@ -188,9 +188,15 @@ class PreprocessingPanel(QWidget):
         self._zones_table.setHorizontalHeaderLabels(["Start", "End", "Reason", ""])
         self._zones_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._zones_table.verticalHeader().setVisible(False)
-        self._zones_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeToContents
-        )
+        # Stretch the columns to share the dock's width instead of
+        # ResizeToContents, which sized each column to its widest cell and
+        # forced the whole preprocessing dock (and thus the window) wider than
+        # it needed to be. A modest table minimum keeps the columns readable
+        # while letting the dock — and the window — shrink.
+        hdr = self._zones_table.horizontalHeader()
+        hdr.setSectionResizeMode(QHeaderView.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # delete-btn col
+        self._zones_table.setMinimumWidth(220)
         self._zones_table.setMaximumHeight(140)
         excl_layout.addWidget(self._zones_table)
         layout.addWidget(excl_box)

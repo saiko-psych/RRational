@@ -2181,12 +2181,26 @@ class MainWindow(QMainWindow):
         """
         if mode not in _VALID_LAYOUTS:
             mode = LAYOUT_MNELAB
+        from qtpy.QtWidgets import QSizePolicy
+
         self._ui_layout = mode
         visible = self._layout_visible_tabs(mode)
         first_visible_idx: int | None = None
         for i, tab in enumerate(self._tabs):
             is_visible = tab in visible
             self._tabs_widget.setTabVisible(i, is_visible)
+            # A QTabWidget sizes to the MAX minimum of ALL its pages, visible
+            # or not. The Streamlit-style Data / Participant tabs carry very
+            # wide tables (~1280 px min) but are hidden in MNE-LAB mode, so
+            # they were silently pinning the whole window's minimum width to
+            # their content even though the user never sees them. Giving hidden
+            # pages an Ignored size policy drops them out of that calculation;
+            # visible pages get the normal Preferred policy so they size to
+            # their content as usual.
+            tab.setSizePolicy(
+                QSizePolicy.Preferred if is_visible else QSizePolicy.Ignored,
+                QSizePolicy.Preferred if is_visible else QSizePolicy.Ignored,
+            )
             if is_visible and first_visible_idx is None:
                 first_visible_idx = i
         # Always select the first visible tab for the new mode. This
