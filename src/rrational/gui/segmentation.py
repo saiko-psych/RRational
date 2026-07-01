@@ -125,6 +125,13 @@ def quality_grade_from_rate(artifact_rate: float) -> str:
     Quigley 2024 thresholds. Returns one of: "excellent", "good", "moderate",
     "poor". This is the single source of truth for quality grades across the
     artifact-detection panel, the analysis tab and the .rrational export.
+
+    Boundaries are INCLUSIVE on the upper side (``<=``): a rate of exactly
+    2% is "excellent", exactly 5% is "good", exactly 10% is "moderate".
+    Quigley 2024 Table 2 is reportedly slightly different (``<10%`` for
+    moderate, ``>=10%`` for poor) — kept inclusive here for backward
+    compatibility with the rest of the pipeline; revisit if Quigley
+    compliance is required for publication.
     """
     if artifact_rate <= _RATE_EXCELLENT:
         return "excellent"

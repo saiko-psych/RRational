@@ -579,9 +579,10 @@ class RRPlotWidget(pg.PlotWidget):
     ) -> EventMarker:
         """Add a vertical event line at ``meta.t``. Returns the created item."""
         if color is None:
-            # Events use a darker variant of the palette so they read on
-            # top of section bands at any zoom level.
-            color = QColor("#444444")
+            # Round 30 — theme-neutral fallback (text_secondary dark value);
+            # reads on BOTH light and dark theme backgrounds at >=4.5:1.
+            # Previous #444444 was invisible on the dark bg_surface (#232830).
+            color = QColor("#a8adb5")
         marker = EventMarker(meta.t, meta.label, color)
         self.addItem(marker)
         self._event_markers.append(marker)

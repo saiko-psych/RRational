@@ -53,7 +53,9 @@ def _empty_state_stack(table: QTableWidget, hint_text: str) -> QStackedWidget:
     label.setAlignment(Qt.AlignCenter)
     label.setWordWrap(True)
     label.setTextFormat(Qt.RichText)
-    label.setStyleSheet("QLabel { color: #666; font-size: 13px; padding: 32px; }")
+    # Round 30 — theme-aware muted text via QSS [muted="true"] rule.
+    label.setStyleSheet("QLabel { font-size: 13px; padding: 32px; }")
+    label.setProperty("muted", True)
     stack = QStackedWidget()
     stack.addWidget(label)
     stack.addWidget(table)
@@ -115,7 +117,7 @@ class _MetricsPane(QWidget):
 
         bar = QHBoxLayout()
         self._info = QLabel("0 row(s)")
-        self._info.setStyleSheet("color: #666;")
+        self._info.setProperty("muted", True)
         bar.addWidget(self._info)
         bar.addStretch()
         self._export_btn = QPushButton("Export CSV…")
@@ -330,7 +332,7 @@ class _GroupTestsPane(QWidget):
 
         bar = QHBoxLayout()
         self._info = QLabel("0 row(s)")
-        self._info.setStyleSheet("color: #666;")
+        self._info.setProperty("muted", True)
         bar.addWidget(self._info)
         bar.addStretch()
         self._export_btn = QPushButton("Export CSV…")
@@ -452,7 +454,7 @@ class _SequenceTestsPane(QWidget):
 
         bar = QHBoxLayout()
         self._info = QLabel("0 row(s)")
-        self._info.setStyleSheet("color: #666;")
+        self._info.setProperty("muted", True)
         bar.addWidget(self._info)
         bar.addStretch()
         self._export_btn = QPushButton("Export CSV…")
@@ -608,9 +610,12 @@ class ResultsTab(InspectorTab):
         # ---- Cache toolbar (Save / Reload / Clear) ----------------------
         cache_bar = QHBoxLayout()
         cache_label = QLabel("<b>Cache:</b>")
-        cache_label.setStyleSheet("color: #555; padding-left: 6px;")
+        # Round 30 — muted secondary text + hint-level tertiary text via
+        # theme properties; previous #555/#888 were near-invisible in dark.
+        cache_label.setStyleSheet("padding-left: 6px;")
+        cache_label.setProperty("muted", True)
         self._cache_status = QLabel("autosaves after every compute")
-        self._cache_status.setStyleSheet("color: #888;")
+        self._cache_status.setProperty("hint", True)
         self._save_now_btn = QPushButton("Save now")
         self._save_now_btn.setToolTip(
             "Manually write inspector_results.yml. Autosave already runs "

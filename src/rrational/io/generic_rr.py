@@ -11,7 +11,7 @@ import io
 import re
 import statistics
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from rrational.io.hrv_logger import RRInterval
@@ -262,7 +262,7 @@ def _parse_bids_physio(path: Path) -> tuple[list[RRInterval], dict]:
     """
     import gzip
     import json
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     sidecar_path = path.with_name(path.name[: -len(".tsv.gz")] + ".json")
     sidecar: dict = {}
@@ -420,7 +420,12 @@ def _parse_empatica(path: Path) -> tuple[list[RRInterval], dict]:
     except (ValueError, IndexError):
         pass
 
-    start_dt = datetime.fromtimestamp(start_unix) if start_unix else None
+    # Round 30 — explicit UTC so downstream wall-clock conversions don't
+    # drift by an hour across DST transitions; naive fromtimestamp uses
+    # local time which silently shifts on every spring-/fall-forward.
+    start_dt = (
+        datetime.fromtimestamp(start_unix, tz=timezone.utc) if start_unix else None
+    )
     intervals = []
 
     for line in lines[1:]:
@@ -604,13 +609,16 @@ def _parse_hrv_logger(path: Path) -> tuple[list[RRInterval], dict]:
 
     Also auto-loads the companion Events.csv if found.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from rrational.io.hrv_logger import load_rr_intervals
 
-    # Peek at the header to decide which path to take.
-    with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
-        header_line = f.readline()
+    # Round 30 — use the established _read_text_with_fallback helper here
+    # as well; the previous errors="ignore" silently dropped umlauts in
+    # cp1252 German clinical files. R28 added the helper but missed these
+    # HRV Logger sites.
+    text = _read_text_with_fallback(path)
+    header_line = text.split("\n", 1)[0] if text else ""
     cols = [c.strip().lower() for c in header_line.strip().split(",")]
     is_unix_ms = "timestamp" in cols and "date" not in cols
 
@@ -621,7 +629,7 @@ def _parse_hrv_logger(path: Path) -> tuple[list[RRInterval], dict]:
         ts_idx = cols.index("timestamp")
         rr_idx = cols.index("rr") if "rr" in cols else cols.index("rr (ms)")
         ss_idx = cols.index("since_start") if "since_start" in cols else None
-        with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+        with io.StringIO(text, newline="") as f:
             reader = csv.reader(f)
             next(reader, None)  # skip header
             for row in reader:
@@ -662,8 +670,19 @@ def _parse_hrv_logger(path: Path) -> tuple[list[RRInterval], dict]:
             events = _load_events_flexible(ev_path)
             metadata["events"] = events
             metadata["events_file"] = ev_path.name
-        except Exception:
-            pass
+        except Exception as exc:
+            # Round 30 — bare ``pass`` previously hid every failure (malformed
+            # companion file, missing column, IO error) and the user only
+            # noticed via "events missing" with no log. Log + flag on metadata.
+            import logging
+
+            metadata["events_load_error"] = f"{type(exc).__name__}: {exc}"
+            logging.getLogger("rrational.io.generic_rr").warning(
+                "Failed to load events companion %s: %s",
+                ev_path.name,
+                exc,
+                exc_info=True,
+            )
     return intervals, metadata
 
 
@@ -675,12 +694,13 @@ def _load_events_flexible(ev_path: Path) -> list[dict]:
     parsed inline.
     """
     import csv
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from rrational.io.hrv_logger import load_events
 
-    with ev_path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
-        header_line = f.readline()
+    # Round 30 — encoding fallback (was errors="ignore" silently dropping bytes).
+    ev_text = _read_text_with_fallback(ev_path)
+    header_line = ev_text.split("\n", 1)[0] if ev_text else ""
     cols = [c.strip().lower() for c in header_line.strip().split(",")]
     if "annotation" in cols and "timestamp" in cols:
         try:
@@ -696,7 +716,7 @@ def _load_events_flexible(ev_path: Path) -> list[dict]:
         ts_idx = cols.index("timestamp")
         label_idx = cols.index("label") if "label" in cols else None
         out: list[dict] = []
-        with ev_path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+        with io.StringIO(ev_text, newline="") as f:
             reader = csv.reader(f)
             next(reader, None)
             for row in reader:

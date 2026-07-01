@@ -196,22 +196,27 @@ class _EventDefinitionDialog(QDialog):
             except re.error as exc:
                 errors.append((i, line, str(exc)))
 
+        # Round 30 — pull theme-aware semantic colours from palette_tokens so
+        # the inline HTML respects dark/light mode (was hardcoded hex).
+        from rrational.inspector.style.theme import palette_tokens
+
+        _tok = palette_tokens()
         if errors:
             line_no, raw, err = errors[0]
             self._regex_status.setText(
-                f"<span style='color:#d97862;'>Line {line_no}: "
+                f"<span style='color:{_tok['danger']};'>Line {line_no}: "
                 f"invalid regex <code>{raw}</code> &mdash; {err}</span>"
             )
             self._ok_btn.setEnabled(False)
         elif n_regex + n_literal == 0:
             self._regex_status.setText(
-                "<span style='color:#a8adb5;'>No synonyms yet "
+                f"<span style='color:{_tok['text_secondary']};'>No synonyms yet "
                 "(the canonical name will be the only match).</span>"
             )
             self._ok_btn.setEnabled(True)
         else:
             self._regex_status.setText(
-                f"<span style='color:#5ab896;'>OK &mdash; "
+                f"<span style='color:{_tok['success']};'>OK &mdash; "
                 f"{n_regex} regex, {n_literal} literal "
                 f"{'string' if n_literal == 1 else 'strings'}.</span>"
             )

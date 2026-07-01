@@ -38,14 +38,27 @@ beats the global fallback.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 import yaml
 
+# Module-level constant so save and load detect schema drift.
+FORMAT_VERSION = "1.0"
+
 _DEFAULT_DIR = Path.home() / ".rrational" / "inspector"
 _dir_override: Path | None = None
+
+# Round 30 — defense against path traversal via a malicious pid loaded
+# from an untrusted .rrational file. Allow only word chars + dash.
+_PARTICIPANT_ID_RE = re.compile(r"[^\w\-]")
+
+
+def _safe_participant_id(pid: str) -> str:
+    """Sanitize ``pid`` for safe use in a filename component."""
+    return _PARTICIPANT_ID_RE.sub("_", str(pid))
 
 
 @dataclass
@@ -144,7 +157,17 @@ def _resolve_dir(project_path: Path | None) -> Path:
 
 
 def _zones_path(pid: str, project_path: Path | None) -> Path:
-    return _resolve_dir(project_path) / f"{pid}_exclusions.yml"
+    # Round 30 — sanitize pid + assert resolved path stays under base dir.
+    base = _resolve_dir(project_path)
+    safe_pid = _safe_participant_id(pid)
+    p = base / f"{safe_pid}_exclusions.yml"
+    resolved = p.resolve()
+    base_resolved = base.resolve()
+    if base_resolved != resolved.parent and base_resolved not in resolved.parents:
+        raise ValueError(
+            f"Resolved exclusions path {resolved} escapes base {base_resolved}"
+        )
+    return p
 
 
 def save_exclusion_zones(
@@ -165,7 +188,7 @@ def save_exclusion_zones(
     # different order.
     sorted_zones = sorted(zones, key=lambda z: z.start_t)
     payload = {
-        "format_version": "1.0",
+        "format_version": FORMAT_VERSION,
         "participant_id": str(pid),
         "exclusion_zones": [z.to_dict() for z in sorted_zones],
         "last_modified": datetime.now().isoformat(),
@@ -217,6 +240,17 @@ def load_exclusion_zones(
             raw = yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError):
         return []
+    # Round 30 — surface schema drift.
+    file_version = raw.get("format_version") if isinstance(raw, dict) else None
+    if file_version is not None and file_version != FORMAT_VERSION:
+        import logging
+
+        logging.getLogger("rrational.inspector.exclusion_persistence").warning(
+            "Loading %s from format_version %s (current: %s); entries may be skipped if schema diverged.",
+            p.name,
+            file_version,
+            FORMAT_VERSION,
+        )
     items = raw.get("exclusion_zones", []) or []
     zones: list[ExclusionZone] = []
     for entry in items:

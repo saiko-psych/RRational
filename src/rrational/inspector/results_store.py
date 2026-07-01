@@ -75,12 +75,22 @@ class ResultsStore:
     sequence_test_rows: list[SequenceTestRow] = field(default_factory=list)
 
     def add_metric_row(self, row: MetricRow) -> None:
+        # Round 30 — dedup guard: repeated Compute / autosave-reload cycles
+        # previously appended unbounded duplicates, so statistical tests
+        # ran on non-independent observations. All three row types are
+        # `@dataclass(frozen=True)` so `in` uses value equality.
+        if row in self.metric_rows:
+            return
         self.metric_rows.append(row)
 
     def add_group_test_row(self, row: GroupTestRow) -> None:
+        if row in self.group_test_rows:
+            return
         self.group_test_rows.append(row)
 
     def add_sequence_test_row(self, row: SequenceTestRow) -> None:
+        if row in self.sequence_test_rows:
+            return
         self.sequence_test_rows.append(row)
 
     def clear(self) -> None:

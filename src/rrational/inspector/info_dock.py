@@ -118,6 +118,10 @@ class _CopyableLabel(QWidget):
         self._copy_btn.setFixedWidth(22)
         self._copy_btn.setFixedHeight(22)
         self._copy_btn.setToolTip("Copy filename to clipboard")
+        # Round 30 — screen readers announce the raw "⧉" codepoint without
+        # setAccessibleName. setToolTip is a sighted-user affordance; AT
+        # relies on the accessible-name tree separately.
+        self._copy_btn.setAccessibleName("Copy filename to clipboard")
         self._copy_btn.setVisible(False)
         self._copy_btn.clicked.connect(self._on_copy)
 
@@ -171,7 +175,12 @@ class _CopyableLabel(QWidget):
 
         clipboard = QApplication.clipboard()
         if clipboard is not None:
-            clipboard.setText(self._label.text())
+            # Round 30 — copy the FULL filename, not the elided display
+            # string. R29 changed `_label.setText` to hold the elided text
+            # for visual rendering, but the copy handler still read from
+            # `_label.text()` and was silently copying "negative_r…csv"
+            # instead of the real filename.
+            clipboard.setText(self._full_text)
 
 
 class InfoDock(QDockWidget):

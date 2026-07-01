@@ -23,16 +23,29 @@ Schema::
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
 
 from rrational.inspector.annotations import Annotation
 
+# Module-level constant so save and load can detect schema drift on load.
+FORMAT_VERSION = "1.0"
+
 # Global fallback when no project is open. Overridable by tests via
 # ``set_annotation_config_dir`` so the developer's home isn't touched.
 _DEFAULT_DIR = Path.home() / ".rrational" / "inspector_annotations"
 _dir_override: Path | None = None
+
+# Round 30 — defense against path traversal via a malicious participant_id
+# loaded from an untrusted .rrational file. Allow only word chars + dash.
+_PARTICIPANT_ID_RE = re.compile(r"[^\w\-]")
+
+
+def _safe_participant_id(pid: str) -> str:
+    """Sanitize ``pid`` for safe use in a filename component."""
+    return _PARTICIPANT_ID_RE.sub("_", str(pid))
 
 
 def set_annotation_config_dir(path: Path | None) -> None:
@@ -52,8 +65,22 @@ def _resolve_dir(project_path: Path | None) -> Path:
 
 
 def annotations_path(participant_id: str, project_path: Path | None = None) -> Path:
-    """Resolve the on-disk path for ``{pid}_annotations.yml``."""
-    return _resolve_dir(project_path) / f"{participant_id}_annotations.yml"
+    """Resolve the on-disk path for ``{pid}_annotations.yml``.
+
+    Round 30 — sanitizes ``participant_id`` to defeat path traversal
+    (``../`` segments) and asserts the resolved path stays under
+    ``_resolve_dir(project_path)``.
+    """
+    base = _resolve_dir(project_path)
+    safe_pid = _safe_participant_id(participant_id)
+    path = base / f"{safe_pid}_annotations.yml"
+    resolved = path.resolve()
+    base_resolved = base.resolve()
+    if base_resolved != resolved.parent and base_resolved not in resolved.parents:
+        raise ValueError(
+            f"Resolved annotations path {resolved} escapes base {base_resolved}"
+        )
+    return path
 
 
 def save_annotations(
@@ -69,7 +96,7 @@ def save_annotations(
     path = annotations_path(participant_id, project_path=project_path)
     payload = {
         "participant_id": str(participant_id),
-        "format_version": "1.0",
+        "format_version": FORMAT_VERSION,
         "annotations": [a.to_dict() for a in annotations],
     }
     # Atomic write — same pattern as save_sequences / save_exclusion_zones
@@ -131,6 +158,18 @@ def load_annotations(
             raw = yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError):
         return []
+    # Round 30 — surface schema drift; load no longer silently swallows
+    # entries from incompatible format versions.
+    file_version = raw.get("format_version") if isinstance(raw, dict) else None
+    if file_version is not None and file_version != FORMAT_VERSION:
+        import logging
+
+        logging.getLogger("rrational.inspector.annotation_persistence").warning(
+            "Loading %s from format_version %s (current: %s); entries may be skipped if schema diverged.",
+            path.name,
+            file_version,
+            FORMAT_VERSION,
+        )
     items = raw.get("annotations", []) or []
     out: list[Annotation] = []
     for entry in items:

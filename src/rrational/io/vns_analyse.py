@@ -204,7 +204,13 @@ def _load_single_vns_file(
     Returns:
         tuple: (rr_intervals, events, header_info)
     """
-    text = path.read_text(encoding="utf-8", errors="ignore")
+    # Round 30 — VNS Analyse is German-clinical-market and frequently
+    # written in cp1252 by German-locale Excel. R28's errors="ignore"
+    # silently dropped every umlaut in header fields and Notiz labels;
+    # use the established fallback chain instead.
+    from rrational.io.generic_rr import _read_text_with_fallback
+
+    text = _read_text_with_fallback(path)
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
     header_info: dict[str, str] = {}

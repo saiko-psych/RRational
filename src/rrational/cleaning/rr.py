@@ -82,6 +82,13 @@ def clean_rr_intervals(
             delta = abs(rr - previous_rr) / previous_rr
             if delta > cfg.sudden_change_pct:
                 reasons["sudden_change"] += 1
+                # Round 30 — update previous_rr before continuing so a
+                # single legitimate jump doesn't cascade-drop the next
+                # 100 beats. The with-flags variant has this correct
+                # already (see comment at line ~149); the non-flag path
+                # previously locked previous_rr at the pre-jump value
+                # and any further normal beats failed the relative check.
+                previous_rr = rr
                 continue
 
         cleaned.append(sample)

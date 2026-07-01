@@ -136,6 +136,20 @@ def load_results(project_path: Path | None = None) -> ResultsStore:
     except (OSError, yaml.YAMLError):
         return store
 
+    # Round 30 — surface schema drift. The version field has been written
+    # since R13 but never read; mismatches silently dropped rows via the
+    # per-entry except guard below.
+    file_version = raw.get("software_version") if isinstance(raw, dict) else None
+    if file_version is not None and file_version != SOFTWARE_VERSION:
+        import logging
+
+        logging.getLogger("rrational.inspector.results_persistence").warning(
+            "Loading %s from software_version %s (current: %s); entries may be skipped if schema diverged.",
+            target.name,
+            file_version,
+            SOFTWARE_VERSION,
+        )
+
     for entry in raw.get("metric_rows", []) or []:
         try:
             store.metric_rows.append(

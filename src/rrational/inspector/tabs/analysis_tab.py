@@ -1534,7 +1534,15 @@ class _GroupComparisonPane(QWidget):
             return
 
         # Render
-        sig_color = "#2ca02c" if result.p_value < 0.05 else "#555"
+        # Round 30 — A11Y WCAG 1.4.1: significance now also carries a textual
+        # "*" prefix so colour is not the sole signal; palette_tokens pulls
+        # theme-aware semantic colours instead of hardcoded #2ca02c / #555.
+        from rrational.inspector.style.theme import palette_tokens
+
+        _tok = palette_tokens()
+        is_sig = result.p_value < 0.05
+        sig_color = _tok["success"] if is_sig else _tok["text_secondary"]
+        sig_prefix = "* " if is_sig else ""
         effect_str = (
             f" · {result.effect_size_name} = <b>{result.effect_size:.3f}</b>"
             if result.effect_size is not None
@@ -1545,9 +1553,9 @@ class _GroupComparisonPane(QWidget):
             f"<b>{sec_name}</b><br>"
             f"statistic = <b>{result.statistic:.3f}</b>, "
             f"<span style='color:{sig_color}'>"
-            f"p = <b>{result.p_value:.4f}</b> {result.significance}</span>"
+            f"{sig_prefix}p = <b>{result.p_value:.4f}</b> {result.significance}</span>"
             f"{effect_str}<br>"
-            f"<small style='color:#777'>"
+            f"<small style='color:{_tok['text_secondary']}'>"
             f"{'parametric' if result.is_parametric else 'non-parametric'} test"
             f"{(' · ' + result.note) if result.note else ''}</small>"
         )
@@ -1977,11 +1985,19 @@ class _SequenceComparisonPane(QWidget):
         self, result, values_per_section: dict[str, list[float]]
     ) -> None:
         # ----- Omnibus result label -----
+        # Round 30 — A11Y WCAG 1.4.1 + theme-aware colours (see _render_result
+        # in the simple-test pane above for the same pattern).
+        from rrational.inspector.style.theme import palette_tokens
+
+        _tok = palette_tokens()
         if math.isnan(result.p_value):
-            sig_color = "#888"
+            sig_color = _tok["text_secondary"]
             p_str = "—"
+            sig_prefix = ""
         else:
-            sig_color = "#2ca02c" if result.p_value < 0.05 else "#555"
+            is_sig = result.p_value < 0.05
+            sig_color = _tok["success"] if is_sig else _tok["text_secondary"]
+            sig_prefix = "* " if is_sig else ""
             p_str = f"{result.p_value:.4f}"
 
         if math.isnan(result.effect_size):

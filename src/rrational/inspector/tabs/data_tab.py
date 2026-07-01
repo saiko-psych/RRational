@@ -513,7 +513,9 @@ class DataTab(InspectorTab):
         # expander.
         self._id_pattern_description = QLabel("")
         self._id_pattern_description.setWordWrap(True)
-        self._id_pattern_description.setStyleSheet("color: #444; font-style: italic;")
+        # Round 30 — theme-aware hint text; previous #444 invisible on dark bg.
+        self._id_pattern_description.setStyleSheet("font-style: italic;")
+        self._id_pattern_description.setProperty("hint", True)
         form.addRow("Matches:", self._id_pattern_description)
 
         # Live match counter — kept on the main form because it's the

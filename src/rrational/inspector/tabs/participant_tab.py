@@ -271,7 +271,7 @@ class RepetitiveEventsDialog(QDialog):
         outer.addLayout(row_btns)
 
         self._preview_label = QLabel("")
-        self._preview_label.setStyleSheet("color: #555;")
+        self._preview_label.setProperty("muted", True)
         outer.addWidget(self._preview_label)
 
         # Live preview hooks — recompute whenever the user tweaks any
@@ -434,16 +434,24 @@ class ParticipantTab(InspectorTab):
 
         self._prev_btn = QPushButton("<- Previous participant")
         self._prev_btn.setToolTip("Switch to the previous loaded recording")
+        # Round 30 — A11Y: keyboard shortcut + explicit accessible name so
+        # AT users can navigate without mouse-clicking the arrow buttons.
+        self._prev_btn.setShortcut("Alt+Left")
+        self._prev_btn.setAccessibleName("Previous participant")
         self._prev_btn.clicked.connect(self._on_prev_clicked)
         top_layout.addWidget(self._prev_btn)
 
         self._next_btn = QPushButton("Next participant ->")
         self._next_btn.setToolTip("Switch to the next loaded recording")
+        self._next_btn.setShortcut("Alt+Right")
+        self._next_btn.setAccessibleName("Next participant")
         self._next_btn.clicked.connect(self._on_next_clicked)
         top_layout.addWidget(self._next_btn)
 
         self._status_label = QLabel("No participants loaded.")
-        self._status_label.setStyleSheet("color: #555; padding-left: 12px;")
+        # Round 30 — palette-aware muted, was hardcoded #555.
+        self._status_label.setStyleSheet("padding-left: 12px;")
+        self._status_label.setProperty("muted", True)
         top_layout.addWidget(self._status_label)
         top_layout.addStretch()
 
@@ -746,8 +754,10 @@ class ParticipantTab(InspectorTab):
                 sep.setFrameShadow(QFrame.Sunken)
                 self._header_metrics_layout.addWidget(sep)
             name_label = QLabel(f"<b>{name}:</b>")
-            name_label.setStyleSheet("color: #333;")
-            value_label.setStyleSheet("color: #555;")
+            # Round 30 — palette-aware text; previous #333 was invisible
+            # in dark mode, #555 too dim against dark surface.
+            name_label.setProperty("heading", True)
+            value_label.setProperty("muted", True)
             self._header_metrics_layout.addWidget(name_label)
             self._header_metrics_layout.addWidget(value_label)
         self._header_metrics_layout.addStretch()
@@ -847,10 +857,19 @@ class ParticipantTab(InspectorTab):
             # Validated rows render the name in a darker green so the
             # check mark + colour together survive any single rendering
             # quirk (some Linux fonts swallow U+2713).
-            name_colour = "#2a7a2a" if is_validated else "#222"
+            # Round 30 — pull theme colours at render time from the active
+            # QApplication palette so the inline HTML respects dark/light
+            # mode (previous "#222" was invisible in dark mode).
+            from qtpy.QtWidgets import QApplication
+
+            app_palette = QApplication.palette()
+            name_colour = (
+                "#2a7a2a" if is_validated else app_palette.text().color().name()
+            )
+            secondary_colour = app_palette.mid().color().name()
             label = QLabel(
                 f"<span style='color:{name_colour};'>{prefix}{meta.name}</span>  "
-                f"<span style='color:#888;'>"
+                f"<span style='color:{secondary_colour};'>"
                 f"({meta.beat_count} beats, "
                 f"{meta.t_end - meta.t_start:.0f}s)</span>"
             )

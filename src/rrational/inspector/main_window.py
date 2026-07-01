@@ -470,7 +470,11 @@ class MainWindow(QMainWindow):
         # from here so the readout stays on the MainWindow's status bar
         # regardless of which tab is active.
         self._cursor_readout = QLabel("")
-        self._cursor_readout.setStyleSheet("color: #555; padding-right: 8px;")
+        self._cursor_readout.setStyleSheet("padding-right: 8px;")
+        # Round 30 — theme-aware muted text via QSS [muted="true"] rule
+        # (text_secondary token). Previously hardcoded #555 was invisible
+        # on the dark status-bar background.
+        self._cursor_readout.setProperty("muted", True)
         self._browse_tab._plot.cursor_moved.connect(self._update_cursor_readout)
         self._browse_tab._plot.cursor_left.connect(self._clear_cursor_readout)
 
@@ -1483,9 +1487,11 @@ class MainWindow(QMainWindow):
                 else "(unnamed)"
             )
             badge.setText(f"Project: {name}")
+            # Round 30 — palette(highlight) instead of hardcoded #1f6feb
+            # (GitHub-blue, missing in both light and dark theme tokens).
             badge.setStyleSheet(
                 "QLabel#projectBadge { "
-                "color: #1f6feb; font-weight: bold; padding: 0 8px; "
+                "color: palette(highlight); font-weight: bold; padding: 0 8px; "
                 "}"
             )
 

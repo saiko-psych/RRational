@@ -352,25 +352,37 @@ def filter_exclusion_zones(
     excluded_duration_ms = 0
     n_excluded = 0
 
+    # Round 30 — tz handling needs to be SYMMETRIC. The earlier code
+    # stripped tzinfo on both sides without converting to a common
+    # frame first, so a UTC beat compared against a local-tz zone
+    # silently shifted by the UTC offset (and across DST in the worst
+    # case). Normalize both sides to naive-UTC before comparison.
+    from datetime import timezone as _tz
+
+    def _to_naive_utc(t):
+        if t is None:
+            return None
+        if hasattr(t, "tzinfo") and t.tzinfo is not None:
+            return t.astimezone(_tz.utc).replace(tzinfo=None)
+        return t
+
+    normalized_zones = [
+        (_to_naive_utc(zs), _to_naive_utc(ze)) for zs, ze in parsed_zones
+    ]
+
     for rr in rr_intervals:
         ts = rr.timestamp
         if ts is None:
             filtered.append(rr)
             continue
 
-        ts_naive = (
-            ts.replace(tzinfo=None)
-            if hasattr(ts, "tzinfo") and ts.tzinfo is not None
-            else ts
-        )
+        ts_naive_utc = _to_naive_utc(ts)
 
         is_excluded = False
-        for zone_start, zone_end in parsed_zones:
-            if hasattr(zone_start, "tzinfo") and zone_start.tzinfo is not None:
-                zone_start = zone_start.replace(tzinfo=None)
-            if hasattr(zone_end, "tzinfo") and zone_end.tzinfo is not None:
-                zone_end = zone_end.replace(tzinfo=None)
-            if zone_start <= ts_naive <= zone_end:
+        for zone_start, zone_end in normalized_zones:
+            if zone_start is None or zone_end is None:
+                continue
+            if zone_start <= ts_naive_utc <= zone_end:
                 is_excluded = True
                 excluded_duration_ms += rr.rr_ms
                 n_excluded += 1

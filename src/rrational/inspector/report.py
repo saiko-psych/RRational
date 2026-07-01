@@ -1434,5 +1434,28 @@ def generate_group_analysis_html(results: dict, output_path) -> "Path":
         parts.append("</tbody></table>")
 
     parts.append("</body></html>")
-    out.write_text("\n".join(parts), encoding="utf-8")
+    # Round 30 — atomic write (per-call unique tmp + replace + retry).
+    # Pattern matches results_persistence/annotation_persistence: a crash
+    # mid-write previously left a truncated HTML report silently
+    # replacing the previous good one.
+    import os
+    import time
+
+    payload = "\n".join(parts)
+    tmp = out.with_suffix(f"{out.suffix}.{os.getpid()}.{time.time_ns()}.tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    last_exc: BaseException | None = None
+    for attempt in range(5):
+        try:
+            tmp.replace(out)
+            return out
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.02 * (2**attempt))
+    if last_exc is not None:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise last_exc
     return out

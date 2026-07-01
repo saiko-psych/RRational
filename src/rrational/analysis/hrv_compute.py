@@ -116,12 +116,25 @@ def _compute_kubios_frequency_powers(
 
     vlf = band_power(*KUBIOS_BAND_VLF)
     lf = band_power(*KUBIOS_BAND_LF)
-    hf = band_power(*KUBIOS_BAND_HF)
+    # Round 30 — HF upper bound INCLUSIVE per Task Force 1996 Table 2
+    # (HF = 0.15–0.40 Hz inclusive). The standard band_power uses
+    # strict ``< f2`` so the bin landing exactly on 0.40 Hz was being
+    # dropped; for the highest band specifically we widen to <=.
+    hf_mask = (freqs >= KUBIOS_BAND_HF[0]) & (freqs <= KUBIOS_BAND_HF[1])
+    hf = float(np.trapezoid(psd[hf_mask], freqs[hf_mask])) if np.any(hf_mask) else 0.0
+    tp = vlf + lf + hf
+    lfn = 100.0 * lf / (lf + hf) if (lf + hf) > 0 else float("nan")
+    hfn = 100.0 * hf / (lf + hf) if (lf + hf) > 0 else float("nan")
     return {
         "VLF": vlf,
         "LF": lf,
         "HF": hf,
-        "TP": vlf + lf + hf,
+        # Round 30 — LFn/HFn (normalized units per Task Force 1996 §3.2.3)
+        # were declared in the metric catalog but never written in the
+        # Kubios branch, so users selecting them silently got None.
+        "LFn": lfn,
+        "HFn": hfn,
+        "TP": tp,
         "LF_HF": lf / hf if hf > 0 else float("nan"),
     }
 
@@ -187,6 +200,13 @@ def calculate_hrv_metrics(
                 hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
                 for m in selected_set & time_basic:
                     if m == "MeanHR":
+                        # Round 30 — Mean HR here is derived from mean NN
+                        # (HR = 60000 / MeanNN). By Jensen's inequality this
+                        # differs from the mean of instantaneous HR
+                        # (mean of 60000/rr_i) which is always >= the
+                        # NN-derived value. Both conventions appear in the
+                        # HRV literature; we keep the NN-derived one for
+                        # Kubios compatibility (Tarvainen et al. 2014).
                         mean_nn = hrv_time.get("HRV_MeanNN", [None])[0]
                         result["MeanHR"] = (
                             60000 / mean_nn if mean_nn and mean_nn > 0 else None

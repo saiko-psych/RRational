@@ -91,6 +91,13 @@ def test_zen_action_triggers_zen_toggle_on_plot(main_window):
 # InfoDock visibility fix
 # ---------------------------------------------------------------------
 def test_info_dock_has_usable_minimum_width(main_window):
-    """The right-side InfoDock must not collapse to a 1-px slit."""
+    """The right-side InfoDock must not collapse to a 1-px slit.
+
+    Round 29 deliberately reduced the container floor from 280 to 220 so
+    medium-length filenames elide reasonably without dropping every
+    information-bearing character. The original 280 threshold became
+    stale at that point — the dock-level guard remains, just at the
+    smaller value.
+    """
     dock = main_window._info_dock
-    assert dock.minimumWidth() >= 280
+    assert dock.minimumWidth() >= 220
