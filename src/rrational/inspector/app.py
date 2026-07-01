@@ -154,8 +154,11 @@ def run(argv: list[str] | None = None) -> int:
     window = MainWindow(initial_path=initial_path)
     window.show()
 
-    # Qt event loop (NOT Python exec — Qt uses .exec() as standard method name).
-    return QApplication.exec_(app) if hasattr(QApplication, "exec_") else app.exec()
+    # Qt event loop. Call the INSTANCE method — ``QApplication.exec_(app)`` is
+    # wrong because ``exec_`` is a static/no-arg method, so passing ``app``
+    # raised "exec_(): too many arguments" and the app never launched. Both
+    # PySide6 and PyQt6 expose ``app.exec()``; PyQt5 also accepts ``app.exec()``.
+    return app.exec() if hasattr(app, "exec") else app.exec_()
 
 
 def main() -> int:

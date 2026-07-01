@@ -113,6 +113,45 @@ def test_parser_help_exits_cleanly(capsys):
     assert "--file" in out
 
 
+def test_run_reaches_and_calls_event_loop(qtbot, monkeypatch, tmp_path):
+    """``run()`` must reach + correctly invoke the Qt event loop.
+
+    Regression: ``run()`` called ``QApplication.exec_(app)``, but ``exec_`` is a
+    no-arg static method, so passing ``app`` raised ``exec_(): too many
+    arguments`` and the app crashed at launch every time. It went undetected
+    for many rounds because every widget test drives Qt through ``qtbot`` and
+    never calls ``run()`` through to the event-loop line — the only test that
+    called ``run()`` used ``--help``, which exits at argparse first.
+
+    Here we patch the event loop to return a sentinel immediately (so the test
+    doesn't block) and assert ``run([])`` returns it — proving the exec call is
+    well-formed, not a TypeError.
+    """
+    from rrational.inspector import settings
+
+    settings.enable_test_mode(tmp_path)
+
+    from qtpy.QtWidgets import QApplication
+
+    calls: list[str] = []
+
+    def _fake_exec(self=None):
+        calls.append("exec")
+        return 4242
+
+    # Patch ONLY the correct instance method. We deliberately leave the real
+    # ``exec_`` in place: if ``run()`` regressed to ``QApplication.exec_(app)``
+    # again, the real no-arg static ``exec_`` would receive ``app`` and raise
+    # TypeError, failing this test — which is exactly the guard we want.
+    monkeypatch.setattr(QApplication, "exec", _fake_exec, raising=False)
+
+    from rrational.inspector.app import run
+
+    rc = run([])
+    assert rc == 4242
+    assert calls == ["exec"]  # the instance event loop was invoked exactly once
+
+
 def test_main_window_constructs_under_offscreen(qtbot, tmp_path):
     """The window must construct without a real display.
 
