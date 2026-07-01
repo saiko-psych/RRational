@@ -969,7 +969,28 @@ class PreprocessingPanel(QWidget):
             plot._curve.setData(data.t, self._last_result.corrected_v)
         else:
             plot._curve.setData(data.t, data.v)
+        # Round 32 (PP1) — propagate the choice to the ACTIVE dataset so the
+        # Analysis tab's Compute uses the corrected series too, not just the
+        # plot. Previously the toggle only re-drew the curve, so Compute
+        # silently ran on raw data while the export used corrected values.
+        self._apply_use_corrected_to_active_dataset(checked)
         self._refresh_workflow_steps()
+
+    def _apply_use_corrected_to_active_dataset(self, checked: bool) -> None:
+        """Store the corrected series + flag on the active Dataset (PP1)."""
+        try:
+            ds = self._main_window._datasets[self._main_window._active_idx]
+        except (AttributeError, IndexError, TypeError):
+            return
+        if (
+            checked
+            and self._last_result is not None
+            and self._last_result.corrected_v is not None
+        ):
+            ds.corrected_v = self._last_result.corrected_v
+            ds.use_corrected = True
+        else:
+            ds.use_corrected = False
 
     # ------------------------------------------------------------------
     # Manual artifact marking + undo / redo
@@ -1177,6 +1198,12 @@ class PreprocessingPanel(QWidget):
             return
         out_path = Path(out_path_str)
 
+        # Round 32 (PP2) — carry the plot's manual artifact edits into the
+        # export so a manually-marked/unmarked beat is reflected in the file,
+        # not just the algorithm's set.
+        plot = self._main_window._browse_tab._plot
+        manual_added = set(getattr(plot, "_manual_added_indices", set()))
+        manual_removed = set(getattr(plot, "_manual_removed_indices", set()))
         try:
             export = export_inspector_to_rrational(
                 data,
@@ -1184,6 +1211,8 @@ class PreprocessingPanel(QWidget):
                 participant_id=participant_id,
                 preprocessing=self._last_result,
                 source_path=active_ds.path,
+                manual_added=manual_added,
+                manual_removed=manual_removed,
             )
         except Exception as e:
             QMessageBox.critical(

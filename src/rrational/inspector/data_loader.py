@@ -215,6 +215,14 @@ class Dataset:
     name: str
     data: InspectorData
     path: Path | None = None
+    # Round 32 (PP1) — artifact-corrected RR series (ms), same length + gap
+    # layout as ``data.v`` (NaN in the same positions). Populated by the
+    # preprocessing panel when a correction is computed, and by the loader
+    # when a persisted correction exists. Analysis reads it instead of the
+    # raw ``data.v`` when ``use_corrected`` is True, so Compute matches what
+    # the plot shows and what the .rrational export writes.
+    corrected_v: "np.ndarray | None" = None
+    use_corrected: bool = False
 
     @classmethod
     def from_path(cls, path: Path) -> "Dataset":

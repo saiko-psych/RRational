@@ -216,24 +216,49 @@ def _slice_section(
     data: "InspectorData",
     section_name: str,
     exclusions: list[ExclusionZone] | None = None,
+    corrected_v: np.ndarray | None = None,
 ) -> np.ndarray | None:
     """Return the RR (ms) values inside ``section_name``, minus excluded beats.
 
     The optional ``exclusions`` argument drops any beat whose timestamp
     falls inside ANY ``ExclusionZone``. Pass ``None`` (or an empty
     list) to skip the filter.
+
+    Round 32 (PP1) — when ``corrected_v`` is supplied (same length + gap
+    layout as ``data.v``) the artifact-corrected values are analysed instead
+    of the raw ``data.v``. This is what makes "Use corrected RR values"
+    actually affect Compute, not just the plot. A length mismatch falls back
+    to the raw array defensively.
     """
     section = next((s for s in data.sections if s.name == section_name), None)
     if section is None:
         return None
+    values = (
+        corrected_v
+        if corrected_v is not None and len(corrected_v) == len(data.v)
+        else data.v
+    )
     in_section = (data.t >= section.t_start) & (data.t <= section.t_end)
-    finite = np.isfinite(data.v)
+    finite = np.isfinite(values)
     mask = in_section & finite
     if exclusions:
         for z in exclusions:
             inside = (data.t >= z.start_t) & (data.t <= z.end_t)
             mask &= ~inside
-    return data.v[mask]
+    return values[mask]
+
+
+def _corrected_for(ds) -> np.ndarray | None:
+    """Round 32 (PP1) — the corrected RR array to analyse for a Dataset.
+
+    Returns ``ds.corrected_v`` only when the dataset's ``use_corrected`` flag
+    is set (the preprocessing panel sets both when the user applies a
+    correction with "Use corrected RR values" on, and the loader restores
+    them from a persisted correction). Otherwise None -> raw ``data.v``.
+    """
+    if getattr(ds, "use_corrected", False):
+        return getattr(ds, "corrected_v", None)
+    return None
 
 
 def _active_exclusion_zones(main_window) -> list[ExclusionZone]:
@@ -813,7 +838,9 @@ class _SingleParticipantPane(QWidget):
             return
         ds = self._main_window._datasets[ds_idx]
         exclusions = _active_exclusion_zones(self._main_window)
-        rr = _slice_section(ds.data, sec_name, exclusions=exclusions)
+        rr = _slice_section(
+            ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
+        )
         if rr is None or len(rr) == 0:
             self._main_window.statusBar().showMessage(
                 f"No samples in section '{sec_name}'", 3000
@@ -1011,7 +1038,9 @@ class _RepeatingSectionPane(QWidget):
         exclusions = _active_exclusion_zones(self._main_window)
         selected_metrics_seen: list[str] = []
         for ds in self._main_window._datasets:
-            rr = _slice_section(ds.data, sec_name, exclusions=exclusions)
+            rr = _slice_section(
+                ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
+            )
             if rr is None or len(rr) == 0:
                 continue
             metrics, selected = _compute_metrics_with_settings(rr, self._settings_bar)
@@ -1493,7 +1522,9 @@ class _GroupComparisonPane(QWidget):
             label = self._group_by_idx.get(i, "")
             if not label:
                 continue
-            rr = _slice_section(ds.data, sec_name, exclusions=exclusions)
+            rr = _slice_section(
+                ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
+            )
             if rr is None or len(rr) == 0:
                 continue
             metrics, _ = _compute_metrics_with_settings(rr, self._settings_bar)
@@ -1930,7 +1961,9 @@ class _SequenceComparisonPane(QWidget):
         exclusions = _active_exclusion_zones(self._main_window)
         for ds in self._main_window._datasets:
             for s in seq.sections:
-                rr = _slice_section(ds.data, s, exclusions=exclusions)
+                rr = _slice_section(
+                    ds.data, s, exclusions=exclusions, corrected_v=_corrected_for(ds)
+                )
                 if rr is None or len(rr) == 0:
                     values_per_section[s].append(float("nan"))
                     continue

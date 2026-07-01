@@ -89,8 +89,18 @@ def _build_section_export(
     *,
     preprocessing: "PreprocessingResult | None",
     timestamp: str,
+    manual_added: set | None = None,
+    manual_removed: set | None = None,
 ) -> SectionExportV2:
-    """Build one SectionExportV2 from a SectionMeta + the dataset."""
+    """Build one SectionExportV2 from a SectionMeta + the dataset.
+
+    Round 32 (PP2) — ``manual_added`` / ``manual_removed`` are the user's
+    per-beat artifact edits (full-recording indices). The exported artifact
+    set is ``(algorithm ∪ manual_added) − manual_removed`` so manual marks
+    are no longer silently dropped from the .rrational file.
+    """
+    manual_added = manual_added or set()
+    manual_removed = manual_removed or set()
     start_idx, end_idx = _slice_section_indices(data, section.t_start, section.t_end)
     beat_count = end_idx - start_idx
 
@@ -147,10 +157,13 @@ def _build_section_export(
         # Cast each index to plain Python int — preprocessing.indices is
         # a numpy.int64 array and yaml.dump emits Python-object tags for
         # numpy scalars that yaml.safe_load then refuses on read-back.
+        # Round 32 (PP2) — fold in the user's manual edits: add manually
+        # marked beats, drop manually un-marked algorithm beats.
+        effective_idxs = (
+            {int(i) for i in preprocessing.indices} | {int(i) for i in manual_added}
+        ) - {int(i) for i in manual_removed}
         section_artifact_idxs = sorted(
-            int(i - start_idx)
-            for i in preprocessing.indices
-            if start_idx <= i < end_idx
+            int(i - start_idx) for i in effective_idxs if start_idx <= i < end_idx
         )
         section_rate = float(
             len(section_artifact_idxs) / beat_count if beat_count > 0 else 0.0
@@ -249,18 +262,28 @@ def build_v2_export(
     preprocessing: "PreprocessingResult | None" = None,
     source_path: "Path | None" = None,
     source_app: str = "RRational",
+    manual_added: set | None = None,
+    manual_removed: set | None = None,
 ) -> RRationalExportV2:
     """Build a complete :class:`RRationalExportV2` from inspector state.
 
     Pure function — does not touch disk. The caller hands the result
     to :func:`save_rrational_v2` (or persists differently if desired).
+
+    Round 32 (PP2) — ``manual_added`` / ``manual_removed`` carry the user's
+    per-beat artifact edits so the exported artifact set reflects them.
     """
     timestamp = datetime.now().isoformat()
 
     sections: dict[str, SectionExportV2] = {}
     for section in data.sections:
         sections[section.name] = _build_section_export(
-            data, section, preprocessing=preprocessing, timestamp=timestamp
+            data,
+            section,
+            preprocessing=preprocessing,
+            timestamp=timestamp,
+            manual_added=manual_added,
+            manual_removed=manual_removed,
         )
 
     source_files: list[dict] = []
@@ -316,13 +339,21 @@ def export_inspector_to_rrational(
     participant_id: str,
     preprocessing: "PreprocessingResult | None" = None,
     source_path: "Path | None" = None,
+    manual_added: set | None = None,
+    manual_removed: set | None = None,
 ) -> RRationalExportV2:
-    """Build + save in one call. Returns the export object for inspection."""
+    """Build + save in one call. Returns the export object for inspection.
+
+    Round 32 (PP2) — pass ``manual_added`` / ``manual_removed`` (the plot's
+    manual artifact edits) so they land in the exported artifact set.
+    """
     export = build_v2_export(
         data,
         participant_id=participant_id,
         preprocessing=preprocessing,
         source_path=source_path,
+        manual_added=manual_added,
+        manual_removed=manual_removed,
     )
     save_rrational_v2(export, out_path)
     return export
