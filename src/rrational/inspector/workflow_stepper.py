@@ -74,9 +74,15 @@ _STYLE: dict[str, str] = {
         "border: 1px solid #c98a2a; border-radius: 4px; padding: 6px 10px; "
         "font-weight: 600; letter-spacing: 0.3px; }"
     ),
+    # Round 33 (W1) — the locked state uses palette() roles (resolved by Qt
+    # at render time from the app palette, no import needed) so it stays
+    # legible in BOTH themes. The old hardcoded dark-surface hex rendered as
+    # dark-on-dark and became invisible under the light preset. The done /
+    # active states keep their brand accent hex (jade / amber) — those are
+    # identical in both themes and their dark #1a1d22 text reads on both.
     "locked": (
-        "QPushButton { background-color: #2a3038; color: #6e7480; "
-        "border: 1px solid #3d4350; border-radius: 4px; padding: 6px 10px; "
+        "QPushButton { background-color: palette(button); color: palette(mid); "
+        "border: 1px solid palette(midlight); border-radius: 4px; padding: 6px 10px; "
         "letter-spacing: 0.3px; }"
     ),
 }
