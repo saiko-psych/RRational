@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -583,6 +583,11 @@ class _SectionsPane(QWidget):
     2. **Found in active dataset** (bottom) — read-only.
     """
 
+    # Round 32 (SU2) — emitted with the section name when a section
+    # definition is deleted, so sibling panes (the Sequences editor) can
+    # purge stale references instead of writing an orphan back to disk.
+    section_removed = Signal(str)
+
     def __init__(self, main_window, parent=None) -> None:
         from rrational.inspector.help_widgets import HelpExpander
 
@@ -809,6 +814,10 @@ class _SectionsPane(QWidget):
         del self._sections[name]
         self._persist()
         self._refresh_defs_table()
+        # SU2 — let the Sequences pane drop this now-deleted section from any
+        # ordered sequence that referenced it (otherwise the sequence analysis
+        # silently resolves an empty result for the orphaned name).
+        self.section_removed.emit(name)
 
 
 class _GroupEditDialog(QDialog):
@@ -886,6 +895,19 @@ class _GroupEditDialog(QDialog):
         if name in self._existing_names:
             QMessageBox.warning(
                 self, "Duplicate name", f"A group named '{name}' already exists."
+            )
+            return
+        # Round 32 (SU3) — block a zero-member group when datasets WERE
+        # available to assign. Such a group silently produces NaN / empty
+        # output in the group-comparison stats. When no datasets are loaded
+        # (no checkboxes), assignment is legitimately deferred — allow it.
+        selected = [n for n, cb in self._member_checks.items() if cb.isChecked()]
+        if self._member_checks and not selected:
+            QMessageBox.warning(
+                self,
+                "Empty group",
+                "Assign at least one member, or cancel. A group with no "
+                "members cannot be used in a comparison.",
             )
             return
         self.accept()
@@ -1427,6 +1449,31 @@ class _SequencesPane(QWidget):
         self._persist()
         self._refresh_table()
 
+    def drop_section_from_all(self, section_name: str) -> None:
+        """Round 32 (SU2) — purge a deleted section from every sequence.
+
+        Called when the Sections pane deletes a section definition. Any
+        sequence referencing it is rewritten without that section; a sequence
+        left with fewer than 2 sections is no longer statistically meaningful
+        and is dropped entirely. Persists + refreshes only if something
+        actually changed.
+        """
+        new_sequences: list[Sequence] = []
+        changed = False
+        for seq in self._sequences:
+            if section_name not in seq.sections:
+                new_sequences.append(seq)
+                continue
+            changed = True
+            filtered = [s for s in seq.sections if s != section_name]
+            if len(filtered) >= 2:
+                new_sequences.append(Sequence(name=seq.name, sections=filtered))
+            # else: sequence falls below 2 sections -> drop it entirely.
+        if changed:
+            self._sequences = new_sequences
+            self._persist()
+            self._refresh_table()
+
     def _on_duplicate(self) -> None:
         row = self._table.currentRow()
         if row < 0:
@@ -1682,6 +1729,13 @@ class SetupTab(InspectorTab):
         self._groups_pane = _GroupsPane(main_window, self)
         self._sequences_pane = _SequencesPane(main_window, self)
         self._protocol_pane = _ProtocolPane(main_window, self)
+
+        # SU2 — deleting a section cascades to the Sequences editor so no
+        # sequence keeps a dangling reference to a section that no longer
+        # exists (which would silently yield empty sequence-analysis output).
+        self._sections_pane.section_removed.connect(
+            self._sequences_pane.drop_section_from_all
+        )
 
         self._subtabs.addTab(self._events_pane, "Events")
         self._subtabs.addTab(self._sections_pane, "Sections")

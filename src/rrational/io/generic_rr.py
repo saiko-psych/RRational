@@ -83,6 +83,24 @@ def detect_format(path: Path) -> str | None:
         sidecar = path.with_name(path.name[: -len(".tsv.gz")] + ".json")
         if sidecar.exists():
             return "bids_physio"
+        # Round 32 — a BIDS cardiac physio file whose .json sidecar is
+        # missing/unreadable cannot be parsed. Do NOT fall through to the
+        # text sniffing below: the .tsv.gz is a gzip binary, so latin-1
+        # would decode it to garbage and silently return None with no clue
+        # why. Log the real cause and stop here.
+        import logging
+
+        logging.getLogger("rrational.io.generic_rr").warning(
+            "BIDS cardiac physio %s has no readable JSON sidecar (%s); "
+            "cannot detect format.",
+            path.name,
+            sidecar.name,
+        )
+        return None
+    # Any other gzip file is binary, not sniffable as text — bail early
+    # rather than latin-1-decoding it into meaningless "lines".
+    if name_lower.endswith(".gz"):
+        return None
 
     try:
         text = _read_text_with_fallback(path)
