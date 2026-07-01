@@ -317,7 +317,7 @@ class BrowseTab(InspectorTab):
         Tags
         ----
         ``PROC``    — preprocessing has run (cached artifacts present).
-        ``N-WIN``   — number of windowed/segmented sections > 1.
+        ``SECTIONS`` — recording has more than one named section.
         ``BAD-Q``   — artifact ratio above the 5% triage threshold.
         ``KUBIOS``  — recording originated from a Kubios-format source.
         ``BIDS``    — file path matches the BIDS physio naming convention.
@@ -333,11 +333,13 @@ class BrowseTab(InspectorTab):
         if has_proc:
             badges.append("PROC")
 
-        # N-WIN — only badge multi-section recordings, single-section is the
-        # uninteresting common case.
+        # SECTIONS — only badge multi-section recordings; single-section is
+        # the uninteresting common case. "SECTIONS" replaced the cryptic
+        # "N-WIN" (which implied analysis *windows*, not sections) after a
+        # naive-user dogfooding pass flagged it as unreadable.
         n_sections = len(getattr(ds.data, "sections", []) or [])
         if n_sections > 1:
-            badges.append("N-WIN")
+            badges.append("SECTIONS")
 
         # BAD-Q — artifact ratio from cache or NaN-fraction in the timeline
         # as a coarse fallback (full preprocessing summary lives elsewhere).

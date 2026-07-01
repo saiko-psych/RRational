@@ -104,7 +104,7 @@ def test_set_items_replaces_existing_rows(qtbot):
 
 def test_badge_colors_cover_documented_taxonomy():
     """Every documented badge tag in the spec resolves to a palette token."""
-    for tag in ("PROC", "N-WIN", "BAD-Q", "KUBIOS", "BIDS"):
+    for tag in ("PROC", "SECTIONS", "BAD-Q", "KUBIOS", "BIDS"):
         assert tag in _BADGE_COLORS
 
 

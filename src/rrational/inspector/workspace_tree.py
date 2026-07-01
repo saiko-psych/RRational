@@ -46,7 +46,7 @@ ROLE_BADGES = Qt.UserRole + 3  # list[str] of badge tags
 # does not ship a standalone "info" colour.
 _BADGE_COLORS: dict[str, str] = {
     "PROC": "success",
-    "N-WIN": "accent",
+    "SECTIONS": "accent",
     "BAD-Q": "danger",
     "KUBIOS": "warning",
     "BIDS": "accent",

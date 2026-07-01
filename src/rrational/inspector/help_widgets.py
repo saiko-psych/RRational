@@ -1,9 +1,9 @@
 """Reusable in-app help widgets — MNE-LAB style.
 
-``HelpExpander`` is a thin, single-button row showing a small ``ⓘ Help``
-button. Clicking opens a focused popup with the help text. ``InfoButton``
-exposes the same icon for callers that want the inline button without
-the wrapping QGroupBox semantics.
+``HelpExpander`` is a thin, single-button row showing a small ``ⓘ <topic>``
+button (the topic title follows the info icon). Clicking opens a focused
+popup with the help text. ``InfoButton`` exposes the same button for callers
+that want the inline control without the wrapping QGroupBox semantics.
 
 This mirrors MNE-LAB's "compact UI + focused docs popup" approach
 rather than always-visible inline documentation.
@@ -84,8 +84,12 @@ class InfoButton(QToolButton):
         super().__init__(parent)
         self._title = title
         self._body_html = body_html
-        # Unicode 'circled information source' — readable, no emoji.
-        self.setText("ⓘ Help")
+        # Unicode 'circled information source' — readable, no emoji. The
+        # topic title follows the icon so panes with more than one help
+        # button (e.g. Setup's Events pane: "Events" + "Event synonyms with
+        # regex") are distinguishable instead of showing two identical
+        # "ⓘ Help" rows that read like an accidental duplicate.
+        self.setText(f"ⓘ {title}")
         self.setToolTip(f"Show help: {title}")
         # Round 33 (W5) — screen readers otherwise announce the raw circled-i
         # glyph; give an explicit accessible name (R30 icon-button pattern).

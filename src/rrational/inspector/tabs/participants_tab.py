@@ -318,7 +318,7 @@ class ParticipantsTab(InspectorTab):
         return (
             "Saved to "
             f"{self.format_config_path('config/participants.yml')} "
-            "(Streamlit-shared)"
+            "(shared across projects)"
         )
 
     def on_active_dataset_changed(self, _data: "InspectorData | None") -> None:

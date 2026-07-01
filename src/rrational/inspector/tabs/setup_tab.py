@@ -304,7 +304,7 @@ class _EventsPane(QWidget):
 
         self._info_label = QLabel(
             f"<b>Defined events</b> (saved to "
-            f"{format_config_path('config/events.yml')}, Streamlit-shared)"
+            f"{format_config_path('config/events.yml')}, shared across projects)"
         )
         self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
@@ -371,7 +371,7 @@ class _EventsPane(QWidget):
         self._events = self._load()
         self._info_label.setText(
             f"<b>Defined events</b> (saved to "
-            f"{format_config_path('config/events.yml')}, Streamlit-shared)"
+            f"{format_config_path('config/events.yml')}, shared across projects)"
         )
         self._refresh_defs_table()
         self._refresh_buttons()
@@ -636,7 +636,7 @@ class _SectionsPane(QWidget):
 
         self._info_label = QLabel(
             f"<b>Defined sections</b> (saved to "
-            f"{format_config_path('config/sections.yml')}, Streamlit-shared)"
+            f"{format_config_path('config/sections.yml')}, shared across projects)"
         )
         self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
@@ -713,7 +713,7 @@ class _SectionsPane(QWidget):
         self._sections = self._load()
         self._info_label.setText(
             f"<b>Defined sections</b> (saved to "
-            f"{format_config_path('config/sections.yml')}, Streamlit-shared)"
+            f"{format_config_path('config/sections.yml')}, shared across projects)"
         )
         self._refresh_defs_table()
         self._refresh_buttons()
@@ -1563,7 +1563,7 @@ class _ProtocolPane(QWidget):
         self._info_label = QLabel(
             f"<b>Protocol</b> — study-wide timing + threshold parameters "
             f"(saved to {format_config_path('config/protocol.yml')}, "
-            f"Streamlit-shared)."
+            f"shared across projects)."
         )
         self._info_label.setWordWrap(True)
         self._info_label.setProperty("muted", True)
@@ -1667,7 +1667,7 @@ class _ProtocolPane(QWidget):
         self._info_label.setText(
             f"<b>Protocol</b> — study-wide timing + threshold parameters "
             f"(saved to {format_config_path('config/protocol.yml')}, "
-            f"Streamlit-shared)."
+            f"shared across projects)."
         )
         self._apply_to_widgets(self._protocol)
 

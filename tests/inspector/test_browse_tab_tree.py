@@ -67,7 +67,7 @@ def test_browse_tab_uses_workspace_tree(main_window, qtbot):
 
 
 def test_browse_tab_renders_badges_for_multi_section_dataset(main_window, qtbot):
-    """Multi-section + high-NaN dataset surfaces N-WIN and BAD-Q badges."""
+    """Multi-section + high-NaN dataset surfaces SECTIONS and BAD-Q badges."""
     bt = main_window._browse_tab
     ds = _synthetic_dataset(n_sections=3, nan_fraction=0.20)
     main_window._datasets.append(ds)
@@ -76,7 +76,7 @@ def test_browse_tab_renders_badges_for_multi_section_dataset(main_window, qtbot)
     top = bt._dataset_tree.topLevelItem(0)
     assert top is not None
     tags = top.data(0, ROLE_BADGES) or []
-    assert "N-WIN" in tags
+    assert "SECTIONS" in tags
     assert "BAD-Q" in tags
 
 
