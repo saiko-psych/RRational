@@ -161,7 +161,9 @@ def load_annotations(
     # Round 30 — surface schema drift; load no longer silently swallows
     # entries from incompatible format versions.
     file_version = raw.get("format_version") if isinstance(raw, dict) else None
-    if file_version is not None and file_version != FORMAT_VERSION:
+    # str() so a hand-edited unquoted "format_version: 1.0" (parsed by YAML as
+    # the float 1.0) doesn't false-positive against the string constant.
+    if file_version is not None and str(file_version) != FORMAT_VERSION:
         import logging
 
         logging.getLogger("rrational.inspector.annotation_persistence").warning(

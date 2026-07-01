@@ -237,6 +237,23 @@ def calculate_hrv_metrics(
                             lf = hrv_freq.get("HRV_LF", [0])[0] or 0
                             hf = hrv_freq.get("HRV_HF", [0])[0] or 0
                             result["TP"] = vlf + lf + hf if any([vlf, lf, hf]) else None
+                        elif m in ("LFn", "HFn"):
+                            # Round 30 — compute normalized units OURSELVES so
+                            # both freq_methods agree. NK2's HRV_LFn is LF/TP
+                            # (0-1, includes VLF in the denominator) whereas the
+                            # metric catalog labels LFn as "n.u." — Task Force
+                            # 1996 §3.2.3 defines n.u. as component/(LF+HF)*100.
+                            # The Kubios branch already uses that convention; if
+                            # we passed NK2's HRV_LFn through here the SAME metric
+                            # would mean two different things depending on
+                            # freq_method (e.g. 62 n.u. vs 0.58 fraction).
+                            lf = hrv_freq.get("HRV_LF", [None])[0]
+                            hf = hrv_freq.get("HRV_HF", [None])[0]
+                            if lf is not None and hf is not None and (lf + hf) > 0:
+                                num = lf if m == "LFn" else hf
+                                result[m] = 100.0 * num / (lf + hf)
+                            else:
+                                result[m] = None
                         else:
                             result[m] = hrv_freq.get(f"HRV_{m}", [None])[0]
             except Exception:

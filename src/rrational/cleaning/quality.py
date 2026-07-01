@@ -356,7 +356,13 @@ def filter_exclusion_zones(
     # stripped tzinfo on both sides without converting to a common
     # frame first, so a UTC beat compared against a local-tz zone
     # silently shifted by the UTC offset (and across DST in the worst
-    # case). Normalize both sides to naive-UTC before comparison.
+    # case). We adopt ONE convention: aware datetimes are converted to
+    # UTC and made naive; naive datetimes are ASSUMED to already be UTC
+    # (consistent with the calendar.timegm treatment elsewhere in this
+    # module). Both sides then share the naive-UTC frame. A genuinely
+    # naive-LOCAL input cannot be corrected without its tz, which is a
+    # data-provenance problem upstream, not something this comparison
+    # can recover.
     from datetime import timezone as _tz
 
     def _to_naive_utc(t):
@@ -364,7 +370,7 @@ def filter_exclusion_zones(
             return None
         if hasattr(t, "tzinfo") and t.tzinfo is not None:
             return t.astimezone(_tz.utc).replace(tzinfo=None)
-        return t
+        return t  # assumed already UTC
 
     normalized_zones = [
         (_to_naive_utc(zs), _to_naive_utc(ze)) for zs, ze in parsed_zones
