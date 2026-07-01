@@ -116,3 +116,50 @@ def test_palette_tokens_exposes_named_dict():
     # Sanity: both palettes expose the same keys so the QSS template
     # works against either without missing-key errors.
     assert set(dark.keys()) == set(light.keys())
+
+
+def _css_block(qss: str, selector: str) -> str:
+    """Return the ``{ ... }`` body of the FIRST rule whose selector matches
+    ``selector`` exactly (selector text immediately followed by ``{``), with
+    ``/* ... */`` comments stripped so property checks don't trip on prose in
+    the explanatory comments that document *why* a property was removed."""
+    import re
+
+    needle = selector + " {"
+    start = qss.index(needle) + len(needle)
+    end = qss.index("}", start)
+    body = qss[start:end]
+    return re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL)
+
+
+def test_tab_labels_cannot_clip_regression():
+    """Guard the two causes of the clipped "Participants  (44)" tab.
+
+    Qt's QStyleSheetStyle reserves each tab's width from the *base*,
+    normal-weight font metrics but paints with whatever the QSS ends up
+    applying. Two properties made the drawn text wider than the reserved
+    rect, clipping the ends of long labels:
+
+    * ``letter-spacing`` on ``QTabBar::tab`` — not counted in the reserved
+      width, so it clips proportionally to label length.
+    * ``font-weight`` on ``QTabBar::tab:selected`` — a heavier selected
+      weight paints wider than the normal-weight width Qt reserved.
+
+    Both were verified visually (real windows QPA) as the clip source. This
+    keeps them from creeping back via a "make the active tab pop" tweak.
+    """
+    from rrational.inspector.style.theme import _qss_for, palette_tokens
+
+    qss = _qss_for(palette_tokens("dark"))
+
+    tab_block = _css_block(qss, "QTabBar::tab")
+    assert "letter-spacing" not in tab_block, (
+        "letter-spacing on QTabBar::tab clips long labels — Qt does not "
+        "reserve width for it"
+    )
+
+    selected_block = _css_block(qss, "QTabBar::tab:selected")
+    assert "font-weight" not in selected_block, (
+        "a font-weight change on the selected tab paints wider than the "
+        "reserved width and clips long labels like 'Participants  (44)'"
+    )

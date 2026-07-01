@@ -217,13 +217,20 @@ def _qss_for(p: dict[str, str]) -> str:
     QTabBar::tab {{
         background-color: {p["bg_base"]};
         color: {p["text_secondary"]};
-        padding: 8px 16px;
+        /* ``letter-spacing`` was removed here (it was 0.3px): Qt's
+           QStyleSheetStyle reserves the tab width from the base font metrics
+           and does NOT add letter-spacing, but paints it — so long labels
+           ("Participants  (44)") drew wider than the reserved rect and
+           clipped at both ends. The generous 20px horizontal padding stays as
+           a defensive margin so minor font/DPI rounding never re-clips. See
+           also ``QTabBar::tab:selected``, which deliberately keeps the base
+           font-weight for the same reason. */
+        padding: 8px 20px;
         margin-right: 2px;
         border: 1px solid {p["border_subtle"]};
         border-bottom: none;
         border-top-left-radius: 4px;
         border-top-right-radius: 4px;
-        letter-spacing: 0.3px;
         min-width: 80px;
     }}
     QTabBar::tab:hover {{
@@ -235,7 +242,12 @@ def _qss_for(p: dict[str, str]) -> str:
         color: {p["text_primary"]};
         border-color: {p["border_strong"]};
         border-bottom: 1px solid {p["bg_surface"]};
-        font-weight: 600;
+        /* No ``font-weight`` change on select. Qt sizes every tab from the
+           base (normal-weight) font metrics, so a heavier selected weight
+           paints wider than the reserved rect and clips long labels
+           ("Participants  (44)"). The selected tab is already distinguished
+           by its lighter surface, brighter text, and stronger border — bold
+           was redundant emphasis that cost us a guaranteed clip. */
     }}
     QTabBar::tab:disabled {{
         color: {p["text_muted"]};
