@@ -137,6 +137,60 @@ def test_overlay_bubble_uses_theme_colors_not_default_palette(qtbot):
     assert "#1f2228" in light._body.styleSheet()  # text_primary (dark)
 
 
+def test_overlay_captures_mouse_so_bubble_is_clickable(qtbot):
+    """Regression: the overlay set WA_TransparentForMouseEvents on itself, so
+    EVERY click — including the bubble's Next/Skip/Exit buttons — fell through
+    to the UI behind it and the tutorial could never be advanced.
+
+    The overlay must NOT be mouse-transparent; click-through to the real
+    highlighted widget is handled by masking out the spotlight hole instead.
+    """
+    from qtpy.QtCore import Qt
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    ov = CoachOverlay(parent)
+    assert ov.testAttribute(Qt.WA_TransparentForMouseEvents) is False
+
+
+def test_next_button_click_emits_signal(qtbot):
+    """A real mouse click on Next (not just a manual signal emit) must fire the
+    overlay's next_clicked — proves the button wiring survives the overlay."""
+    from qtpy.QtCore import Qt
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    parent.show()
+    ov = CoachOverlay(parent)
+    ov.set_bubble("<p>hi</p>", step_idx=0, n_steps=12, can_advance=True)
+    ov.show()
+    with qtbot.waitSignal(ov.next_clicked, timeout=1000):
+        qtbot.mouseClick(ov._next_btn, Qt.LeftButton)
+
+
+def test_spotlight_is_masked_out_for_clickthrough(qtbot):
+    """With a spotlight set, the overlay masks out that rect so clicks there
+    reach the real widget; with no spotlight it captures the whole surface."""
+    from qtpy.QtCore import QRect
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    parent.resize(800, 600)
+    ov = CoachOverlay(parent)
+    ov.resize(800, 600)
+    spot = QRect(100, 100, 120, 40)
+    ov.set_target(spot)
+    mask = ov.mask()
+    assert not mask.isEmpty()
+    # A point inside the spotlight is NOT part of the overlay (click passes
+    # through to the real widget); a point outside it IS (dim captures it).
+    assert not mask.contains(spot.center())
+    assert mask.contains(QRect(0, 0, 800, 600).center())  # (400, 300), outside
+    # No spotlight -> mask cleared, so the whole surface captures input again.
+    ov.set_target(None)
+    assert ov.mask().isEmpty()
+
+
 from rrational.inspector.tutorial import TutorialController  # noqa: E402
 
 

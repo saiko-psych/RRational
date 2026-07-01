@@ -304,9 +304,16 @@ class CoachOverlay(QWidget):
     """Translucent full-parent overlay: dims everything, cuts a spotlight around
     the target, and shows an interactive instruction bubble.
 
-    The overlay itself is transparent to mouse events so the user interacts with
-    the real highlighted widget normally; only the bubble (a child frame)
-    receives clicks. The dim is purely a visual focus device.
+    Mouse model: the overlay CAPTURES mouse events over the dimmed area and the
+    bubble, so the bubble's Exit / Skip / Next buttons actually receive clicks.
+    A previous version set ``WA_TransparentForMouseEvents`` on the whole
+    overlay, which made every click — including the bubble's buttons — fall
+    through to the UI behind it, so the tutorial could never be advanced.
+
+    To still let the user perform the real action on an action step (e.g. click
+    the highlighted *Detect* button), the spotlight rectangle is punched out of
+    the overlay's input mask via :meth:`setMask`, so clicks inside the spotlight
+    reach the real widget while everything else is captured.
     """
 
     next_clicked = Signal()
@@ -316,9 +323,11 @@ class CoachOverlay(QWidget):
     def __init__(self, parent: QWidget, mode: str = "dark") -> None:
         super().__init__(parent)
         self._spotlight: QRect | None = None
-        # The overlay covers the parent and lets clicks fall through to the
-        # real UI beneath it; the bubble child re-enables mouse for itself.
-        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        # NOTE: deliberately NOT WA_TransparentForMouseEvents — the overlay must
+        # capture clicks so the bubble buttons work. Click-through to the real
+        # highlighted widget is handled selectively by masking out the spotlight
+        # hole (see _apply_input_mask), not by making the whole overlay
+        # transparent.
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(parent.size())
@@ -383,7 +392,20 @@ class CoachOverlay(QWidget):
     def set_target(self, rect: QRect | None) -> None:
         self._spotlight = rect
         self._reposition_bubble()
+        self._apply_input_mask()
         self.update()
+
+    def _apply_input_mask(self) -> None:
+        """Punch the spotlight rect out of the overlay's input area so clicks
+        there reach the real highlighted widget, while the dim + bubble still
+        capture everything else. No spotlight -> capture the whole surface
+        (welcome/summary steps only need the bubble's Next button)."""
+        from qtpy.QtGui import QRegion
+
+        if self._spotlight is not None and not self._spotlight.isNull():
+            self.setMask(QRegion(self.rect()) - QRegion(self._spotlight))
+        else:
+            self.clearMask()
 
     def set_bubble(
         self, html: str, step_idx: int, n_steps: int, can_advance: bool
@@ -411,6 +433,7 @@ class CoachOverlay(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
         self._reposition_bubble()
+        self._apply_input_mask()
         super().resizeEvent(event)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
