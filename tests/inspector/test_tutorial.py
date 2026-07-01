@@ -64,7 +64,9 @@ def test_action_steps_have_completion():
     by_key = {s.key: s for s in STEPS}
     assert isinstance(by_key["detect"].completion, SignalCompletion)
     assert isinstance(by_key["corrected"].completion, PredicateCompletion)
-    assert isinstance(by_key["compute"].completion, PredicateCompletion)
+    # compute advances on the real Compute click (not a results-count predicate,
+    # which would instantly skip the step for a user with prior results).
+    assert isinstance(by_key["compute"].completion, SignalCompletion)
 
 
 def test_resolve_attr_walks_and_guards():
@@ -196,4 +198,24 @@ def test_menu_action_starts_tutorial(mw):
     mw._on_interactive_tutorial()
     ctl = getattr(mw, "_tutorial_controller", None)
     assert ctl is not None and ctl.is_active()
+    ctl.exit()
+
+
+def test_compute_step_does_not_autoskip_with_prior_results(mw):
+    # Pre-populate the results store (as a returning user would have).
+    from rrational.inspector.results_store import MetricRow
+
+    mw._results_store.add_metric_row(
+        MetricRow(mode="single", dataset="x", section="s", n_beats=100, metrics={})
+    )
+    ctl = TutorialController(mw)
+    ctl.start()
+    # Jump straight to the compute step and assert it did NOT auto-advance
+    # despite the store already having a row (the old predicate bug).
+    compute_idx = next(i for i, s in enumerate(ctl._steps) if s.key == "compute")
+    ctl._enter_step(compute_idx)
+    assert ctl.current_index() == compute_idx
+    # The real Compute click advances it.
+    mw._analysis_tab._single_pane._compute_btn.click()
+    assert ctl.current_index() == compute_idx + 1
     ctl.exit()

@@ -120,15 +120,24 @@ def build_tutorial_dataset() -> Dataset:
 # Step setup helpers (idempotent, self-guarding).
 # ---------------------------------------------------------------------
 def _ensure_demo_loaded(mw) -> None:
-    """Load the tutorial demo dataset if the workspace doesn't already have it."""
+    """Load the tutorial demo dataset if the workspace doesn't already have it.
+
+    Resets the demo's corrected-flag on (re)use so a second tutorial run in the
+    same session starts the "Use corrected" step from a clean, un-toggled state
+    instead of instantly auto-advancing on stale ``use_corrected == True``.
+    """
     datasets = getattr(mw, "_datasets", None)
     if datasets is None:
         return
     for i, d in enumerate(datasets):
         if getattr(d, "name", "") == "TUTORIAL_demo.csv":
+            d.use_corrected = False
+            d.corrected_v = None
             mw.set_active_dataset(i)
             return
-    mw.add_dataset(build_tutorial_dataset())
+    ds = build_tutorial_dataset()
+    ds.use_corrected = False
+    mw.add_dataset(ds)
     mw.set_active_dataset(len(mw._datasets) - 1)
 
 
@@ -270,8 +279,11 @@ STEPS: tuple[TutorialStep, ...] = (
             "advances once a result row appears.</p>"
         ),
         target="_analysis_tab._single_pane._compute_btn",
-        completion=PredicateCompletion(
-            lambda mw: len(getattr(mw, "_results_store").metric_rows) > 0
+        # Advance on the actual Compute click (like the Detect step). The
+        # earlier ``len(results_store.metric_rows) > 0`` predicate skipped this
+        # step instantly for a returning user whose store already held rows.
+        completion=SignalCompletion(
+            "_analysis_tab._single_pane._compute_btn", "clicked"
         ),
     ),
     TutorialStep(
