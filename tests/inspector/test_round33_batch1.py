@@ -107,3 +107,23 @@ def test_annotation_created_at_is_utc_aware():
     parsed = datetime.fromisoformat(ann.created_at)
     assert parsed.tzinfo is not None
     assert parsed.utcoffset().total_seconds() == 0.0
+
+
+# ---------------------------------------------------------------------
+# S2 — live plot canvas follows a runtime theme switch
+# ---------------------------------------------------------------------
+def test_plot_apply_theme_mode_switches_canvas(qtbot):
+    pytest.importorskip("pytestqt")
+    pytest.importorskip("pyqtgraph")
+    from rrational.inspector.app import set_plot_theme
+    from rrational.inspector.plot_widget import RRPlotWidget
+
+    set_plot_theme("dark")
+    plot = RRPlotWidget()
+    qtbot.addWidget(plot)
+    assert plot.backgroundBrush().color().name().lower() == "#1a1d22"
+    # A live switch must re-skin the already-constructed canvas.
+    plot.apply_theme_mode("light")
+    assert plot.backgroundBrush().color().name().lower() == "#f8f6f1"
+    plot.apply_theme_mode("dark")
+    assert plot.backgroundBrush().color().name().lower() == "#1a1d22"

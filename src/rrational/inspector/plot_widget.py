@@ -1135,6 +1135,27 @@ class RRPlotWidget(pg.PlotWidget):
         for name, region in self._sections_by_label.items():
             region.set_highlighted(name == label)
 
+    def apply_theme_mode(self, mode: str) -> None:
+        """Round 33 (S2) — re-skin this LIVE plot's canvas + axes to ``mode``.
+
+        ``app.set_plot_theme`` only updates PyQtGraph's GLOBAL default, which
+        applies to newly-created plots — an already-constructed widget keeps
+        its dark canvas under a light UI on a runtime theme switch. This
+        updates the live widget so the canvas + axes follow the theme. The RR
+        line, artifact dots and section bands are ColorScheme-driven (see
+        :meth:`set_color_scheme`) and already read on both backgrounds, so we
+        only touch the canvas + axis pens here.
+        """
+        bg, fg = ("#f8f6f1", "#1f2228") if mode == "light" else ("#1a1d22", "#eaecef")
+        self.setBackground(bg)
+        plot_item = self.getPlotItem()
+        if plot_item is not None:
+            for ax_name in ("left", "bottom", "top", "right"):
+                ax = plot_item.getAxis(ax_name)
+                if ax is not None:
+                    ax.setPen(fg)
+                    ax.setTextPen(fg)
+
     def set_color_scheme(self, scheme) -> None:
         """Re-skin every existing plot element from ``scheme``.
 

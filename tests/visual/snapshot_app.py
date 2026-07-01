@@ -335,9 +335,20 @@ def snapshot_all_tabs() -> list[Path]:
     # re-snap the four most diagnostic tabs so dark/light parity can
     # be eyeballed side-by-side.
     try:
+        from rrational.inspector.app import set_plot_theme
         from rrational.inspector.style import apply_app_theme
 
         apply_app_theme(app, mode="light")
+        # Round 33 — the harness previously left the live plots dark under the
+        # light QSS (set_plot_theme only re-skins NEW plots), which read as a
+        # false "plot ignores the theme" bug. Update the global config AND
+        # re-theme the already-constructed live plots so the light snapshots
+        # match what a real light-startup shows.
+        set_plot_theme("light")
+        for _attr in ("_browse_tab", "_participant_tab"):
+            _plot = getattr(getattr(win, _attr, None), "_plot", None)
+            if _plot is not None and hasattr(_plot, "apply_theme_mode"):
+                _plot.apply_theme_mode("light")
         app.processEvents()
         _let_layout_settle(app, 250)
         for i in range(tabs.count()):
@@ -361,6 +372,11 @@ def snapshot_all_tabs() -> list[Path]:
             written.append(path)
         # Restore dark mode for the dialog passes below.
         apply_app_theme(app, mode="dark")
+        set_plot_theme("dark")
+        for _attr in ("_browse_tab", "_participant_tab"):
+            _plot = getattr(getattr(win, _attr, None), "_plot", None)
+            if _plot is not None and hasattr(_plot, "apply_theme_mode"):
+                _plot.apply_theme_mode("dark")
         app.processEvents()
         _let_layout_settle(app, 150)
     except Exception as exc:  # noqa: BLE001
