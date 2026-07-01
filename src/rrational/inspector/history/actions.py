@@ -79,10 +79,27 @@ class DetectArtifacts(Action):
     pid: str | None = None  # optional context for batch flows
 
     def to_python(self) -> str:
+        # Round 31 — replay fidelity: the GUI's artifact detection is the
+        # NeuroKit2 Kubios algorithm (detect_artifacts_fixpeaks), NOT the
+        # basic threshold filter. The old to_python() always emitted
+        # clean_rr_intervals regardless of self.method, so a session that
+        # used Kubios detection silently replayed as basic threshold
+        # filtering. We now dispatch on the recorded method and still bind
+        # ``cleaned`` (to the corrected RR series) so downstream recipe
+        # snippets keep their variable contract.
+        if self.method == "basic":
+            return (
+                "from rrational.cleaning.rr import clean_rr_intervals, CleaningConfig\n"
+                "_config = CleaningConfig()\n"
+                "cleaned = clean_rr_intervals(rr_intervals, _config)"
+            )
         return (
-            "from rrational.cleaning.rr import clean_rr_intervals, CleaningConfig\n"
-            f"_config = CleaningConfig()  # method={self.method!r}\n"
-            "cleaned = clean_rr_intervals(rr_intervals, _config)"
+            "from rrational.cleaning.quality import detect_artifacts_fixpeaks\n"
+            f"# NeuroKit2 Kubios artifact detection (method={self.method!r})\n"
+            "_rr_ms = [int(round(iv.rr_ms)) for iv in rr_intervals]\n"
+            "_detection = detect_artifacts_fixpeaks(_rr_ms)\n"
+            "cleaned = _detection['corrected_rr']  # in-place interpolated RR\n"
+            "artifact_indices = _detection['artifact_indices']"
         )
 
 

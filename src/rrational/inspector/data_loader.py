@@ -95,14 +95,25 @@ class InspectorData:
 
     @property
     def t_start(self) -> float:
-        """Timestamp of first non-gap sample."""
+        """Timestamp of first non-gap sample.
+
+        Raises ValueError on an empty / all-gap dataset rather than an
+        opaque IndexError (Round 31 — load_inspector_data / load_raw_rr can
+        return an empty InspectorData for an empty file, and callers that
+        read t_start before checking the beat count would otherwise crash
+        inside numpy indexing).
+        """
         finite = np.isfinite(self.t)
+        if not np.any(finite):
+            raise ValueError("InspectorData has no finite samples (empty dataset)")
         return float(self.t[finite][0])
 
     @property
     def t_end(self) -> float:
-        """Timestamp of last non-gap sample."""
+        """Timestamp of last non-gap sample. See :meth:`t_start` for the empty-case contract."""
         finite = np.isfinite(self.t)
+        if not np.any(finite):
+            raise ValueError("InspectorData has no finite samples (empty dataset)")
         return float(self.t[finite][-1])
 
     # ------------------------------------------------------------------

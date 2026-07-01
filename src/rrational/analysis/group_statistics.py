@@ -103,6 +103,32 @@ def _cohens_d(x: np.ndarray, y: np.ndarray) -> float:
     return (x.mean() - y.mean()) / pooled_sd
 
 
+def _rank_biserial_from_u(u_statistic: float, n1: int, n2: int) -> float:
+    """Rank-biserial correlation from a Mann-Whitney U statistic.
+
+    r = 1 - 2U / (n1 * n2)  (Wendt 1972). Bounded [-1, 1]; 0 = no effect.
+    The correct effect size for the rank-based unpaired test (Lakens 2013).
+    """
+    if n1 <= 0 or n2 <= 0:
+        return float("nan")
+    return 1.0 - (2.0 * u_statistic) / (n1 * n2)
+
+
+def _epsilon_squared_kruskal(
+    h_statistic: float, groups_data: list[np.ndarray]
+) -> float:
+    """Epsilon-squared effect size for Kruskal-Wallis (Tomczak & Tomczak 2014).
+
+    ε² = (H - k + 1) / (n - k), where H is the KW statistic, k the number of
+    groups and n the total sample size. Bounded [0, 1] for well-posed inputs.
+    """
+    k = len(groups_data)
+    n_total = sum(len(g) for g in groups_data)
+    if n_total <= k:
+        return float("nan")
+    return (h_statistic - k + 1) / (n_total - k)
+
+
 def _eta_squared_oneway(groups_data: list[np.ndarray]) -> float:
     """Eta-squared (η²) effect size for one-way ANOVA.
 
@@ -226,20 +252,31 @@ def compare_groups(
         if is_parametric:
             stat, p_val = stats.ttest_ind(g1, g2, equal_var=False)
             test_name = "Welch's t-test"
+            effect = _cohens_d(g1, g2)
+            effect_name = "Cohen's d"
         else:
             stat, p_val = stats.mannwhitneyu(g1, g2, alternative="two-sided")
             test_name = "Mann-Whitney U"
-        effect = _cohens_d(g1, g2)
-        effect_name = "Cohen's d"
+            # Round 31 — rank-biserial correlation is the correct effect size
+            # for a rank-based unpaired test; Cohen's d (a pooled-SD parametric
+            # measure) mischaracterises a Mann-Whitney result (Wendt 1972;
+            # Lakens 2013 §3.2). r = 1 - 2U/(n1*n2), bounded [-1, 1].
+            effect = _rank_biserial_from_u(float(stat), len(g1), len(g2))
+            effect_name = "Rank-biserial r"
     else:
         if is_parametric:
             stat, p_val = stats.f_oneway(*group_arrays)
             test_name = "One-way ANOVA"
+            effect = _eta_squared_oneway(group_arrays)
+            effect_name = "η²"
         else:
             stat, p_val = stats.kruskal(*group_arrays)
             test_name = "Kruskal-Wallis"
-        effect = _eta_squared_oneway(group_arrays)
-        effect_name = "η²"
+            # Round 31 — epsilon-squared is the rank-based effect size for
+            # Kruskal-Wallis (Tomczak & Tomczak 2014); SS-based η² conflates
+            # the raw-scale variance partition with a rank test.
+            effect = _epsilon_squared_kruskal(float(stat), group_arrays)
+            effect_name = "ε²"
 
     # Build note combining all relevant warnings
     notes = []
@@ -420,7 +457,12 @@ def adjust_pvalues(
     if n == 1:
         return results
 
-    raw_p = np.array([r.p_value for r in results])
+    # Round 31 — a test on constant data (e.g. ttest_rel/ttest_ind on a
+    # zero-variance metric) returns p=NaN without raising. A NaN in the
+    # correction input poisons the sort/argsort and produces garbage
+    # adjusted p-values for the WHOLE family, not just the NaN entry.
+    # Treat a non-finite raw p as "no evidence" (p=1.0) before correcting.
+    raw_p = np.array([r.p_value if np.isfinite(r.p_value) else 1.0 for r in results])
 
     if method == "bonferroni":
         adj_p = np.minimum(raw_p * n, 1.0)

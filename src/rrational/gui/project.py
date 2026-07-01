@@ -115,37 +115,49 @@ class ProjectManager:
         if data_sources is None:
             data_sources = ["hrv_logger"]
 
-        # Create directory structure
-        path.mkdir(parents=True, exist_ok=True)
-        for dir_name in cls.REQUIRED_DIRS:
-            (path / dir_name).mkdir(parents=True, exist_ok=True)
+        # Round 31 — roll back a partially-created tree on failure. If a
+        # mkdir or the metadata write raises after we started creating the
+        # directory, an orphaned skeleton would otherwise survive and mix
+        # with the next attempt (the guard above only checks project_file,
+        # not path). Only remove the directory if WE created it (it did not
+        # pre-exist), so we never delete a user's existing folder.
+        path_preexisted = path.exists()
+        try:
+            # Create directory structure
+            path.mkdir(parents=True, exist_ok=True)
+            for dir_name in cls.REQUIRED_DIRS:
+                (path / dir_name).mkdir(parents=True, exist_ok=True)
 
-        # Create data source subfolders in data/raw
-        for source_id in data_sources:
-            source_dir = path / "data" / "raw" / source_id
-            source_dir.mkdir(parents=True, exist_ok=True)
+            # Create data source subfolders in data/raw
+            for source_id in data_sources:
+                source_dir = path / "data" / "raw" / source_id
+                source_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create project metadata with data sources info
-        now = datetime.now().isoformat()
-        data_sources_info = [
-            {"id": src, "name": cls.DATA_SOURCES.get(src, src)}
-            for src in data_sources
-        ]
-        metadata = ProjectMetadata(
-            name=name,
-            description=description,
-            created_at=now,
-            modified_at=now,
-            rrational_version=_get_version(),
-            author=author,
-            notes=notes,
-            data_sources=data_sources_info,
-        )
+            # Create project metadata with data sources info
+            now = datetime.now().isoformat()
+            data_sources_info = [
+                {"id": src, "name": cls.DATA_SOURCES.get(src, src)}
+                for src in data_sources
+            ]
+            metadata = ProjectMetadata(
+                name=name,
+                description=description,
+                created_at=now,
+                modified_at=now,
+                rrational_version=_get_version(),
+                author=author,
+                notes=notes,
+                data_sources=data_sources_info,
+            )
 
-        # Create project manager and save metadata
-        pm = cls(path)
-        pm.metadata = metadata
-        pm.save_metadata()
+            # Create project manager and save metadata
+            pm = cls(path)
+            pm.metadata = metadata
+            pm.save_metadata()
+        except Exception:
+            if not path_preexisted:
+                shutil.rmtree(path, ignore_errors=True)
+            raise
 
         return pm
 
@@ -287,8 +299,33 @@ class ProjectManager:
         }
 
         project_file = self.project_path / self.PROJECT_FILE
-        with open(project_file, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+        # Round 31 — atomic write (per-call unique tmp + replace + retry),
+        # matching the R30 standard applied to the *_persistence modules. A
+        # crash or power loss mid-write previously truncated project.rrational
+        # to a partial/zero-byte YAML, making the whole project unopenable on
+        # next _load_metadata.
+        import os
+        import time
+
+        payload = yaml.safe_dump(data, default_flow_style=False, allow_unicode=True)
+        tmp = project_file.with_suffix(
+            f"{project_file.suffix}.{os.getpid()}.{time.time_ns()}.tmp"
+        )
+        tmp.write_text(payload, encoding="utf-8")
+        last_exc: BaseException | None = None
+        for attempt in range(5):
+            try:
+                tmp.replace(project_file)
+                return
+            except PermissionError as exc:
+                last_exc = exc
+                time.sleep(0.02 * (2**attempt))
+        if last_exc is not None:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise last_exc
 
     def _load_metadata(self) -> None:
         """Load project metadata from project.rrational."""
@@ -326,12 +363,14 @@ def _get_version() -> str:
     """Get the current RRational version."""
     try:
         from importlib.metadata import version
+
         return version("rrational")
     except Exception:
         return "0.7.1"  # Fallback
 
 
 # --- Recent Projects Management ---
+
 
 def get_recent_projects() -> list[dict[str, Any]]:
     """Get list of recently opened projects from settings.
@@ -364,11 +403,14 @@ def add_recent_project(path: Path, name: str) -> None:
     recent = [p for p in recent if p.get("path") != path_str]
 
     # Add new entry at the beginning
-    recent.insert(0, {
-        "path": path_str,
-        "name": name,
-        "last_opened": datetime.now().isoformat(),
-    })
+    recent.insert(
+        0,
+        {
+            "path": path_str,
+            "name": name,
+            "last_opened": datetime.now().isoformat(),
+        },
+    )
 
     # Trim to max
     recent = recent[:max_recent]
@@ -396,6 +438,7 @@ def remove_recent_project(path: Path) -> None:
 
 
 # --- Migration ---
+
 
 def has_global_config() -> bool:
     """Check if global config exists with user data.

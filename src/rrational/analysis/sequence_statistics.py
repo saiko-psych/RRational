@@ -154,6 +154,12 @@ def _holm_correct(p_values: list[float]) -> list[float]:
     n = len(p_values)
     if n == 0:
         return []
+    # Round 31 — a post-hoc pair on constant data (ttest_rel/wilcoxon on a
+    # zero-variance metric) yields p=NaN without raising, so the _post_hoc
+    # try/except never catches it. A NaN key makes ``sorted`` non-deterministic
+    # (NaN comparisons are all False) and corrupts the adjusted p-values for
+    # every pair in the family. Treat a non-finite p as "no evidence" (1.0).
+    p_values = [p if math.isfinite(p) else 1.0 for p in p_values]
     # Sort indices by raw p ascending
     order = sorted(range(n), key=lambda i: p_values[i])
     adjusted = [0.0] * n
