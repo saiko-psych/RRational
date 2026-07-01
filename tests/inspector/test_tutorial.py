@@ -116,6 +116,27 @@ def test_overlay_buttons_emit(qtbot):
         ov._exit_btn.click()
 
 
+def test_overlay_bubble_uses_theme_colors_not_default_palette(qtbot):
+    """Regression: the bubble used palette(window), which resolves to Qt's
+    DEFAULT (white) palette because the app themes via QSS (not QPalette) —
+    a white bubble with the QSS's light text = unreadable in dark mode.
+
+    The bubble must instead pull explicit theme colours: a DARK surface with
+    LIGHT text in dark mode, and a LIGHT surface with DARK text in light mode.
+    """
+    parent = QWidget()
+    qtbot.addWidget(parent)
+
+    dark = CoachOverlay(parent, mode="dark")
+    assert "#232830" in dark.bubble.styleSheet()  # bg_surface (dark)
+    assert "#eaecef" in dark._body.styleSheet()  # text_primary (light)
+    assert "palette(" not in dark.bubble.styleSheet()  # no unthemed palette roles
+
+    light = CoachOverlay(parent, mode="light")
+    assert "#ffffff" in light.bubble.styleSheet()  # bg_surface (light)
+    assert "#1f2228" in light._body.styleSheet()  # text_primary (dark)
+
+
 from rrational.inspector.tutorial import TutorialController  # noqa: E402
 
 

@@ -313,7 +313,7 @@ class CoachOverlay(QWidget):
     skip_clicked = Signal()
     exit_clicked = Signal()
 
-    def __init__(self, parent: QWidget) -> None:
+    def __init__(self, parent: QWidget, mode: str = "dark") -> None:
         super().__init__(parent)
         self._spotlight: QRect | None = None
         # The overlay covers the parent and lets clicks fall through to the
@@ -324,12 +324,26 @@ class CoachOverlay(QWidget):
         self.resize(parent.size())
 
         # ---- Interactive bubble ----------------------------------------
+        # The app themes via QSS, NOT the QPalette, so ``palette(window)`` here
+        # would resolve to Qt's DEFAULT (white) palette — a white bubble with
+        # the QSS's light text on top = unreadable in dark mode. Pull the real
+        # theme colours explicitly instead.
+        from rrational.inspector.style.theme import palette_tokens
+
+        tok = palette_tokens(mode)
+        bubble_bg = tok["bg_surface"]
+        text_col = tok["text_primary"]
+        muted_col = tok.get("text_secondary", text_col)
+        border_col = tok["accent"]
+
         self.bubble = QFrame(self)
         self.bubble.setObjectName("tutorialBubble")
         self.bubble.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self.bubble.setStyleSheet(
-            "QFrame#tutorialBubble { background-color: palette(window); "
-            "border: 1px solid palette(highlight); border-radius: 8px; }"
+            f"QFrame#tutorialBubble {{ background-color: {bubble_bg}; "
+            f"border: 1px solid {border_col}; border-radius: 8px; }}"
+            f"QFrame#tutorialBubble QLabel {{ color: {text_col}; "
+            "background: transparent; }"
         )
         self.bubble.setFixedWidth(360)
         b = QVBoxLayout(self.bubble)
@@ -337,12 +351,13 @@ class CoachOverlay(QWidget):
         b.setSpacing(8)
 
         self._counter = QLabel("", self.bubble)
-        self._counter.setProperty("muted", True)
+        self._counter.setStyleSheet(f"color: {muted_col}; background: transparent;")
         b.addWidget(self._counter)
 
         self._body = QLabel("", self.bubble)
         self._body.setWordWrap(True)
         self._body.setTextFormat(Qt.RichText)
+        self._body.setStyleSheet(f"color: {text_col}; background: transparent;")
         b.addWidget(self._body)
 
         row = QHBoxLayout()
@@ -449,7 +464,15 @@ class TutorialController(QObject):
         except Exception:  # pragma: no cover - defensive
             pass
         central = self._mw.centralWidget() or self._mw
-        self._overlay = CoachOverlay(central)
+        # Resolve the active theme mode so the bubble uses matching colours
+        # (the app themes via QSS, so palette() roles can't be trusted here).
+        try:
+            from rrational.inspector.app import _resolve_theme_mode
+
+            mode = _resolve_theme_mode()
+        except Exception:  # pragma: no cover - defensive
+            mode = "dark"
+        self._overlay = CoachOverlay(central, mode=mode)
         self._overlay.resize(central.size())
         self._overlay.next_clicked.connect(self._advance)
         self._overlay.skip_clicked.connect(self._advance)
