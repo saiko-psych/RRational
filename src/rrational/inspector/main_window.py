@@ -805,6 +805,35 @@ class MainWindow(QMainWindow):
             "Show or hide the right-side metadata panel"
         )
 
+        # ----- Text size (app-wide UI zoom) -------------------------------
+        # Accessibility: scale every font in the interface. Ctrl+= / Ctrl+-
+        # / Ctrl+0 mirror the near-universal browser + editor zoom
+        # shortcuts. The chosen scale is persisted (read back at startup in
+        # app.run) so it survives restarts. ``_font_scale`` seeds from the
+        # persisted value that app.run already applied to the running QSS.
+        from rrational.inspector.app import _resolve_font_scale
+
+        self._font_scale = _resolve_font_scale()
+        view_menu.addSeparator()
+        text_size_menu = view_menu.addMenu("&Text size")
+        self._zoom_in_act = QAction("&Increase", self)
+        self._zoom_in_act.setShortcuts([QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")])
+        self._zoom_in_act.setToolTip("Make all interface text larger (Ctrl++)")
+        self._zoom_in_act.triggered.connect(lambda: self._adjust_font_scale(+1))
+        text_size_menu.addAction(self._zoom_in_act)
+        self._zoom_out_act = QAction("&Decrease", self)
+        self._zoom_out_act.setShortcut(QKeySequence("Ctrl+-"))
+        self._zoom_out_act.setToolTip("Make all interface text smaller (Ctrl+-)")
+        self._zoom_out_act.triggered.connect(lambda: self._adjust_font_scale(-1))
+        text_size_menu.addAction(self._zoom_out_act)
+        self._zoom_reset_act = QAction("&Reset to default", self)
+        self._zoom_reset_act.setShortcut(QKeySequence("Ctrl+0"))
+        self._zoom_reset_act.setToolTip("Reset interface text size (Ctrl+0)")
+        self._zoom_reset_act.triggered.connect(lambda: self._set_font_scale(1.0))
+        text_size_menu.addAction(self._zoom_reset_act)
+        # Reflect whether we're already at a zoom bound.
+        self._sync_zoom_actions_enabled()
+
         # View → Layout submenu (Streamlit / MNE-LAB modes).
         # QActionGroup with exclusive=True gives the entries radio
         # behaviour — Qt automatically unchecks the other one when the
@@ -1059,6 +1088,56 @@ class MainWindow(QMainWindow):
         act.toggled.connect(_on_toggled)
         menu.addAction(act)
         return act
+
+    # ---- Text size (app-wide UI zoom) --------------------------------
+    def _adjust_font_scale(self, steps: int) -> None:
+        """Zoom the UI text by ``steps`` increments (e.g. +1 / -1)."""
+        from rrational.inspector.app import FONT_SCALE_STEP
+
+        self._set_font_scale(self._font_scale + steps * FONT_SCALE_STEP)
+
+    def _set_font_scale(self, scale: float) -> None:
+        """Clamp, apply, and persist the app-wide font scale.
+
+        Re-applies the theme at the current mode with the new scale (the QSS
+        ``font-size`` values are what actually resize the UI — see
+        ``theme._qss_for``), persists the value so it survives a restart, and
+        updates the zoom actions' enabled state at the bounds.
+        """
+        from qtpy.QtCore import QSettings
+        from qtpy.QtWidgets import QApplication
+
+        from rrational.inspector.app import (
+            _FONT_SCALE_KEY,
+            _resolve_theme_mode,
+            FONT_SCALE_MAX,
+            FONT_SCALE_MIN,
+        )
+        from rrational.inspector.style import apply_app_theme
+
+        scale = min(FONT_SCALE_MAX, max(FONT_SCALE_MIN, round(float(scale), 2)))
+        self._font_scale = scale
+
+        app = QApplication.instance()
+        if app is not None:
+            apply_app_theme(app, mode=_resolve_theme_mode(), scale=scale)
+
+        # Persist. QSettings is redirected to a temp file under test mode
+        # (conftest autouse), so this stays isolated in the suite.
+        QSettings().setValue(_FONT_SCALE_KEY, scale)
+
+        self._sync_zoom_actions_enabled()
+        self.statusBar().showMessage(f"Text size: {round(scale * 100)}%", 2000)
+
+    def _sync_zoom_actions_enabled(self) -> None:
+        """Grey out Increase/Decrease when already at a zoom bound."""
+        from rrational.inspector.app import FONT_SCALE_MAX, FONT_SCALE_MIN
+
+        # Guard: the actions may not exist yet if called mid-construction.
+        if hasattr(self, "_zoom_in_act"):
+            self._zoom_in_act.setEnabled(self._font_scale < FONT_SCALE_MAX - 1e-6)
+        if hasattr(self, "_zoom_out_act"):
+            self._zoom_out_act.setEnabled(self._font_scale > FONT_SCALE_MIN + 1e-6)
 
     def _update_cursor_readout(self, t: float, v: float) -> None:
         """Format the (time, RR) reading from the plot's cursor signal."""

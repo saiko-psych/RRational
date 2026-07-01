@@ -122,21 +122,39 @@ _FONT_BODY = (
 )
 _FONT_MONO = '"JetBrains Mono", "IBM Plex Mono", "Cascadia Code", "Consolas", monospace'
 
+# Pristine application-font point size, captured on the first ``apply_app_theme``
+# call (before any zoom scaling touches the app font). 0.0 means "not yet
+# captured". Anchoring the UI-zoom scale to this fixed base keeps repeated
+# zoom-in/out keypresses from compounding — see ``apply_app_theme``.
+_BASE_FONT_PT: float = 0.0
 
-def _qss_for(p: dict[str, str]) -> str:
+
+def _qss_for(p: dict[str, str], scale: float = 1.0) -> str:
     """Render the full QSS string with the given palette ``p``.
 
     The output is one long string deliberately — Qt parses the whole
     sheet in one pass, and keeping it in a single f-string makes the
     cascade easy to read top-to-bottom.
+
+    ``scale`` multiplies every ``font-size`` in the sheet so the whole UI
+    can be zoomed for accessibility. It must scale the QSS values (not just
+    ``app.setFont``) because the base ``QWidget {{ font-size }}`` rule wins
+    over the application font for every styled widget. QStyleSheetStyle also
+    sizes widgets (tab widths, button heights) from these values, so scaling
+    them keeps the chrome laid out correctly around the larger text.
     """
+    # Clamp so a corrupted persisted value can never produce an unreadable or
+    # absurd sheet; floor each result so tiny scales stay legible.
+    scale = min(2.0, max(0.7, float(scale)))
+    body_px = max(9, round(13 * scale))
+    caption_px = max(8, round(11 * scale))
     return f"""
     /* ===================== Base ===================== */
     QWidget {{
         background-color: {p["bg_base"]};
         color: {p["text_primary"]};
         font-family: {_FONT_BODY};
-        font-size: 13px;
+        font-size: {body_px}px;
         selection-background-color: {p["selection_bg"]};
         selection-color: {p["selection_fg"]};
     }}
@@ -296,7 +314,7 @@ def _qss_for(p: dict[str, str]) -> str:
         background-color: {p["bg_base"]};
         text-transform: uppercase;
         letter-spacing: 0.3px;
-        font-size: 11px;
+        font-size: {caption_px}px;
     }}
     QGroupBox::indicator {{
         width: 14px;
@@ -617,8 +635,14 @@ def palette_tokens(mode: str = "dark") -> dict[str, str]:
     return dict(_DARK if mode == "dark" else _LIGHT)
 
 
-def apply_app_theme(app: QApplication, mode: str = "dark") -> None:
+def apply_app_theme(app: QApplication, mode: str = "dark", scale: float = 1.0) -> None:
     """Apply the theme to ``app``. ``mode`` is "dark" or "light".
+
+    ``scale`` (default 1.0) zooms every font in the sheet — see ``_qss_for``.
+    It is re-applied live by the View-menu text-size actions, and read from
+    persisted settings at startup. The application font point size is scaled
+    too, as a belt-and-braces fallback for any widget that renders text
+    without hitting a QSS ``font-size`` rule.
 
     Call this once at startup AFTER ``QApplication`` is created but
     BEFORE the first widget renders — otherwise the user sees a flash
@@ -627,5 +651,20 @@ def apply_app_theme(app: QApplication, mode: str = "dark") -> None:
     Unknown values for ``mode`` fall back to "dark" rather than raising:
     a typo or stale config entry should never block app startup.
     """
+    global _BASE_FONT_PT
     palette = _LIGHT if mode == "light" else _DARK
-    app.setStyleSheet(_qss_for(palette))
+    app.setStyleSheet(_qss_for(palette, scale))
+    # Belt-and-braces: also scale the application default font so widgets
+    # that draw text outside a QSS ``font-size`` rule (custom-painted
+    # delegates, some native dialogs) grow with the rest of the UI.
+    #
+    # Capture the pristine base point size ONCE, before we ever scale the
+    # app font. Re-reading ``app.font()`` on later calls would return the
+    # already-scaled size and compound zoom on every keypress — anchoring to
+    # the captured base keeps the mapping ``scale -> absolute size`` stable.
+    font = app.font()
+    if _BASE_FONT_PT <= 0:
+        _BASE_FONT_PT = font.pointSizeF()
+    if _BASE_FONT_PT and _BASE_FONT_PT > 0:
+        font.setPointSizeF(_BASE_FONT_PT * min(2.0, max(0.7, float(scale))))
+        app.setFont(font)

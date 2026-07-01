@@ -84,6 +84,35 @@ def _resolve_theme_mode() -> str:
     return mode if mode in ("dark", "light") else "dark"
 
 
+# QSettings key for the persisted UI-zoom / font-scale factor. Same rationale
+# as ``_THEME_MODE_KEY``: read before the settings module so the very first
+# QSS is already at the user's chosen size (no flash of default-size text).
+_FONT_SCALE_KEY = "inspector/font_scale"
+
+# Zoom bounds shared by the startup reader and the View-menu actions so both
+# clamp identically. 1.0 == the design baseline; steps are 0.1.
+FONT_SCALE_MIN = 0.8
+FONT_SCALE_MAX = 1.8
+FONT_SCALE_STEP = 0.1
+
+
+def _resolve_font_scale() -> float:
+    """Return the persisted UI font scale, clamped to the supported range.
+
+    Defaults to 1.0 (design baseline). A non-numeric or out-of-range stored
+    value falls back to 1.0 rather than raising — a corrupt entry must never
+    stop the app from launching.
+    """
+    raw = QSettings().value(_FONT_SCALE_KEY, 1.0)
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return 1.0
+    if val != val:  # NaN
+        return 1.0
+    return min(FONT_SCALE_MAX, max(FONT_SCALE_MIN, val))
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """argparse setup, factored out so tests can introspect it."""
     parser = argparse.ArgumentParser(
@@ -146,7 +175,8 @@ def run(argv: list[str] | None = None) -> int:
     from rrational.inspector.style import apply_app_theme
 
     theme_mode = _resolve_theme_mode()
-    apply_app_theme(app, mode=theme_mode)
+    font_scale = _resolve_font_scale()
+    apply_app_theme(app, mode=theme_mode, scale=font_scale)
     # Match the global plot bg/fg to the same theme so the central plot
     # panel reads as part of the QSS surface stack, not a print preview.
     set_plot_theme(theme_mode)
