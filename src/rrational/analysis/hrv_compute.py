@@ -12,6 +12,7 @@ from rrational.analysis.hrv_metrics import (
     HRV_METRICS_CATALOG,
     HRV_METRIC_PRESETS,
     MIN_BEATS_FREQUENCY_DOMAIN,
+    MIN_BEATS_TIME_DOMAIN,
     ParticipantSectionResult,
     generate_overlapping_windows_beats,
 )
@@ -38,6 +39,29 @@ KUBIOS_WELCH_WINDOW_S = 180
 KUBIOS_BAND_VLF = (0.0033, 0.04)
 KUBIOS_BAND_LF = (0.04, 0.15)
 KUBIOS_BAND_HF = (0.15, 0.40)
+
+
+def _warn_time_domain_underpowered(
+    min_beats: int, n_under: int, n_total: int = 1
+) -> None:
+    """Round 30 (G3) — flag time-domain windows below Quigley's 100-beat floor.
+
+    We still compute the metrics (the user chose "warn but compute"), but a
+    window with fewer than ``MIN_BEATS_TIME_DOMAIN`` beats gives unstable
+    RMSSD/SDNN estimates (Quigley et al. 2024). One aggregated warning per
+    compute keeps the log readable.
+    """
+    import logging
+
+    logging.getLogger("rrational.analysis.hrv_compute").warning(
+        "Time-domain metrics computed on %d/%d window(s) below the "
+        "recommended %d-beat minimum (smallest = %d beats); RMSSD/SDNN may "
+        "be unstable (Quigley et al. 2024).",
+        n_under,
+        n_total,
+        MIN_BEATS_TIME_DOMAIN,
+        min_beats,
+    )
 
 
 def _hrv_frequency_kwargs(freq_method: str) -> dict:
@@ -98,6 +122,26 @@ def _compute_kubios_frequency_powers(
 
     nperseg = min(int(welch_window_s * fs), len(rr_detrended))
     noverlap = int(nperseg * overlap_frac)
+    # Round 30 (G1) — reproducibility warning: when the segment is too
+    # short to fit >= 2 Welch averaging windows, the PSD is effectively a
+    # single periodogram with no variance reduction, so LF/HF are far less
+    # reliable (Task Force 1996 recommends >= 5 min for LF). We still
+    # compute (user chose "warn but compute"), but flag it so short-window
+    # estimates aren't silently trusted.
+    step = max(1, nperseg - noverlap)
+    n_welch_windows = 1 + (len(rr_detrended) - nperseg) // step
+    if n_welch_windows < 2:
+        import logging
+
+        logging.getLogger("rrational.analysis.hrv_compute").warning(
+            "Kubios PSD on a short segment: only %d Welch averaging window(s) "
+            "(%d samples at %.1f Hz, nperseg=%d). LF/HF have high variance and "
+            "low reproducibility; interpret with caution.",
+            n_welch_windows,
+            len(rr_detrended),
+            fs,
+            nperseg,
+        )
     freqs, psd = sig.welch(
         rr_detrended,
         fs=fs,
@@ -276,6 +320,8 @@ def calculate_hrv_metrics(
 
     # Single analysis (no windows)
     if not use_windows:
+        if need_time and len(nn_ms_list) < MIN_BEATS_TIME_DOMAIN:
+            _warn_time_domain_underpowered(len(nn_ms_list), 1, 1)
         return compute_hrv(nn_ms_list), None, 1
 
     # Build window slices from segments, time-based, or beat-based
@@ -311,6 +357,11 @@ def calculate_hrv_metrics(
 
     if not window_slices:
         return compute_hrv(nn_ms_list), None, 1
+
+    if need_time:
+        under = [len(w) for w in window_slices if len(w) < MIN_BEATS_TIME_DOMAIN]
+        if under:
+            _warn_time_domain_underpowered(min(under), len(under), len(window_slices))
 
     window_results = []
     for w_rr in window_slices:
