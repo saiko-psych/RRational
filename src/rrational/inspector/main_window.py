@@ -1004,6 +1004,13 @@ class MainWindow(QMainWindow):
         walkthrough_act.triggered.connect(self._show_workflow_walkthrough)
         help_menu.addAction(walkthrough_act)
 
+        interactive_act = QAction("&Interactive tutorial", self)
+        interactive_act.setStatusTip(
+            "Guided, hands-on tour that highlights each control as you use it."
+        )
+        interactive_act.triggered.connect(self._on_interactive_tutorial)
+        help_menu.addAction(interactive_act)
+
         reshow_welcome_act = QAction("Show &welcome dialog again", self)
         reshow_welcome_act.setStatusTip(
             "Reopen the first-run welcome dialog (5-tab overview)"
@@ -1143,6 +1150,17 @@ class MainWindow(QMainWindow):
 
         dlg = WalkthroughDialog(self, self)
         dlg.exec()
+
+    def _on_interactive_tutorial(self) -> None:
+        """Launch the interactive coach-mark tutorial (Help menu).
+
+        Unlike the walkthrough dialog this is a non-modal overlay, so it is
+        safe (and useful) to run in test_mode too. The controller is retained
+        on ``self`` so its overlay + timers survive the trigger call.
+        """
+        from rrational.inspector.tutorial import show_tutorial
+
+        self._tutorial_controller = show_tutorial(self)
 
     def _reshow_welcome_dialog(self) -> None:
         """Re-open the first-run welcome dialog on demand."""

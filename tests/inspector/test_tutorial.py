@@ -189,3 +189,11 @@ def test_full_run_through_finishes(qtbot, mw):
             break
         ctl._overlay.skip_clicked.emit()
     assert not ctl.is_active()  # finished, overlay gone
+
+
+def test_menu_action_starts_tutorial(mw):
+    assert hasattr(mw, "_on_interactive_tutorial")
+    mw._on_interactive_tutorial()
+    ctl = getattr(mw, "_tutorial_controller", None)
+    assert ctl is not None and ctl.is_active()
+    ctl.exit()
