@@ -273,6 +273,37 @@ def _active_exclusion_zones(main_window) -> list[ExclusionZone]:
         return []
 
 
+def _exclusion_zones_for_dataset(main_window, ds) -> list[ExclusionZone]:
+    """Round 33 (E1) — the exclusion zones that belong to ``ds`` specifically.
+
+    The single shared plot only ever holds the CURRENTLY-displayed dataset's
+    zones. A cross-dataset compute that applied ``_active_exclusion_zones`` to
+    every dataset in the loop therefore filtered dataset B's beats with
+    dataset A's zone timestamps — silently corrupting B's HRV result. This
+    returns the live-plot zones only for the displayed dataset, and each other
+    dataset's OWN persisted zones (which auto-save whenever the user edits).
+    """
+    datasets = getattr(main_window, "_datasets", None) or []
+    active_idx = getattr(main_window, "_active_idx", None)
+    if (
+        active_idx is not None
+        and 0 <= active_idx < len(datasets)
+        and datasets[active_idx] is ds
+    ):
+        return _active_exclusion_zones(main_window)
+    try:
+        from pathlib import Path
+
+        from rrational.inspector.exclusion_persistence import load_exclusion_zones
+
+        pid = Path(ds.name).stem
+        proj = getattr(main_window, "_project", None)
+        project_path = proj.project_path if proj is not None else None
+        return load_exclusion_zones(pid, project_path=project_path)
+    except Exception:
+        return []
+
+
 def _segment_warning(
     n_beats: int, duration_s: float | None, metrics: list[str]
 ) -> str | None:
@@ -837,7 +868,10 @@ class _SingleParticipantPane(QWidget):
         if ds_idx is None or not sec_name:
             return
         ds = self._main_window._datasets[ds_idx]
-        exclusions = _active_exclusion_zones(self._main_window)
+        # Round 33 (E1) — use THIS dataset's own zones, not whatever the live
+        # plot happens to show (the analysed dataset may not be the displayed
+        # one when picked from the dropdown).
+        exclusions = _exclusion_zones_for_dataset(self._main_window, ds)
         rr = _slice_section(
             ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
         )
@@ -1035,9 +1069,11 @@ class _RepeatingSectionPane(QWidget):
             f"Computing HRV on '{sec_name}' across every dataset…"
         )
         rows: list[tuple[str, dict, int]] = []
-        exclusions = _active_exclusion_zones(self._main_window)
         selected_metrics_seen: list[str] = []
         for ds in self._main_window._datasets:
+            # Round 33 (E1) — each dataset uses its OWN zones, not the live
+            # plot's (which belong only to the displayed dataset).
+            exclusions = _exclusion_zones_for_dataset(self._main_window, ds)
             rr = _slice_section(
                 ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
             )
@@ -1517,11 +1553,12 @@ class _GroupComparisonPane(QWidget):
         from rrational.inspector.results_store import MetricRow
 
         values_per_group: dict[str, list[float]] = {}
-        exclusions = _active_exclusion_zones(self._main_window)
         for i, ds in enumerate(self._main_window._datasets):
             label = self._group_by_idx.get(i, "")
             if not label:
                 continue
+            # Round 33 (E1) — per-dataset zones, not the shared live plot's.
+            exclusions = _exclusion_zones_for_dataset(self._main_window, ds)
             rr = _slice_section(
                 ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
             )
@@ -1958,8 +1995,9 @@ class _SequenceComparisonPane(QWidget):
         # Build {section: [per-subject metric values]} — subject order
         # = dataset order so subject i is dataset i across every section.
         values_per_section: dict[str, list[float]] = {s: [] for s in seq.sections}
-        exclusions = _active_exclusion_zones(self._main_window)
         for ds in self._main_window._datasets:
+            # Round 33 (E1) — per-dataset zones, not the shared live plot's.
+            exclusions = _exclusion_zones_for_dataset(self._main_window, ds)
             for s in seq.sections:
                 rr = _slice_section(
                     ds.data, s, exclusions=exclusions, corrected_v=_corrected_for(ds)

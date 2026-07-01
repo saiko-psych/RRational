@@ -26,7 +26,7 @@ export can mirror the spec one-to-one. Older YAML files without a
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 @dataclass
@@ -94,7 +94,9 @@ class Annotation:
         return cls(
             t=float(t),
             text=str(text),
-            created_at=datetime.now().isoformat(),
+            # Round 33 (A5) — tz-aware UTC so the created_at stamp is
+            # unambiguous across machines / DST (was naive local ISO).
+            created_at=datetime.now(timezone.utc).isoformat(),
             duration=float(duration),
         )
 

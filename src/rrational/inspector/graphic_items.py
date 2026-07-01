@@ -580,9 +580,17 @@ class AnnotationMarker(pg.InfiniteLine):
 
     def _refresh_tooltip(self) -> None:
         from datetime import datetime as _dt
+        from datetime import timezone as _tz
 
         try:
-            stamp = _dt.fromtimestamp(self.annotation_t).strftime("%Y-%m-%d %H:%M:%S")
+            # Round 33 (A1) — convert the epoch in UTC then to the display
+            # tz so the shown time is DST-stable (naive fromtimestamp used
+            # local wall-clock and drifted an hour across a DST boundary).
+            stamp = (
+                _dt.fromtimestamp(self.annotation_t, tz=_tz.utc)
+                .astimezone()
+                .strftime("%Y-%m-%d %H:%M:%S")
+            )
         except (ValueError, OSError, OverflowError):  # pragma: no cover - defensive
             stamp = str(self.annotation_t)
         # InfiniteLine doesn't render a QWidget tooltip natively; we

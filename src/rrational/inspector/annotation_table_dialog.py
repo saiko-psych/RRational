@@ -136,8 +136,11 @@ class AnnotationTableDialog(QDialog):
         self._table.itemChanged.connect(self._on_item_changed)
 
         # ----- Empty-state hint (shown when no rows) ----------------------
+        # Round 33 (W2) — theme-aware muted text via setProperty instead of a
+        # hardcoded #888 inline-HTML colour (invisible on a near-#888 custom
+        # dark background, and it bypasses the theme QSS cascade).
         self._empty_hint = QLabel(
-            "<p style='color:#888;'>"
+            "<p>"
             "<b>No annotations yet.</b><br><br>"
             "Add them inline by switching to <i>Annotation mode</i> in the "
             "Preprocessing panel and clicking a beat on the plot,<br>"
@@ -149,6 +152,7 @@ class AnnotationTableDialog(QDialog):
         self._empty_hint.setTextFormat(Qt.RichText)
         self._empty_hint.setAlignment(Qt.AlignCenter)
         self._empty_hint.setWordWrap(True)
+        self._empty_hint.setProperty("muted", True)
 
         # Stack the table over the hint so we can swap based on row count.
         self._body_stack = QStackedWidget(self)
@@ -549,15 +553,27 @@ class AnnotationTableDialog(QDialog):
         history = getattr(self._main, "history", None)
         for pid, new_items in new_by_pid.items():
             existing = load_annotations(pid, project_path=project)
-            merged = existing + new_items
+            # Round 33 (A4) — dedup on (rounded t, text) so re-importing the
+            # same CSV (or importing after a crash-recovery) doesn't double
+            # every annotation. Only genuinely new rows are merged, counted,
+            # and recorded in history.
+            seen = {(round(a.t, 3), a.text) for a in existing}
+            fresh = []
+            for ann in new_items:
+                key = (round(ann.t, 3), ann.text)
+                if key in seen:
+                    continue
+                seen.add(key)
+                fresh.append(ann)
+            merged = existing + fresh
             save_annotations(pid, merged, project_path=project)
-            imported += len(new_items)
+            imported += len(fresh)
             # Record one history action per imported annotation so the
             # generated recipe replays the same per-row attachments. We
             # swallow recorder exceptions per-row — a logging glitch
             # must not abort a 1000-row import.
             if history is not None:
-                for ann in new_items:
+                for ann in fresh:
                     try:
                         history.record(
                             AddAnnotation(pid=pid, t=float(ann.t), label=str(ann.text))

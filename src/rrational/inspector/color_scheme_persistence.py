@@ -77,8 +77,29 @@ def save_color_scheme(preset_name: str, scheme: ColorScheme) -> Path:
             "custom_scheme": scheme.to_dict(),
         }
     target = _color_scheme_path()
-    with target.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(payload, f, default_flow_style=False, allow_unicode=True)
+    # Round 33 (S1) — atomic write (tmp + replace + retry), matching the R30
+    # standard. A crash mid-write previously left a zero-byte color_scheme.yml
+    # and load silently fell back to "Scientific", losing the user's scheme.
+    import os
+    import time
+
+    body = yaml.safe_dump(payload, default_flow_style=False, allow_unicode=True)
+    tmp = target.with_suffix(f"{target.suffix}.{os.getpid()}.{time.time_ns()}.tmp")
+    tmp.write_text(body, encoding="utf-8")
+    last_exc: BaseException | None = None
+    for attempt in range(5):
+        try:
+            tmp.replace(target)
+            return target
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.02 * (2**attempt))
+    if last_exc is not None:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise last_exc
     return target
 
 
