@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 import numpy as np
-from qtpy.QtCore import QRect, Qt, Signal
+from qtpy.QtCore import QObject, QRect, QRectF, Qt, QTimer, Signal
 from qtpy.QtGui import QColor, QPainter, QPainterPath
 from qtpy.QtWidgets import (
     QFrame,
@@ -394,11 +394,155 @@ class CoachOverlay(QWidget):
         full.addRect(0, 0, self.width(), self.height())
         if self._spotlight is not None:
             hole = QPainterPath()
-            r = self._spotlight.adjusted(-6, -6, 6, 6)
-            hole.addRoundedRect(r, 6, 6)
+            # QPainterPath.addRoundedRect requires QRectF (not QRect) in
+            # PySide6, so wrap the padded spotlight rect explicitly.
+            r = QRectF(self._spotlight.adjusted(-6, -6, 6, 6))
+            hole.addRoundedRect(r, 6.0, 6.0)
             full = full.subtracted(hole)
         painter.fillPath(full, dim)
         if self._spotlight is not None:
             painter.setPen(QColor("#e8a13a"))  # amber accent border
-            painter.drawRoundedRect(self._spotlight.adjusted(-6, -6, 6, 6), 6, 6)
+            painter.drawRoundedRect(
+                QRectF(self._spotlight.adjusted(-6, -6, 6, 6)), 6.0, 6.0
+            )
         painter.end()
+
+
+class TutorialController(QObject):
+    """Drives the ordered ``STEPS`` over a live MainWindow with a CoachOverlay."""
+
+    def __init__(self, main_window, steps: "tuple[TutorialStep, ...]" = STEPS) -> None:
+        super().__init__(main_window)
+        self._mw = main_window
+        self._steps = list(steps)
+        self._idx = -1
+        self._active = False
+        self._overlay: CoachOverlay | None = None
+        self._prev_layout: str | None = None
+        self._poll: QTimer | None = None
+        self._signal_conn = None  # (bound_signal, slot) for teardown
+
+    # -- public --------------------------------------------------------
+    def is_active(self) -> bool:
+        return self._active
+
+    def current_index(self) -> int:
+        return self._idx
+
+    def start(self) -> None:
+        # Targets assume the mnelab layout (Browse + preprocessing visible).
+        self._prev_layout = getattr(self._mw, "_ui_layout", None)
+        try:
+            self._mw.set_ui_layout("mnelab")
+        except Exception:  # pragma: no cover - defensive
+            pass
+        central = self._mw.centralWidget() or self._mw
+        self._overlay = CoachOverlay(central)
+        self._overlay.resize(central.size())
+        self._overlay.next_clicked.connect(self._advance)
+        self._overlay.skip_clicked.connect(self._advance)
+        self._overlay.exit_clicked.connect(self.exit)
+        self._overlay.show()
+        self._overlay.raise_()
+        self._active = True
+        self._enter_step(0)
+
+    def exit(self) -> None:
+        self._teardown_completion()
+        if self._overlay is not None:
+            self._overlay.hide()
+            self._overlay.deleteLater()
+            self._overlay = None
+        if self._prev_layout:
+            try:
+                self._mw.set_ui_layout(self._prev_layout)
+            except Exception:  # pragma: no cover - defensive
+                pass
+        self._active = False
+
+    def finish(self) -> None:
+        self.exit()
+
+    # -- internals -----------------------------------------------------
+    def _enter_step(self, i: int) -> None:
+        self._teardown_completion()
+        self._idx = i
+        step = self._steps[i]
+        if step.setup is not None:
+            try:
+                step.setup(self._mw)
+            except Exception:  # pragma: no cover - defensive
+                import logging
+
+                logging.getLogger("rrational.inspector.tutorial").warning(
+                    "tutorial step %s setup failed", step.key, exc_info=True
+                )
+        self._refresh_spotlight(step)
+        # On action steps Next is disabled (do the real action / Skip).
+        can_advance = step.completion is None
+        if self._overlay is not None:
+            self._overlay.set_bubble(
+                step.instruction_html, i, len(self._steps), can_advance
+            )
+        self._wire_completion(step)
+
+    def _refresh_spotlight(self, step: "TutorialStep") -> None:
+        if self._overlay is None:
+            return
+        widget = resolve_attr(self._mw, step.target)
+        rect = None
+        if widget is not None and widget.isVisible():
+            top_left = widget.mapTo(
+                self._overlay.parentWidget(), widget.rect().topLeft()
+            )
+            rect = QRect(top_left, widget.size())
+        self._overlay.set_target(rect)
+
+    def _wire_completion(self, step: "TutorialStep") -> None:
+        comp = step.completion
+        if comp is None:
+            return
+        if isinstance(comp, SignalCompletion):
+            owner = resolve_attr(self._mw, comp.target_attr)
+            sig = getattr(owner, comp.signal_name, None) if owner is not None else None
+            if sig is not None:
+                slot = lambda *a: self._advance()  # noqa: E731
+                sig.connect(slot)
+                self._signal_conn = (sig, slot)
+            return
+        # PredicateCompletion — poll.
+        self._poll = QTimer(self)
+        self._poll.setInterval(comp.poll_ms)
+        self._poll.timeout.connect(
+            lambda: self._advance() if comp.predicate(self._mw) else None
+        )
+        self._poll.start()
+
+    def _teardown_completion(self) -> None:
+        if self._signal_conn is not None:
+            sig, slot = self._signal_conn
+            try:
+                sig.disconnect(slot)
+            except (TypeError, RuntimeError):  # pragma: no cover - defensive
+                pass
+            self._signal_conn = None
+        if self._poll is not None:
+            self._poll.stop()
+            self._poll.deleteLater()
+            self._poll = None
+
+    def _advance(self) -> None:
+        if not self._active:
+            return
+        nxt = self._idx + 1
+        if nxt >= len(self._steps):
+            self.finish()
+            return
+        self._enter_step(nxt)
+
+
+def show_tutorial(main_window) -> TutorialController:
+    """Construct + start the interactive tutorial. Returns the controller."""
+    ctl = TutorialController(main_window)
+    ctl.start()
+    return ctl

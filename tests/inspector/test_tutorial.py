@@ -112,3 +112,80 @@ def test_overlay_buttons_emit(qtbot):
         ov._skip_btn.click()
     with qtbot.waitSignal(ov.exit_clicked, timeout=1000):
         ov._exit_btn.click()
+
+
+from rrational.inspector.tutorial import TutorialController  # noqa: E402
+
+
+@pytest.fixture
+def mw(qtbot, tmp_path):
+    from rrational.inspector import settings
+    from rrational.inspector.main_window import MainWindow
+
+    settings.enable_test_mode(tmp_path)
+    w = MainWindow()
+    w.test_mode = True
+    w.set_ui_layout("mnelab")
+    qtbot.addWidget(w)
+    w.show()
+    qtbot.waitExposed(w)
+    return w
+
+
+def _tut_panel(w):
+    return w._browse_tab._preprocessing_panel
+
+
+def test_start_loads_demo_and_shows_step_zero(mw):
+    ctl = TutorialController(mw)
+    ctl.start()
+    assert ctl.is_active()
+    assert ctl.current_index() == 0
+    assert any(d.name == "TUTORIAL_demo.csv" for d in mw._datasets)
+
+
+def test_next_advances_from_welcome(mw):
+    ctl = TutorialController(mw)
+    ctl.start()
+    ctl._overlay.next_clicked.emit()
+    assert ctl.current_index() == 1  # timeline
+
+
+def test_detect_click_auto_advances(mw):
+    ctl = TutorialController(mw)
+    ctl.start()
+    ctl._overlay.next_clicked.emit()  # -> timeline
+    ctl._overlay.next_clicked.emit()  # -> detect
+    assert ctl.current_index() == 2
+    _tut_panel(mw)._detect_btn.click()  # real action
+    assert ctl.current_index() == 3  # auto-advanced to corrected
+
+
+def test_corrected_toggle_auto_advances(qtbot, mw):
+    ctl = TutorialController(mw)
+    ctl.start()
+    for _ in range(3):
+        ctl._overlay.next_clicked.emit()  # welcome->timeline->detect->corrected
+    _tut_panel(mw)._detect_btn.click()  # enables the toggle
+    assert ctl.current_index() == 3
+    _tut_panel(mw)._toggle_use_corrected.setChecked(True)  # real action
+    qtbot.waitUntil(lambda: ctl.current_index() == 4, timeout=2000)
+
+
+def test_skip_and_exit(mw):
+    ctl = TutorialController(mw)
+    ctl.start()
+    ctl._overlay.skip_clicked.emit()
+    assert ctl.current_index() == 1
+    ctl._overlay.exit_clicked.emit()
+    assert not ctl.is_active()
+
+
+def test_full_run_through_finishes(qtbot, mw):
+    ctl = TutorialController(mw)
+    ctl.start()
+    for _ in range(len(ctl._steps) + 2):
+        if not ctl.is_active():
+            break
+        ctl._overlay.skip_clicked.emit()
+    assert not ctl.is_active()  # finished, overlay gone
