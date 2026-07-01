@@ -183,6 +183,38 @@ def migrate_legacy_config() -> bool:
     return migrated_any
 
 
+def _atomic_yaml_dump(target: Path, data: Any) -> None:
+    """Write ``data`` to ``target`` as YAML atomically (Round 32).
+
+    Per-call unique tmp + ``Path.replace`` + Windows PermissionError retry —
+    the R30 persistence standard, previously only applied to save_sequences.
+    A crash or a concurrent Streamlit reader between truncate and flush left a
+    zero-byte / partial config that reload silently treated as empty ({}),
+    dropping the group / section / sequence / protocol definitions that feed
+    the statistics layer.
+    """
+    import os
+    import time
+
+    payload = yaml.safe_dump(data, default_flow_style=False, allow_unicode=True)
+    tmp = target.with_suffix(f"{target.suffix}.{os.getpid()}.{time.time_ns()}.tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    last_exc: BaseException | None = None
+    for attempt in range(5):
+        try:
+            tmp.replace(target)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.02 * (2**attempt))
+    if last_exc is not None:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise last_exc
+
+
 # --- Groups ---
 
 
@@ -196,8 +228,7 @@ def save_groups(groups: dict[str, Any], project_path: Path | None = None) -> Non
     if not project_path:
         ensure_config_dir()
     target = _get_config_path("groups.yml", project_path)
-    with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(groups, f, default_flow_style=False, allow_unicode=True)
+    _atomic_yaml_dump(target, groups)
 
 
 def load_groups(project_path: Path | None = None) -> dict[str, Any]:
@@ -229,8 +260,7 @@ def save_events(events: dict[str, list[str]], project_path: Path | None = None) 
     if not project_path:
         ensure_config_dir()
     target = _get_config_path("events.yml", project_path)
-    with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(events, f, default_flow_style=False, allow_unicode=True)
+    _atomic_yaml_dump(target, events)
 
 
 def load_events(project_path: Path | None = None) -> dict[str, list[str]]:
@@ -262,8 +292,7 @@ def save_sections(sections: dict[str, Any], project_path: Path | None = None) ->
     if not project_path:
         ensure_config_dir()
     target = _get_config_path("sections.yml", project_path)
-    with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(sections, f, default_flow_style=False, allow_unicode=True)
+    _atomic_yaml_dump(target, sections)
 
 
 def load_sections(project_path: Path | None = None) -> dict[str, Any]:
@@ -306,10 +335,7 @@ def save_participants(
     if not project_path:
         ensure_config_dir()
     target = _get_config_path("participants.yml", project_path)
-    with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(
-            participants_data, f, default_flow_style=False, allow_unicode=True
-        )
+    _atomic_yaml_dump(target, participants_data)
 
 
 def load_participants(project_path: Path | None = None) -> dict[str, Any]:
@@ -357,8 +383,7 @@ def save_event_sequences(
     if not project_path:
         ensure_config_dir()
     target = _get_config_path("event_sequences.yml", project_path)
-    with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(event_sequences, f, default_flow_style=False, allow_unicode=True)
+    _atomic_yaml_dump(target, event_sequences)
 
 
 def load_event_sequences(project_path: Path | None = None) -> dict[str, Any]:
@@ -407,10 +432,7 @@ def save_condition_labels(
     if not project_path:
         ensure_config_dir()
     target = _get_config_path("condition_labels.yml", project_path)
-    with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(
-            condition_labels, f, default_flow_style=False, allow_unicode=True
-        )
+    _atomic_yaml_dump(target, condition_labels)
 
 
 def load_condition_labels(project_path: Path | None = None) -> dict[str, Any]:
@@ -464,8 +486,7 @@ def save_protocol(protocol: dict[str, Any], project_path: Path | None = None) ->
     if not project_path:
         ensure_config_dir()
     target = _get_config_path("protocol.yml", project_path)
-    with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(protocol, f, default_flow_style=False, allow_unicode=True)
+    _atomic_yaml_dump(target, protocol)
 
 
 def load_protocol(project_path: Path | None = None) -> dict[str, Any]:

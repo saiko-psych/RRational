@@ -63,7 +63,13 @@ if TYPE_CHECKING:
 
 
 def _epoch_to_iso(t: float) -> str:
-    return datetime.fromtimestamp(t).isoformat()
+    # Round 32 — tz-aware UTC so the exported ISO string is unambiguous and
+    # DST-stable. A naive datetime.fromtimestamp(t) uses local wall-clock and
+    # writes no tzinfo, so an export crossing a DST boundary from the
+    # recording is off by an hour with no marker to detect or recover it.
+    from datetime import timezone
+
+    return datetime.fromtimestamp(t, tz=timezone.utc).isoformat()
 
 
 def _slice_section_indices(

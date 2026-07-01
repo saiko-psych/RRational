@@ -445,7 +445,12 @@ class PreprocessingPanel(QWidget):
         import numpy as _np
 
         indices_arr = _np.asarray(algo_indices, dtype=_np.int64)
-        rate = (len(indices_arr) / len(data.v)) if len(data.v) > 0 else 0.0
+        # Round 32 — divide by the number of REAL beats, not len(data.v):
+        # data.v carries NaN gap-markers between sections, so len(data.v)
+        # inflates the denominator and reports an artificially low artifact
+        # rate (and a falsely optimistic quality grade) on gapped recordings.
+        n_finite = int(_np.isfinite(data.v).sum())
+        rate = (len(indices_arr) / n_finite) if n_finite > 0 else 0.0
         grade, msg = _grade_for_rate(rate)
         by_type = dict(entry.get("indices_by_type") or {})
         restored = PreprocessingResult(

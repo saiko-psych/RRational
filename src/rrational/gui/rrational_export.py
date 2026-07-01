@@ -367,6 +367,39 @@ def _dataclass_to_dict(obj: Any) -> Any:
     return obj
 
 
+def _atomic_yaml_write(filepath: Path | str, data: dict) -> None:
+    """Write ``data`` as YAML to ``filepath`` atomically (Round 32).
+
+    Per-call unique tmp + ``Path.replace`` + Windows PermissionError retry.
+    A crash / KeyboardInterrupt / write-sharing error mid-dump previously left
+    a zero-byte or half-written .rrational file with no recovery path (the R30
+    atomic-write standard had not been applied to the export writers).
+    """
+    import os
+    import time
+
+    target = Path(filepath)
+    payload = yaml.dump(
+        data, default_flow_style=False, allow_unicode=True, sort_keys=False
+    )
+    tmp = target.with_suffix(f"{target.suffix}.{os.getpid()}.{time.time_ns()}.tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    last_exc: BaseException | None = None
+    for attempt in range(5):
+        try:
+            tmp.replace(target)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.02 * (2**attempt))
+    if last_exc is not None:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise last_exc
+
+
 def save_rrational(export_data: RRationalExport, filepath: Path | str) -> None:
     """Save export data to a .rrational file.
 
@@ -423,11 +456,8 @@ def save_rrational(export_data: RRationalExport, filepath: Path | str) -> None:
             "nn_intervals": _dataclass_to_dict(export_data.corrected_intervals),
         }
 
-    # Write YAML file
-    with open(filepath, "w", encoding="utf-8") as f:
-        yaml.dump(
-            data, f, default_flow_style=False, allow_unicode=True, sort_keys=False
-        )
+    # Write YAML file atomically (Round 32).
+    _atomic_yaml_write(filepath, data)
 
 
 def load_rrational(filepath: Path | str) -> RRationalExport:
@@ -1051,11 +1081,8 @@ def save_rrational_v2(
         ],
     }
 
-    # Write YAML file
-    with open(filepath, "w", encoding="utf-8") as f:
-        yaml.dump(
-            data, f, default_flow_style=False, allow_unicode=True, sort_keys=False
-        )
+    # Write YAML file atomically (Round 32).
+    _atomic_yaml_write(filepath, data)
 
 
 def load_rrational_v2(filepath: Path | str) -> RRationalExportV2:
