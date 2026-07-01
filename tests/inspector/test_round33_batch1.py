@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import numpy as np
+import pytest
 
 from rrational.inspector.annotations import Annotation
 from rrational.inspector.data_loader import Dataset, InspectorData
