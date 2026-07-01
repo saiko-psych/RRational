@@ -13,6 +13,16 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 import numpy as np
+from qtpy.QtCore import QRect, Qt, Signal
+from qtpy.QtGui import QColor, QPainter, QPainterPath
+from qtpy.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from rrational.inspector.data_loader import (
     Dataset,
@@ -276,3 +286,119 @@ STEPS: tuple[TutorialStep, ...] = (
         setup=lambda mw: _switch_to_tab(mw, "_results_tab"),
     ),
 )
+
+
+class CoachOverlay(QWidget):
+    """Translucent full-parent overlay: dims everything, cuts a spotlight around
+    the target, and shows an interactive instruction bubble.
+
+    The overlay itself is transparent to mouse events so the user interacts with
+    the real highlighted widget normally; only the bubble (a child frame)
+    receives clicks. The dim is purely a visual focus device.
+    """
+
+    next_clicked = Signal()
+    skip_clicked = Signal()
+    exit_clicked = Signal()
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._spotlight: QRect | None = None
+        # The overlay covers the parent and lets clicks fall through to the
+        # real UI beneath it; the bubble child re-enables mouse for itself.
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.resize(parent.size())
+
+        # ---- Interactive bubble ----------------------------------------
+        self.bubble = QFrame(self)
+        self.bubble.setObjectName("tutorialBubble")
+        self.bubble.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.bubble.setStyleSheet(
+            "QFrame#tutorialBubble { background-color: palette(window); "
+            "border: 1px solid palette(highlight); border-radius: 8px; }"
+        )
+        self.bubble.setFixedWidth(360)
+        b = QVBoxLayout(self.bubble)
+        b.setContentsMargins(14, 12, 14, 12)
+        b.setSpacing(8)
+
+        self._counter = QLabel("", self.bubble)
+        self._counter.setProperty("muted", True)
+        b.addWidget(self._counter)
+
+        self._body = QLabel("", self.bubble)
+        self._body.setWordWrap(True)
+        self._body.setTextFormat(Qt.RichText)
+        b.addWidget(self._body)
+
+        row = QHBoxLayout()
+        self._exit_btn = QPushButton("Exit", self.bubble)
+        self._exit_btn.setToolTip("Close the tutorial.")
+        self._exit_btn.clicked.connect(self.exit_clicked)
+        row.addWidget(self._exit_btn)
+        row.addStretch()
+        self._skip_btn = QPushButton("Skip", self.bubble)
+        self._skip_btn.setToolTip("Skip this step.")
+        self._skip_btn.clicked.connect(self.skip_clicked)
+        row.addWidget(self._skip_btn)
+        self._next_btn = QPushButton("Next", self.bubble)
+        self._next_btn.setToolTip("Advance to the next step.")
+        self._next_btn.setProperty("primary", True)
+        self._next_btn.clicked.connect(self.next_clicked)
+        row.addWidget(self._next_btn)
+        b.addLayout(row)
+
+        self.bubble.adjustSize()
+
+    # ------------------------------------------------------------------
+    def set_target(self, rect: QRect | None) -> None:
+        self._spotlight = rect
+        self._reposition_bubble()
+        self.update()
+
+    def set_bubble(
+        self, html: str, step_idx: int, n_steps: int, can_advance: bool
+    ) -> None:
+        self._counter.setText(f"Step {step_idx + 1} of {n_steps}")
+        self._body.setText(html)
+        self._next_btn.setEnabled(can_advance)
+        self.bubble.adjustSize()
+        self._reposition_bubble()
+
+    # ------------------------------------------------------------------
+    def _reposition_bubble(self) -> None:
+        """Place the bubble under the spotlight if there's room, else centre it."""
+        self.bubble.adjustSize()
+        bw, bh = self.bubble.width(), self.bubble.height()
+        pw, ph = self.width(), self.height()
+        if self._spotlight is not None:
+            x = min(max(0, self._spotlight.center().x() - bw // 2), pw - bw)
+            below = self._spotlight.bottom() + 12
+            y = below if below + bh <= ph else max(0, self._spotlight.top() - bh - 12)
+        else:
+            x = (pw - bw) // 2
+            y = (ph - bh) // 2
+        self.bubble.move(max(0, x), max(0, y))
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self._reposition_bubble()
+        super().resizeEvent(event)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        dim = QColor(0, 0, 0, 140)
+        full = QPainterPath()
+        full.addRect(0, 0, self.width(), self.height())
+        if self._spotlight is not None:
+            hole = QPainterPath()
+            r = self._spotlight.adjusted(-6, -6, 6, 6)
+            hole.addRoundedRect(r, 6, 6)
+            full = full.subtracted(hole)
+        painter.fillPath(full, dim)
+        if self._spotlight is not None:
+            painter.setPen(QColor("#e8a13a"))  # amber accent border
+            painter.drawRoundedRect(self._spotlight.adjusted(-6, -6, 6, 6), 6, 6)
+        painter.end()

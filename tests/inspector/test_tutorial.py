@@ -79,3 +79,36 @@ def test_resolve_attr_walks_and_guards():
     assert resolve_attr(root, "b.missing") is None
     assert resolve_attr(root, None) is None
     assert resolve_attr(root, "nope.at.all") is None
+
+
+import pytest  # noqa: E402
+
+pytest.importorskip("pytestqt")
+
+from qtpy.QtCore import QRect  # noqa: E402
+from qtpy.QtWidgets import QWidget  # noqa: E402
+
+from rrational.inspector.tutorial import CoachOverlay  # noqa: E402
+
+
+def test_overlay_constructs_and_updates(qtbot):
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    parent.resize(800, 600)
+    ov = CoachOverlay(parent)
+    ov.set_target(QRect(100, 100, 120, 40))
+    ov.set_bubble("<p>hello</p>", step_idx=0, n_steps=12, can_advance=True)
+    assert ov.bubble is not None
+    assert ov._next_btn.isEnabled() is True
+    ov.set_bubble("<p>last</p>", step_idx=11, n_steps=12, can_advance=False)
+    assert ov._next_btn.isEnabled() is False
+
+
+def test_overlay_buttons_emit(qtbot):
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    ov = CoachOverlay(parent)
+    with qtbot.waitSignal(ov.skip_clicked, timeout=1000):
+        ov._skip_btn.click()
+    with qtbot.waitSignal(ov.exit_clicked, timeout=1000):
+        ov._exit_btn.click()
