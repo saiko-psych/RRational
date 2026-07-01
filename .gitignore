@@ -109,3 +109,12 @@ tests/visual/e2e_snapshots/
 
 # Local-only validation script (E2E + Kubios smoke, manually run).
 tests/workflow_verification.py
+
+# Round 30 — runtime tracker artefacts. ALL machine-local: the baseline
+# is deliberately not committed because comparing one machine's timings
+# against another's (dev vs CI ubuntu runner) is pure noise. Each dev
+# generates their own via scripts/refresh_runtime_baseline.py; until then
+# the conftest comparator stays dormant.
+tests/.runtime_log.json
+tests/.runtime_log.*.json
+tests/runtime_baseline.json

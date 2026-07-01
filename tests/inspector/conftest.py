@@ -14,6 +14,24 @@ import numpy as np
 import pytest
 
 
+def pytest_collection_modifyitems(config, items):
+    """Auto-tag Qt-heavy inspector tests as ``slow``.
+
+    Round 30 — any test that builds a MainWindow (via each module's
+    ``main_window`` fixture) or drives the GUI through ``qtbot`` boots a
+    full Qt widget tree in the setup phase (~10-14 s each on this
+    machine); that fixture setup is the suite's dominant cost, not the
+    test bodies. Marking is automatic based on the requested fixtures so
+    no individual test needs a hand-written decorator. Run the fast dev
+    loop with ``pytest -m "not slow"``; CI and the pre-merge full run
+    execute everything (no marker filter).
+    """
+    for item in items:
+        fixtures = getattr(item, "fixturenames", ())
+        if "main_window" in fixtures or "qtbot" in fixtures:
+            item.add_marker(pytest.mark.slow)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_color_scheme_dir(tmp_path):
     """Redirect ColorScheme persistence away from the user's real home.

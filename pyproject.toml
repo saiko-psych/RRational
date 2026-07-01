@@ -61,9 +61,23 @@ target-version = ["py311"]
 # tests that touch the QApplication singleton. ``loadscope`` is the
 # next-best fallback (groups by module) but is too coarse for the
 # Inspector suite where many widget tests live in the same module.
-addopts = "--dist=loadgroup"
+# Round 30 — ``-n auto`` activates pytest-xdist parallelism (one worker
+# per logical CPU). Critically, this is what makes ``--dist=loadgroup``
+# actually do anything: without ``-n`` the suite runs single-lane and
+# the xdist_group markers are silently ignored, so theme-pollution tests
+# (test_app.py theme suite) re-applied QSS over the entire stale widget
+# tree of every prior test on the same worker — observed at ~600 s per
+# theme test in the single-lane baseline, ~1 s with proper isolation.
+# ``--durations=20`` makes the top-20 slowest tests visible on every
+# pytest run so runtime drift is caught before it compounds. The
+# tests/conftest.py session hook (added Round 30) writes the same data
+# to tests/.runtime_log.json and compares it against the committed
+# tests/runtime_baseline.json — regressions emit a warning but never
+# fail the run, so the app's functional tests stay the only fail signal.
+addopts = "--dist=loadgroup -n auto --durations=20"
 markers = [
     "xdist_group: pin tests sharing the same group name to one xdist worker",
+    "slow: Qt-heavy test that boots a MainWindow / qtbot widget tree; auto-applied by tests/inspector/conftest.py. Skip in the dev loop with -m 'not slow'.",
 ]
 
 [tool.ruff]
