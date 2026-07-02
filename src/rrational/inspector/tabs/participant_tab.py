@@ -645,10 +645,8 @@ class ParticipantTab(InspectorTab):
             | QDockWidget.DockWidgetClosable
         )
         self._preprocessing_dock.setWidget(self._preprocessing_panel)
-        # Bug B4: same width cap as the left dock — keeps the central
-        # plot from being squeezed when both side docks are visible.
-        self._preprocessing_panel.setMinimumWidth(260)
-        self._preprocessing_panel.setMaximumWidth(360)
+        # Width caps are owned by PreprocessingPanel (and scale with the UI-zoom
+        # factor); don't re-pin them here — see the BrowseTab note.
         self._dock_host.addDockWidget(Qt.RightDockWidgetArea, self._preprocessing_dock)
 
         # ----- Outer layout --------------------

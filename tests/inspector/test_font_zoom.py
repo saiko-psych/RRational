@@ -123,6 +123,23 @@ def test_zoom_clamps_and_toggles_action_enabled(mw):
     assert mw._zoom_in_act.isEnabled()
 
 
+def test_zoom_scales_stepper_and_dock_widths(mw):
+    """Regression: enlarging the font clipped the workflow-stepper labels
+    ("Detec") because the buttons + preprocessing dock pinned fixed pixel
+    widths the QSS font-size couldn't reach. Zooming must widen them."""
+    panel = mw._browse_tab._preprocessing_panel
+    stepper = panel._stepper
+    base_btn = next(iter(stepper._buttons.values())).minimumWidth()
+    base_max = panel.maximumWidth()
+
+    mw._set_font_scale(1.5)
+    assert next(iter(stepper._buttons.values())).minimumWidth() > base_btn
+    assert panel.maximumWidth() > base_max
+
+    mw._set_font_scale(1.0)
+    assert next(iter(stepper._buttons.values())).minimumWidth() == base_btn
+
+
 def test_zoom_actually_enlarges_the_applied_qss(qtbot, mw):
     """End-to-end: bumping the scale enlarges the live application QSS.
 

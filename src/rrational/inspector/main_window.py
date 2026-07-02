@@ -1122,6 +1122,16 @@ class MainWindow(QMainWindow):
         if app is not None:
             apply_app_theme(app, mode=_resolve_theme_mode(), scale=scale)
 
+        # Cascade the scale to widgets that pin fixed pixel widths which the QSS
+        # font-size can't reach (the workflow-stepper buttons + their host dock)
+        # so their labels don't clip when the font grows. Guarded getattr walk
+        # keeps this safe when optional tabs are absent.
+        for tab_attr in ("_browse_tab", "_participant_tab"):
+            tab = getattr(self, tab_attr, None)
+            panel = getattr(tab, "_preprocessing_panel", None) if tab else None
+            if panel is not None and hasattr(panel, "apply_font_scale"):
+                panel.apply_font_scale(scale)
+
         # Persist. QSettings is redirected to a temp file under test mode
         # (conftest autouse), so this stays isolated in the suite.
         QSettings().setValue(_FONT_SCALE_KEY, scale)

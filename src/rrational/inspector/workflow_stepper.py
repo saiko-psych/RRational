@@ -126,9 +126,14 @@ class WorkflowStepper(QWidget):
             btn = QPushButton(STEP_LABELS[step], self)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # Width pinned so the short label + state prefix never
-            # ellipsises in the narrow preprocessing dock.
-            btn.setMinimumWidth(78)
+            # Width pinned so the short label + state prefix never ellipsises in
+            # the narrow preprocessing dock. Scaled by the active UI-zoom factor
+            # so the labels don't clip ("Detec") when the font is enlarged — the
+            # QSS font-size isn't reflected in the button's own metrics, so the
+            # scale has to come from the theme module.
+            from rrational.inspector.style.theme import scaled
+
+            btn.setMinimumWidth(scaled(78))
             btn.setToolTip(STEP_TOOLTIPS[step])
             # Use lambda default-arg trick to capture the step index.
             btn.clicked.connect(lambda _checked, s=step: self.step_clicked.emit(s))
@@ -149,6 +154,13 @@ class WorkflowStepper(QWidget):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def apply_font_scale(self, scale: float) -> None:
+        """Rescale the per-button minimum width to the live UI-zoom factor so
+        the step labels keep fitting when the user zooms in/out."""
+        for btn in self._buttons.values():
+            btn.setMinimumWidth(round(78 * scale))
+        self.updateGeometry()
+
     def set_step_states(self, states: dict[int, str]) -> None:
         """Set each step's visual state.
 

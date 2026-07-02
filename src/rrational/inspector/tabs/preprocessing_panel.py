@@ -76,9 +76,13 @@ class PreprocessingPanel(QWidget):
         self._main_window = main_window
         self._last_result: "PreprocessingResult | None" = None
 
-        # Wider so the workflow-stepper buttons aren't truncated.
-        self.setMaximumWidth(340)
-        self.setMinimumWidth(280)
+        # Width caps scale with the UI-zoom factor so the workflow-stepper
+        # buttons and the group-box content keep fitting when the font is
+        # enlarged (see apply_font_scale for live updates).
+        from rrational.inspector.style.theme import scaled
+
+        self.setMaximumWidth(scaled(340))
+        self.setMinimumWidth(scaled(260))
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
         from qtpy.QtWidgets import QGroupBox
@@ -282,6 +286,15 @@ class PreprocessingPanel(QWidget):
     # ------------------------------------------------------------------
     # State sync
     # ------------------------------------------------------------------
+    def apply_font_scale(self, scale: float) -> None:
+        """Rescale the dock's width caps (and the stepper's button widths) to
+        the live UI-zoom factor so nothing clips when the user zooms."""
+        self.setMaximumWidth(round(340 * scale))
+        self.setMinimumWidth(round(260 * scale))
+        stepper = getattr(self, "_stepper", None)
+        if stepper is not None:
+            stepper.apply_font_scale(scale)
+
     # ------------------------------------------------------------------
     # Workflow-stepper helpers
     # ------------------------------------------------------------------

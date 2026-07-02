@@ -128,6 +128,22 @@ _FONT_MONO = '"JetBrains Mono", "IBM Plex Mono", "Cascadia Code", "Consolas", mo
 # zoom-in/out keypresses from compounding — see ``apply_app_theme``.
 _BASE_FONT_PT: float = 0.0
 
+# Last-applied UI font scale (1.0 == design baseline). Widgets that pin fixed
+# pixel dimensions (button min-widths, dock width caps) read this to scale those
+# dims in step with the zoomed font — the QSS ``font-size`` is NOT reflected in
+# ``widget.font()``, so a widget can't derive the scale from its own metrics.
+_CURRENT_SCALE: float = 1.0
+
+
+def current_font_scale() -> float:
+    """Return the UI font scale last applied via :func:`apply_app_theme`."""
+    return _CURRENT_SCALE
+
+
+def scaled(px: int | float) -> int:
+    """Scale a design-baseline pixel dimension by the active UI font scale."""
+    return round(px * _CURRENT_SCALE)
+
 
 def _qss_for(p: dict[str, str], scale: float = 1.0) -> str:
     """Render the full QSS string with the given palette ``p``.
@@ -651,7 +667,8 @@ def apply_app_theme(app: QApplication, mode: str = "dark", scale: float = 1.0) -
     Unknown values for ``mode`` fall back to "dark" rather than raising:
     a typo or stale config entry should never block app startup.
     """
-    global _BASE_FONT_PT
+    global _BASE_FONT_PT, _CURRENT_SCALE
+    _CURRENT_SCALE = min(2.0, max(0.7, float(scale)))
     palette = _LIGHT if mode == "light" else _DARK
     app.setStyleSheet(_qss_for(palette, scale))
     # Belt-and-braces: also scale the application default font so widgets

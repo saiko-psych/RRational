@@ -159,10 +159,10 @@ class BrowseTab(InspectorTab):
             | QDockWidget.DockWidgetClosable
         )
         self._preprocessing_dock.setWidget(self._preprocessing_panel)
-        # Bug B4: same width cap as the left dock — keeps the central
-        # plot from being squeezed when both side docks are visible.
-        self._preprocessing_panel.setMinimumWidth(260)
-        self._preprocessing_panel.setMaximumWidth(360)
+        # Width caps (min/max, and their scaling with the UI-zoom factor) are
+        # owned by PreprocessingPanel itself — don't re-pin them here or the
+        # zoom rescale gets clobbered and the workflow-stepper labels clip when
+        # the font is enlarged.
         self._dock_host.addDockWidget(Qt.RightDockWidgetArea, self._preprocessing_dock)
 
         # The tab's own QWidget hosts the dock-host through a VBoxLayout.
