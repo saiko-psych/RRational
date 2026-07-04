@@ -44,6 +44,7 @@ def test_steps_keys_and_order():
     keys = [s.key for s in STEPS]
     assert keys == [
         "welcome",
+        "datasets",
         "timeline",
         "detect",
         "corrected",
@@ -52,6 +53,7 @@ def test_steps_keys_and_order():
         "setup_sections",
         "setup_groups",
         "setup_sequences",
+        "participants",
         "analysis",
         "compute",
         "results",
@@ -221,32 +223,39 @@ def test_start_loads_demo_and_shows_step_zero(mw):
     assert any(d.name == "TUTORIAL_demo.csv" for d in mw._datasets)
 
 
+def _goto(ctl, key):
+    """Drive the tour forward to the step with ``key`` (robust to reordering)."""
+    target = next(i for i, s in enumerate(ctl._steps) if s.key == key)
+    guard = 0
+    while ctl.current_index() < target and ctl.is_active() and guard < 50:
+        ctl._overlay.next_clicked.emit()
+        guard += 1
+    assert ctl.current_index() == target
+    return target
+
+
 def test_next_advances_from_welcome(mw):
     ctl = TutorialController(mw)
     ctl.start()
     ctl._overlay.next_clicked.emit()
-    assert ctl.current_index() == 1  # timeline
+    assert ctl.current_index() == 1  # first step after welcome (datasets)
 
 
 def test_detect_click_auto_advances(mw):
     ctl = TutorialController(mw)
     ctl.start()
-    ctl._overlay.next_clicked.emit()  # -> timeline
-    ctl._overlay.next_clicked.emit()  # -> detect
-    assert ctl.current_index() == 2
+    detect_idx = _goto(ctl, "detect")
     _tut_panel(mw)._detect_btn.click()  # real action
-    assert ctl.current_index() == 3  # auto-advanced to corrected
+    assert ctl.current_index() == detect_idx + 1  # auto-advanced to corrected
 
 
 def test_corrected_toggle_auto_advances(qtbot, mw):
     ctl = TutorialController(mw)
     ctl.start()
-    for _ in range(3):
-        ctl._overlay.next_clicked.emit()  # welcome->timeline->detect->corrected
+    corrected_idx = _goto(ctl, "corrected")
     _tut_panel(mw)._detect_btn.click()  # enables the toggle
-    assert ctl.current_index() == 3
     _tut_panel(mw)._toggle_use_corrected.setChecked(True)  # real action
-    qtbot.waitUntil(lambda: ctl.current_index() == 4, timeout=2000)
+    qtbot.waitUntil(lambda: ctl.current_index() == corrected_idx + 1, timeout=2000)
 
 
 def test_skip_and_exit(mw):

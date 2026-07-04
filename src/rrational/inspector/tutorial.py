@@ -165,12 +165,32 @@ STEPS: tuple[TutorialStep, ...] = (
         key="welcome",
         title="Welcome to the interactive tour",
         instruction_html=(
-            "<p>This tour walks you through a full HRV workflow on a built-in "
-            "demo recording. On the highlighted steps, just do the action and "
-            "the tour advances by itself.</p>"
-            "<p>Click <b>Next</b> to load the demo recording.</p>"
+            "<p>This tour walks you through the <b>full HRV workflow</b> on a "
+            "built-in demo recording:</p>"
+            "<p><b>1. Load</b> a recording &rarr; <b>2. Browse &amp; clean</b> it "
+            "(artifact detection) &rarr; <b>3. Define</b> your study structure "
+            "(events, sections, groups) &rarr; <b>4. Analyse</b> &rarr; "
+            "<b>5. Results</b>.</p>"
+            "<p>On highlighted steps, just do the action and the tour advances by "
+            "itself. Click <b>Next</b> to load the demo recording.</p>"
         ),
         setup=_ensure_demo_loaded,
+    ),
+    TutorialStep(
+        key="datasets",
+        title="Your recordings live here",
+        instruction_html=(
+            "<p>The <b>Datasets</b> list on the left holds every recording you've "
+            "opened. <b>Click a recording</b> to show its tachogram and start "
+            "working on it — that is how you get to the browsing / artifact-"
+            "detection view.</p>"
+            "<p>To load your <i>own</i> data later, use <b>File &rarr; Open "
+            "recording</b> (one file) or <b>File &rarr; Open folder</b> (a whole "
+            "study folder at once). For now we use the loaded demo — click "
+            "<b>Next</b>.</p>"
+        ),
+        target="_browse_tab._dataset_tree",
+        setup=lambda mw: _switch_to_tab(mw, "_browse_tab"),
     ),
     TutorialStep(
         key="timeline",
@@ -260,6 +280,20 @@ STEPS: tuple[TutorialStep, ...] = (
         ),
         target="_setup_tab",
         setup=lambda mw: _switch_to_tab(mw, "_setup_tab"),
+    ),
+    TutorialStep(
+        key="participants",
+        title="Participants — metadata, not recordings",
+        instruction_html=(
+            "<p>The <b>Participants</b> tab lists your subjects and links each ID "
+            "to a <b>group</b> and an <b>event sequence</b>. It is <i>metadata</i> "
+            "— you don't open or view a recording from here.</p>"
+            "<p>Recordings are opened in <b>Browse</b> (the Datasets list) and "
+            "matched to a participant by file name, which is what feeds the group "
+            "and repeated-measures analyses. Click <b>Next</b>.</p>"
+        ),
+        target="_participants_tab",
+        setup=lambda mw: _switch_to_tab(mw, "_participants_tab"),
     ),
     TutorialStep(
         key="analysis",
@@ -399,11 +433,18 @@ class CoachOverlay(QWidget):
         """Punch the spotlight rect out of the overlay's input area so clicks
         there reach the real highlighted widget, while the dim + bubble still
         capture everything else. No spotlight -> capture the whole surface
-        (welcome/summary steps only need the bubble's Next button)."""
+        (welcome/summary steps only need the bubble's Next button).
+
+        The bubble's own rectangle is always unioned back in: if it happens to
+        overlap the spotlight hole (e.g. a full-height sidebar target), the
+        hole must not clip the bubble's text or swallow its button clicks.
+        """
         from qtpy.QtGui import QRegion
 
         if self._spotlight is not None and not self._spotlight.isNull():
-            self.setMask(QRegion(self.rect()) - QRegion(self._spotlight))
+            region = QRegion(self.rect()) - QRegion(self._spotlight)
+            region = region.united(QRegion(self.bubble.geometry()))
+            self.setMask(region)
         else:
             self.clearMask()
 
@@ -415,20 +456,42 @@ class CoachOverlay(QWidget):
         self._next_btn.setEnabled(can_advance)
         self.bubble.adjustSize()
         self._reposition_bubble()
+        # The bubble just moved/resized — refresh the mask so its new rectangle
+        # is unioned in (and any stale spotlight-overlap clip is cleared).
+        self._apply_input_mask()
 
     # ------------------------------------------------------------------
     def _reposition_bubble(self) -> None:
-        """Place the bubble under the spotlight if there's room, else centre it."""
+        """Place the bubble so it does NOT overlap the spotlight if avoidable:
+        try below the target, then above, then to its right, then left; only
+        overlap (top-left) as a last resort. Centre it when there's no target."""
         self.bubble.adjustSize()
         bw, bh = self.bubble.width(), self.bubble.height()
         pw, ph = self.width(), self.height()
-        if self._spotlight is not None:
-            x = min(max(0, self._spotlight.center().x() - bw // 2), pw - bw)
-            below = self._spotlight.bottom() + 12
-            y = below if below + bh <= ph else max(0, self._spotlight.top() - bh - 12)
-        else:
-            x = (pw - bw) // 2
-            y = (ph - bh) // 2
+        if self._spotlight is None:
+            self.bubble.move((pw - bw) // 2, (ph - bh) // 2)
+            return
+
+        sp = self._spotlight
+
+        def clamp_x(x: int) -> int:
+            return max(0, min(x, pw - bw))
+
+        def clamp_y(y: int) -> int:
+            return max(0, min(y, ph - bh))
+
+        cx = clamp_x(sp.center().x() - bw // 2)
+        cy = clamp_y(sp.center().y() - bh // 2)
+        if sp.bottom() + 12 + bh <= ph:  # below
+            x, y = cx, sp.bottom() + 12
+        elif sp.top() - 12 - bh >= 0:  # above
+            x, y = cx, sp.top() - 12 - bh
+        elif sp.right() + 12 + bw <= pw:  # right (typical for a tall sidebar)
+            x, y = sp.right() + 12, cy
+        elif sp.left() - 12 - bw >= 0:  # left
+            x, y = sp.left() - 12 - bw, cy
+        else:  # last resort — overlap; the mask keeps the bubble readable
+            x, y = cx, 0
         self.bubble.move(max(0, x), max(0, y))
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
