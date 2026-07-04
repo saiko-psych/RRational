@@ -154,6 +154,23 @@ def run(argv: list[str] | None = None) -> int:
     """
     argv = argv if argv is not None else sys.argv[1:]
 
+    # Windows taskbar identity. When launched via ``python -m ...`` the OS
+    # groups the window under the interpreter (python.exe) and shows ITS icon
+    # in the taskbar, even though the title-bar icon (setWindowIcon) is ours.
+    # Declaring an explicit AppUserModelID makes Windows treat the app as its
+    # own entity and use our window icon in the taskbar too. Must run before
+    # the first window is created. No-op / best-effort on non-Windows or if the
+    # shell call is unavailable.
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "RRational.Inspector"
+            )
+        except Exception:  # pragma: no cover - platform/shell specific
+            pass
+
     parser = _build_parser()
     args = parser.parse_args(argv)
 
