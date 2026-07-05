@@ -82,7 +82,7 @@ class PreprocessingPanel(QWidget):
         from rrational.inspector.style.theme import scaled
 
         self.setMaximumWidth(scaled(340))
-        self.setMinimumWidth(scaled(260))
+        self.setMinimumWidth(scaled(230))
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
         from qtpy.QtWidgets import QGroupBox
@@ -290,7 +290,7 @@ class PreprocessingPanel(QWidget):
         """Rescale the dock's width caps (and the stepper's button widths) to
         the live UI-zoom factor so nothing clips when the user zooms."""
         self.setMaximumWidth(round(340 * scale))
-        self.setMinimumWidth(round(260 * scale))
+        self.setMinimumWidth(round(230 * scale))
         stepper = getattr(self, "_stepper", None)
         if stepper is not None:
             stepper.apply_font_scale(scale)

@@ -306,6 +306,10 @@ class _EventsPane(QWidget):
             f"<b>Defined events</b> (saved to "
             f"{format_config_path('config/events.yml')}, shared across projects)"
         )
+        # Wrap: the config path can be long (a full project/temp folder), and
+        # without wrapping this single-line label forced the whole Setup pane —
+        # and thus the window's minimum width — out to its full text width.
+        self._info_label.setWordWrap(True)
         self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
 
@@ -638,6 +642,9 @@ class _SectionsPane(QWidget):
             f"<b>Defined sections</b> (saved to "
             f"{format_config_path('config/sections.yml')}, shared across projects)"
         )
+        # Wrap so a long config path doesn't force the pane (and the window's
+        # minimum width) out to the label's full single-line width.
+        self._info_label.setWordWrap(True)
         self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
 
