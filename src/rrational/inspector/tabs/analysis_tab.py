@@ -439,8 +439,12 @@ class _AnalysisSettingsBar(QWidget):
         overlap_layout = QVBoxLayout(overlap_box)
         overlap_layout.setContentsMargins(8, 6, 8, 6)
         overlap_layout.setSpacing(4)
-        self._overlap_check = QCheckBox(
-            "Use overlapping windows (compute metrics per window, then average)"
+        # Short label + tooltip: the full sentence as a checkbox caption was
+        # ~880 px wide and single-handedly pinned the Analysis settings bar (and
+        # thus the window's minimum width) that wide.
+        self._overlap_check = QCheckBox("Use overlapping windows")
+        self._overlap_check.setToolTip(
+            "Compute metrics per window, then average across windows."
         )
         self._overlap_check.toggled.connect(self._on_overlap_toggled)
         overlap_layout.addWidget(self._overlap_check)
@@ -464,9 +468,12 @@ class _AnalysisSettingsBar(QWidget):
         self._overlap_step_spin.setValue(75)
         self._overlap_step_spin.setSuffix(" beats")
         self._overlap_step_spin.valueChanged.connect(self._persist)
+        self._overlap_step_spin.setToolTip("Gap between successive window starts.")
         form.addRow("Mode:", self._overlap_mode_combo)
         form.addRow("Window size:", self._overlap_size_spin)
-        form.addRow("Step (gap between window starts):", self._overlap_step_spin)
+        # Short label (was "Step (gap between window starts):", ~430 px) — the
+        # detail lives in the spin box's tooltip now.
+        form.addRow("Step:", self._overlap_step_spin)
         overlap_layout.addWidget(self._overlap_form_widget)
         self._overlap_form_widget.setVisible(False)
         settings_layout.addWidget(overlap_box)
@@ -2266,9 +2273,32 @@ class AnalysisTab(InspectorTab):
         self._stack.addWidget(self._group_pane)
         self._stack.addWidget(self._sequence_pane)
         outer.addWidget(self._stack)
+        self._sync_mode_pane_size_policies()
 
     def _on_mode_changed(self, idx: int) -> None:
         self._stack.setCurrentIndex(idx)
+        self._sync_mode_pane_size_policies()
+
+    def _sync_mode_pane_size_policies(self) -> None:
+        """A QStackedWidget reserves the MAX minimum width of ALL its pages, so
+        the widest hidden mode pane (Repeating, ~1074 px) pinned the Analysis
+        tab — and the whole window's minimum width — even while a narrower mode
+        was showing. Give every non-current mode pane an Ignored size policy so
+        only the visible mode contributes to the minimum."""
+        from qtpy.QtWidgets import QSizePolicy
+
+        current = self._stack.currentWidget()
+        for pane in (
+            self._single_pane,
+            self._repeating_pane,
+            self._group_pane,
+            self._sequence_pane,
+        ):
+            pane.setSizePolicy(
+                QSizePolicy.Preferred if pane is current else QSizePolicy.Ignored,
+                QSizePolicy.Preferred if pane is current else QSizePolicy.Ignored,
+            )
+        self._stack.updateGeometry()
 
     # ------------------------------------------------------------------
     # Notification hooks
