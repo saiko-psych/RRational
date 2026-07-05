@@ -92,6 +92,39 @@ def test_open_bids_folder_loads_every_subject_recording(tmp_path, main_window):
     assert any("sub-02" in n for n in names)
 
 
+def test_open_folder_recurses_when_top_level_empty(tmp_path, main_window):
+    """A folder whose recordings live only in SUBfolders (a project's
+    ``data/raw/`` that groups them under ``hrv_logger/``, ``vns/`` …) must load
+    them all — pointing Open folder there used to silently find nothing."""
+    root = tmp_path / "data_raw"
+    (root / "hrv_logger").mkdir(parents=True)
+    (root / "vns").mkdir(parents=True)
+    _write_simple_polar_csv(root / "hrv_logger" / "rec_a.csv")
+    _write_simple_polar_csv(root / "hrv_logger" / "rec_b.csv")
+    _write_simple_polar_csv(root / "vns" / "rec_c.txt")
+
+    main_window.open_folder(root)
+
+    names = {ds.name for ds in main_window._datasets}
+    assert len(main_window._datasets) == 3
+    assert {"rec_a.csv", "rec_b.csv", "rec_c.txt"} <= names
+
+
+def test_open_folder_flat_takes_precedence_over_recursion(tmp_path, main_window):
+    """When the top level itself has recordings, recursion must NOT also pull
+    in nested ones (avoid double-loading raw + a nested processed copy)."""
+    root = tmp_path / "flat"
+    (root / "nested").mkdir(parents=True)
+    _write_simple_polar_csv(root / "top.csv")
+    _write_simple_polar_csv(root / "nested" / "deep.csv")
+
+    main_window.open_folder(root)
+
+    names = {ds.name for ds in main_window._datasets}
+    assert "top.csv" in names
+    assert "deep.csv" not in names
+
+
 def test_open_bids_folder_adds_participant_entries(tmp_path, main_window):
     from rrational.gui.persistence import load_participants
 

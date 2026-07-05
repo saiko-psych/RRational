@@ -1777,16 +1777,28 @@ class MainWindow(QMainWindow):
         # Try .rrational first; if none, glob for raw RR file extensions.
         # We deliberately don't mix the two — a folder is either a project
         # export directory or a raw-data dump, not both.
-        files = sorted(folder.glob("*.rrational"))
-        if not files:
+        def _collect(glob):
+            hits = sorted(glob("*.rrational"))
+            if hits:
+                return hits
             raw_files: list[Path] = []
             for ext in ("*.csv", "*.txt", "*.dat"):
-                raw_files.extend(folder.glob(ext))
-            files = sorted(raw_files)
+                raw_files.extend(glob(ext))
+            return sorted(raw_files)
+
+        files = _collect(folder.glob)
+        if not files and any(p.is_dir() for p in folder.iterdir()):
+            # Nothing at the top level, but there ARE subfolders — descend
+            # recursively. This is the common project case: pointing Open
+            # folder at ``data/raw/`` (which only holds ``hrv_logger/``,
+            # ``vns/`` … subdirs) should load every recording underneath,
+            # not silently find nothing.
+            files = _collect(folder.rglob)
         if not files:
             self._info(
                 "No files found",
-                f"No .rrational, .csv, .txt or .dat files in {folder.name}.",
+                f"No .rrational, .csv, .txt or .dat files in {folder.name} "
+                "or its subfolders.",
             )
             return
         for p in files:
