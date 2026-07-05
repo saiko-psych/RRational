@@ -161,6 +161,14 @@ def run(argv: list[str] | None = None) -> int:
     # own entity and use our window icon in the taskbar too. Must run before
     # the first window is created. No-op / best-effort on non-Windows or if the
     # shell call is unavailable.
+    #
+    # IMPORTANT: this only works for an UNPACKAGED interpreter. The Microsoft
+    # Store / MSIX ``python`` shim runs with a registered package identity, and
+    # the shell keys the taskbar icon off THAT identity, ignoring the runtime
+    # AppUserModelID — so a Store-``python -m rrational.inspector`` launch always
+    # shows Python's icon regardless of this call. Launch from the project venv
+    # (``.venv\Scripts\python.exe``) for the RRational icon; the warning below
+    # makes that trap self-explaining.
     if sys.platform == "win32":
         try:
             import ctypes
@@ -168,6 +176,21 @@ def run(argv: list[str] | None = None) -> int:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
                 "RRational.Inspector"
             )
+            # Detect a packaged (Store/MSIX) interpreter — GetCurrentPackageFullName
+            # returns APPMODEL_ERROR_NO_PACKAGE (15700) when unpackaged.
+            length = ctypes.c_uint32(0)
+            rc = ctypes.windll.kernel32.GetCurrentPackageFullName(
+                ctypes.byref(length), None
+            )
+            if rc != 15700:  # not "no package" -> we ARE packaged
+                print(
+                    "warning: launched under a packaged (Microsoft Store) Python, "
+                    "so the Windows taskbar will show Python's icon, not "
+                    "RRational's. Launch from the project venv "
+                    "(.venv\\Scripts\\python.exe -m rrational.inspector) for the "
+                    "RRational icon.",
+                    file=sys.stderr,
+                )
         except Exception:  # pragma: no cover - platform/shell specific
             pass
 

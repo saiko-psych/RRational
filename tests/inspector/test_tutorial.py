@@ -139,6 +139,35 @@ def test_overlay_bubble_uses_theme_colors_not_default_palette(qtbot):
     assert "#1f2228" in light._body.styleSheet()  # text_primary (dark)
 
 
+def test_bubble_body_not_clipped_for_long_text_at_zoom(qtbot):
+    """Regression: the long welcome instruction clipped its last line at higher
+    UI text zoom — a word-wrapped QLabel in a fixed-width bubble was allocated
+    height for its natural (wider) width, not the real wrapped width, so it cut
+    off text and the buttons overlapped it. The body must be tall enough for its
+    heightForWidth at the laid-out width."""
+    from qtpy.QtWidgets import QApplication
+
+    from rrational.inspector.style import apply_app_theme
+
+    app = QApplication.instance()
+    apply_app_theme(app, mode="dark", scale=1.4)  # the zoom where it clipped
+    try:
+        parent = QWidget()
+        qtbot.addWidget(parent)
+        parent.resize(1000, 800)
+        ov = CoachOverlay(parent, mode="dark")
+        ov.set_bubble(
+            STEPS[0].instruction_html, step_idx=0, n_steps=14, can_advance=True
+        )
+        body = ov._body
+        assert body.width() > 0
+        # The label must reserve at least its true wrapped height — otherwise
+        # the last line is clipped inside the label's own bounds.
+        assert body.height() >= body.heightForWidth(body.width())
+    finally:
+        apply_app_theme(app, mode="dark", scale=1.0)  # reset global scale
+
+
 def test_overlay_captures_mouse_so_bubble_is_clickable(qtbot):
     """Regression: the overlay set WA_TransparentForMouseEvents on itself, so
     EVERY click — including the bubble's Next/Skip/Exit buttons — fell through

@@ -454,11 +454,32 @@ class CoachOverlay(QWidget):
         self._counter.setText(f"Step {step_idx + 1} of {n_steps}")
         self._body.setText(html)
         self._next_btn.setEnabled(can_advance)
-        self.bubble.adjustSize()
+        self._fit_body_height()
         self._reposition_bubble()
         # The bubble just moved/resized — refresh the mask so its new rectangle
         # is unioned in (and any stale spotlight-overlap clip is cleared).
         self._apply_input_mask()
+
+    def _fit_body_height(self) -> None:
+        """Size the bubble to the body's TRUE wrapped height.
+
+        ``_body`` is a word-wrapped QLabel (a height-for-width widget) inside a
+        fixed-width (360px) frame, but the QVBoxLayout sizes it from
+        ``sizeHint()`` computed at a heuristic (wider) width — not the frame's
+        real ~330px content width. So at larger UI text zoom the layout
+        under-allocated the label and it clipped its last wrapped line, with the
+        Exit/Skip/Next row sitting on top of the cut text (user-reported at
+        "Step 1 of 14"). Pin the label's minimum height to its heightForWidth at
+        the actually laid-out width so ``adjustSize`` reserves the real height.
+        Reset to 0 first so a tall earlier step doesn't leave a stale floor that
+        over-sizes a shorter later one.
+        """
+        self._body.setMinimumHeight(0)
+        self.bubble.adjustSize()  # settle the real fixed-width wrap width
+        w = self._body.width()
+        if w > 0 and self._body.wordWrap():
+            self._body.setMinimumHeight(self._body.heightForWidth(w))
+        self.bubble.adjustSize()  # re-fit the frame around the pinned height
 
     # ------------------------------------------------------------------
     def _reposition_bubble(self) -> None:
