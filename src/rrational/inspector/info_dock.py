@@ -113,10 +113,13 @@ class _CopyableLabel(QWidget):
         # full string so selection-copy still gives the user the
         # unabbreviated name.
 
+        from rrational.inspector.style.theme import scaled
+
         self._copy_btn = QPushButton("⧉", self)
         self._copy_btn.setFlat(True)
-        self._copy_btn.setFixedWidth(22)
-        self._copy_btn.setFixedHeight(22)
+        # Scale with the UI-zoom factor so the glyph doesn't clip at high zoom.
+        self._copy_btn.setFixedWidth(scaled(22))
+        self._copy_btn.setFixedHeight(scaled(22))
         self._copy_btn.setToolTip("Copy filename to clipboard")
         # Round 30 — screen readers announce the raw "⧉" codepoint without
         # setAccessibleName. setToolTip is a sighted-user affordance; AT
@@ -152,8 +155,17 @@ class _CopyableLabel(QWidget):
         # Leave room for the copy-button column when computing available width.
         avail = max(40, self._label.width() - 4)
         fm = QFontMetrics(self._label.font())
-        elided = fm.elidedText(self._full_text, Qt.ElideMiddle, avail)
+        # ElideRight (not Middle): the leading "Demo recording…" is the
+        # information-bearing part; Middle collapsed it to "De…n)" once the
+        # label column narrowed at higher zoom.
+        elided = fm.elidedText(self._full_text, Qt.ElideRight, avail)
         self._label.setText(elided)
+
+    def apply_font_scale(self, scale: float) -> None:
+        """Rescale the fixed-size copy button to the live UI-zoom factor."""
+        self._copy_btn.setFixedWidth(round(22 * scale))
+        self._copy_btn.setFixedHeight(round(22 * scale))
+        self._refresh_display()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt convention
         # Re-elide on dock resize so the filename keeps using all the
@@ -285,9 +297,25 @@ class InfoDock(QDockWidget):
         # have enough room to elide reasonably without dropping every
         # information-bearing character. Users can still drag the dock
         # to a wider split if they need the full path visible.
-        container.setMinimumWidth(220)
-        container.setMaximumWidth(320)
+        from rrational.inspector.style.theme import scaled
+
+        # Scale the width bounds with the UI-zoom factor: at a fixed 220 px the
+        # label column widened with the font but the value column didn't, so the
+        # filename over-elided at higher zoom. apply_font_scale updates these
+        # live on Ctrl +/-/0.
+        self._container = container
+        container.setMinimumWidth(scaled(220))
+        container.setMaximumWidth(scaled(320))
         self.setWidget(container)
+
+    def apply_font_scale(self, scale: float) -> None:
+        """Rescale the dock width bounds + the file copy button to the live
+        UI-zoom factor so the filename value keeps enough room and nothing
+        clips."""
+        self._container.setMinimumWidth(round(220 * scale))
+        self._container.setMaximumWidth(round(320 * scale))
+        if hasattr(self._file_label, "apply_font_scale"):
+            self._file_label.apply_font_scale(scale)
 
     # ------------------------------------------------------------------
     # Public API — host pushes a snapshot whenever active state changes.

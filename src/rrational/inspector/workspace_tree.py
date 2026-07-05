@@ -104,14 +104,31 @@ class _BadgeDelegate(QStyledItemDelegate):
             fm.height() + 2 * self._PAD_Y,
         )
 
+    def _badge_font(self, base: QFont) -> QFont:
+        """Bold pill font that scales with the UI zoom even when the base font
+        is PIXEL-sized. QSS ``font-size`` sets a pixel size, so ``pointSizeF()``
+        returns -1 and the old ``max(7.0, pointSizeF-1)`` collapsed every badge
+        to a fixed 7pt — while the pill was *measured* with the scaled font. At
+        small zoom the 7pt bold text overflowed the smaller pill and clipped
+        ("SECTIONS" -> "ECTION"). Deriving the badge font from the base keeps the
+        measured and painted sizes in lock-step at every scale."""
+        f = QFont(base)
+        if base.pixelSize() > 0:
+            f.setPixelSize(max(8, base.pixelSize() - 1))
+        else:
+            f.setPointSizeF(max(7.0, base.pointSizeF() - 1.0))
+        f.setBold(True)
+        return f
+
     def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:  # noqa: N802 - Qt API
         base = super().sizeHint(option, index)
         badges = index.data(ROLE_BADGES) or []
         if not badges:
             return base
-        fm = QFontMetrics(option.font)
+        # Measure with the SAME font the badges are painted with (bold, scaled).
+        bfm = QFontMetrics(self._badge_font(option.font))
         # Reserve enough width: label + gap + sum(badges + gaps).
-        extra = sum(self._badge_size(b, fm).width() + self._GAP for b in badges)
+        extra = sum(self._badge_size(b, bfm).width() + self._GAP for b in badges)
         return QSize(base.width() + extra + self._PAD_X, base.height())
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:  # noqa: N802 - Qt API
@@ -133,13 +150,16 @@ class _BadgeDelegate(QStyledItemDelegate):
         if style is not None:
             style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
 
-        # 2. Compute the badge strip on the right.
+        # 2. Compute the badge strip on the right. Measure with the badge font
+        #    (bold, zoom-scaled) so the reserved pill matches the painted text.
         fm = QFontMetrics(option.font)
+        badge_font = self._badge_font(option.font)
+        bfm = QFontMetrics(badge_font)
         rect = option.rect
         x_right = rect.right() - self._PAD_X
         badge_rects: list[tuple[QRect, str]] = []
         for badge in reversed(badges):
-            size = self._badge_size(badge, fm)
+            size = self._badge_size(badge, bfm)
             top = rect.top() + (rect.height() - size.height()) // 2
             x_left = x_right - size.width()
             badge_rects.append((QRect(x_left, top, size.width(), size.height()), badge))
@@ -172,11 +192,12 @@ class _BadgeDelegate(QStyledItemDelegate):
             painter.setPen(Qt.NoPen)
             painter.drawRoundedRect(badge_rect, self._RADIUS, self._RADIUS)
             painter.setPen(QPen(QColor(_BADGE_TEXT_COLOR)))
-            badge_font = QFont(option.font)
-            badge_font.setPointSizeF(max(7.0, option.font.pointSizeF() - 1.0))
-            badge_font.setBold(True)
             painter.setFont(badge_font)
-            painter.drawText(badge_rect, Qt.AlignCenter, badge)
+            # Elide as a safety net so the label can never spill past the pill.
+            drawn = bfm.elidedText(
+                badge, Qt.ElideRight, badge_rect.width() - 2 * self._PAD_X
+            )
+            painter.drawText(badge_rect, Qt.AlignCenter, drawn)
         painter.restore()
 
 

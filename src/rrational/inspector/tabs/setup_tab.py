@@ -969,7 +969,7 @@ class _GroupsPane(QWidget):
         self._info_label = QLabel(
             f"<i>Group definitions are saved to "
             f"{format_config_path('config/groups.yml')}. "
-            f"Shared with the Streamlit app.</i>"
+            f"Shared across projects.</i>"
         )
         self._info_label.setWordWrap(True)
         self._info_label.setProperty("muted", True)
@@ -1011,7 +1011,7 @@ class _GroupsPane(QWidget):
         self._info_label.setText(
             f"<i>Group definitions are saved to "
             f"{format_config_path('config/groups.yml')}. "
-            f"Shared with the Streamlit app.</i>"
+            f"Shared across projects.</i>"
         )
         self._refresh_table()
         self._refresh_buttons()

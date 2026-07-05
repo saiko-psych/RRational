@@ -1131,6 +1131,12 @@ class MainWindow(QMainWindow):
             panel = getattr(tab, "_preprocessing_panel", None) if tab else None
             if panel is not None and hasattr(panel, "apply_font_scale"):
                 panel.apply_font_scale(scale)
+        # The Info dock pins fixed pixel widths (container bounds + copy button)
+        # the QSS font-size can't reach — scale those too so the filename value
+        # doesn't over-elide and the copy glyph doesn't clip at high zoom.
+        info_dock = getattr(self, "_info_dock", None)
+        if info_dock is not None and hasattr(info_dock, "apply_font_scale"):
+            info_dock.apply_font_scale(scale)
 
         # Persist. QSettings is redirected to a temp file under test mode
         # (conftest autouse), so this stays isolated in the suite.

@@ -1241,6 +1241,17 @@ class _GroupComparisonPane(QWidget):
         self._assign_table.verticalHeader().setVisible(False)
         self._assign_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self._assign_table.itemChanged.connect(self._on_assignment_changed)
+        # The pane's tall QVBoxLayout could otherwise shrink this Expanding table
+        # to a sub-row viewport (it clipped the single "Demo recording" row with
+        # no scrollbar). Reserve header + ~3 rows and scroll beyond that.
+        from qtpy.QtWidgets import QSizePolicy
+
+        _row_h = self._assign_table.verticalHeader().defaultSectionSize()
+        self._assign_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._assign_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self._assign_table.setMinimumHeight(
+            4 * _row_h + 2 * self._assign_table.frameWidth()
+        )
         assign_layout.addWidget(self._assign_table)
 
         # "Save as group" button — persists current ad-hoc labels as a

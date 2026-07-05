@@ -108,6 +108,28 @@ def test_badge_colors_cover_documented_taxonomy():
         assert tag in _BADGE_COLORS
 
 
+def test_badge_font_scales_with_pixel_sized_base(qtbot):
+    """Regression: a pixel-sized UI font (QSS font-size) made pointSizeF()==-1,
+    collapsing the badge to a fixed 7pt while the pill was measured with the
+    scaled font — so "SECTIONS" clipped to "ECTION" at small zoom. The badge
+    font must follow the base's PIXEL size, not fall back to 7pt."""
+    from qtpy.QtGui import QFont
+
+    from rrational.inspector.workspace_tree import _BadgeDelegate
+
+    delegate = _BadgeDelegate(None, mode="dark")
+    base = QFont()
+    base.setPixelSize(16)  # e.g. 13px * 1.25 zoom
+    bf = delegate._badge_font(base)
+    assert bf.pixelSize() > 0  # did NOT collapse to a point size
+    assert bf.pixelSize() == 15  # max(8, 16 - 1)
+    assert bf.bold()
+    # And it tracks zoom: a smaller base yields a smaller badge font.
+    small = QFont()
+    small.setPixelSize(10)  # 13px * 0.8 -> ~10
+    assert delegate._badge_font(small).pixelSize() < bf.pixelSize()
+
+
 def test_delegate_size_hint_grows_with_badges(qtbot):
     """A row with badges must reserve more horizontal space than one without."""
     w = WorkspaceTreeWidget()
