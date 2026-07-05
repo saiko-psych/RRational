@@ -50,6 +50,25 @@ if TYPE_CHECKING:
     from rrational.inspector.data_loader import Dataset, InspectorData
 
 
+def _select_or_preserve(combo: QComboBox, stored, source: str) -> None:
+    """Select ``stored`` in ``combo``; if it isn't one of the offered items,
+    add it as a selectable entry instead of silently falling back to "(none)".
+
+    Without this, a stored group/sequence that is absent from ``source`` (it was
+    deleted or renamed, or differs only by capitalisation) failed the
+    case-sensitive ``findData`` lookup, so the combo showed "(none)" and saving
+    the row dropped the value from the persisted YAML — silent data loss.
+    """
+    if not stored:
+        combo.setCurrentIndex(0)
+        return
+    idx = combo.findData(stored)
+    if idx < 0:
+        combo.addItem(f"{stored} (not in {source})", stored)
+        idx = combo.count() - 1
+    combo.setCurrentIndex(idx)
+
+
 class _ParticipantEditDialog(QDialog):
     """Modal editor for one participant entry.
 
@@ -89,8 +108,7 @@ class _ParticipantEditDialog(QDialog):
         for grp in available_groups:
             self._group_combo.addItem(grp, grp)
         initial_group = (initial or {}).get("group") if initial else None
-        idx = self._group_combo.findData(initial_group) if initial_group else 0
-        self._group_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        _select_or_preserve(self._group_combo, initial_group, "groups.yml")
         form.addRow("Group:", self._group_combo)
 
         self._sequence_combo = QComboBox()
@@ -98,8 +116,7 @@ class _ParticipantEditDialog(QDialog):
         for seq in available_sequences:
             self._sequence_combo.addItem(seq, seq)
         initial_seq = (initial or {}).get("sequence") if initial else None
-        idx = self._sequence_combo.findData(initial_seq) if initial_seq else 0
-        self._sequence_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        _select_or_preserve(self._sequence_combo, initial_seq, "event_sequences.yml")
         form.addRow("Sequence:", self._sequence_combo)
 
         outer.addLayout(form)
@@ -175,11 +192,22 @@ class ParticipantsTab(InspectorTab):
         outer.addWidget(self._heading_label)
 
         self._info_label = QLabel(
-            "Link each participant ID to a group and an event sequence."
+            "Metadata only — link each participant ID to a group and an event "
+            "sequence. Open and inspect the actual recordings on the "
+            "<b>Browse</b> tab."
         )
         self._info_label.setWordWrap(True)
         self._info_label.setProperty("muted", True)
         outer.addWidget(self._info_label)
+
+        # Inline warning shown only when participant groups collide under
+        # case-folding (e.g. "Music"/"music") — those are treated as separate
+        # cohorts downstream, so surface it rather than silently splitting.
+        self._group_warn_label = QLabel("")
+        self._group_warn_label.setWordWrap(True)
+        self._group_warn_label.setProperty("warning", True)
+        self._group_warn_label.setVisible(False)
+        outer.addWidget(self._group_warn_label)
 
         # Round 16 (L9) — toolbar buttons given a uniform minimum-width
         # plus consistent padding so the Add / Edit / Remove / Import
@@ -343,6 +371,31 @@ class ParticipantsTab(InspectorTab):
             n_manual = len(data.get("manual_events", []) or [])
             self._table.setItem(row, 4, QTableWidgetItem(str(n_manual)))
         self._table.setSortingEnabled(True)
+        self._update_group_casefold_warning()
+
+    def _update_group_casefold_warning(self) -> None:
+        """Warn when participant groups collide only by capitalisation.
+
+        Such variants ("Music"/"music") flow verbatim into the group-statistics
+        ``groupby`` and are silently treated as separate cohorts, so make the
+        split visible rather than letting it skew a comparison unnoticed."""
+        by_fold: dict[str, set[str]] = {}
+        for data in self._participants.values():
+            grp = (data.get("group") or "").strip()
+            if grp:
+                by_fold.setdefault(grp.casefold(), set()).add(grp)
+        clashes = [sorted(v) for v in by_fold.values() if len(v) > 1]
+        if not clashes:
+            self._group_warn_label.setVisible(False)
+            return
+        pretty = "; ".join("/".join(f"'{g}'" for g in c) for c in clashes)
+        n = len(clashes)
+        self._group_warn_label.setText(
+            f"Warning: {n} group{'s' if n > 1 else ''} differ only by "
+            f"capitalisation ({pretty}) — these are treated as SEPARATE cohorts "
+            "in analysis. Normalise them to one spelling to combine them."
+        )
+        self._group_warn_label.setVisible(True)
 
     def _refresh_buttons(self) -> None:
         has_selection = self._table.currentRow() >= 0

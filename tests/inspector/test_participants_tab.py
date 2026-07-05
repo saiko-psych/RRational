@@ -68,6 +68,44 @@ def test_participants_tab_is_registered(main_window):
     assert main_window._participants_tab.TAB_LABEL == "Participants"
 
 
+def test_edit_preserves_group_absent_from_groups_yml(qapp):
+    """Regression (data loss): editing a participant whose stored group is not
+    in groups.yml (deleted / renamed / case mismatch) must NOT silently drop the
+    group on save — the combo previously fell back to "(none)"."""
+    from rrational.inspector.tabs.participants_tab import _ParticipantEditDialog
+
+    dlg = _ParticipantEditDialog(
+        existing_ids=[],
+        available_groups=["Music", "Control"],  # note: capital M
+        available_sequences=[],
+        initial_id="P001",
+        initial={"group": "music", "sequence": None},  # lower-case, not in list
+    )
+    _pid, payload = dlg.result_participant()
+    assert payload.get("group") == "music", "stale group must round-trip, not vanish"
+
+
+def test_group_casefold_collision_warning(main_window):
+    pane = main_window._participants_tab
+    pane._participants = {
+        "P1": {"group": "Music", "event_order": [], "manual_events": []},
+        "P2": {"group": "music", "event_order": [], "manual_events": []},
+        "P3": {"group": "Control", "event_order": [], "manual_events": []},
+    }
+    pane._refresh_table()
+    # isHidden() reflects the explicit setVisible() state without needing the
+    # whole window to be shown (isVisible() would be False in a headless test).
+    assert not pane._group_warn_label.isHidden()
+    assert "capitalisation" in pane._group_warn_label.text().lower()
+    # No collision -> hidden.
+    pane._participants = {
+        "P1": {"group": "Music", "event_order": [], "manual_events": []},
+        "P2": {"group": "Control", "event_order": [], "manual_events": []},
+    }
+    pane._refresh_table()
+    assert pane._group_warn_label.isHidden()
+
+
 def test_participants_tab_starts_empty(main_window):
     pane = main_window._participants_tab
     assert pane._table.rowCount() == 0
