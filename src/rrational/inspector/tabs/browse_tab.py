@@ -207,6 +207,9 @@ class BrowseTab(InspectorTab):
             sc.setContext(Qt.WidgetWithChildrenShortcut)
             sc.activated.connect(lambda _checked=False, d=delta: self._go_relative(d))
 
+        # Initial state: no recordings loaded yet -> Prev/Next disabled, "—".
+        self._sync_nav()
+
     # ------------------------------------------------------------------
     # Dock visibility helpers (wired to MainWindow's View menu)
     # ------------------------------------------------------------------
@@ -310,8 +313,10 @@ class BrowseTab(InspectorTab):
         if not hasattr(self, "_ds_counter"):
             return
         mw = self._main_window
-        n = len(mw._datasets)
-        cur = mw._active_idx
+        # getattr guards: this can run during MainWindow construction (from
+        # _build) before ``_active_idx`` exists.
+        n = len(getattr(mw, "_datasets", []) or [])
+        cur = getattr(mw, "_active_idx", None)
         if n == 0 or cur is None:
             self._ds_counter.setText("—")
             self._prev_ds_btn.setEnabled(False)

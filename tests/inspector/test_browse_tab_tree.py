@@ -114,6 +114,11 @@ def test_prev_next_navigation_steps_through_recordings(main_window):
     """The Prev/Next bar steps the active recording and tracks the "X / N"
     counter — the easy way to review every loaded recording in sequence."""
     bt = main_window._browse_tab
+    # Empty state: nothing loaded -> both disabled, counter em-dash.
+    assert not bt._prev_ds_btn.isEnabled()
+    assert not bt._next_ds_btn.isEnabled()
+    assert bt._ds_counter.text() == "—"
+
     for k in range(3):
         main_window.add_dataset(_synthetic_dataset(f"rec_{k}.rrational"))
     main_window.set_active_dataset(0)
