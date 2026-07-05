@@ -108,3 +108,31 @@ def test_browse_tab_no_badges_for_clean_dataset(main_window, qtbot):
     top = bt._dataset_tree.topLevelItem(0)
     tags = top.data(0, ROLE_BADGES) or []
     assert tags == []
+
+
+def test_prev_next_navigation_steps_through_recordings(main_window):
+    """The Prev/Next bar steps the active recording and tracks the "X / N"
+    counter — the easy way to review every loaded recording in sequence."""
+    bt = main_window._browse_tab
+    for k in range(3):
+        main_window.add_dataset(_synthetic_dataset(f"rec_{k}.rrational"))
+    main_window.set_active_dataset(0)
+
+    assert bt._ds_counter.text() == "1 / 3"
+    assert not bt._prev_ds_btn.isEnabled()  # at the first
+    assert bt._next_ds_btn.isEnabled()
+
+    bt._go_relative(1)
+    assert main_window._active_idx == 1
+    assert bt._ds_counter.text() == "2 / 3"
+
+    bt._go_relative(1)
+    assert main_window._active_idx == 2
+    assert not bt._next_ds_btn.isEnabled()  # at the last
+
+    bt._go_relative(1)  # clamp — stays put
+    assert main_window._active_idx == 2
+
+    bt._go_relative(-1)
+    assert main_window._active_idx == 1
+    assert bt._prev_ds_btn.isEnabled()

@@ -17,7 +17,10 @@ import numpy as np
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QDockWidget,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
+    QPushButton,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -142,12 +145,35 @@ class BrowseTab(InspectorTab):
             | QDockWidget.DockWidgetFloatable
             | QDockWidget.DockWidgetClosable
         )
-        self._datasets_dock.setWidget(self._dataset_tree)
+        # A "‹ Prev / Next ›" bar above the tree lets the user step through
+        # every loaded recording one at a time — the easy way to review all
+        # participants in sequence instead of hunting each row in the list.
+        ds_container = QWidget()
+        ds_v = QVBoxLayout(ds_container)
+        ds_v.setContentsMargins(4, 4, 4, 2)
+        ds_v.setSpacing(4)
+        nav = QHBoxLayout()
+        nav.setSpacing(4)
+        self._prev_ds_btn = QPushButton("‹ Prev")
+        self._prev_ds_btn.setToolTip("Show the previous recording (PageUp)")
+        self._prev_ds_btn.clicked.connect(lambda: self._go_relative(-1))
+        self._next_ds_btn = QPushButton("Next ›")
+        self._next_ds_btn.setToolTip("Show the next recording (PageDown)")
+        self._next_ds_btn.clicked.connect(lambda: self._go_relative(1))
+        self._ds_counter = QLabel("—")
+        self._ds_counter.setProperty("muted", True)
+        nav.addWidget(self._prev_ds_btn)
+        nav.addWidget(self._next_ds_btn)
+        nav.addStretch()
+        nav.addWidget(self._ds_counter)
+        ds_v.addLayout(nav)
+        ds_v.addWidget(self._dataset_tree, 1)
+        self._datasets_dock.setWidget(ds_container)
         # Bug B4: hint the dock area to give the sidebar a fixed-ish slice
         # rather than the default 50/50 split, so the central plot keeps
         # the bulk of the horizontal real estate.
-        self._dataset_tree.setMinimumWidth(150)
-        self._dataset_tree.setMaximumWidth(320)
+        ds_container.setMinimumWidth(150)
+        ds_container.setMaximumWidth(320)
         self._dock_host.addDockWidget(Qt.LeftDockWidgetArea, self._datasets_dock)
 
         # ----- Right dock: preprocessing panel ----------------------------
@@ -169,6 +195,17 @@ class BrowseTab(InspectorTab):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._dock_host)
+
+        # PageDown / PageUp step to the next / previous recording. Scoped to
+        # this tab (WidgetWithChildrenShortcut) so they don't fire while the
+        # user is on another tab, and they don't collide with the plot's own
+        # arrow-key pan / 1-2-3 zoom bindings.
+        from qtpy.QtGui import QKeySequence, QShortcut
+
+        for key, delta in ((Qt.Key_PageDown, 1), (Qt.Key_PageUp, -1)):
+            sc = QShortcut(QKeySequence(key), self)
+            sc.setContext(Qt.WidgetWithChildrenShortcut)
+            sc.activated.connect(lambda _checked=False, d=delta: self._go_relative(d))
 
     # ------------------------------------------------------------------
     # Dock visibility helpers (wired to MainWindow's View menu)
@@ -219,6 +256,7 @@ class BrowseTab(InspectorTab):
         self._update_tree_active_marker()
         if not self._main_window._datasets:
             self._show_empty_state()
+        self._sync_nav()
 
     def on_active_dataset_changed(self, data: "InspectorData | None") -> None:
         if data is None:
@@ -226,6 +264,7 @@ class BrowseTab(InspectorTab):
             # toggles and disables Detect immediately.
             self._preprocessing_panel.on_active_dataset_changed(data)
             self._show_empty_state()
+            self._sync_nav()
             return
         idx = self._main_window._active_idx
         if idx is None or not (0 <= idx < len(self._main_window._datasets)):
@@ -238,6 +277,49 @@ class BrowseTab(InspectorTab):
         self._render_dataset(ds)
         self._update_tree_active_marker()
         self._preprocessing_panel.on_active_dataset_changed(data)
+        self._sync_nav()
+
+    # ------------------------------------------------------------------
+    # Prev/Next recording navigation (step through all loaded recordings)
+    # ------------------------------------------------------------------
+    def _go_relative(self, delta: int) -> None:
+        """Activate the recording ``delta`` positions from the current one."""
+        mw = self._main_window
+        n = len(mw._datasets)
+        if n == 0:
+            return
+        cur = mw._active_idx if mw._active_idx is not None else -1
+        new = max(0, min(cur + delta, n - 1))
+        if new == cur:
+            return
+        mw.set_active_dataset(new)
+        self._select_dataset_item(new)
+
+    def _select_dataset_item(self, idx: int) -> None:
+        """Highlight + scroll to the top-level tree row for dataset ``idx``."""
+        tree = self._dataset_tree
+        for i in range(tree.topLevelItemCount()):
+            it = tree.topLevelItem(i)
+            if it.data(0, ROLE_DATASET_IDX) == idx:
+                tree.setCurrentItem(it)
+                tree.scrollToItem(it)
+                return
+
+    def _sync_nav(self) -> None:
+        """Refresh the Prev/Next enabled state + the "X / N" counter."""
+        if not hasattr(self, "_ds_counter"):
+            return
+        mw = self._main_window
+        n = len(mw._datasets)
+        cur = mw._active_idx
+        if n == 0 or cur is None:
+            self._ds_counter.setText("—")
+            self._prev_ds_btn.setEnabled(False)
+            self._next_ds_btn.setEnabled(False)
+            return
+        self._ds_counter.setText(f"{cur + 1} / {n}")
+        self._prev_ds_btn.setEnabled(cur > 0)
+        self._next_ds_btn.setEnabled(cur < n - 1)
 
     # ------------------------------------------------------------------
     # Rendering
