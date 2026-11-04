@@ -166,7 +166,20 @@ def validate_section_for_participant(
         is_user_selected = True
     else:
         start_idx = 0
-        end_idx = 0
+        # Pair the earliest start with the first end that FOLLOWS it. With
+        # several end candidates the earliest one can lie before the start
+        # (e.g. a label shared with another section), which used to reject a
+        # section that has a valid pairing (#22). If the earliest end already
+        # follows the start this is the same choice as before.
+        first_start = _normalize_timestamp(start_candidates[0].timestamp)
+        end_idx = next(
+            (
+                i
+                for i, c in enumerate(end_candidates)
+                if _normalize_timestamp(c.timestamp) > first_start
+            ),
+            0,
+        )
         is_user_selected = False
 
     selected_start = start_candidates[start_idx]
