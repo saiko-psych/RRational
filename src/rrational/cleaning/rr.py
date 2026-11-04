@@ -13,11 +13,14 @@ from rrational.io.hrv_logger import RRInterval
 class CleaningConfig:
     """Thresholds used for RR filtering.
 
-    Note: sudden_change_pct=1.0 is lenient (100% threshold) — it only
-    catches beats that more than DOUBLE or HALVE the previous RR. True
-    ectopic / artefact bursts in the 30-90% range pass through. Use
-    NeuroKit2's artifact correction (DetectArtifacts action) for proper
-    physiological screening.
+    Note: the sudden-change rule is ``|rr - prev| / prev > sudden_change_pct``.
+    With the default 1.0 it removes beats that are more than DOUBLE the
+    previous RR. It can never fire for a shorter beat (the left side is
+    < 1 for any 0 < rr < prev), so a premature beat below half the previous
+    RR is kept and the normal beat after it is removed instead (pinned in
+    tests/cleaning/test_rr.py). Ectopic / artefact bursts in the 30-90 %
+    range pass through. Use NeuroKit2's artifact correction (DetectArtifacts
+    action) for proper physiological screening.
     """
 
     rr_min_ms: int = 200
