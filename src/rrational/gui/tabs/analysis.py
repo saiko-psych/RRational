@@ -112,7 +112,7 @@ def _hrv_freq(peaks, artifact_rate: float | None = None):
 
 
 _FREQ_METHOD_LABELS = {
-    "neurokit": "NeuroKit2 default (normalized PSD, 100 Hz interpolation)",
+    "neurokit": "NeuroKit2 (absolute ms², 100 Hz interpolation)",
     "kubios": "Kubios-compatible (absolute ms², 4 Hz interpolation, 180 s Welch)",
 }
 
@@ -131,9 +131,10 @@ def _render_freq_method_selector(key_suffix: str = ""):
         format_func=lambda x: _FREQ_METHOD_LABELS[x],
         key=key,
         help=(
-            "Choose how LF, HF, VLF, LF/HF and TP are computed. NeuroKit2 default uses "
-            "normalized PSD (relative scale). Kubios mode returns absolute ms² values, "
-            "matches Kubios HRV Scientific within ±5–9% on validated data."
+            "Choose how LF, HF, VLF, LF/HF and TP are computed. Both return absolute "
+            "power in ms². NeuroKit2: 100 Hz interpolation, NK2 Welch. Kubios mode: 4 Hz "
+            "interpolation, smoothness-priors detrending, 180 s Welch; matches Kubios "
+            "HRV Scientific within ±5–9% on validated data."
         ),
     )
     if selected != st.session_state.get("freq_method"):
@@ -145,13 +146,13 @@ def _render_freq_method_selector(key_suffix: str = ""):
             """
 **Use NeuroKit2 default (recommended for new projects)** when you:
 
-- Start a new study and want NeuroKit2's standard normalized PSD output
+- Start a new study and want NeuroKit2's PSD pipeline (absolute ms²)
 - Compare results across other NK2-based tools (BioSPPy, pyHRV)
 - Don't need direct cross-comparison with Kubios
 
 **Use Kubios-compatible mode** when you:
 
-- Want LF / HF / VLF in absolute **ms²** units (international standard for publication)
+- Want values directly comparable with Kubios HRV Scientific (same detrending and Welch window)
 - Need to cross-validate or replicate Kubios HRV Scientific output
 - Are writing a paper that references Kubios values from prior studies
 - Want Tarvainen et al. 2002 Smoothness Priors detrending (λ=500) applied before PSD

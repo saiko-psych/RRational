@@ -397,7 +397,7 @@ class _AnalysisSettingsBar(QWidget):
         self._freq_neurokit = QRadioButton("NeuroKit2 default")
         self._freq_kubios = QRadioButton("Kubios-compatible")
         self._freq_neurokit.setToolTip(
-            "NK2 default — normalized PSD, 100 Hz interpolation"
+            "NeuroKit2 pipeline — absolute ms-squared, 100 Hz interpolation"
         )
         self._freq_kubios.setToolTip(
             "Kubios HRV Scientific compatible — absolute ms-squared, 4 Hz "

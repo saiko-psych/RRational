@@ -105,7 +105,12 @@ def _hrv_frequency_kwargs(freq_method: str) -> dict:
             "lf": KUBIOS_BAND_LF,
             "hf": KUBIOS_BAND_HF,
         }
-    return {}
+    # NK2's default normalize=True divides each recording's PSD by its OWN
+    # maximum, so absolute band powers lose all amplitude information (two
+    # recordings whose true LF differs 4x get the same LF) while still being
+    # reported/compared as ms^2. Absolute power keeps the documented units;
+    # ratios (LF/HF, LFn, HFn) are unaffected.
+    return {"normalize": False}
 
 
 def _compute_kubios_frequency_powers(
@@ -228,8 +233,9 @@ def calculate_hrv_metrics(
         selected_metrics: Metric names to calculate (None = basic).
         window_s: Window duration in seconds (time-based).
         segments: Pre-computed Segment objects from artifact detection.
-        freq_method: Frequency-domain pipeline. "neurokit" uses NK2 defaults
-            (normalized PSD, 100 Hz interpolation). "kubios" matches Kubios
+        freq_method: Frequency-domain pipeline. "neurokit" uses NK2's
+            pipeline (100 Hz interpolation, NK2 Welch defaults) with absolute
+            power in ms^2 (normalize=False). "kubios" matches Kubios
             HRV Scientific (absolute ms², 4 Hz interpolation, bands
             VLF 0.0033-0.04, LF 0.04-0.15, HF 0.15-0.40 Hz). The VLF
             lower bound deliberately excludes the ULF band per Task Force
