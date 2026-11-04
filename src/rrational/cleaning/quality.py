@@ -145,7 +145,12 @@ def detect_time_gaps(
         ts_seconds = np.array([_safe_epoch(t) for t in timestamps])
         ts_diff = np.diff(ts_seconds)
 
-        if rr_values is not None and len(rr_values) == len(timestamps):
+        # Decide ONCE whether RR values can explain the timestamp deltas and
+        # reuse that decision below. Re-testing ``if rr_values`` later raised
+        # "truth value of an array is ambiguous" for numpy input, which the
+        # except clause turned into a silent "no gaps" result.
+        use_rr = rr_values is not None and len(rr_values) == len(timestamps)
+        if use_rr:
             rr_array = np.array(rr_values, dtype=float) / 1000.0
             expected_diff = rr_array[1:]
             unexplained_time = ts_diff - expected_diff
@@ -160,7 +165,7 @@ def detect_time_gaps(
         total_gap_duration = 0.0
         for idx in gap_indices:
             gap_duration = (
-                float(unexplained_time[idx]) if rr_values else float(ts_diff[idx])
+                float(unexplained_time[idx]) if use_rr else float(ts_diff[idx])
             )
             gaps.append(
                 {
