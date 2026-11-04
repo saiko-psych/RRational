@@ -59,3 +59,29 @@ def test_clean_rr_intervals_with_flags_keeps_all():
     # Non-flagged should have no reason
     assert flagged[0].flag_reason is None
     assert flagged[2].flag_reason is None
+
+
+def _series(*rr):
+    return [RRInterval(timestamp=None, rr_ms=r, elapsed_ms=None) for r in rr]
+
+
+def test_default_sudden_change_removes_beats_longer_than_twice_previous():
+    """Default sudden_change_pct=1.0 removes beats > 2x the previous RR
+    (e.g. a missed beat) at import, before artifact detection sees them."""
+    kept, stats = clean_rr_intervals(_series(800, 800, 1601, 800))
+    assert [s.rr_ms for s in kept] == [800, 800, 800]
+    assert stats.reasons["sudden_change"] == 1
+
+    kept, _ = clean_rr_intervals(_series(800, 800, 1600, 800))
+    assert [s.rr_ms for s in kept] == [800, 800, 1600, 800]  # exactly 2x kept
+
+
+def test_default_sudden_change_is_asymmetric_for_short_beats():
+    """Documents current behaviour, not an endorsement: the rule
+    |rr - prev| / prev > 1.0 can never fire for a SHORT beat, so a premature
+    399 ms beat after 800 ms is kept, and the healthy 800 ms beat after it
+    is removed instead (800 / 399 > 2). If the rule is changed on purpose,
+    update this test and docs/science/processing-pipeline.md."""
+    kept, stats = clean_rr_intervals(_series(800, 800, 399, 800, 800))
+    assert [s.rr_ms for s in kept] == [800, 800, 399, 800]
+    assert stats.reasons["sudden_change"] == 1
