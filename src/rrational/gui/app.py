@@ -2966,7 +2966,7 @@ def render_rr_plot_fragment(participant_id: str):
         # Export NN as CSV button (easily accessible)
         st.markdown("---")
         st.markdown("**Export Corrected NN Intervals**")
-        st.caption("Download CSV with artifact-corrected (interpolated) NN intervals")
+        st.caption("Download CSV with artifact-corrected NN intervals (Lipponen & Tarvainen)")
 
         # Get current plot data
         plot_data_nn = st.session_state.get(f"plot_data_{participant_id}", {})
@@ -3110,7 +3110,7 @@ def render_rr_plot_fragment(participant_id: str):
             "Include corrected NN intervals",
             value=False,
             key=f"frag_include_corrected_{participant_id}",
-            help="Include interpolated NN intervals (artifact-corrected)",
+            help="Include artifact-corrected NN intervals (Lipponen & Tarvainen)",
         )
 
         if st.button(
@@ -3941,7 +3941,7 @@ def render_rr_plot_fragment(participant_id: str):
                 "Show corrected (NN)",
                 value=plot_defaults.get("show_corrected", False),
                 key=f"frag_show_corrected_{participant_id}",
-                help="Preview corrected NN intervals (artifacts interpolated)",
+                help="Preview corrected NN intervals (Lipponen & Tarvainen correction)",
             )
         else:
             artifact_method = "threshold"

@@ -298,3 +298,19 @@ class TestStitch:
         out = stitch_corrections(rr, None, [(100, 300, piece)])
         cs, ce = map_raw_range(out["raw_to_corrected"], 100, 300)
         assert out["corrected_flags"][cs:ce] == piece["corrected_flags"]
+
+
+def test_nn_positions_of_raw_beats_one_marker_per_artifact():
+    from rrational.cleaning.quality import nn_positions_of_raw_beats
+
+    rr = _ectopic()  # clean base, ectopic pair at 300/301 (peaks moved)
+    res = correct_artifacts_lipponen(rr)
+    pos = nn_positions_of_raw_beats(res["raw_to_corrected"], res["artifact_indices"])
+    assert len(pos) == len(res["artifact_indices"])  # not 2 per moved peak
+    assert pos == res["artifact_indices"]  # length unchanged -> identity
+    # Split beat: the marker lands on the first half.
+    rr = _missed()
+    res = correct_artifacts_lipponen(rr)
+    cs, _ = map_raw_range(res["raw_to_corrected"], 300, 301)
+    assert cs in nn_positions_of_raw_beats(res["raw_to_corrected"], [300])
+    assert nn_positions_of_raw_beats([0, 1, 1, 2], [1, 5]) == [1]

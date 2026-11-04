@@ -26,7 +26,10 @@ from rrational.gui.shared import (  # noqa: E402
     cached_load_vns_recording,
 )
 from rrational.gui.help_text import ANALYSIS_HELP  # noqa: E402
-from rrational.cleaning.quality import correct_artifacts_lipponen  # noqa: E402
+from rrational.cleaning.quality import (  # noqa: E402
+    correct_artifacts_lipponen,
+    nn_positions_of_raw_beats,
+)
 from rrational.gui.segmentation import windows_from_detection_segments  # noqa: E402
 from rrational.gui.rrational_export import (  # noqa: E402
     find_rrational_files,
@@ -2007,13 +2010,15 @@ def _render_single_participant_analysis():
         )
 
         # Artifact correction options
-        with st.expander("Artifact Correction (signal_fixpeaks)", expanded=False):
+        with st.expander("Artifact Correction (Lipponen & Tarvainen 2019)", expanded=False):
             st.markdown("""
-            Uses NeuroKit2's `signal_fixpeaks()` with the **Kubios algorithm** to detect and correct:
-            - **Ectopic beats** (premature/delayed beats)
-            - **Missed beats** (undetected R-peaks)
-            - **Extra beats** (false positive detections)
-            - **Long/short intervals** (physiologically implausible)
+            Detects artifacts with NeuroKit2's Kubios detector and corrects them per
+            **Lipponen & Tarvainen (2019)**, preserving the recording time:
+            - **Ectopic / long-short beats**: R-peak moved to the midpoint of its neighbours
+            - **Missed beats** (undetected R-peak): interval split in two (+1 beat)
+            - **Extra beats** (false detection): two intervals merged (-1 beat)
+
+            Sections with > 5 % artifacts report time-domain metrics only.
             """)
             apply_artifact_correction = st.checkbox(
                 "Apply artifact correction before HRV analysis",
@@ -3203,17 +3208,16 @@ def _render_single_participant_analysis():
                                         rr_ms = artifact_result["corrected_rr"]
                                         # artifact_info travels with rr_intervals
                                         # (the NN series), so its marker indices
-                                        # are NN positions of changed beats; raw
-                                        # detection indices are kept separately.
+                                        # are the NN positions of the DETECTED
+                                        # beats (one marker per artifact, so the
+                                        # tachogram count matches the detection);
+                                        # raw indices are kept separately.
                                         artifact_info = {
                                             **artifact_result,
-                                            "artifact_indices": [
-                                                j
-                                                for j, f in enumerate(
-                                                    artifact_result["corrected_flags"]
-                                                )
-                                                if f
-                                            ],
+                                            "artifact_indices": nn_positions_of_raw_beats(
+                                                artifact_result["raw_to_corrected"],
+                                                artifact_result["artifact_indices"],
+                                            ),
                                             "raw_artifact_indices": artifact_result[
                                                 "artifact_indices"
                                             ],

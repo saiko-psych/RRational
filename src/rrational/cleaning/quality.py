@@ -782,3 +782,22 @@ def correct_artifacts_lipponen_segmented(rr_values, timestamps, bounds) -> dict:
         "n_removed": removed,
         "correction_applied": bool(artifact_indices),
     }
+
+
+def nn_positions_of_raw_beats(raw_to_corrected, raw_indices) -> list[int]:
+    """Corrected-series position of each raw beat (one per raw beat).
+
+    For plot markers on the NN series: raw beat i maps to the first
+    corrected beat ending inside it (``raw_to_corrected[i]``). A raw beat
+    merged into the next one (extra beat, no corrected beat of its own)
+    maps to the beat it was merged into. Duplicates collapse.
+    """
+    m = list(raw_to_corrected)
+    n_cor = m[-1] if m else 0
+    out = set()
+    for i in raw_indices:
+        if 0 <= i < len(m) - 1:
+            j = int(m[i])
+            if j < n_cor:
+                out.add(j)
+    return sorted(out)
