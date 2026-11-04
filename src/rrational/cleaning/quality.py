@@ -447,3 +447,210 @@ def filter_exclusion_zones(
         "excluded_duration_ms": excluded_duration_ms,
         "zones_applied": len(parsed_zones),
     }
+
+
+# =============================================================================
+# Lipponen & Tarvainen (2019) correction with a raw -> corrected beat map
+# =============================================================================
+
+
+def map_raw_range(raw_to_corrected, raw_start: int, raw_end: int) -> tuple[int, int]:
+    """Translate a raw beat slice ``[raw_start, raw_end)`` to the corrected series.
+
+    ``raw_to_corrected`` is the boundary map returned by
+    :func:`correct_artifacts_lipponen` (length N_raw + 1). Use it as
+    ``corrected[cs:ce]`` wherever code previously sliced the corrected array
+    with raw beat positions (sections, segments, scopes).
+    """
+    m = raw_to_corrected
+    n = len(m) - 1
+    s = min(max(int(raw_start), 0), n)
+    e = min(max(int(raw_end), s), n)
+    return int(m[s]), int(m[e])
+
+
+def _epoch_like(values):
+    """Timestamps -> (floats, back-converter) or (None, None) if unusable."""
+    valid = [v for v in values if v is not None]
+    if not valid:
+        return None, None
+    ref = valid[0]
+    if isinstance(ref, (int, float, np.integer, np.floating)):
+        return (
+            np.array([np.nan if v is None else float(v) for v in values]),
+            lambda x: float(x),
+        )
+    import datetime as _dt
+
+    try:
+        secs = np.array(
+            [np.nan if v is None else (v - ref).total_seconds() for v in values]
+        )
+    except (TypeError, AttributeError):
+        return None, None
+    return secs, lambda x: ref + _dt.timedelta(seconds=float(x))
+
+
+def _corrected_timestamps(timestamps, raw_peaks, corrected_peaks):
+    """Timestamps for corrected beats.
+
+    A corrected beat that ends exactly where a raw beat ends keeps that raw
+    beat's original timestamp object; inserted or moved beats are linearly
+    interpolated between the raw beat end times.
+    """
+    if timestamps is None or len(timestamps) != len(raw_peaks) - 1:
+        return None
+    secs, back = _epoch_like(list(timestamps))
+    if secs is None:
+        return None
+    raw_end = raw_peaks[1:]
+    ok = ~np.isnan(secs)
+    if ok.sum() < 2:
+        return None
+    end_to_raw = {int(p): i for i, p in enumerate(raw_end)}
+    out = []
+    for p in corrected_peaks[1:]:
+        i = end_to_raw.get(int(p))
+        if i is not None and timestamps[i] is not None:
+            out.append(timestamps[i])
+        else:
+            out.append(back(np.interp(float(p), raw_end[ok], secs[ok])))
+    return out
+
+
+def _beat_correspondence(raw_peaks: np.ndarray, corrected_peaks: np.ndarray):
+    """Boundary map, changed-beat flags and inserted/removed counts.
+
+    Peaks present unchanged in both series are anchors. Between two
+    consecutive anchors the raw series has ``a`` peaks and the corrected
+    series ``c``. If ``a == c`` the peaks were only moved (ectopic /
+    long-short) and map one-to-one; otherwise beats were inserted (missed)
+    or removed (extra) and boundaries inside that block map by time. Using
+    time alone would misread a moved peak that crosses a raw beat boundary
+    as one removal plus one insertion.
+    """
+    _, ri, ci = np.intersect1d(raw_peaks, corrected_peaks, return_indices=True)
+    n_raw, n_cor = len(raw_peaks) - 1, len(corrected_peaks) - 1
+    peak_map = np.empty(len(raw_peaks), dtype=np.int64)
+    inserted = removed = 0
+
+    anchors = list(zip(ri.tolist(), ci.tolist()))
+    if not anchors or anchors[0] != (0, 0):
+        anchors.insert(0, (0, 0))
+    if anchors[-1] != (n_raw, n_cor):
+        anchors.append((n_raw, n_cor))
+
+    for (r0, c0), (r1, c1) in zip(anchors, anchors[1:]):
+        a, c = r1 - r0, c1 - c0
+        peak_map[r0] = c0
+        if a == c:
+            for k in range(1, a):
+                peak_map[r0 + k] = c0 + k
+        else:
+            inserted += max(0, c - a)
+            removed += max(0, a - c)
+            inner = corrected_peaks[c0 + 1 : c1]
+            for k in range(1, a):
+                pos = np.searchsorted(inner, raw_peaks[r0 + k], side="right")
+                peak_map[r0 + k] = c0 + int(pos)
+    peak_map[n_raw] = n_cor
+    peak_map = np.maximum.accumulate(peak_map)
+
+    anchor_set = {int(c): int(r) for r, c in anchors}
+    flags = []
+    for j in range(n_cor):
+        r_a, r_b = anchor_set.get(j), anchor_set.get(j + 1)
+        unchanged = (
+            r_a is not None
+            and r_b is not None
+            and r_b - r_a == 1
+            and raw_peaks[r_a] == corrected_peaks[j]
+            and raw_peaks[r_b] == corrected_peaks[j + 1]
+        )
+        flags.append(not unchanged)
+    return peak_map.tolist(), flags, inserted, removed
+
+
+def correct_artifacts_lipponen(
+    rr_values, timestamps=None, sampling_rate: int = 1000
+) -> dict:
+    """Detect and correct artifacts per Lipponen & Tarvainen (2019).
+
+    Detection: NK2 Kubios detector, ``iterative=False`` (comprehensive; same
+    indices as :func:`detect_artifacts_fixpeaks`). Correction: NK2
+    ``signal_fixpeaks(method="Kubios", iterative=True)``, which works in
+    PEAK space: extra beats are removed (two short intervals merge), missed
+    beats get a peak inserted at the midpoint (a long interval splits), and
+    ectopic / long-short beats have their peak moved to the midpoint of its
+    neighbours. Recording time is preserved; the number of intervals can
+    change, so the corrected series comes with its own timestamps and a map
+    back to raw beat positions.
+
+    Known limitation (NK2 0.2.x): adjacent misaligned peaks are each moved
+    using the other's uncorrected position, so an ectopic pair is improved
+    but not fully equalised.
+
+    Returns dict:
+        artifact_indices / indices_by_type: RR indices in RAW space
+            (for overlays, counts and quality grades).
+        artifacts: per-type counts (NK2 raw list lengths).
+        corrected_rr: corrected NN intervals (ms), own length.
+        corrected_timestamps: per corrected beat, or None.
+        raw_to_corrected: boundary map, length N_raw + 1; slice the corrected
+            series for a raw range with :func:`map_raw_range`.
+        corrected_flags: per corrected beat, True if it is not an unchanged
+            raw beat.
+        n_inserted / n_removed: beats added (missed) / removed (extra).
+        correction_applied: bool.
+    """
+    rr_list = list(rr_values)
+    n = len(rr_list)
+    passthrough = {
+        "artifact_indices": [],
+        "indices_by_type": {k: [] for k in FIXPEAKS_ARTIFACT_TYPES},
+        "artifacts": {k: 0 for k in FIXPEAKS_ARTIFACT_TYPES},
+        "corrected_rr": rr_list,
+        "corrected_timestamps": list(timestamps) if timestamps is not None else None,
+        "raw_to_corrected": list(range(n + 1)),
+        "corrected_flags": [False] * n,
+        "n_inserted": 0,
+        "n_removed": 0,
+        "correction_applied": False,
+    }
+    nk, available = _get_neurokit()
+    if not available or n < 10:
+        return passthrough
+
+    raw_peaks = rr_to_peak_indices(rr_list)
+    info, _ = nk.signal_fixpeaks(
+        raw_peaks, sampling_rate=sampling_rate, iterative=False,
+        method="Kubios", show=False,
+    )
+    by_type = fixpeaks_info_to_rr_indices(info, n)
+    artifact_indices = sorted({i for v in by_type.values() for i in v})
+    counts = {k: len(_fixpeaks_index_list(info.get(k, []))) for k in FIXPEAKS_ARTIFACT_TYPES}
+    if not artifact_indices:
+        return {**passthrough, "artifacts": counts}
+
+    _, corrected_peaks = nk.signal_fixpeaks(
+        raw_peaks, sampling_rate=sampling_rate, iterative=True,
+        method="Kubios", show=False,
+    )
+    corrected_peaks = np.asarray(corrected_peaks, dtype=np.int64)
+    corrected_rr = np.diff(corrected_peaks).astype(float).tolist()
+    bmap, flags, inserted, removed = _beat_correspondence(raw_peaks, corrected_peaks)
+
+    return {
+        "artifact_indices": artifact_indices,
+        "indices_by_type": by_type,
+        "artifacts": counts,
+        "corrected_rr": corrected_rr,
+        "corrected_timestamps": _corrected_timestamps(
+            timestamps, raw_peaks, corrected_peaks
+        ),
+        "raw_to_corrected": bmap,
+        "corrected_flags": flags,
+        "n_inserted": inserted,
+        "n_removed": removed,
+        "correction_applied": True,
+    }
