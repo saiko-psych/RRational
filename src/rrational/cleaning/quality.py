@@ -140,7 +140,9 @@ def detect_time_gaps(
                 return np.nan
             if t.tzinfo is not None:
                 return t.timestamp()
-            return float(calendar.timegm(t.timetuple()))
+            # timetuple() has no sub-second field; add the microseconds
+            # back or every naive timestamp is truncated to whole seconds.
+            return calendar.timegm(t.timetuple()) + t.microsecond / 1e6
 
         ts_seconds = np.array([_safe_epoch(t) for t in timestamps])
         ts_diff = np.diff(ts_seconds)
