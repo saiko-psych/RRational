@@ -70,7 +70,9 @@ if TYPE_CHECKING:
 # cleaning_sudden_change_pct). Keep these in sync.
 _CLEANING_DEFAULT_MIN_MS = 300.0
 _CLEANING_DEFAULT_MAX_MS = 2000.0
-_CLEANING_DEFAULT_SUDDEN_PCT = 20.0
+# 100 % disables the sudden-change filter (same convention as the Streamlit
+# app); jumps are handled by artifact detection + L&T correction instead.
+_CLEANING_DEFAULT_SUDDEN_PCT = 100.0
 
 
 def _read_cleaning_setting(key: str, default: float) -> float:
@@ -489,6 +491,10 @@ class DataTab(InspectorTab):
             _read_cleaning_setting(
                 "cleaning_sudden_change_pct", _CLEANING_DEFAULT_SUDDEN_PCT
             )
+        )
+        self._cleaning_sudden_spin.setToolTip(
+            "100 % = disabled (recommended): large beat-to-beat jumps are left "
+            "to artifact detection and Lipponen-Tarvainen correction."
         )
         form.addRow("Sudden change:", self._cleaning_sudden_spin)
 

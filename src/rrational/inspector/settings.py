@@ -66,7 +66,9 @@ _DEFAULTS: dict[str, object] = {
     # Defaults match what the Streamlit prep wizard shows by default.
     "cleaning_min_rr_ms": 300,
     "cleaning_max_rr_ms": 2000,
-    "cleaning_sudden_change_pct": 20,
+    # 100 % = sudden-change filter disabled (large jumps such as missed
+    # beats are left to artifact detection / L&T correction).
+    "cleaning_sudden_change_pct": 100,
     # Participant ID regex used when extracting an ID from raw-file
     # stems. Default mirrors ``rrational.io.DEFAULT_ID_PATTERN``.
     "participant_id_pattern": r"(?P<participant>\d{4}[A-Z]{4})",

@@ -51,10 +51,10 @@ Basic physiological filtering removes impossible values:
 |-----------|---------|---------|
 | Minimum RR | 200 ms | Removes impossibly fast beats (> 300 BPM) |
 | Maximum RR | 2000 ms | Removes impossibly slow beats (< 30 BPM) |
-| Sudden change | 100% | Removes a beat that is more than **twice** the previous RR (e.g. a missed beat) before artifact detection runs; such beats are not counted as artifacts afterwards |
+| Sudden change | 100% (disabled) | Off by default: large beat-to-beat jumps (e.g. missed beats) are left to artifact detection, where Lipponen-Tarvainen correction splits/merges them and they count toward the artifact rate. Below 100% a beat changing by more than the threshold relative to the previous one is removed |
 
-!!! warning "Known asymmetry of the sudden-change rule"
-    The rule is `|RR - previous RR| / previous RR > threshold`. With the default 100% it can never fire for a *shorter* beat, so a premature beat (e.g. 399 ms after 800 ms) is **kept** and the normal beat that follows it is **removed** instead (800 / 399 > 2). Smaller beat-to-beat changes are left to the NeuroKit2 artifact detection.
+!!! warning "Sudden-change thresholds below 100% are asymmetric"
+    The rule is `|RR - previous RR| / previous RR > threshold`. For thresholds of roughly 50% or more it can never fire for a *shorter* beat, so a premature beat (e.g. 399 ms after 800 ms with a 95% threshold) is **kept** and the normal beat that follows it is **removed** instead. Prefer leaving the filter disabled and relying on artifact detection.
 
 !!! note
     For VNS Analyse data, no cleaning is applied during import. Artifact detection is handled separately at analysis time, since VNS timestamps are cumulative and removing beats would distort the time axis.
