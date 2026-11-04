@@ -20,13 +20,14 @@ from rrational.gui.shared import (  # noqa: E402
     get_summary_dict,
     extract_section_rr_intervals,
     filter_exclusion_zones,
-    detect_artifacts_fixpeaks,
     show_toast,
     cached_discover_recordings,
     cached_load_recording,
     cached_load_vns_recording,
 )
 from rrational.gui.help_text import ANALYSIS_HELP  # noqa: E402
+from rrational.cleaning.quality import correct_artifacts_lipponen  # noqa: E402
+from rrational.gui.segmentation import windows_from_detection_segments  # noqa: E402
 from rrational.gui.rrational_export import (  # noqa: E402
     find_rrational_files,
     load_rrational,
@@ -2409,21 +2410,22 @@ def _render_single_participant_analysis():
                                         f"segment_inclusion_{selected_participant}", {}
                                     )
 
-                                    if det_segments:
-                                        # Filter to included segments
-                                        nn_arr = np.asarray(
-                                            nn_intervals_ms, dtype=np.float64
+                                    # Detection segments only apply if these NN
+                                    # intervals ARE the detection's corrected
+                                    # series; otherwise use time-based segments.
+                                    det_windows = windows_from_detection_segments(
+                                        det_segments,
+                                        seg_inclusion,
+                                        np.asarray(nn_intervals_ms, dtype=np.float64),
+                                        artifact_data,
+                                    )
+                                    if det_segments and det_windows is None:
+                                        st.caption(
+                                            "Detection segments belong to a different "
+                                            "scope/series; using time-based segments."
                                         )
-                                        windows = []
-                                        for seg in det_segments:
-                                            if seg_inclusion.get(seg.idx, seg.included):
-                                                sliced = nn_arr[
-                                                    seg.beat_start : seg.beat_end
-                                                ].tolist()
-                                                if len(sliced) >= 30:
-                                                    windows.append(
-                                                        (seg.idx, seg.start_ms, sliced)
-                                                    )
+                                    if det_windows is not None:
+                                        windows = det_windows
                                         window_info_str = (
                                             f"per-segment ({len(windows)} included)"
                                         )
@@ -3147,12 +3149,33 @@ def _render_single_participant_analysis():
                                 artifact_info = None
                                 if apply_artifact_correction:
                                     st.write("    Applying artifact correction...")
-                                    artifact_result = detect_artifacts_fixpeaks(rr_ms)
+                                    # Lipponen & Tarvainen (2019): missed beats
+                                    # split, extra beats merged, ectopic peaks
+                                    # moved; the NN series can change length.
+                                    artifact_result = correct_artifacts_lipponen(rr_ms)
                                     if artifact_result["correction_applied"]:
                                         rr_ms = artifact_result["corrected_rr"]
-                                        artifact_info = artifact_result
+                                        # artifact_info travels with rr_intervals
+                                        # (the NN series), so its marker indices
+                                        # are NN positions of changed beats; raw
+                                        # detection indices are kept separately.
+                                        artifact_info = {
+                                            **artifact_result,
+                                            "artifact_indices": [
+                                                j
+                                                for j, f in enumerate(
+                                                    artifact_result["corrected_flags"]
+                                                )
+                                                if f
+                                            ],
+                                            "raw_artifact_indices": artifact_result[
+                                                "artifact_indices"
+                                            ],
+                                        }
                                         st.write(
-                                            f"    * Corrected {artifact_result['total_artifacts']} artifacts"
+                                            f"    * Corrected {artifact_result['total_artifacts']} artifacts "
+                                            f"(+{artifact_result['n_inserted']} / "
+                                            f"-{artifact_result['n_removed']} beats)"
                                         )
 
                                 combined_rr.extend(rr_ms)
@@ -3186,23 +3209,20 @@ def _render_single_participant_analysis():
                                             {},
                                         )
 
-                                        if det_segments:
-                                            windows = []
-                                            for seg in det_segments:
-                                                if seg_inclusion.get(
-                                                    seg.idx, seg.included
-                                                ):
-                                                    sliced = nn_arr[
-                                                        seg.beat_start : seg.beat_end
-                                                    ].tolist()
-                                                    if len(sliced) >= 30:
-                                                        windows.append(
-                                                            (
-                                                                seg.idx,
-                                                                seg.start_ms,
-                                                                sliced,
-                                                            )
-                                                        )
+                                        # Detection segments only apply if this
+                                        # NN array IS the detection's corrected
+                                        # series (raw indices of another array
+                                        # would point at unrelated beats).
+                                        det_windows = windows_from_detection_segments(
+                                            det_segments, seg_inclusion, nn_arr, artifact_data
+                                        )
+                                        if det_segments and det_windows is None:
+                                            st.caption(
+                                                "Detection segments belong to a different "
+                                                "scope/series; using fresh 5-min segments."
+                                            )
+                                        if det_windows is not None:
+                                            windows = det_windows
                                             window_info_str = (
                                                 f"per-segment ({len(windows)} included)"
                                             )

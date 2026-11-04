@@ -609,6 +609,8 @@ def correct_artifacts_lipponen(
         "artifact_indices": [],
         "indices_by_type": {k: [] for k in FIXPEAKS_ARTIFACT_TYPES},
         "artifacts": {k: 0 for k in FIXPEAKS_ARTIFACT_TYPES},
+        "total_artifacts": 0,
+        "artifact_ratio": 0.0,
         "corrected_rr": rr_list,
         "corrected_timestamps": list(timestamps) if timestamps is not None else None,
         "raw_to_corrected": list(range(n + 1)),
@@ -629,8 +631,16 @@ def correct_artifacts_lipponen(
     by_type = fixpeaks_info_to_rr_indices(info, n)
     artifact_indices = sorted({i for v in by_type.values() for i in v})
     counts = {k: len(_fixpeaks_index_list(info.get(k, []))) for k in FIXPEAKS_ARTIFACT_TYPES}
+    # Same definitions as detect_artifacts_fixpeaks (sum of NK2 type counts).
+    total = sum(counts.values())
+    ratio = total / n if n else 0.0
     if not artifact_indices:
-        return {**passthrough, "artifacts": counts}
+        return {
+            **passthrough,
+            "artifacts": counts,
+            "total_artifacts": total,
+            "artifact_ratio": ratio,
+        }
 
     _, corrected_peaks = nk.signal_fixpeaks(
         raw_peaks, sampling_rate=sampling_rate, iterative=True,
@@ -644,6 +654,8 @@ def correct_artifacts_lipponen(
         "artifact_indices": artifact_indices,
         "indices_by_type": by_type,
         "artifacts": counts,
+        "total_artifacts": total,
+        "artifact_ratio": ratio,
         "corrected_rr": corrected_rr,
         "corrected_timestamps": _corrected_timestamps(
             timestamps, raw_peaks, corrected_peaks
@@ -653,6 +665,72 @@ def correct_artifacts_lipponen(
         "n_inserted": inserted,
         "n_removed": removed,
         "correction_applied": True,
+    }
+
+
+def stitch_corrections(rr_values, timestamps, pieces) -> dict:
+    """Combine per-range corrections into one corrected series.
+
+    ``pieces`` is an iterable of ``(raw_start, raw_end, result)`` where
+    ``result`` holds ``corrected_rr`` for ``rr_values[raw_start:raw_end]``
+    and optionally ``corrected_timestamps`` and a local ``raw_to_corrected``
+    map (absent = in-place correction, identity). Raw beats not covered by
+    any piece pass through unchanged. Returns ``corrected_rr``,
+    ``corrected_timestamps`` (None if ``timestamps`` is None),
+    ``raw_to_corrected`` (global, length N_raw + 1) and ``corrected_flags``.
+    """
+    rr_list = list(rr_values)
+    n = len(rr_list)
+    ts_list = list(timestamps) if timestamps is not None else None
+    corrected: list = []
+    corrected_ts: list | None = [] if ts_list is not None else None
+    flags: list = []
+    bmap = [0] * (n + 1)
+
+    def _passthrough(s, e):
+        for i in range(s, e):
+            bmap[i] = len(corrected)
+            corrected.append(rr_list[i])
+            flags.append(False)
+            if corrected_ts is not None:
+                corrected_ts.append(ts_list[i])
+
+    pos = 0
+    for s, e, res in sorted(pieces, key=lambda p: p[0]):
+        s, e = max(int(s), pos), min(int(e), n)
+        if e <= s:
+            continue
+        _passthrough(pos, s)
+        piece_rr = list(res.get("corrected_rr") or rr_list[s:e])
+        local = res.get("raw_to_corrected") or list(range(len(piece_rr) + 1))
+        if len(local) != (e - s) + 1:  # inconsistent piece: keep raw beats
+            _passthrough(s, e)
+            pos = e
+            continue
+        offset = len(corrected)
+        for k in range(e - s):
+            bmap[s + k] = offset + int(local[k])
+        corrected.extend(piece_rr)
+        piece_flags = res.get("corrected_flags")
+        if piece_flags is None or len(piece_flags) != len(piece_rr):
+            if len(piece_rr) == e - s:
+                piece_flags = [ri != ci for ri, ci in zip(rr_list[s:e], piece_rr)]
+            else:
+                piece_flags = [True] * len(piece_rr)
+        flags.extend(piece_flags)
+        if corrected_ts is not None:
+            piece_ts = res.get("corrected_timestamps")
+            if piece_ts is None or len(piece_ts) != len(piece_rr):
+                piece_ts = ts_list[s:e] if len(piece_rr) == e - s else [None] * len(piece_rr)
+            corrected_ts.extend(piece_ts)
+        pos = e
+    _passthrough(pos, n)
+    bmap[n] = len(corrected)
+    return {
+        "corrected_rr": corrected,
+        "corrected_timestamps": corrected_ts,
+        "raw_to_corrected": bmap,
+        "corrected_flags": flags,
     }
 
 
@@ -668,57 +746,34 @@ def correct_artifacts_lipponen_segmented(rr_values, timestamps, bounds) -> dict:
     rr_list = list(rr_values)
     n = len(rr_list)
     ts_list = list(timestamps) if timestamps is not None else None
-    corrected: list = []
-    corrected_ts: list | None = [] if ts_list is not None else None
-    flags: list = []
-    bmap = [0] * (n + 1)
     by_type = {k: set() for k in FIXPEAKS_ARTIFACT_TYPES}
     counts = {k: 0 for k in FIXPEAKS_ARTIFACT_TYPES}
     inserted = removed = 0
-
-    def _passthrough(s, e):
-        for i in range(s, e):
-            bmap[i] = len(corrected)
-            corrected.append(rr_list[i])
-            flags.append(False)
-            if corrected_ts is not None:
-                corrected_ts.append(ts_list[i])
-
+    pieces = []
     pos = 0
     for s, e in sorted((max(0, int(a)), min(n, int(b))) for a, b in bounds):
-        if e <= pos:
-            continue
         s = max(s, pos)
-        _passthrough(pos, s)
+        if e <= s:
+            continue
         seg_ts = ts_list[s:e] if ts_list is not None else None
         res = correct_artifacts_lipponen(rr_list[s:e], timestamps=seg_ts)
-        offset = len(corrected)
-        for k, v in enumerate(res["raw_to_corrected"][:-1]):
-            bmap[s + k] = offset + v
-        corrected.extend(res["corrected_rr"])
-        flags.extend(res["corrected_flags"])
-        if corrected_ts is not None:
-            seg_cts = res["corrected_timestamps"]
-            corrected_ts.extend(seg_cts if seg_cts is not None else [None] * len(res["corrected_rr"]))
+        pieces.append((s, e, res))
         for key in FIXPEAKS_ARTIFACT_TYPES:
             by_type[key].update(s + i for i in res["indices_by_type"][key])
             counts[key] += res["artifacts"][key]
         inserted += res["n_inserted"]
         removed += res["n_removed"]
         pos = e
-    _passthrough(pos, n)
-    bmap[n] = len(corrected)
 
-    indices_by_type = {k: sorted(v) for k, v in by_type.items()}
+    stitched = stitch_corrections(rr_list, ts_list, pieces)
     artifact_indices = sorted({i for v in by_type.values() for i in v})
     return {
         "artifact_indices": artifact_indices,
-        "indices_by_type": indices_by_type,
+        "indices_by_type": {k: sorted(v) for k, v in by_type.items()},
         "artifacts": counts,
-        "corrected_rr": corrected,
-        "corrected_timestamps": corrected_ts,
-        "raw_to_corrected": bmap,
-        "corrected_flags": flags,
+        "total_artifacts": sum(counts.values()),
+        "artifact_ratio": sum(counts.values()) / n if n else 0.0,
+        **stitched,
         "n_inserted": inserted,
         "n_removed": removed,
         "correction_applied": bool(artifact_indices),

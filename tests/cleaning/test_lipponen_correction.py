@@ -249,3 +249,52 @@ class TestSegmented:
         assert res["corrected_rr"][cs:ce] == pytest.approx(rr[0:100])
         assert res["corrected_timestamps"] is None
         _check_map(res, rr)
+
+
+class TestStitch:
+    def test_stitch_matches_segmented_and_passes_gaps_through(self):
+        from rrational.cleaning.quality import (
+            correct_artifacts_lipponen_segmented,
+            stitch_corrections,
+        )
+
+        rr = _realistic(n=900)
+        rr[150] = 2 * rr[150]
+        first = int(rr[600] * 0.4)
+        rr[600:601] = [first, rr[600] - first]
+        ts = list(range(len(rr)))
+        bounds = [(0, 400), (450, len(rr))]  # raw beats 400..449 uncovered
+        pieces = [
+            (s, e, correct_artifacts_lipponen(rr[s:e], timestamps=ts[s:e]))
+            for s, e in bounds
+        ]
+        out = stitch_corrections(rr, ts, pieces)
+        ref = correct_artifacts_lipponen_segmented(rr, ts, bounds)
+
+        assert out["corrected_rr"] == pytest.approx(ref["corrected_rr"])
+        assert out["raw_to_corrected"] == ref["raw_to_corrected"]
+        assert out["corrected_timestamps"] == pytest.approx(ref["corrected_timestamps"])
+        cs, ce = map_raw_range(out["raw_to_corrected"], 400, 450)
+        assert out["corrected_rr"][cs:ce] == rr[400:450]
+        _check_map(out, rr)
+
+    def test_stitch_accepts_pieces_without_map(self):
+        from rrational.cleaning.quality import stitch_corrections
+
+        rr = [800.0] * 20
+        piece = {"corrected_rr": [810.0] * 10}  # in-place method, no map
+        out = stitch_corrections(rr, None, [(5, 15, piece)])
+        assert out["corrected_rr"] == [800.0] * 5 + [810.0] * 10 + [800.0] * 5
+        assert out["raw_to_corrected"] == list(range(21))
+        assert out["corrected_timestamps"] is None
+
+    def test_stitch_keeps_piece_flags_when_length_changes(self):
+        from rrational.cleaning.quality import stitch_corrections
+
+        rr = _realistic(n=400)
+        rr[200] = 2 * rr[200]
+        piece = correct_artifacts_lipponen(rr[100:300])
+        assert len(piece["corrected_rr"]) != 200  # missed beat split
+        out = stitch_corrections(rr, None, [(100, 300, piece)])
+        cs, ce = map_raw_range(out["raw_to_corrected"], 100, 300)
+        assert out["corrected_flags"][cs:ce] == piece["corrected_flags"]

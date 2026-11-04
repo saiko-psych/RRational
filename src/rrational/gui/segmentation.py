@@ -165,3 +165,51 @@ def format_ms_as_time(ms: float) -> str:
     """Format cumulative milliseconds as MM:SS."""
     total_s = int(ms / 1000)
     return f"{total_s // 60}:{total_s % 60:02d}"
+
+
+def windows_from_detection_segments(
+    det_segments, inclusion: dict, nn_values, artifact_data: dict, min_beats: int = 30
+):
+    """HRV windows from artifact-detection segments, or None if they don't apply.
+
+    Detection segments hold RAW beat indices of the array the detection ran
+    on. They may only be used on ``nn_values`` if that is exactly the
+    detection's own corrected series (``artifact_data["corrected_rr"]``);
+    the raw bounds are then translated with the raw->corrected map (L&T
+    correction can split/merge beats). For any other NN array (another
+    section, a cleaned subset, NN loaded from a file) the raw indices would
+    point at unrelated beats, so None is returned and the caller should use
+    fresh time-based segments.
+
+    Returns a list of ``(segment_idx, start_ms, nn_slice)`` for included
+    segments with at least ``min_beats`` beats. ``inclusion`` overrides
+    ``seg.included`` per segment index.
+    """
+    import numpy as _np
+
+    corrected = artifact_data.get("corrected_rr") if artifact_data else None
+    if not det_segments or corrected is None:
+        return None
+    nn = _np.asarray(nn_values, dtype=_np.float64)
+    corr = _np.asarray(corrected, dtype=_np.float64)
+    if nn.shape != corr.shape or not _np.allclose(nn, corr):
+        return None
+
+    bmap = artifact_data.get("raw_to_corrected")
+    if not bmap:
+        original = artifact_data.get("original_rr")
+        if original is not None and len(original) != len(corr):
+            return None
+        bmap = list(range(len(corr) + 1))
+    n_raw = len(bmap) - 1
+
+    windows = []
+    for seg in det_segments:
+        if not inclusion.get(seg.idx, seg.included):
+            continue
+        s = min(max(int(seg.beat_start), 0), n_raw)
+        e = min(max(int(seg.beat_end), s), n_raw)
+        sliced = nn[int(bmap[s]) : int(bmap[e])].tolist()
+        if len(sliced) >= min_beats:
+            windows.append((seg.idx, seg.start_ms, sliced))
+    return windows
