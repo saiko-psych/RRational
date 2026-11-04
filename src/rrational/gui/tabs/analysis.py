@@ -2942,7 +2942,6 @@ def _render_single_participant_analysis():
                         else:
                             # Re-discover VNS recordings
                             from rrational.io.vns_analyse import discover_vns_recordings
-                            from pathlib import Path
 
                             vns_bundles = discover_vns_recordings(
                                 Path(st.session_state.data_dir),
