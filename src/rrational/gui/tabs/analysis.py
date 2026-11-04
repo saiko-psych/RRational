@@ -55,6 +55,7 @@ from rrational.analysis.hrv_compute import (  # noqa: E402
     results_to_long_df as _results_to_long_df,
     results_to_wide_df as _results_to_wide_df,
     calculate_group_stats as _calculate_group_stats,
+    FREQ_GATE_ARTIFACT_RATE,
     FREQ_METHOD_NEUROKIT,
     _hrv_frequency_kwargs,
 )
@@ -65,15 +66,24 @@ def _current_freq_method() -> str:
     return st.session_state.get("freq_method", FREQ_METHOD_NEUROKIT)
 
 
-def _hrv_freq(peaks):
-    """Compute NK2 HRV frequency metrics honoring the configured freq_method."""
+def _hrv_freq(peaks, artifact_rate: float | None = None):
+    """Compute NK2 HRV frequency metrics honoring the configured freq_method.
+
+    Quality gate (docs/science/guidelines.md): above 5 % artifacts
+    (Moderate or worse) only time-domain metrics are reported, so the
+    frequency metrics come back as NaN with the same columns.
+    """
     nk = get_neurokit()
-    return nk.hrv_frequency(
+    result = nk.hrv_frequency(
         peaks,
         sampling_rate=1000,
         show=False,
         **_hrv_frequency_kwargs(_current_freq_method()),
     )
+    if artifact_rate is not None and artifact_rate > FREQ_GATE_ARTIFACT_RATE:
+        result = result.copy()
+        result.loc[:, :] = float("nan")
+    return result
 
 
 _FREQ_METHOD_LABELS = {
@@ -1424,26 +1434,15 @@ def _render_repeating_section_analysis():
 
                     rr_values = [rr.rr_ms for rr in section.rr_intervals]
 
-                    # Apply artifact correction if requested
+                    # Apply artifact correction if requested (Lipponen &
+                    # Tarvainen 2019; also yields the detected artifact rate
+                    # for the Moderate -> time-domain-only gate).
+                    rep_artifact_rate = None
                     if apply_correction:
                         try:
-                            import numpy as np
-
-                            # Convert RR intervals to peak indices for signal_fixpeaks
-                            rr_array = np.array(rr_values, dtype=float)
-                            peak_indices = np.cumsum(rr_array).astype(int)
-                            peak_indices = np.insert(peak_indices, 0, 0)
-
-                            # Call signal_fixpeaks with correct format
-                            info, corrected_peaks = nk.signal_fixpeaks(
-                                peak_indices,
-                                sampling_rate=1000,
-                                iterative=True,
-                                method="Kubios",
-                                show=False,
-                            )
-                            # Use corrected RR intervals from NeuroKit2
-                            rr_values = list(np.diff(corrected_peaks))
+                            lt = correct_artifacts_lipponen(rr_values)
+                            rr_values = list(lt["corrected_rr"])
+                            rep_artifact_rate = lt["artifact_ratio"]
                         except Exception:
                             pass  # Use original if correction fails
 
@@ -1453,7 +1452,7 @@ def _render_repeating_section_analysis():
 
                         # Compute HRV metrics using peaks
                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = _hrv_freq(peaks)
+                        hrv_freq = _hrv_freq(peaks, rep_artifact_rate)
 
                         hrv_results.append(
                             {
@@ -2516,7 +2515,7 @@ def _render_single_participant_analysis():
                                                 show=False,
                                             )
                                             if meets_freq:
-                                                win_hrv_freq = _hrv_freq(win_peaks)
+                                                win_hrv_freq = _hrv_freq(win_peaks, section_artifact_info.get("artifact_rate"))
                                                 win_hrv = pd.concat(
                                                     [win_hrv_time, win_hrv_freq], axis=1
                                                 )
@@ -2604,7 +2603,7 @@ def _render_single_participant_analysis():
 
                             # Only compute frequency metrics if enough data
                             if meets_freq:
-                                hrv_freq = _hrv_freq(peaks)
+                                hrv_freq = _hrv_freq(peaks, section_artifact_info.get("artifact_rate"))
                                 hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
                             else:
                                 st.info(
@@ -2766,7 +2765,7 @@ def _render_single_participant_analysis():
                                         win_hrv_time = nk.hrv_time(
                                             win_peaks, sampling_rate=1000, show=False
                                         )
-                                        win_hrv_freq = _hrv_freq(win_peaks)
+                                        win_hrv_freq = _hrv_freq(win_peaks, ready_data.quality.artifact_rate_final)
                                         win_hrv = pd.concat(
                                             [win_hrv_time, win_hrv_freq], axis=1
                                         )
@@ -2860,7 +2859,7 @@ def _render_single_participant_analysis():
                         # Standard single analysis (fallback or when overlapping disabled)
                         peaks = nk.intervals_to_peaks(clean_rr_ms, sampling_rate=1000)
                         hrv_time = nk.hrv_time(peaks, sampling_rate=1000, show=False)
-                        hrv_freq = _hrv_freq(peaks)
+                        hrv_freq = _hrv_freq(peaks, ready_data.quality.artifact_rate_final)
                         hrv_results = pd.concat([hrv_time, hrv_freq], axis=1)
                         progress.progress(80)
 
@@ -3298,7 +3297,7 @@ def _render_single_participant_analysis():
                                                     sampling_rate=1000,
                                                     show=False,
                                                 )
-                                                win_hrv_freq = _hrv_freq(win_peaks)
+                                                win_hrv_freq = _hrv_freq(win_peaks, (artifact_info or {}).get("artifact_ratio"))
                                                 win_hrv = pd.concat(
                                                     [win_hrv_time, win_hrv_freq], axis=1
                                                 )
@@ -3365,7 +3364,7 @@ def _render_single_participant_analysis():
                                         hrv_time = nk.hrv_time(
                                             peaks, sampling_rate=1000, show=False
                                         )
-                                        hrv_freq = _hrv_freq(peaks)
+                                        hrv_freq = _hrv_freq(peaks, (artifact_info or {}).get("artifact_ratio"))
                                         hrv_results = pd.concat(
                                             [hrv_time, hrv_freq], axis=1
                                         )
@@ -3387,7 +3386,7 @@ def _render_single_participant_analysis():
                                     hrv_time = nk.hrv_time(
                                         peaks, sampling_rate=1000, show=False
                                     )
-                                    hrv_freq = _hrv_freq(peaks)
+                                    hrv_freq = _hrv_freq(peaks, (artifact_info or {}).get("artifact_ratio"))
                                     hrv_results = pd.concat(
                                         [hrv_time, hrv_freq], axis=1
                                     )
@@ -4239,6 +4238,8 @@ def _run_group_analysis(
                     config["overlap_percent"],
                     selected_metrics=selected_metrics,
                     freq_method=_current_freq_method(),
+                    # Moderate (> 5 % artifacts) = time domain only.
+                    artifact_rate=info.get("artifact_rate"),
                 )
 
                 results.append(
@@ -5771,6 +5772,8 @@ This analysis groups participants by sequence and compares conditions within and
                         overlap_pct,
                         selected_metrics=selected_metrics,
                         freq_method=_current_freq_method(),
+                        # Moderate (> 5 % artifacts) = time domain only.
+                        artifact_rate=info.get("artifact_rate"),
                     )
 
                     seq_label = seq_data.get("label", seq_id)

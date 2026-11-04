@@ -40,6 +40,26 @@ KUBIOS_BAND_VLF = (0.0033, 0.04)
 KUBIOS_BAND_LF = (0.04, 0.15)
 KUBIOS_BAND_HF = (0.15, 0.40)
 
+# Frequency-domain quality gate. docs/science/guidelines.md: Good (2-5 %
+# artifacts) = time + frequency domain, Moderate (5-10 %) = time domain only,
+# Poor (> 10 %) = exclude. Boundary inclusive like
+# gui.segmentation.quality_grade_from_rate (exactly 5 % is still "good").
+FREQ_GATE_ARTIFACT_RATE = 0.05
+
+
+def _warn_frequency_gated(n_gated: int, n_total: int, max_rate: float) -> None:
+    import logging
+
+    logging.getLogger("rrational.analysis.hrv_compute").warning(
+        "frequency-domain metrics withheld for %d/%d window(s) with artifact "
+        "rate > %.0f%% (max %.1f%%): Moderate quality allows time-domain "
+        "metrics only (docs/science/guidelines.md).",
+        n_gated,
+        n_total,
+        FREQ_GATE_ARTIFACT_RATE * 100,
+        max_rate * 100,
+    )
+
 
 def _warn_time_domain_underpowered(
     min_beats: int, n_under: int, n_total: int = 1
@@ -192,6 +212,7 @@ def calculate_hrv_metrics(
     window_s: float | None = None,
     segments: list | None = None,
     freq_method: str = FREQ_METHOD_NEUROKIT,
+    artifact_rate: float | None = None,
 ) -> tuple[dict, dict | None, int]:
     """Calculate HRV metrics from NN intervals.
 
@@ -209,6 +230,12 @@ def calculate_hrv_metrics(
             VLF 0.0033-0.04, LF 0.04-0.15, HF 0.15-0.40 Hz). The VLF
             lower bound deliberately excludes the ULF band per Task Force
             1996 — earlier docstring incorrectly said "VLF 0-0.04".
+        artifact_rate: Fraction of corrected/flagged beats (0-1) of the
+            analysed data. Above FREQ_GATE_ARTIFACT_RATE (5 %, Moderate or
+            worse) frequency-domain metrics are returned as None and a
+            warning is logged; time-domain metrics are still computed.
+            With ``segments``, each segment's own ``artifact_pct`` is used
+            when present. None = no gating (unknown quality).
 
     Returns:
         (metrics_dict, std_dict_or_None, n_windows)
@@ -234,10 +261,11 @@ def calculate_hrv_metrics(
     need_freq = bool(selected_set & frequency)
     need_nonlinear = bool(selected_set & nonlinear)
 
-    def compute_hrv(rr_list: list[float]) -> dict:
+    def compute_hrv(rr_list: list[float], rate: float | None = artifact_rate) -> dict:
         """Compute HRV for a single window."""
         result = {}
         peaks = nk.intervals_to_peaks(rr_list, sampling_rate=1000)
+        freq_allowed = rate is None or rate <= FREQ_GATE_ARTIFACT_RATE
 
         if need_time:
             try:
@@ -263,7 +291,7 @@ def calculate_hrv_metrics(
                 for m in selected_set & (time_basic | time_extended):
                     result[m] = None
 
-        if need_freq and len(rr_list) >= MIN_BEATS_FREQUENCY_DOMAIN:
+        if need_freq and freq_allowed and len(rr_list) >= MIN_BEATS_FREQUENCY_DOMAIN:
             try:
                 if freq_method == FREQ_METHOD_KUBIOS:
                     powers = _compute_kubios_frequency_powers(rr_list)
@@ -318,14 +346,20 @@ def calculate_hrv_metrics(
 
         return result
 
+    def _gated(rate):
+        return need_freq and rate is not None and rate > FREQ_GATE_ARTIFACT_RATE
+
     # Single analysis (no windows)
     if not use_windows:
         if need_time and len(nn_ms_list) < MIN_BEATS_TIME_DOMAIN:
             _warn_time_domain_underpowered(len(nn_ms_list), 1, 1)
+        if _gated(artifact_rate):
+            _warn_frequency_gated(1, 1, artifact_rate)
         return compute_hrv(nn_ms_list), None, 1
 
     # Build window slices from segments, time-based, or beat-based
     window_slices: list[list[float]] = []
+    window_rates: list[float | None] = []  # per-window artifact rate (gate)
 
     if segments is not None:
         nn_array = np.asarray(nn_ms_list, dtype=np.float64)
@@ -334,6 +368,10 @@ def calculate_hrv_metrics(
                 sliced = nn_array[seg.beat_start : seg.beat_end]
                 if len(sliced) >= 30:
                     window_slices.append(sliced.tolist())
+                    pct = getattr(seg, "artifact_pct", None)
+                    window_rates.append(
+                        pct / 100.0 if pct is not None else artifact_rate
+                    )
 
     elif window_s is not None:
         from rrational.gui.segmentation import generate_segments
@@ -356,7 +394,14 @@ def calculate_hrv_metrics(
         window_slices = [w_rr for _, _, w_rr in windows]
 
     if not window_slices:
+        if _gated(artifact_rate):
+            _warn_frequency_gated(1, 1, artifact_rate)
         return compute_hrv(nn_ms_list), None, 1
+    if len(window_rates) != len(window_slices):
+        window_rates = [artifact_rate] * len(window_slices)
+    gated = [r for r in window_rates if _gated(r)]
+    if gated:
+        _warn_frequency_gated(len(gated), len(window_slices), max(gated))
 
     if need_time:
         under = [len(w) for w in window_slices if len(w) < MIN_BEATS_TIME_DOMAIN]
@@ -364,9 +409,9 @@ def calculate_hrv_metrics(
             _warn_time_domain_underpowered(min(under), len(under), len(window_slices))
 
     window_results = []
-    for w_rr in window_slices:
+    for w_rr, w_rate in zip(window_slices, window_rates):
         try:
-            window_results.append(compute_hrv(w_rr))
+            window_results.append(compute_hrv(w_rr, w_rate))
         except Exception:
             continue
 
