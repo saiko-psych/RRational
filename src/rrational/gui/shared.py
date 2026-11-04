@@ -983,6 +983,28 @@ def cached_load_vns_recording(vns_paths_tuple: tuple, participant_id: str, use_c
     }
 
 
+def clear_event_widget_state(participant_id: str, session_state=None) -> int:
+    """Drop the per-row widget values of a participant's event list.
+
+    The event rows (Participants tab) use keyed widgets
+    ``raw_/canonical_/time_{participant_id}_{hash8}_{idx}`` whose key is
+    derived from label + timestamp. When the events are replaced wholesale
+    (e.g. "Reset to Original"), the same events produce the same keys, and
+    Streamlit then shows the *stale* widget value from session_state instead
+    of the ``index``/``value`` computed from the new data (issue #18).
+
+    Returns the number of keys removed.
+    """
+    state = st.session_state if session_state is None else session_state
+    pattern = re.compile(
+        rf"^(?:raw|canonical|time)_{re.escape(participant_id)}_[0-9a-f]{{8}}_\d+$"
+    )
+    stale = [k for k in list(state.keys()) if isinstance(k, str) and pattern.match(k)]
+    for key in stale:
+        del state[key]
+    return len(stale)
+
+
 def scroll_to_top():
     """Inject JavaScript to scroll the page to the top.
 

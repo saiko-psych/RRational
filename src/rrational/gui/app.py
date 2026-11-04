@@ -11555,6 +11555,11 @@ def main():
                             undo_key = f"event_undo_stack_{selected_participant}"
                             if undo_key in st.session_state:
                                 st.session_state[undo_key] = []
+                            # Drop stale event-row widget values so the dropdowns
+                            # re-initialise from the reloaded events (issue #18)
+                            from rrational.gui.shared import clear_event_widget_state
+
+                            clear_event_widget_state(selected_participant)
                             show_toast(
                                 f"Reset {selected_participant} to original events from raw data",
                                 icon="success",
