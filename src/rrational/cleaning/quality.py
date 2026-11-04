@@ -201,6 +201,62 @@ def detect_time_gaps(
         return empty
 
 
+FIXPEAKS_ARTIFACT_TYPES = ("ectopic", "missed", "extra", "longshort")
+
+
+def rr_to_peak_indices(rr_values) -> np.ndarray:
+    """Peak sample indices (1 kHz) for ``nk.signal_fixpeaks`` from RR in ms.
+
+    Returns ``[0, cumsum(rr)...]`` (length N+1) as int64. Round 28: a plain
+    ``astype(int)`` is the platform native int (32-bit on Windows builds),
+    which wraps to negative for cumulative totals > 2^31 ms (~25 days).
+    """
+    peaks = np.cumsum(np.asarray(rr_values, dtype=float)).astype(np.int64)
+    return np.insert(peaks, 0, 0)
+
+
+def _fixpeaks_index_list(value) -> list:
+    """NK2 ``info[type]`` as a plain list (non list/array values -> [])."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    return value if isinstance(value, list) else []
+
+
+def fixpeaks_info_to_rr_indices(info: dict, n_rr: int) -> dict[str, list[int]]:
+    """Map NK2 Kubios artifact indices (peaks space) to RR-space indices.
+
+    Round 30 — NK2's Kubios detector (``_find_artifacts``) works on
+    ``rr = ediff1d(peaks, to_begin=0)``, which is PEAKS-space: it has the
+    same length as the peak array (N+1) and ``rr_nk[i]`` is the interval
+    ENDING at peak i, i.e. ``rr_nk[i] == rr_values[i-1]`` (``rr_nk[0]`` is a
+    synthetic mean, not a real interval). So an NK2 artifact index k refers
+    to ``rr_values[k-1]``. Storing k directly (a) shifts every flagged beat
+    one position later and (b) drops a real artifact on the final beat
+    (NK2 index N). Verified empirically: an ectopic injected at
+    ``rr_values[100]`` is reported by NK2 at index 101.
+
+    Every caller that turns ``signal_fixpeaks`` output into beat positions
+    must go through this function; ``gui/app.py`` once kept its own copy of
+    the mapping and missed the fix.
+
+    Returns ``{type: sorted unique RR indices}`` for the four Kubios types,
+    keeping only indices that are valid positions in an RR array of length
+    ``n_rr``. Non-integer entries are ignored.
+    """
+    out: dict[str, list[int]] = {}
+    for key in FIXPEAKS_ARTIFACT_TYPES:
+        mapped = set()
+        for raw_idx in _fixpeaks_index_list(info.get(key, [])):
+            try:
+                rr_idx = int(raw_idx) - 1
+            except (TypeError, ValueError):
+                continue
+            if 0 <= rr_idx < n_rr:
+                mapped.add(rr_idx)
+        out[key] = sorted(mapped)
+    return out
+
+
 def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -> dict:
     """Detect and correct artifacts using NeuroKit2's Kubios algorithm.
 
@@ -239,12 +295,7 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
 
     try:
         rr_array = np.array(rr_values, dtype=float)
-        # Round 28 — astype(int) defaults to the platform native int
-        # (32-bit on Windows builds), which silently wraps to negative
-        # for any cumulative ms total > 2^31 (~25 days). Explicit int64
-        # so 24h+ Holter recordings keep monotonic peak indices.
-        peak_indices = np.cumsum(rr_array).astype(np.int64)
-        peak_indices = np.insert(peak_indices, 0, 0)
+        peak_indices = rr_to_peak_indices(rr_array)
 
         # Detection: iterative=False finds ALL artifacts
         info, _ = nk.signal_fixpeaks(
@@ -255,37 +306,15 @@ def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -
             show=False,
         )
 
-        # Round 30 — peak-space -> RR-space index conversion.
-        # NK2's Kubios detector (_find_artifacts) works on
-        # ``rr = ediff1d(peaks, to_begin=0)``, which is PEAKS-space: it has
-        # the same length as ``peak_indices`` (N+1) and ``rr_nk[i]`` is the
-        # interval ENDING at peak i, i.e. ``rr_nk[i] == rr_values[i-1]``
-        # (rr_nk[0] is a synthetic mean, not a real interval). So an NK2
-        # artifact index k refers to ``rr_values[k-1]``. The previous code
-        # stored k directly, which (a) shifted every flagged beat one
-        # position later and (b) silently dropped a real artifact on the
-        # final beat (NK2 index N failed the ``< len(rr_values)`` guard).
-        # Verified empirically against NK2 0.2.13: an ectopic injected at
-        # rr_values[100] is reported by NK2 at index 101.
-        artifacts = {}
+        # Per-type counts are NK2's raw list lengths (unchanged behaviour);
+        # beat positions go through the shared peaks -> RR mapping.
+        artifacts = {
+            key: len(_fixpeaks_index_list(info.get(key, [])))
+            for key in FIXPEAKS_ARTIFACT_TYPES
+        }
         artifact_indices: set[int] = set()
-        for key in ["ectopic", "missed", "extra", "longshort"]:
-            indices = info.get(key, [])
-            if isinstance(indices, np.ndarray):
-                indices = indices.tolist()
-            elif not isinstance(indices, list):
-                indices = []
-            artifacts[key] = len(indices)
-            # Map peaks-space index k -> RR-space index k-1, keeping only
-            # indices that are valid positions in rr_values.
-            for raw_idx in indices:
-                try:
-                    idx_int = int(raw_idx)
-                except (TypeError, ValueError):
-                    continue
-                rr_idx = idx_int - 1
-                if 0 <= rr_idx < len(rr_values):
-                    artifact_indices.add(rr_idx)
+        for indices in fixpeaks_info_to_rr_indices(info, len(rr_values)).values():
+            artifact_indices.update(indices)
 
         total_artifacts = sum(artifacts.values())
         artifact_ratio = total_artifacts / len(rr_values) if rr_values else 0

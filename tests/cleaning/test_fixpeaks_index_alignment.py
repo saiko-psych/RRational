@@ -68,3 +68,40 @@ def test_indices_never_exceed_rr_length():
     result = detect_artifacts_fixpeaks(rr_values=rr)
     for idx in result["artifact_indices"]:
         assert 0 <= idx < len(rr)
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers used by both the core detector and gui/app.py
+# ---------------------------------------------------------------------------
+
+
+def test_fixpeaks_info_to_rr_indices_maps_peaks_space_to_rr_space():
+    from rrational.cleaning.quality import fixpeaks_info_to_rr_indices
+
+    n = 50
+    info = {
+        "ectopic": np.array([101 - 100, 5, 5]),  # 1 -> 0; duplicate collapsed
+        "missed": [n],  # peaks index N -> last beat (n-1), not dropped
+        "extra": [0],  # synthetic first interval -> no beat
+        "longshort": "not-a-list",
+    }
+    out = fixpeaks_info_to_rr_indices(info, n)
+    assert out == {"ectopic": [0, 4], "missed": [n - 1], "extra": [], "longshort": []}
+
+
+def test_fixpeaks_info_to_rr_indices_ignores_out_of_range_and_non_ints():
+    from rrational.cleaning.quality import fixpeaks_info_to_rr_indices
+
+    out = fixpeaks_info_to_rr_indices({"ectopic": [None, "x", 3, 99]}, n_rr=10)
+    assert out["ectopic"] == [2]
+
+
+def test_rr_to_peak_indices_is_int64_and_monotonic_beyond_2_31_ms():
+    from rrational.cleaning.quality import rr_to_peak_indices
+
+    rr = [1000.0] * 2_200_000  # ~25.5 days > 2**31 ms
+    peaks = rr_to_peak_indices(rr)
+    assert peaks.dtype == np.int64
+    assert peaks[0] == 0 and len(peaks) == len(rr) + 1
+    assert peaks[-1] == 2_200_000_000 > 2**31
+    assert np.all(np.diff(peaks) > 0)
