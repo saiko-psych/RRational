@@ -258,10 +258,14 @@ def fixpeaks_info_to_rr_indices(info: dict, n_rr: int) -> dict[str, list[int]]:
 
 
 def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -> dict:
-    """Detect and correct artifacts using NeuroKit2's Kubios algorithm.
+    """Detect artifacts with NeuroKit2's Kubios algorithm (legacy correction).
 
-    Two-phase approach: detection with iterative=False (comprehensive),
-    then in-place interpolation for correction (preserves array length).
+    Detection uses iterative=False (comprehensive). The ``corrected_rr`` it
+    returns is the LEGACY neighbour-average replacement (array length
+    preserved, but recording time is not: a missed beat loses half its
+    duration). The application uses :func:`correct_artifacts_lipponen`
+    (Lipponen & Tarvainen 2019) for correction; this function is kept for
+    detection-only callers and backward compatibility.
 
     Args:
         rr_values: RR interval values in ms.

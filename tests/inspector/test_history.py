@@ -52,12 +52,13 @@ def test_load_recording_without_fmt_uses_auto_detect():
 
 
 def test_detect_artifacts_action_renders_neurokit_call_for_nk2_method():
-    # Round 31 — a NeuroKit2 method must replay via detect_artifacts_fixpeaks
-    # (the GUI's actual algorithm), NOT the basic threshold filter. It still
-    # binds ``cleaned`` so downstream recipe snippets keep their contract.
+    # Round 31 — a NeuroKit2 method must replay via the GUI's actual
+    # algorithm (Kubios detection + Lipponen-Tarvainen correction), NOT the
+    # basic threshold filter. It still binds ``cleaned`` so downstream
+    # recipe snippets keep their contract.
     a = DetectArtifacts(method="lipponen2019", pid="S01")
     code = a.to_python()
-    assert "detect_artifacts_fixpeaks" in code
+    assert "correct_artifacts_lipponen" in code
     assert "clean_rr_intervals" not in code
     assert "cleaned =" in code
     assert "lipponen2019" in code
@@ -164,8 +165,8 @@ def test_to_script_produces_valid_python_for_mixed_actions():
     # Every action's distinguishing token shows up in the script body.
     assert "/tmp/proj" in src
     assert "/tmp/x.csv" in src
-    # Round 31 — lipponen2019 renders the NeuroKit2 detection call.
-    assert "detect_artifacts_fixpeaks" in src
+    # Round 31 — lipponen2019 renders the NeuroKit2 detection + L&T call.
+    assert "correct_artifacts_lipponen" in src
     assert "/tmp/S01.rrational" in src
 
 

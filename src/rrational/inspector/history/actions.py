@@ -80,8 +80,8 @@ class DetectArtifacts(Action):
 
     def to_python(self) -> str:
         # Round 31 — replay fidelity: the GUI's artifact detection is the
-        # NeuroKit2 Kubios algorithm (detect_artifacts_fixpeaks), NOT the
-        # basic threshold filter. The old to_python() always emitted
+        # NeuroKit2 Kubios algorithm with Lipponen & Tarvainen correction
+        # (correct_artifacts_lipponen), NOT the basic threshold filter. The old to_python() always emitted
         # clean_rr_intervals regardless of self.method, so a session that
         # used Kubios detection silently replayed as basic threshold
         # filtering. We now dispatch on the recorded method and still bind
@@ -94,12 +94,13 @@ class DetectArtifacts(Action):
                 "cleaned = clean_rr_intervals(rr_intervals, _config)"
             )
         return (
-            "from rrational.cleaning.quality import detect_artifacts_fixpeaks\n"
-            f"# NeuroKit2 Kubios artifact detection (method={self.method!r})\n"
+            "from rrational.cleaning.quality import correct_artifacts_lipponen\n"
+            f"# NeuroKit2 Kubios detection + Lipponen & Tarvainen correction (method={self.method!r})\n"
             "_rr_ms = [int(round(iv.rr_ms)) for iv in rr_intervals]\n"
-            "_detection = detect_artifacts_fixpeaks(_rr_ms)\n"
-            "cleaned = _detection['corrected_rr']  # in-place interpolated RR\n"
-            "artifact_indices = _detection['artifact_indices']"
+            "_detection = correct_artifacts_lipponen(_rr_ms)\n"
+            "# NN series: missed beats split, extra beats merged (length may differ)\n"
+            "cleaned = _detection['corrected_rr']\n"
+            "artifact_indices = _detection['artifact_indices']  # raw RR positions"
         )
 
 

@@ -217,6 +217,7 @@ def _slice_section(
     section_name: str,
     exclusions: list[ExclusionZone] | None = None,
     corrected_v: np.ndarray | None = None,
+    corrected_t: np.ndarray | None = None,
 ) -> np.ndarray | None:
     """Return the RR (ms) values inside ``section_name``, minus excluded beats.
 
@@ -224,26 +225,31 @@ def _slice_section(
     falls inside ANY ``ExclusionZone``. Pass ``None`` (or an empty
     list) to skip the filter.
 
-    Round 32 (PP1) — when ``corrected_v`` is supplied (same length + gap
-    layout as ``data.v``) the artifact-corrected values are analysed instead
-    of the raw ``data.v``. This is what makes "Use corrected RR values"
-    actually affect Compute, not just the plot. A length mismatch falls back
-    to the raw array defensively.
+    Round 32 (PP1) — when ``corrected_v`` is supplied the artifact-corrected
+    values are analysed instead of the raw ``data.v``, so "Use corrected RR
+    values" affects Compute, not just the plot.
+
+    Lipponen-Tarvainen correction can split/merge beats, so the corrected
+    series carries its own time axis ``corrected_t``; beats are then selected
+    by THEIR time. Without ``corrected_t`` the corrected array must be 1:1
+    with ``data.v`` (legacy/in-place corrections); any other length falls
+    back to the raw array defensively.
     """
     section = next((s for s in data.sections if s.name == section_name), None)
     if section is None:
         return None
-    values = (
-        corrected_v
-        if corrected_v is not None and len(corrected_v) == len(data.v)
-        else data.v
-    )
-    in_section = (data.t >= section.t_start) & (data.t <= section.t_end)
+    values, times = data.v, data.t
+    if corrected_v is not None:
+        if corrected_t is not None and len(corrected_t) == len(corrected_v):
+            values, times = corrected_v, corrected_t
+        elif len(corrected_v) == len(data.v):
+            values = corrected_v
+    in_section = (times >= section.t_start) & (times <= section.t_end)
     finite = np.isfinite(values)
     mask = in_section & finite
     if exclusions:
         for z in exclusions:
-            inside = (data.t >= z.start_t) & (data.t <= z.end_t)
+            inside = (times >= z.start_t) & (times <= z.end_t)
             mask &= ~inside
     return values[mask]
 
@@ -259,6 +265,20 @@ def _corrected_for(ds) -> np.ndarray | None:
     if getattr(ds, "use_corrected", False):
         return getattr(ds, "corrected_v", None)
     return None
+
+
+def _corrected_kwargs(ds) -> dict:
+    """``corrected_v`` + ``corrected_t`` for :func:`_slice_section`.
+
+    Both None unless ``ds.use_corrected`` is set. ``corrected_t`` is the
+    corrected series' own time axis (L&T can split/merge beats).
+    """
+    if getattr(ds, "use_corrected", False):
+        return {
+            "corrected_v": getattr(ds, "corrected_v", None),
+            "corrected_t": getattr(ds, "corrected_t", None),
+        }
+    return {"corrected_v": None, "corrected_t": None}
 
 
 def _active_exclusion_zones(main_window) -> list[ExclusionZone]:
@@ -697,9 +717,35 @@ class _AnalysisSettingsBar(QWidget):
         return kwargs
 
 
+def _section_artifact_rate(ds, section_name: str) -> float | None:
+    """Detected-artifact rate of a section (0-1), or None if unknown.
+
+    Uses the raw artifact positions stored on the dataset by the last
+    detection (``ds.artifact_indices``) divided by the raw beats inside the
+    section - the same definition as the segment/section quality grades.
+    Drives the Moderate (> 5 %) -> time-domain-only gate.
+    """
+    indices = getattr(ds, "artifact_indices", None)
+    data = getattr(ds, "data", None)
+    if indices is None or data is None:
+        return None
+    section = next((s for s in data.sections if s.name == section_name), None)
+    if section is None:
+        return None
+    in_section = (data.t >= section.t_start) & (data.t <= section.t_end)
+    in_section &= np.isfinite(data.v)
+    n = int(in_section.sum())
+    if n == 0:
+        return None
+    idx = np.asarray(indices, dtype=np.int64)
+    idx = idx[(idx >= 0) & (idx < len(data.t))]
+    return float(in_section[idx].sum()) / n
+
+
 def _compute_metrics_with_settings(
     rr_ms: np.ndarray,
     settings_bar: _AnalysisSettingsBar | None,
+    artifact_rate: float | None = None,
 ) -> tuple[dict[str, float], list[str]]:
     """Run HRV compute on an RR array, honouring the settings bar.
 
@@ -722,6 +768,8 @@ def _compute_metrics_with_settings(
 
     if len(rr_ms) < 10:
         return {m: float("nan") for m in selected}, selected
+    # Moderate quality (> 5 % artifacts) = time-domain metrics only.
+    kwargs["artifact_rate"] = artifact_rate
     try:
         metrics, _, _ = calculate_hrv_metrics(nn_ms_list=rr_ms.tolist(), **kwargs)
     except Exception:
@@ -880,7 +928,7 @@ class _SingleParticipantPane(QWidget):
         # one when picked from the dropdown).
         exclusions = _exclusion_zones_for_dataset(self._main_window, ds)
         rr = _slice_section(
-            ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
+            ds.data, sec_name, exclusions=exclusions, **_corrected_kwargs(ds)
         )
         if rr is None or len(rr) == 0:
             self._main_window.statusBar().showMessage(
@@ -890,7 +938,9 @@ class _SingleParticipantPane(QWidget):
         self._main_window.statusBar().showMessage(
             f"Computing HRV on '{sec_name}' ({len(rr)} beats)…"
         )
-        metrics, selected = _compute_metrics_with_settings(rr, self._settings_bar)
+        metrics, selected = _compute_metrics_with_settings(
+            rr, self._settings_bar, artifact_rate=_section_artifact_rate(ds, sec_name)
+        )
         duration_s = float(np.nansum(rr) / 1000.0) if len(rr) else 0.0
         warning = _segment_warning(int(len(rr)), duration_s, selected)
         self._populate_result_table(
@@ -1082,11 +1132,13 @@ class _RepeatingSectionPane(QWidget):
             # plot's (which belong only to the displayed dataset).
             exclusions = _exclusion_zones_for_dataset(self._main_window, ds)
             rr = _slice_section(
-                ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
+                ds.data, sec_name, exclusions=exclusions, **_corrected_kwargs(ds)
             )
             if rr is None or len(rr) == 0:
                 continue
-            metrics, selected = _compute_metrics_with_settings(rr, self._settings_bar)
+            metrics, selected = _compute_metrics_with_settings(
+                rr, self._settings_bar, artifact_rate=_section_artifact_rate(ds, sec_name)
+            )
             selected_metrics_seen = selected
             rows.append((ds.name, metrics, int(len(rr))))
         self._populate_result_table(
@@ -1578,11 +1630,13 @@ class _GroupComparisonPane(QWidget):
             # Round 33 (E1) — per-dataset zones, not the shared live plot's.
             exclusions = _exclusion_zones_for_dataset(self._main_window, ds)
             rr = _slice_section(
-                ds.data, sec_name, exclusions=exclusions, corrected_v=_corrected_for(ds)
+                ds.data, sec_name, exclusions=exclusions, **_corrected_kwargs(ds)
             )
             if rr is None or len(rr) == 0:
                 continue
-            metrics, _ = _compute_metrics_with_settings(rr, self._settings_bar)
+            metrics, _ = _compute_metrics_with_settings(
+                rr, self._settings_bar, artifact_rate=_section_artifact_rate(ds, sec_name)
+            )
             self._main_window._results_store.add_metric_row(
                 MetricRow(
                     mode="group",
@@ -2018,12 +2072,14 @@ class _SequenceComparisonPane(QWidget):
             exclusions = _exclusion_zones_for_dataset(self._main_window, ds)
             for s in seq.sections:
                 rr = _slice_section(
-                    ds.data, s, exclusions=exclusions, corrected_v=_corrected_for(ds)
+                    ds.data, s, exclusions=exclusions, **_corrected_kwargs(ds)
                 )
                 if rr is None or len(rr) == 0:
                     values_per_section[s].append(float("nan"))
                     continue
-                metrics, _ = _compute_metrics_with_settings(rr, self._settings_bar)
+                metrics, _ = _compute_metrics_with_settings(
+                    rr, self._settings_bar, artifact_rate=_section_artifact_rate(ds, s)
+                )
                 v = metrics.get(metric)
                 values_per_section[s].append(
                     float("nan")

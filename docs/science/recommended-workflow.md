@@ -185,7 +185,7 @@ flowchart TD
 
 **Why:**
 
-- **Correction, not deletion**: Detected artifacts are replaced with interpolated values from the surrounding beats, preserving the time structure. Simply deleting ectopic beats would shift all subsequent timestamps.
+- **Correction, not deletion**: Detected artifacts are corrected per Lipponen & Tarvainen (2019): missed beats are split, extra beats merged and ectopic peaks moved, so the total recording time and the time structure are preserved. Simply deleting ectopic beats would shift all subsequent timestamps.
 - **Per-segment metrics**: Computing metrics per segment enables both individual reporting and later aggregation.
 
 **In RRational:**

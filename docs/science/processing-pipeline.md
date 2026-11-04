@@ -95,10 +95,21 @@ RRational uses **time-based segmentation** (Quigley 2024): the recording is divi
 
 ## Stage 5: Artifact Correction
 
-For segments with 2–10% artifacts, RRational replaces detected artifacts with values interpolated from the surrounding beats:
+Detected artifacts are corrected with the algorithm of **Lipponen & Tarvainen (2019)** (NeuroKit2 `signal_fixpeaks(method="Kubios", iterative=True)`). The correction works on R-peak positions, not on RR values:
 
-- Short artifacts (ectopic): replaced by mean of neighbors
-- Long artifacts (missed beats): interpolated from surrounding beats
+| Artifact type | Correction | Effect on the NN series |
+|---|---|---|
+| Missed beat (one RR ≈ two beats) | A peak is inserted at the midpoint | The long interval is **split** into two (+1 beat) |
+| Extra beat (spurious peak) | The peak is removed | Two short intervals are **merged** (−1 beat) |
+| Ectopic / long-short beat | The peak is moved to the midpoint of its neighbours | Two adjacent intervals become equal; beat count unchanged |
+
+Total recording time is preserved in every case. Because the number of NN intervals can differ from the number of raw RR intervals, the corrected series carries its own timestamps, and sections, segments and exports are mapped onto it (RRational keeps a raw → corrected beat map).
+
+!!! note "Known limitations"
+    - **Ectopic pairs**: NeuroKit2 moves two adjacent misaligned peaks using each other's *uncorrected* positions, so a premature/compensatory pair is improved but not fully equalised (example: 550 / 1050 / 785 ms → 733 / 734 / 918 ms; total time unchanged).
+    - **Very low variability**: the missed/extra criteria use thresholds adapted to the local spread of RR differences. In recordings with very little beat-to-beat variability these thresholds become strict, and a true missed beat may be classified as long/short and have a peak moved instead of being split.
+
+Earlier versions replaced each flagged RR value with the mean of its neighbours. That changed the recording duration (a missed 1600 ms beat became ~800 ms, losing 0.8 s) and kept phantom beats for extra detections.
 
 !!! warning
     Segments with > 10% artifacts should be **excluded**, not corrected. Over-correction distorts HRV metrics.

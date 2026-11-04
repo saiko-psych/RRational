@@ -668,8 +668,13 @@ class PreprocessingPanel(QWidget):
         data = self._main_window._data
         if data is None or len(data.v) == 0:
             return
-        result = detect_artifacts(data.v)
+        result = detect_artifacts(data.v, data.t)
         self._last_result = result
+        try:  # per-section artifact rates for the analysis quality gate
+            ds_active = self._main_window._datasets[self._main_window._active_idx]
+            ds_active.artifact_indices = result.indices
+        except (AttributeError, IndexError, TypeError):
+            pass
 
         # Push markers to the plot, then update summary text.
         plot = self._main_window._browse_tab._plot
@@ -814,7 +819,7 @@ class PreprocessingPanel(QWidget):
             )
 
         try:
-            result = detect_artifacts(data.v)
+            result = detect_artifacts(data.v, data.t)
         except Exception:
             # Batch must never crash on one bad recording — surface as a
             # "?" grade row so the user can still see the others.
@@ -829,6 +834,7 @@ class PreprocessingPanel(QWidget):
 
         rate = float(result.rate)
         letter = _grade_letter_for_rate(rate)
+        ds.artifact_indices = result.indices  # per-section quality gate
 
         # Persist the artifact correction so a subsequent single-dataset
         # open auto-restores the same state via _try_restore_artifacts.
@@ -998,7 +1004,14 @@ class PreprocessingPanel(QWidget):
         if data is None:
             return
         if checked:
-            plot._curve.setData(data.t, self._last_result.corrected_v)
+            # The corrected series has its own time axis (L&T correction can
+            # split/merge beats); fall back to data.t only when 1:1.
+            corr_v = self._last_result.corrected_v
+            corr_t = self._last_result.corrected_t
+            if corr_t is None or len(corr_t) != len(corr_v):
+                corr_t = data.t if len(corr_v) == len(data.t) else None
+            if corr_t is not None:
+                plot._curve.setData(corr_t, corr_v)
         else:
             plot._curve.setData(data.t, data.v)
         # Round 32 (PP1) — propagate the choice to the ACTIVE dataset so the
@@ -1020,6 +1033,8 @@ class PreprocessingPanel(QWidget):
             and self._last_result.corrected_v is not None
         ):
             ds.corrected_v = self._last_result.corrected_v
+            ds.corrected_t = self._last_result.corrected_t
+            ds.corrected_flags = self._last_result.corrected_flags
             ds.use_corrected = True
         else:
             ds.use_corrected = False

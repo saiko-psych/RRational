@@ -112,10 +112,44 @@ def _build_section_export(
         ts_from_start_ms = ((t_slice - t0) * 1000).astype(int).tolist()
         # If preprocessing is present, swap in corrected values where available
         # and mark them.
-        if (
-            preprocessing is not None
-            and preprocessing.corrected_v is not None
-            and len(preprocessing.corrected_v) == len(data.v)
+        corr_v = preprocessing.corrected_v if preprocessing is not None else None
+        corr_t = getattr(preprocessing, "corrected_t", None) if corr_v is not None else None
+        if corr_t is not None and len(corr_t) == len(corr_v):
+            # Lipponen-Tarvainen: the corrected series has its own time axis
+            # (missed beats split, extra beats merged). Select corrected beats
+            # by their own time inside [t_start, t_end]; each correction
+            # references the raw beat whose interval contains it.
+            corr_flags = getattr(preprocessing, "corrected_flags", None)
+            if corr_flags is None or len(corr_flags) != len(corr_v):
+                corr_flags = np.ones(len(corr_v), dtype=bool)
+            sel = np.nonzero(
+                (corr_t >= section.t_start)
+                & (corr_t <= section.t_end)
+                & np.isfinite(corr_v)
+            )[0]
+            ct0 = corr_t[sel[0]] if sel.size else 0.0
+            nn_data = [
+                [
+                    int((corr_t[j] - ct0) * 1000),
+                    float(corr_v[j]),
+                    bool(corr_flags[j]),
+                ]
+                for j in sel
+            ]
+            raw_of = np.clip(np.searchsorted(data.t, corr_t[sel], side="left"), 0, len(data.v) - 1)
+            corrections_list = [
+                {
+                    "nn_idx": int(k),
+                    "raw_idx": int(raw_of[k]),
+                    "original_rr_ms": float(data.v[raw_of[k]]),
+                    "corrected_nn_ms": float(corr_v[j]),
+                }
+                for k, j in enumerate(sel)
+                if corr_flags[j]
+            ]
+        elif (
+            corr_v is not None
+            and len(corr_v) == len(data.v)
         ):
             corrected_slice = preprocessing.corrected_v[start_idx:end_idx]
             # was_corrected per beat: True where the corrected value differs

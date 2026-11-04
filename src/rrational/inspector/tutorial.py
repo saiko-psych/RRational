@@ -133,6 +133,7 @@ def _ensure_demo_loaded(mw) -> None:
         if getattr(d, "name", "") == "TUTORIAL_demo.csv":
             d.use_corrected = False
             d.corrected_v = None
+            d.corrected_t = None
             mw.set_active_dataset(i)
             return
     ds = build_tutorial_dataset()

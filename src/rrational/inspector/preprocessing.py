@@ -1,7 +1,7 @@
 """Artifact detection + R-peak correction wrapper for the inspector.
 
-Thin facade over ``rrational.cleaning.quality.detect_artifacts_fixpeaks``
-(NeuroKit2's Kubios algorithm). The cleaning module already does the
+Thin facade over ``rrational.cleaning.quality.correct_artifacts_lipponen``
+(NeuroKit2's Kubios detector + Lipponen & Tarvainen 2019 correction). The cleaning module already does the
 science; this layer just packages the result into something the
 inspector's UI can consume — most importantly, the **time-domain
 indices** of each artifact (so the plot can drop an ``ArtifactMarker``
@@ -30,7 +30,16 @@ class PreprocessingResult:
     by_type: dict[str, int] = field(default_factory=dict)  # "ectopic", "missed", ...
     total: int = 0
     rate: float = 0.0  # 0.0–1.0, fraction of beats that are artifacts
-    corrected_v: np.ndarray | None = None  # ms, same length as input
+    # Lipponen & Tarvainen (2019) correction: missed beats are split and
+    # extra beats merged, so the corrected series can be longer/shorter than
+    # the input. It carries its own time axis (seconds, same basis as
+    # ``data.t``; None if no times were given) and per-beat change flags.
+    # NaN gap markers of the input are preserved at their original time.
+    corrected_v: np.ndarray | None = None  # ms
+    corrected_t: np.ndarray | None = None  # s, aligned 1:1 with corrected_v
+    corrected_flags: np.ndarray | None = None  # bool, aligned with corrected_v
+    n_inserted: int = 0
+    n_removed: int = 0
     grade: str = "unknown"  # excellent / good / moderate / poor
     recommendation: str = ""
 
@@ -77,21 +86,27 @@ def _grade_letter_for_rate(rate: float) -> str:
     return _LETTER_GRADE_MAP.get(grade, "?")
 
 
-def detect_artifacts(v: np.ndarray) -> PreprocessingResult:
-    """Run NK2's Kubios fixpeaks on the RR-ms array ``v``.
+def detect_artifacts(v: np.ndarray, t: np.ndarray | None = None) -> PreprocessingResult:
+    """Detect and correct artifacts in the RR-ms array ``v`` (L&T 2019).
 
-    NaN samples (inter-section gaps) are passed through unchanged in
-    the corrected output — we never invent data for a missing region.
+    Detection is NK2's Kubios detector over all finite beats (indices are
+    positions in ``v``). Correction is Lipponen & Tarvainen: missed beats
+    split, extra beats merged, ectopic peaks moved, so the corrected series
+    may differ in length. Pass the beat times ``t`` (seconds) to get
+    ``corrected_t``. NaN samples (inter-section gaps) are never filled:
+    each gap marker is re-inserted at the corrected position between the
+    same two beats, with its original time.
 
-    Returns a ``PreprocessingResult`` even on failure: if NeuroKit2
-    isn't installed or the array is too short (< 10 beats), the result
-    has zero artifacts and quality grade "unknown".
+    Returns a ``PreprocessingResult`` even on failure: if NeuroKit2 isn't
+    installed or the array is too short (< 10 beats), the result has zero
+    artifacts, the input as "corrected" series and grade "unknown".
     """
-    from rrational.cleaning.quality import detect_artifacts_fixpeaks
+    from rrational.cleaning.quality import correct_artifacts_lipponen
 
-    # detect_artifacts_fixpeaks operates on a Python list of ints; NaN
-    # samples are gap-markers we should strip before sending to NK2,
-    # then re-inject at the right indices in the output.
+    v = np.asarray(v, dtype=np.float64)
+    t_arr = np.asarray(t, dtype=np.float64) if t is not None else None
+    if t_arr is not None and len(t_arr) != len(v):
+        t_arr = None
     finite_mask = np.isfinite(v)
     finite_v = v[finite_mask]
 
@@ -101,19 +116,19 @@ def detect_artifacts(v: np.ndarray) -> PreprocessingResult:
             total=0,
             rate=0.0,
             corrected_v=v.copy(),
+            corrected_t=t_arr.copy() if t_arr is not None else None,
+            corrected_flags=np.zeros(len(v), dtype=bool),
             grade="unknown",
             recommendation="Recording too short for artifact detection (<10 beats).",
         )
 
-    result = detect_artifacts_fixpeaks(
-        rr_values=[int(round(x)) for x in finite_v.tolist()],
+    finite_t = t_arr[finite_mask] if t_arr is not None else None
+    result = correct_artifacts_lipponen(
+        [int(round(x)) for x in finite_v.tolist()],
+        timestamps=finite_t.tolist() if finite_t is not None else None,
     )
 
-    # Map artifact indices (positions in the finite-only sub-array) back to
-    # indices in the FULL array. ``detect_artifacts_fixpeaks`` now returns
-    # the merged set from NK2's info dict directly, so we no longer have to
-    # reconstruct it by diffing corrected vs original (which silently lost
-    # artifacts that happened to interpolate to the same value).
+    # Artifact indices: positions in the finite-only sub-array -> FULL array.
     finite_positions = np.nonzero(finite_mask)[0]
     artifact_finite_indices = np.asarray(
         result.get("artifact_indices", []), dtype=np.int64
@@ -123,10 +138,23 @@ def detect_artifacts(v: np.ndarray) -> PreprocessingResult:
     else:
         full_artifact_indices = np.array([], dtype=np.int64)
 
-    # Rebuild corrected array at full length (NaNs preserved at gaps).
-    corrected_finite = np.array(result["corrected_rr"], dtype=np.float64)
-    corrected_full = v.copy()
-    corrected_full[finite_positions] = corrected_finite
+    # Re-insert NaN gap markers. A NaN at full position p lies between the
+    # finite beats k-1 and k (k = finite beats before p); in the corrected
+    # series that boundary is raw_to_corrected[k].
+    corrected_finite = np.asarray(result["corrected_rr"], dtype=np.float64)
+    flags_finite = np.asarray(result["corrected_flags"], dtype=bool)
+    nan_positions = np.nonzero(~finite_mask)[0]
+    bmap = np.asarray(result["raw_to_corrected"], dtype=np.int64)
+    finite_before = np.cumsum(finite_mask)[nan_positions] if nan_positions.size else []
+    insert_at = bmap[np.asarray(finite_before, dtype=np.int64)] if nan_positions.size else []
+    corrected_full = np.insert(corrected_finite, insert_at, np.nan)
+    flags_full = np.insert(flags_finite, insert_at, False)
+    corrected_t = None
+    cts = result.get("corrected_timestamps")
+    if t_arr is not None and cts is not None and len(cts) == len(corrected_finite):
+        corrected_t = np.insert(
+            np.asarray(cts, dtype=np.float64), insert_at, t_arr[nan_positions]
+        )
 
     rate = float(result["artifact_ratio"])
     grade, msg = _grade_for_rate(rate)
@@ -137,6 +165,10 @@ def detect_artifacts(v: np.ndarray) -> PreprocessingResult:
         total=int(result["total_artifacts"]),
         rate=rate,
         corrected_v=corrected_full,
+        corrected_t=corrected_t,
+        corrected_flags=flags_full,
+        n_inserted=int(result["n_inserted"]),
+        n_removed=int(result["n_removed"]),
         grade=grade,
         recommendation=msg,
     )
