@@ -134,3 +134,100 @@ def test_full_scope_without_offset_defaults_to_zero(project):
     assert [iv[1] for iv in export.sections["rest"].nn_intervals.data] == list(
         range(810, 820)
     )
+
+
+# --- VNS multi-file recording gaps ------------------------------------------
+
+
+def test_vns_gaps_are_exported_and_split_segments(project):
+    from datetime import datetime
+
+    # section 10:00:00-10:05:00 (300 s); file gap 10:02:00-10:02:30 inside it,
+    # second gap outside the section
+    _save_parent(project, "rest", 100)
+    _save_section(project, 0, 100)
+    gaps = [
+        {
+            "after_file": "P01_a.txt",
+            "before_file": "P01_b.txt",
+            "gap_start": datetime(2024, 1, 1, 10, 2, 0),
+            "gap_end": datetime(2024, 1, 1, 10, 2, 30),
+            "gap_duration_s": 30.0,
+        },
+        {
+            "after_file": "P01_b.txt",
+            "before_file": "P01_c.txt",
+            "gap_start": datetime(2024, 1, 1, 11, 0, 0),
+            "gap_end": datetime(2024, 1, 1, 11, 1, 0),
+            "gap_duration_s": 60.0,
+        },
+    ]
+
+    export, _ = build_rrational_v2(
+        PID, ["rest"], project_path=project, recording_gaps=gaps
+    )
+
+    assert [g.gap_id for g in export.recording_gaps] == ["gap_1", "gap_2"]
+    assert export.recording_gaps[0].gap_start == "2024-01-01T10:02:00"
+    assert export.recording_gaps[0].after_file == "P01_a.txt"
+
+    section = export.sections["rest"]
+    assert [g.gap_id for g in section.gaps] == ["gap_1"]
+    assert section.quality.usable_duration_s == pytest.approx(270.0)
+    types = [seg.type for seg in section.analysis_segments]
+    assert types.count("data") == 2  # split at the gap
+    assert "gap" in types
+
+
+def test_gap_partially_overlapping_section_is_clipped(project):
+    from datetime import datetime
+
+    _save_parent(project, "rest", 100)
+    _save_section(project, 0, 100)
+    gaps = [
+        {
+            "after_file": "a",
+            "before_file": "b",
+            "gap_start": datetime(2024, 1, 1, 9, 59, 0),
+            "gap_end": datetime(2024, 1, 1, 10, 0, 20),
+            "gap_duration_s": 80.0,
+        }
+    ]
+    export, _ = build_rrational_v2(
+        PID, ["rest"], project_path=project, recording_gaps=gaps
+    )
+    assert export.sections["rest"].quality.usable_duration_s == pytest.approx(280.0)
+
+
+def test_no_gaps_by_default(project):
+    _save_parent(project, "rest", 100)
+    _save_section(project, 0, 100)
+    export, _ = build_rrational_v2(PID, ["rest"], project_path=project)
+    assert export.recording_gaps == []
+    assert export.sections["rest"].gaps == []
+
+
+def test_gaps_survive_save_load_roundtrip(project):
+    from datetime import datetime
+
+    from rrational.gui.rrational_export import load_rrational_v2, save_rrational_v2
+
+    _save_parent(project, "rest", 100)
+    _save_section(project, 0, 100)
+    gaps = [
+        {
+            "after_file": "a",
+            "before_file": "b",
+            "gap_start": datetime(2024, 1, 1, 10, 2, 0),
+            "gap_end": datetime(2024, 1, 1, 10, 2, 30),
+            "gap_duration_s": 30.0,
+        }
+    ]
+    export, _ = build_rrational_v2(
+        PID, ["rest"], project_path=project, recording_gaps=gaps
+    )
+    out = project / "out.rrational"
+    save_rrational_v2(export, out)
+    loaded = load_rrational_v2(out)
+    assert [g.gap_id for g in loaded.recording_gaps] == ["gap_1"]
+    assert [g.gap_id for g in loaded.sections["rest"].gaps] == ["gap_1"]

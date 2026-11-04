@@ -3566,6 +3566,9 @@ def render_rr_plot_fragment(participant_id: str):
                             raw_rr_fallback=raw_rr_fallback
                             if raw_rr_fallback
                             else None,
+                            recording_gaps=st.session_state.get(
+                                f"vns_recording_gaps_{participant_id}"
+                            ),
                         )
 
                     # Show warnings
@@ -7907,6 +7910,10 @@ def main():
                         st.session_state[
                             f"vns_multiple_files_{selected_participant}"
                         ] = vns_has_multiple_files
+                        # Keep file gaps for the v2 export (not persisted elsewhere)
+                        st.session_state[
+                            f"vns_recording_gaps_{selected_participant}"
+                        ] = gaps or []
 
                         if file_segments and len(file_segments) > 1:
                             with st.expander(
