@@ -448,10 +448,10 @@ on each segment. Segments are always time-based, not beat-based. This provides:
 
 | Type | Description | How Corrected |
 |------|-------------|---------------|
-| **Ectopic** | Premature/delayed beat (PVC, PAC) | Interpolated from neighbors |
+| **Ectopic** | Premature/delayed beat (PVC, PAC) | R-peak moved to the midpoint of its neighbours |
 | **Missed** | Undetected R-peak | Interval split |
 | **Extra** | False positive detection | Beat removed |
-| **Long/Short** | Physiologically implausible | Interpolated |
+| **Long/Short** | Physiologically implausible | R-peak moved to the midpoint of its neighbours |
 
 #### Threshold Method:
 - Simple: flags beats where `RR[i] / RR[i-1]` differs by > threshold %

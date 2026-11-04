@@ -103,3 +103,90 @@ def test_export_keeps_algo_when_no_manual_edits():
 def test_export_manual_added_only():
     # algo {5} + manual {8, 12} -> {5, 8, 12}
     assert _export_indices({8, 12}, set()) == [5, 8, 12]
+
+
+# ---------------------------------------------------------------------
+# Lipponen-Tarvainen: corrected series with its own (longer) time axis
+# ---------------------------------------------------------------------
+def test_slice_section_selects_corrected_beats_by_their_own_time():
+    from rrational.inspector.tabs.analysis_tab import _corrected_kwargs
+
+    ds = _one_section_dataset(12)
+    t = ds.data.t
+    # A missed beat split in two: one extra corrected beat at t[5] - 0.5 s.
+    corr_t = np.sort(np.append(t, t[5] - 0.5))
+    corr_v = np.full(len(corr_t), 400.0)
+    ds.corrected_v, ds.corrected_t, ds.use_corrected = corr_v, corr_t, True
+
+    rr = _slice_section(ds.data, "all", **_corrected_kwargs(ds))
+    assert len(rr) == 13 and np.all(rr == 400.0)
+
+
+def test_corrected_kwargs_are_empty_when_not_using_corrected():
+    from rrational.inspector.tabs.analysis_tab import _corrected_kwargs
+
+    ds = _one_section_dataset(12)
+    ds.corrected_v = ds.data.v.copy()
+    assert _corrected_kwargs(ds) == {"corrected_v": None, "corrected_t": None}
+
+
+def test_export_writes_lt_corrected_series_with_its_own_length():
+    """A missed beat split by L&T adds one NN interval to the section export;
+    timestamps come from the corrected time axis and the corrections point at
+    the raw beat that was split."""
+    ds = _one_section_dataset(20)
+    t, v = ds.data.t, ds.data.v.copy()
+    v[10] = 1600.0
+    ds.data.v[:] = v
+    corr_t = np.sort(np.append(t, t[10] - 0.8))
+    corr_v = np.full(len(corr_t), 800.0)
+    flags = np.zeros(len(corr_t), dtype=bool)
+    flags[[10, 11]] = True  # the two halves of the split beat
+    pre = PreprocessingResult(
+        indices=np.array([10], dtype=np.int64),
+        by_type={"missed": 1},
+        total=1,
+        rate=0.05,
+        corrected_v=corr_v,
+        corrected_t=corr_t,
+        corrected_flags=flags,
+        n_inserted=1,
+        grade="good",
+        recommendation="",
+    )
+    exp = build_v2_export(ds.data, participant_id="P01", preprocessing=pre)
+    nn = exp.sections["all"].nn_intervals
+    assert len(nn.data) == 21
+    assert [row[2] for row in nn.data].count(True) == 2
+    assert {c["raw_idx"] for c in nn.corrections} == {10}
+    assert all(c["original_rr_ms"] == 1600.0 for c in nn.corrections)
+    ts_ms = [row[0] for row in nn.data]
+    assert ts_ms[0] == 0 and all(a < b for a, b in zip(ts_ms, ts_ms[1:]))
+
+
+# ---------------------------------------------------------------------
+# Moderate (> 5 % artifacts) = time domain only, per section
+# ---------------------------------------------------------------------
+def test_section_artifact_rate_uses_detected_indices_in_section():
+    from rrational.inspector.tabs.analysis_tab import _section_artifact_rate
+
+    ds = _one_section_dataset(20)
+    assert _section_artifact_rate(ds, "all") is None  # no detection yet
+    ds.artifact_indices = np.array([2, 5, 30], dtype=np.int64)  # 30 is outside
+    assert _section_artifact_rate(ds, "all") == 2 / 20
+    assert _section_artifact_rate(ds, "missing") is None
+
+
+def test_compute_withholds_frequency_metrics_above_five_percent():
+    from rrational.inspector.tabs.analysis_tab import _compute_metrics_with_settings
+
+    rng = np.random.default_rng(0)
+    t = np.arange(900)
+    rr = 800 + 40 * np.sin(t / 5) + 24 * np.sin(t / 23 + 1) + rng.normal(0, 15, 900)
+    ok, _ = _compute_metrics_with_settings(rr, None, artifact_rate=0.03)
+    gated, _ = _compute_metrics_with_settings(rr, None, artifact_rate=0.08)
+    freq = [m for m in ok if m in ("LF", "HF", "LF_HF", "VLF", "TP")]
+    assert freq, "default metric set should contain frequency metrics"
+    assert all(np.isfinite(ok[m]) for m in freq)
+    assert all(gated[m] is None or not np.isfinite(gated[m]) for m in freq)
+    assert np.isfinite(gated["RMSSD"])

@@ -1982,3 +1982,158 @@ def _get_software_version() -> str:
         return __version__
     except Exception:
         return "unknown"
+
+
+def build_nn_data(
+    raw_rr,
+    corrected_rr,
+    corrected_timestamps=None,
+    raw_to_corrected=None,
+    corrected_flags=None,
+    raw_start: int = 0,
+    raw_end: int | None = None,
+    excluded_raw=frozenset(),
+    correction_method: str = "kubios",
+) -> dict[str, Any]:
+    """Build the ``nn_data`` dict for :func:`save_nn_intervals`.
+
+    Works for both correction styles:
+
+    - in-place methods (threshold; legacy results): ``corrected_rr`` has the
+      same length as ``raw_rr`` and ``raw_to_corrected`` is None (identity);
+      a beat counts as corrected if its value changed by more than 1 ms;
+    - Lipponen & Tarvainen: the corrected series can be longer (missed beats
+      split) or shorter (extra beats merged); ``raw_to_corrected`` maps raw
+      beat boundaries to corrected ones and ``corrected_flags`` marks changed
+      beats.
+
+    ``raw_start``/``raw_end`` select a RAW beat range (a section/scope); the
+    matching corrected beats are found through the map. ``excluded_raw``
+    are raw indices the user marked as "not an artifact"; corrected beats
+    belonging to them are not flagged. Timestamps are written relative to
+    the first beat of the range (ms); without timestamps the cumulative NN
+    sum is used.
+    """
+    from bisect import bisect_right
+
+    raw = list(raw_rr)
+    corr = list(corrected_rr)
+    n_raw = len(raw)
+    if raw_end is None:
+        raw_end = n_raw
+    if raw_to_corrected is None:
+        if len(corr) != n_raw:
+            raise ValueError(
+                "corrected_rr length differs from raw_rr but no raw_to_corrected "
+                "map was given; re-run artifact detection"
+            )
+        raw_to_corrected = list(range(n_raw + 1))
+        if corrected_flags is None:
+            corrected_flags = [abs(r - c) > 1 for r, c in zip(raw, corr)]
+    if corrected_flags is None or len(corrected_flags) != len(corr):
+        corrected_flags = [True] * len(corr)
+
+    s = min(max(int(raw_start), 0), n_raw)
+    e = min(max(int(raw_end), s), n_raw)
+    cs, ce = int(raw_to_corrected[s]), int(raw_to_corrected[e])
+
+    ts = list(corrected_timestamps) if corrected_timestamps is not None else []
+    ts = ts[cs:ce] if len(ts) == len(corr) else []
+    first_ts = ts[0] if ts else None
+
+    excluded = set(excluded_raw or ())
+    intervals, corrections = [], []
+    cum = 0.0
+    for k, j in enumerate(range(cs, ce)):
+        value = corr[j]
+        raw_idx = bisect_right(raw_to_corrected, j) - 1
+        raw_idx = min(max(raw_idx, 0), n_raw - 1)
+        flagged = bool(corrected_flags[j]) and raw_idx not in excluded
+
+        # Timestamps mark the END of each beat, so beat k lies
+        # rr[1] + ... + rr[k] after beat 0; the fallback mirrors that.
+        if k > 0:
+            cum += value
+        t = ts[k] if ts else None
+        if t is not None and first_ts is not None:
+            try:
+                ts_ms = int(round((t - first_ts).total_seconds() * 1000))
+            except AttributeError:
+                ts_ms = int(round(float(t) - float(first_ts)))
+        else:
+            ts_ms = int(round(cum))
+
+        intervals.append([ts_ms, round(float(value), 1), flagged])
+        if flagged:
+            corrections.append(
+                {
+                    "nn_idx": k,
+                    "raw_idx": raw_idx,
+                    "original_rr_ms": raw[raw_idx],
+                    "corrected_nn_ms": round(float(value), 1),
+                }
+            )
+
+    from datetime import datetime as _dt
+
+    return {
+        "correction_method": correction_method,
+        "corrected_at": _dt.now().isoformat(),
+        "original_beat_count": e - s,
+        "artifacts_removed": len({c["raw_idx"] for c in corrections}),
+        "intervals_corrected": len(corrections),
+        "final_nn_count": len(intervals),
+        "intervals": intervals,
+        "corrections": corrections,
+    }
+
+
+def nn_export_rows(
+    raw_rr,
+    corrected_rr,
+    corrected_timestamps=None,
+    raw_to_corrected=None,
+    corrected_flags=None,
+) -> list[dict[str, Any]]:
+    """One row per corrected (NN) beat with a reference to its raw beat.
+
+    Used by the NN CSV exports. After Lipponen-Tarvainen correction there is
+    no 1:1 pairing of raw and NN beats (missed beats split, extra beats
+    merged), so each NN row carries ``raw_idx`` / ``rr_ms`` of the raw beat
+    it lies in. Keys: nn_idx, raw_idx, timestamp, rr_ms, nn_ms,
+    was_corrected. Raises ValueError like :func:`build_nn_data` on a length
+    mismatch without a map.
+    """
+    from bisect import bisect_right
+
+    raw = list(raw_rr)
+    corr = list(corrected_rr)
+    if raw_to_corrected is None:
+        if len(corr) != len(raw):
+            raise ValueError(
+                "corrected_rr length differs from raw_rr but no raw_to_corrected "
+                "map was given; re-run artifact detection"
+            )
+        raw_to_corrected = list(range(len(raw) + 1))
+        if corrected_flags is None:
+            corrected_flags = [abs(r - c) > 1 for r, c in zip(raw, corr)]
+    if corrected_flags is None or len(corrected_flags) != len(corr):
+        corrected_flags = [True] * len(corr)
+    ts = list(corrected_timestamps) if corrected_timestamps is not None else []
+    if len(ts) != len(corr):
+        ts = [None] * len(corr)
+
+    rows = []
+    for j, value in enumerate(corr):
+        raw_idx = min(max(bisect_right(raw_to_corrected, j) - 1, 0), len(raw) - 1)
+        rows.append(
+            {
+                "nn_idx": j,
+                "raw_idx": raw_idx,
+                "timestamp": ts[j],
+                "rr_ms": raw[raw_idx],
+                "nn_ms": round(float(value), 1),
+                "was_corrected": bool(corrected_flags[j]),
+            }
+        )
+    return rows

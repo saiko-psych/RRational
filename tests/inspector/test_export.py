@@ -85,7 +85,10 @@ def test_build_v2_export_with_preprocessing_marks_corrected_beats():
     spike_indices = [10, 50, 100, 200]
     for i in spike_indices:
         data.v[i] = 2000.0  # very obviously not a heartbeat
-    prep = detect_artifacts(data.v)
+    # Pass the beat times like the preprocessing panel does: L&T correction
+    # can change the beat count, so the corrected series needs its own time
+    # axis to be placed into sections.
+    prep = detect_artifacts(data.v, data.t)
     if prep.total == 0:
         pytest.skip("Synthetic spikes weren't detected by NK2 in this run")
 

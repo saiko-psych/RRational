@@ -222,6 +222,15 @@ class Dataset:
     # raw ``data.v`` when ``use_corrected`` is True, so Compute matches what
     # the plot shows and what the .rrational export writes.
     corrected_v: "np.ndarray | None" = None
+    # Lipponen-Tarvainen correction can split/merge beats, so the corrected
+    # series has its own time axis (s, same basis as data.t) and per-beat
+    # change flags. None for legacy/in-place corrections that are 1:1 with
+    # data.v.
+    corrected_t: "np.ndarray | None" = None
+    corrected_flags: "np.ndarray | None" = None
+    # Raw positions (into data.v) of the beats flagged by the last artifact
+    # detection; used for per-section artifact rates (quality gate).
+    artifact_indices: "np.ndarray | None" = None
     use_corrected: bool = False
 
     @classmethod

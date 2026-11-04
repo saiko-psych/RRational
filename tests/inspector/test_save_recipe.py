@@ -219,7 +219,10 @@ def test_save_recipe_writes_runnable_script(main_window, tmp_path, monkeypatch):
     src = recipe.read_text(encoding="utf-8")
     ast.parse(src)
     assert "recipe_target.csv" in src
-    assert "clean_rr_intervals" in src
+    # Detection replays the GUI's algorithm (Kubios detection + Lipponen-
+    # Tarvainen correction). The old expectation (clean_rr_intervals) was
+    # already stale since Round 31 switched the replay away from it.
+    assert "correct_artifacts_lipponen" in src
 
 
 def test_save_recipe_with_empty_history_still_writes(main_window):

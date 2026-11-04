@@ -46,7 +46,7 @@ The underlying recordings contain identifiable participant data and are therefor
 - **RRational mode**: `freq_method="kubios"` — the Kubios-aligned pipeline added in v0.9.3.
 - **Kubios settings**: Defaults as documented in the Kubios batch-export CSV header.
 
-To make the two tools comparable, RRational's Kubios-aligned mode mirrors the Kubios processing chain. RRational's *default* (`freq_method="neurokit"`) instead follows NeuroKit2 conventions (notably normalized spectral power), which are not directly comparable to Kubios absolute-power output — see the [Kubios Compatibility Guide](../user-guide/kubios-compatibility.md).
+To make the two tools comparable, RRational's Kubios-aligned mode mirrors the Kubios processing chain. RRational's *default* (`freq_method="neurokit"`) instead uses NeuroKit2's PSD pipeline (100 Hz interpolation, NK2 Welch, no smoothness-priors detrending), also in absolute ms², but not tuned to match Kubios — see the [Kubios Compatibility Guide](../user-guide/kubios-compatibility.md). (Up to v0.9.3 this mode reported NK2's per-recording *normalized* PSD; those absolute band powers were not comparable between recordings.)
 
 | Processing step | Kubios HRV Scientific v4.3.0 | RRational (`freq_method="kubios"`) |
 |---|---|---|

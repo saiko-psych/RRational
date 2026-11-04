@@ -44,7 +44,7 @@ In the Analysis tab, the new **"Frequency-domain pipeline"** dropdown appears
 under each analysis mode (Group Analysis, Sequence Comparison).
 
 Choose:
-- **"NeuroKit2 default"** for new projects (normalized PSD, NK2 reference)
+- **"NeuroKit2"** for new projects (absolute ms², NK2 reference pipeline)
 - **"Kubios-compatible"** when you want absolute ms² and Kubios cross-comparison
 
 The setting persists in your session and applies to all subsequent analyses

@@ -81,9 +81,14 @@ No. Current consensus (Quigley et al., 2024; Laborde et al., 2017) rejects the L
 
 ### Why are my LF/HF values different from Kubios HRV?
 
-By default RRational uses the NeuroKit2 pipeline (normalized PSD, 100 Hz
-interpolation). This gives different absolute values than Kubios — but the
-*relative pattern* across conditions is preserved.
+By default RRational uses the NeuroKit2 pipeline (100 Hz interpolation, NK2
+Welch PSD, absolute power in ms²). It has no smoothness-priors detrending and a
+different Welch window than Kubios, so absolute values differ somewhat.
+
+(Before version 0.9.4 the NeuroKit2 mode reported NK2's *normalized* PSD,
+scaled per recording to its own maximum. Those LF/HF/VLF/TP values carried no
+amplitude information and must not be compared between recordings; LF/HF,
+LFn and HFn were unaffected.)
 
 To get Kubios-comparable absolute ms² values, switch the
 **Frequency-domain pipeline** dropdown in the Analysis tab to

@@ -90,7 +90,9 @@ A specific recording needs careful, beat-by-beat inspection.
 5. Press `A` and drag a range over any region where you want to leave
    a written note — the magenta annotation stripe is saved per-recording.
 6. Tick **Use corrected RR values** to switch the plot to the
-   interpolated series.
+   corrected NN series (Lipponen & Tarvainen: missed beats split, extra
+   beats merged, so it can have a few more or fewer beats than the raw
+   series).
 7. Click **Save as .rrational** to write a v2 export with the
    corrections baked in.
 

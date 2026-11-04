@@ -258,10 +258,14 @@ def fixpeaks_info_to_rr_indices(info: dict, n_rr: int) -> dict[str, list[int]]:
 
 
 def detect_artifacts_fixpeaks(rr_values: list[int], sampling_rate: int = 1000) -> dict:
-    """Detect and correct artifacts using NeuroKit2's Kubios algorithm.
+    """Detect artifacts with NeuroKit2's Kubios algorithm (legacy correction).
 
-    Two-phase approach: detection with iterative=False (comprehensive),
-    then in-place interpolation for correction (preserves array length).
+    Detection uses iterative=False (comprehensive). The ``corrected_rr`` it
+    returns is the LEGACY neighbour-average replacement (array length
+    preserved, but recording time is not: a missed beat loses half its
+    duration). The application uses :func:`correct_artifacts_lipponen`
+    (Lipponen & Tarvainen 2019) for correction; this function is kept for
+    detection-only callers and backward compatibility.
 
     Args:
         rr_values: RR interval values in ms.
@@ -447,3 +451,353 @@ def filter_exclusion_zones(
         "excluded_duration_ms": excluded_duration_ms,
         "zones_applied": len(parsed_zones),
     }
+
+
+# =============================================================================
+# Lipponen & Tarvainen (2019) correction with a raw -> corrected beat map
+# =============================================================================
+
+
+def map_raw_range(raw_to_corrected, raw_start: int, raw_end: int) -> tuple[int, int]:
+    """Translate a raw beat slice ``[raw_start, raw_end)`` to the corrected series.
+
+    ``raw_to_corrected`` is the boundary map returned by
+    :func:`correct_artifacts_lipponen` (length N_raw + 1). Use it as
+    ``corrected[cs:ce]`` wherever code previously sliced the corrected array
+    with raw beat positions (sections, segments, scopes).
+    """
+    m = raw_to_corrected
+    n = len(m) - 1
+    s = min(max(int(raw_start), 0), n)
+    e = min(max(int(raw_end), s), n)
+    return int(m[s]), int(m[e])
+
+
+def _epoch_like(values):
+    """Timestamps -> (floats, back-converter) or (None, None) if unusable."""
+    valid = [v for v in values if v is not None]
+    if not valid:
+        return None, None
+    ref = valid[0]
+    if isinstance(ref, (int, float, np.integer, np.floating)):
+        return (
+            np.array([np.nan if v is None else float(v) for v in values]),
+            lambda x: float(x),
+        )
+    import datetime as _dt
+
+    try:
+        secs = np.array(
+            [np.nan if v is None else (v - ref).total_seconds() for v in values]
+        )
+    except (TypeError, AttributeError):
+        return None, None
+    return secs, lambda x: ref + _dt.timedelta(seconds=float(x))
+
+
+def _corrected_timestamps(timestamps, raw_peaks, corrected_peaks):
+    """Timestamps for corrected beats.
+
+    A corrected beat that ends exactly where a raw beat ends keeps that raw
+    beat's original timestamp object; inserted or moved beats are linearly
+    interpolated between the raw beat end times.
+    """
+    if timestamps is None or len(timestamps) != len(raw_peaks) - 1:
+        return None
+    secs, back = _epoch_like(list(timestamps))
+    if secs is None:
+        return None
+    raw_end = raw_peaks[1:]
+    ok = ~np.isnan(secs)
+    if ok.sum() < 2:
+        return None
+    end_to_raw = {int(p): i for i, p in enumerate(raw_end)}
+    out = []
+    for p in corrected_peaks[1:]:
+        i = end_to_raw.get(int(p))
+        if i is not None and timestamps[i] is not None:
+            out.append(timestamps[i])
+        else:
+            out.append(back(np.interp(float(p), raw_end[ok], secs[ok])))
+    return out
+
+
+def _beat_correspondence(raw_peaks: np.ndarray, corrected_peaks: np.ndarray):
+    """Boundary map, changed-beat flags and inserted/removed counts.
+
+    Peaks present unchanged in both series are anchors. Between two
+    consecutive anchors the raw series has ``a`` peaks and the corrected
+    series ``c``. If ``a == c`` the peaks were only moved (ectopic /
+    long-short) and map one-to-one; otherwise beats were inserted (missed)
+    or removed (extra) and boundaries inside that block map by time. Using
+    time alone would misread a moved peak that crosses a raw beat boundary
+    as one removal plus one insertion.
+    """
+    _, ri, ci = np.intersect1d(raw_peaks, corrected_peaks, return_indices=True)
+    n_raw, n_cor = len(raw_peaks) - 1, len(corrected_peaks) - 1
+    peak_map = np.empty(len(raw_peaks), dtype=np.int64)
+    inserted = removed = 0
+
+    anchors = list(zip(ri.tolist(), ci.tolist()))
+    if not anchors or anchors[0] != (0, 0):
+        anchors.insert(0, (0, 0))
+    if anchors[-1] != (n_raw, n_cor):
+        anchors.append((n_raw, n_cor))
+
+    for (r0, c0), (r1, c1) in zip(anchors, anchors[1:]):
+        a, c = r1 - r0, c1 - c0
+        peak_map[r0] = c0
+        if a == c:
+            for k in range(1, a):
+                peak_map[r0 + k] = c0 + k
+        else:
+            inserted += max(0, c - a)
+            removed += max(0, a - c)
+            inner = corrected_peaks[c0 + 1 : c1]
+            for k in range(1, a):
+                pos = np.searchsorted(inner, raw_peaks[r0 + k], side="right")
+                peak_map[r0 + k] = c0 + int(pos)
+    peak_map[n_raw] = n_cor
+    peak_map = np.maximum.accumulate(peak_map)
+
+    anchor_set = {int(c): int(r) for r, c in anchors}
+    flags = []
+    for j in range(n_cor):
+        r_a, r_b = anchor_set.get(j), anchor_set.get(j + 1)
+        unchanged = (
+            r_a is not None
+            and r_b is not None
+            and r_b - r_a == 1
+            and raw_peaks[r_a] == corrected_peaks[j]
+            and raw_peaks[r_b] == corrected_peaks[j + 1]
+        )
+        flags.append(not unchanged)
+    return peak_map.tolist(), flags, inserted, removed
+
+
+def correct_artifacts_lipponen(
+    rr_values, timestamps=None, sampling_rate: int = 1000
+) -> dict:
+    """Detect and correct artifacts per Lipponen & Tarvainen (2019).
+
+    Detection: NK2 Kubios detector, ``iterative=False`` (comprehensive; same
+    indices as :func:`detect_artifacts_fixpeaks`). Correction: NK2
+    ``signal_fixpeaks(method="Kubios", iterative=True)``, which works in
+    PEAK space: extra beats are removed (two short intervals merge), missed
+    beats get a peak inserted at the midpoint (a long interval splits), and
+    ectopic / long-short beats have their peak moved to the midpoint of its
+    neighbours. Recording time is preserved; the number of intervals can
+    change, so the corrected series comes with its own timestamps and a map
+    back to raw beat positions.
+
+    Known limitation (NK2 0.2.x): adjacent misaligned peaks are each moved
+    using the other's uncorrected position, so an ectopic pair is improved
+    but not fully equalised.
+
+    Returns dict:
+        artifact_indices / indices_by_type: RR indices in RAW space
+            (for overlays, counts and quality grades).
+        artifacts: per-type counts (NK2 raw list lengths).
+        corrected_rr: corrected NN intervals (ms), own length.
+        corrected_timestamps: per corrected beat, or None.
+        raw_to_corrected: boundary map, length N_raw + 1; slice the corrected
+            series for a raw range with :func:`map_raw_range`.
+        corrected_flags: per corrected beat, True if it is not an unchanged
+            raw beat.
+        n_inserted / n_removed: beats added (missed) / removed (extra).
+        correction_applied: bool.
+    """
+    rr_list = list(rr_values)
+    n = len(rr_list)
+    passthrough = {
+        "artifact_indices": [],
+        "indices_by_type": {k: [] for k in FIXPEAKS_ARTIFACT_TYPES},
+        "artifacts": {k: 0 for k in FIXPEAKS_ARTIFACT_TYPES},
+        "total_artifacts": 0,
+        "artifact_ratio": 0.0,
+        "corrected_rr": rr_list,
+        "corrected_timestamps": list(timestamps) if timestamps is not None else None,
+        "raw_to_corrected": list(range(n + 1)),
+        "corrected_flags": [False] * n,
+        "n_inserted": 0,
+        "n_removed": 0,
+        "correction_applied": False,
+    }
+    nk, available = _get_neurokit()
+    if not available or n < 10:
+        return passthrough
+
+    raw_peaks = rr_to_peak_indices(rr_list)
+    info, _ = nk.signal_fixpeaks(
+        raw_peaks, sampling_rate=sampling_rate, iterative=False,
+        method="Kubios", show=False,
+    )
+    by_type = fixpeaks_info_to_rr_indices(info, n)
+    artifact_indices = sorted({i for v in by_type.values() for i in v})
+    counts = {k: len(_fixpeaks_index_list(info.get(k, []))) for k in FIXPEAKS_ARTIFACT_TYPES}
+    # Same definitions as detect_artifacts_fixpeaks (sum of NK2 type counts).
+    total = sum(counts.values())
+    ratio = total / n if n else 0.0
+    if not artifact_indices:
+        return {
+            **passthrough,
+            "artifacts": counts,
+            "total_artifacts": total,
+            "artifact_ratio": ratio,
+        }
+
+    _, corrected_peaks = nk.signal_fixpeaks(
+        raw_peaks, sampling_rate=sampling_rate, iterative=True,
+        method="Kubios", show=False,
+    )
+    corrected_peaks = np.asarray(corrected_peaks, dtype=np.int64)
+    corrected_rr = np.diff(corrected_peaks).astype(float).tolist()
+    bmap, flags, inserted, removed = _beat_correspondence(raw_peaks, corrected_peaks)
+
+    return {
+        "artifact_indices": artifact_indices,
+        "indices_by_type": by_type,
+        "artifacts": counts,
+        "total_artifacts": total,
+        "artifact_ratio": ratio,
+        "corrected_rr": corrected_rr,
+        "corrected_timestamps": _corrected_timestamps(
+            timestamps, raw_peaks, corrected_peaks
+        ),
+        "raw_to_corrected": bmap,
+        "corrected_flags": flags,
+        "n_inserted": inserted,
+        "n_removed": removed,
+        "correction_applied": True,
+    }
+
+
+def stitch_corrections(rr_values, timestamps, pieces) -> dict:
+    """Combine per-range corrections into one corrected series.
+
+    ``pieces`` is an iterable of ``(raw_start, raw_end, result)`` where
+    ``result`` holds ``corrected_rr`` for ``rr_values[raw_start:raw_end]``
+    and optionally ``corrected_timestamps`` and a local ``raw_to_corrected``
+    map (absent = in-place correction, identity). Raw beats not covered by
+    any piece pass through unchanged. Returns ``corrected_rr``,
+    ``corrected_timestamps`` (None if ``timestamps`` is None),
+    ``raw_to_corrected`` (global, length N_raw + 1) and ``corrected_flags``.
+    """
+    rr_list = list(rr_values)
+    n = len(rr_list)
+    ts_list = list(timestamps) if timestamps is not None else None
+    corrected: list = []
+    corrected_ts: list | None = [] if ts_list is not None else None
+    flags: list = []
+    bmap = [0] * (n + 1)
+
+    def _passthrough(s, e):
+        for i in range(s, e):
+            bmap[i] = len(corrected)
+            corrected.append(rr_list[i])
+            flags.append(False)
+            if corrected_ts is not None:
+                corrected_ts.append(ts_list[i])
+
+    pos = 0
+    for s, e, res in sorted(pieces, key=lambda p: p[0]):
+        s, e = max(int(s), pos), min(int(e), n)
+        if e <= s:
+            continue
+        _passthrough(pos, s)
+        piece_rr = list(res.get("corrected_rr") or rr_list[s:e])
+        local = res.get("raw_to_corrected") or list(range(len(piece_rr) + 1))
+        if len(local) != (e - s) + 1:  # inconsistent piece: keep raw beats
+            _passthrough(s, e)
+            pos = e
+            continue
+        offset = len(corrected)
+        for k in range(e - s):
+            bmap[s + k] = offset + int(local[k])
+        corrected.extend(piece_rr)
+        piece_flags = res.get("corrected_flags")
+        if piece_flags is None or len(piece_flags) != len(piece_rr):
+            if len(piece_rr) == e - s:
+                piece_flags = [ri != ci for ri, ci in zip(rr_list[s:e], piece_rr)]
+            else:
+                piece_flags = [True] * len(piece_rr)
+        flags.extend(piece_flags)
+        if corrected_ts is not None:
+            piece_ts = res.get("corrected_timestamps")
+            if piece_ts is None or len(piece_ts) != len(piece_rr):
+                piece_ts = ts_list[s:e] if len(piece_rr) == e - s else [None] * len(piece_rr)
+            corrected_ts.extend(piece_ts)
+        pos = e
+    _passthrough(pos, n)
+    bmap[n] = len(corrected)
+    return {
+        "corrected_rr": corrected,
+        "corrected_timestamps": corrected_ts,
+        "raw_to_corrected": bmap,
+        "corrected_flags": flags,
+    }
+
+
+def correct_artifacts_lipponen_segmented(rr_values, timestamps, bounds) -> dict:
+    """Apply :func:`correct_artifacts_lipponen` per segment and stitch.
+
+    ``bounds`` are raw ``(start, end)`` beat ranges (e.g. 5-min detection
+    windows). Each segment is detected and corrected independently; raw
+    beats outside every segment (or in segments < 10 beats) pass through.
+    Returns the same keys as :func:`correct_artifacts_lipponen` with a
+    GLOBAL ``raw_to_corrected`` map and raw-space artifact indices.
+    """
+    rr_list = list(rr_values)
+    n = len(rr_list)
+    ts_list = list(timestamps) if timestamps is not None else None
+    by_type = {k: set() for k in FIXPEAKS_ARTIFACT_TYPES}
+    counts = {k: 0 for k in FIXPEAKS_ARTIFACT_TYPES}
+    inserted = removed = 0
+    pieces = []
+    pos = 0
+    for s, e in sorted((max(0, int(a)), min(n, int(b))) for a, b in bounds):
+        s = max(s, pos)
+        if e <= s:
+            continue
+        seg_ts = ts_list[s:e] if ts_list is not None else None
+        res = correct_artifacts_lipponen(rr_list[s:e], timestamps=seg_ts)
+        pieces.append((s, e, res))
+        for key in FIXPEAKS_ARTIFACT_TYPES:
+            by_type[key].update(s + i for i in res["indices_by_type"][key])
+            counts[key] += res["artifacts"][key]
+        inserted += res["n_inserted"]
+        removed += res["n_removed"]
+        pos = e
+
+    stitched = stitch_corrections(rr_list, ts_list, pieces)
+    artifact_indices = sorted({i for v in by_type.values() for i in v})
+    return {
+        "artifact_indices": artifact_indices,
+        "indices_by_type": {k: sorted(v) for k, v in by_type.items()},
+        "artifacts": counts,
+        "total_artifacts": sum(counts.values()),
+        "artifact_ratio": sum(counts.values()) / n if n else 0.0,
+        **stitched,
+        "n_inserted": inserted,
+        "n_removed": removed,
+        "correction_applied": bool(artifact_indices),
+    }
+
+
+def nn_positions_of_raw_beats(raw_to_corrected, raw_indices) -> list[int]:
+    """Corrected-series position of each raw beat (one per raw beat).
+
+    For plot markers on the NN series: raw beat i maps to the first
+    corrected beat ending inside it (``raw_to_corrected[i]``). A raw beat
+    merged into the next one (extra beat, no corrected beat of its own)
+    maps to the beat it was merged into. Duplicates collapse.
+    """
+    m = list(raw_to_corrected)
+    n_cor = m[-1] if m else 0
+    out = set()
+    for i in raw_indices:
+        if 0 <= i < len(m) - 1:
+            j = int(m[i])
+            if j < n_cor:
+                out.add(j)
+    return sorted(out)

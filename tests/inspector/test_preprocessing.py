@@ -55,12 +55,16 @@ def test_detect_artifacts_on_real_world_data_returns_finite_rate():
 
     p = _exists_or_skip("data/demo/empatica/IBI_stress_predict_S10.csv")
     data = load_raw_rr(p)
-    result = detect_artifacts(data.v)
+    result = detect_artifacts(data.v, data.t)
     # Rate must be in [0, 1]
     assert 0.0 <= result.rate <= 1.0
-    # Corrected array preserves length
-    assert result.corrected_v is not None
-    assert len(result.corrected_v) == len(data.v)
+    # L&T correction can split/merge beats: the corrected series has its own
+    # time axis, aligned 1:1 with its values, with the same recording span.
+    assert result.corrected_v is not None and result.corrected_t is not None
+    assert len(result.corrected_t) == len(result.corrected_v)
+    assert np.isfinite(result.corrected_v).sum() == np.isfinite(data.v).sum() + (
+        result.n_inserted - result.n_removed
+    )
     # If artifacts were found, indices must be valid array positions
     assert result.indices.dtype.kind in ("i", "u")
     if result.total > 0:
@@ -285,3 +289,80 @@ def test_export_clicked_in_test_mode_writes_real_file(
     # The CSV has at least one section (empatica generic_rr parser
     # creates a single-section dataset)
     assert len(loaded.sections) >= 1
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "rate", [0.0, 0.0199, 0.02, 0.0201, 0.049, 0.05, 0.051, 0.0999, 0.10, 0.1001, 0.5]
+)
+def test_inspector_grade_matches_shared_quality_grade(rate):
+    """Regression: the Inspector kept its own threshold table with strict
+    ``<`` while gui/segmentation.quality_grade_from_rate (used by the
+    Streamlit app, should_exclude_segment and the .rrational export) uses
+    ``<=``. At exactly 2/5/10 % the two GUIs graded the same recording
+    differently, e.g. 10 % = "poor" in the Inspector but "moderate" (and
+    not excluded) everywhere else. Documented spec (docs/science/
+    guidelines.md): Poor = > 10 %."""
+    from rrational.gui.segmentation import quality_grade_from_rate
+    from rrational.inspector.preprocessing import _grade_for_rate
+
+    assert _grade_for_rate(rate)[0] == quality_grade_from_rate(rate)
+
+
+def test_inspector_ten_percent_is_moderate_not_poor():
+    from rrational.inspector.preprocessing import _grade_for_rate, _grade_letter_for_rate
+
+    grade, msg = _grade_for_rate(0.10)
+    assert grade == "moderate" and "Time-domain only" in msg
+    assert _grade_letter_for_rate(0.10) == "C"
+
+
+
+def _realistic(n=600, seed=0):
+    rng = np.random.default_rng(seed)
+    t = np.arange(n)
+    rr = 800 + 40 * np.sin(t / 5) + 24 * np.sin(t / 23 + 1) + rng.normal(0, 15, n)
+    return np.round(rr).astype(float)
+
+
+def _times(v):
+    """Beat end times in seconds; NaN gaps keep the clock running by 5 s."""
+    t, out = 0.0, []
+    for x in v:
+        t += 5.0 if np.isnan(x) else x / 1000.0
+        out.append(t)
+    return np.array(out)
+
+
+def test_detect_artifacts_lt_split_and_gap_markers_preserved():
+    """Missed beat -> split (+1 beat); NaN gap markers stay at their time and
+    separate the corrected series exactly where they separated the raw one."""
+    from rrational.inspector.preprocessing import detect_artifacts
+
+    v = _realistic()
+    v[150] = 2 * v[150]  # missed beat
+    v = np.insert(v, 400, np.nan)  # recording gap
+    t = _times(v)
+    res = detect_artifacts(v, t)
+
+    assert res.n_inserted == 1
+    assert len(res.corrected_v) == len(v) + 1 == len(res.corrected_t)
+    nan_at = np.nonzero(np.isnan(res.corrected_v))[0]
+    assert len(nan_at) == 1 and res.corrected_t[nan_at[0]] == t[400]
+    # Time axis strictly increasing; raw-space artifact index hits the beat.
+    assert np.all(np.diff(res.corrected_t) > 0)
+    assert 150 in set(res.indices.tolist())
+    # Duration of the finite parts is preserved.
+    assert np.nansum(res.corrected_v) == pytest.approx(np.nansum(v), abs=3)
+
+
+def test_detect_artifacts_without_times_keeps_gap_positions():
+    from rrational.inspector.preprocessing import detect_artifacts
+
+    v = _realistic()
+    v = np.insert(v, 300, np.nan)
+    res = detect_artifacts(v)
+    assert res.corrected_t is None
+    assert np.isnan(res.corrected_v).sum() == 1

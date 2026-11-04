@@ -60,9 +60,10 @@ class TestFrequencyMethod:
         assert FREQ_METHOD_NEUROKIT in VALID_FREQ_METHODS
         assert FREQ_METHOD_KUBIOS in VALID_FREQ_METHODS
 
-    def test_neurokit_kwargs_empty(self):
-        # Default NK2 path passes no extra kwargs
-        assert _hrv_frequency_kwargs(FREQ_METHOD_NEUROKIT) == {}
+    def test_neurokit_kwargs_request_absolute_power(self):
+        # NK2's default normalize=True scales each PSD by its own maximum
+        # (no amplitude information); band powers must be absolute ms^2.
+        assert _hrv_frequency_kwargs(FREQ_METHOD_NEUROKIT) == {"normalize": False}
 
     def test_kubios_kwargs_contain_kubios_params(self):
         kw = _hrv_frequency_kwargs(FREQ_METHOD_KUBIOS)
@@ -90,9 +91,12 @@ class TestFrequencyMethod:
         )
         assert KUBIOS_BAND_VLF == (0.0033, 0.04)
 
-    def test_kubios_mode_produces_absolute_ms2(self):
-        """Kubios mode returns LF/HF as absolute ms² (typically > 1, often 100s)
-        while NK2 default normalize=True returns small normalized values."""
+    def test_both_modes_produce_absolute_ms2_of_same_magnitude(self):
+        """Both freq_methods return absolute ms^2. They differ only in the
+        PSD pipeline (interpolation rate, detrending, Welch window), so on
+        realistic data they agree within ~25 % (observed <= 16 %). With NK2's
+        former normalize=True default the NeuroKit values were ~1e5 times
+        smaller and carried no amplitude information."""
         rr = _make_realistic_rr(400, mean_ms=800.0, sd_ms=50.0)
         freq_metrics = ["LF", "HF", "LF_HF"]
         m_nk, _, _ = calculate_hrv_metrics(
@@ -107,13 +111,10 @@ class TestFrequencyMethod:
             selected_metrics=freq_metrics,
             freq_method=FREQ_METHOD_KUBIOS,
         )
-        # Both should produce non-None values
-        assert m_nk["LF"] is not None and m_k["LF"] is not None
-        # Kubios absolute ms² should be substantially larger than normalized NK2
-        assert m_k["LF"] > m_nk["LF"], (
-            f"Kubios LF={m_k['LF']} should exceed normalized NK2 LF={m_nk['LF']}"
-        )
-        assert m_k["HF"] > m_nk["HF"]
+        for m in ("LF", "HF"):
+            assert m_nk[m] > 10 and m_k[m] > 10, (m, m_nk[m], m_k[m])
+            assert m_nk[m] == pytest.approx(m_k[m], rel=0.25), m
+        assert m_nk["LF_HF"] == pytest.approx(m_k["LF_HF"], rel=0.25)
 
     def test_freq_method_does_not_affect_time_domain(self):
         rr = _make_realistic_rr(400)

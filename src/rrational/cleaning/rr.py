@@ -13,19 +13,28 @@ from rrational.io.hrv_logger import RRInterval
 class CleaningConfig:
     """Thresholds used for RR filtering.
 
-    Note: sudden_change_pct=1.0 is lenient (100% threshold) — it only
-    catches beats that more than DOUBLE or HALVE the previous RR. True
-    ectopic / artefact bursts in the 30-90% range pass through. Use
-    NeuroKit2's artifact correction (DetectArtifacts action) for proper
-    physiological screening.
+    The sudden-change filter is DISABLED at 100 % or more (the default,
+    1.0), as the GUI slider help states: large jumps such as missed beats
+    are left to artifact detection, where Lipponen-Tarvainen correction
+    splits/merges them and they count toward the artifact rate. Only the
+    physiological range (rr_min_ms / rr_max_ms) is enforced at import.
+
+    Below 100 % the rule is ``|rr - prev| / prev > sudden_change_pct`` and
+    the beat is removed. It is asymmetric: for thresholds >= ~0.5 it can
+    never fire for a SHORTER beat, so a premature beat is kept and the
+    normal beat after it is removed instead (pinned in
+    tests/cleaning/test_rr.py).
     """
 
     rr_min_ms: int = 200
     rr_max_ms: int = 2000
-    # 1.0 = lenient (>100% relative change). See class docstring; the
-    # earlier comment "Disabled by default" was inaccurate — a 100%
-    # threshold still flags 2x / 0.5x jumps. Round 28 documentation fix.
+    # >= 1.0 (100 %) disables the filter; see class docstring.
     sudden_change_pct: float = 1.0
+
+
+def _sudden_change_enabled(cfg: CleaningConfig) -> bool:
+    """The sudden-change filter runs only for thresholds below 100 %."""
+    return cfg.sudden_change_pct is not None and cfg.sudden_change_pct < 1.0
 
 
 @dataclass(slots=True)
@@ -78,7 +87,7 @@ def clean_rr_intervals(
             reasons["out_of_range"] += 1
             continue
 
-        if previous_rr is not None and previous_rr > 0:
+        if _sudden_change_enabled(cfg) and previous_rr is not None and previous_rr > 0:
             delta = abs(rr - previous_rr) / previous_rr
             if delta > cfg.sudden_change_pct:
                 reasons["sudden_change"] += 1
@@ -136,7 +145,7 @@ def clean_rr_intervals_with_flags(
             flag_reason = "out_of_range"
             reasons["out_of_range"] += 1
         # Check sudden change (only if not already flagged and have previous)
-        elif previous_rr is not None and previous_rr > 0:
+        elif _sudden_change_enabled(cfg) and previous_rr is not None and previous_rr > 0:
             delta = abs(rr - previous_rr) / previous_rr
             if delta > cfg.sudden_change_pct:
                 flag_reason = "sudden_change"

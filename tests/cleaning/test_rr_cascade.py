@@ -19,6 +19,10 @@ from rrational.cleaning.rr import (
 )
 from rrational.io.hrv_logger import RRInterval
 
+# These tests exercise the sudden-change filter's mechanics, so they enable
+# it explicitly (the default 100 % now means disabled).
+_CFG = CleaningConfig(sudden_change_pct=0.95)
+
 
 def _mk(rr_values):
     """Build an RRInterval series with monotonically summed elapsed_ms."""
@@ -41,7 +45,7 @@ def test_single_jump_does_not_cascade_drop_following_beats():
     """
     samples = _mk([400, 400, 1600, 1000, 1000, 1000])
 
-    cleaned, stats = clean_rr_intervals(samples)  # default CleaningConfig
+    cleaned, stats = clean_rr_intervals(samples, _CFG)
 
     # Only the single 1600ms jump is removed; the three trailing 1000ms beats
     # survive. Under the buggy behaviour cleaned would be just [400, 400].
@@ -61,8 +65,8 @@ def test_cascade_fix_matches_with_flags_variant():
     """
     samples = _mk([400, 400, 1600, 1000, 1000, 1000])
 
-    cleaned, stats = clean_rr_intervals(samples)
-    flagged, fstats = clean_rr_intervals_with_flags(samples)
+    cleaned, stats = clean_rr_intervals(samples, _CFG)
+    flagged, fstats = clean_rr_intervals_with_flags(samples, _CFG)
 
     # with-flags keeps every interval but flags exactly the one jump.
     assert len(flagged) == len(samples)
@@ -85,8 +89,8 @@ def test_task_series_retains_normal_beats_after_jump():
     """
     samples = _mk([800, 800, 1700, 800, 800, 800])
 
-    cleaned, stats = clean_rr_intervals(samples)
-    flagged, fstats = clean_rr_intervals_with_flags(samples)
+    cleaned, stats = clean_rr_intervals(samples, _CFG)
+    flagged, fstats = clean_rr_intervals_with_flags(samples, _CFG)
 
     assert [c.rr_ms for c in cleaned] == [800, 800, 800, 800, 800]
     assert stats.retained_samples == 5
