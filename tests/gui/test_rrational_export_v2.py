@@ -15,7 +15,11 @@ PID = "P01"
 def _validation(start_beat: int, end_beat: int, start_ts: str, end_ts: str) -> dict:
     return {
         "is_valid": True,
-        "start_event": {"canonical": "s", "timestamp": start_ts, "beat_idx": start_beat},
+        "start_event": {
+            "canonical": "s",
+            "timestamp": start_ts,
+            "beat_idx": start_beat,
+        },
         "end_event": {"canonical": "e", "timestamp": end_ts, "beat_idx": end_beat},
         "duration_s": 300.0,
         "beat_count": end_beat - start_beat,
