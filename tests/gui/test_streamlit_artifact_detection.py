@@ -97,3 +97,33 @@ def test_segmented_matches_core_detector_per_segment(detect):
     assert {100, 700} <= set(res["artifact_indices"])
     assert res["corrected_rr"][101] == rr[101]
     assert res["corrected_rr"][701] == rr[701]
+
+
+def test_segment_artifact_count_is_distinct_flagged_beats(detect):
+    """Regression: the per-segment count used ``range(len(indices))`` per
+    artifact type, i.e. the length of the LONGEST type list instead of the
+    number of distinct flagged beats. Here 64 beats (10.7 %) are flagged
+    (48 longshort + 16 missed) but the segment reported 48 (8.0 %), graded
+    "moderate" and stayed included, although > 10 % must be excluded
+    (Quigley 2024, docs/science/validation.md)."""
+    rng = np.random.default_rng(1)
+    rr = np.round(800 + rng.normal(0, 15, 600)).astype(int).tolist()
+    for k in range(20, 580, 12):
+        rr[k] = 450  # premature beats
+    for k in range(26, 580, 36):
+        rr[k] = 1550  # missed beats
+
+    res = _run(detect, rr, "lipponen2019_segmented", window_s=600.0)
+    flagged = res["artifact_indices"]
+    assert res["segments"], "expected at least one segment"
+    for seg in res["segments"]:
+        distinct = [i for i in flagged if seg.beat_start <= i < seg.beat_end]
+        assert seg.artifact_count == len(distinct)
+        assert seg.artifact_pct == pytest.approx(len(distinct) / seg.n_beats * 100, abs=0.01)
+        stats = res["segment_stats"][seg.idx]
+        assert stats["n_artifacts"] == len(distinct)
+
+    (seg,) = res["segments"]
+    assert seg.artifact_pct > 10
+    assert seg.quality_grade == "poor"
+    assert seg.included is False

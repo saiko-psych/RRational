@@ -718,7 +718,10 @@ def cached_artifact_detection(
                         by_type[artifact_type] += len(global_indices)
                         indices_by_type[artifact_type].update(global_indices)
                         artifact_indices_set.update(global_indices)
-                        segment_artifact_indices.update(range(len(indices)))
+                        # Distinct flagged beats in this segment (a beat can
+                        # belong to several types); drives artifact_pct,
+                        # the quality grade and the >10% exclusion.
+                        segment_artifact_indices.update(indices)
 
                     segment_artifacts = len(segment_artifact_indices)
 
