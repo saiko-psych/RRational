@@ -1241,6 +1241,7 @@ def build_rrational_v2(
         Tuple of (RRationalExportV2, list of warnings/errors)
     """
     from datetime import datetime as dt
+    from rrational import __version__ as rrational_version
     from rrational.gui.persistence import (
         load_participant_events,
         load_artifact_corrections,
@@ -1274,7 +1275,7 @@ def build_rrational_v2(
         created_at=now,
         last_modified=now,
         source_app="Unknown",  # Will be updated if we can determine it
-        software_versions={"rrational": "0.7.7"},  # TODO: Get from package
+        software_versions={"rrational": rrational_version},
     )
 
     # Get exclusion zones from events data
