@@ -6,6 +6,11 @@ import streamlit as st
 from pathlib import Path
 import time
 
+from rrational.cleaning.quality import (
+    FIXPEAKS_ARTIFACT_TYPES,
+    fixpeaks_info_to_rr_indices,
+    rr_to_peak_indices,
+)
 from rrational.cleaning.rr import CleaningConfig
 from rrational.io import DEFAULT_ID_PATTERN
 from rrational.gui.persistence import (
@@ -511,8 +516,7 @@ def generate_artifact_diagnostic_plots(rr_values: list[float]) -> bytes | None:
     try:
         nk = get_neurokit()
         rr_ms = np.array(rr_values, dtype=float)
-        peak_indices = np.cumsum(rr_ms).astype(int)
-        peak_indices = np.insert(peak_indices, 0, 0)
+        peak_indices = rr_to_peak_indices(rr_ms)
 
         was_interactive = plt.isinteractive()
         plt.ioff()
@@ -692,8 +696,7 @@ def cached_artifact_detection(
                     continue
 
                 # Create peak indices for this segment
-                peak_indices = np.cumsum(segment_rr).astype(int)
-                peak_indices = np.insert(peak_indices, 0, 0)
+                peak_indices = rr_to_peak_indices(segment_rr)
 
                 segment_artifacts = 0
                 try:
@@ -705,24 +708,20 @@ def cached_artifact_detection(
                         show=False,
                     )
 
-                    # Collect artifacts and adjust indices to global position
+                    # Map NK2 peaks-space indices to segment RR positions
+                    # (shared k -> k-1 mapping), then to global positions.
                     segment_artifact_indices = set()
-                    for artifact_type in ["ectopic", "missed", "extra", "longshort"]:
-                        indices = info.get(artifact_type, [])
-                        if isinstance(indices, np.ndarray):
-                            indices = indices.tolist()
-                        elif not isinstance(indices, list):
-                            indices = []
-
-                        global_indices = [
-                            i + seg.beat_start
-                            for i in indices
-                            if 0 <= i < len(segment_rr)
-                        ]
+                    local_by_type = fixpeaks_info_to_rr_indices(info, len(segment_rr))
+                    for artifact_type in FIXPEAKS_ARTIFACT_TYPES:
+                        indices = local_by_type[artifact_type]
+                        global_indices = [i + seg.beat_start for i in indices]
                         by_type[artifact_type] += len(global_indices)
                         indices_by_type[artifact_type].update(global_indices)
                         artifact_indices_set.update(global_indices)
-                        segment_artifact_indices.update(range(len(indices)))
+                        # Distinct flagged beats in this segment (a beat can
+                        # belong to several types); drives artifact_pct,
+                        # the quality grade and the >10% exclusion.
+                        segment_artifact_indices.update(indices)
 
                     segment_artifacts = len(segment_artifact_indices)
 
@@ -799,8 +798,7 @@ def cached_artifact_detection(
 
             nk = get_neurokit()
             rr_array = np.array(rr_list, dtype=float)
-            peak_indices = np.cumsum(rr_array).astype(int)
-            peak_indices = np.insert(peak_indices, 0, 0)
+            peak_indices = rr_to_peak_indices(rr_array)
 
             # TWO-PHASE APPROACH:
             # Phase 1: DETECTION with iterative=FALSE and show=TRUE
@@ -862,14 +860,12 @@ def cached_artifact_detection(
             by_type = {}
             indices_by_type = {}
 
-            for artifact_type in ["ectopic", "missed", "extra", "longshort"]:
-                indices = info.get(artifact_type, [])
-                if isinstance(indices, np.ndarray):
-                    indices = indices.tolist()
-                elif not isinstance(indices, list):
-                    indices = []
+            # NK2 indices are peaks-space; map to RR positions (k -> k-1).
+            rr_by_type = fixpeaks_info_to_rr_indices(info, len(rr_list))
+            for artifact_type in FIXPEAKS_ARTIFACT_TYPES:
+                indices = rr_by_type[artifact_type]
                 by_type[artifact_type] = len(indices)
-                indices_by_type[artifact_type] = sorted(indices)
+                indices_by_type[artifact_type] = indices
                 artifact_indices_set.update(indices)
 
             artifact_indices = sorted(artifact_indices_set)
