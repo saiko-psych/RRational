@@ -56,7 +56,9 @@ from rrational.analysis.hrv_compute import (  # noqa: E402
     results_to_wide_df as _results_to_wide_df,
     calculate_group_stats as _calculate_group_stats,
     FREQ_GATE_ARTIFACT_RATE,
+    FREQ_METHOD_KUBIOS,
     FREQ_METHOD_NEUROKIT,
+    _compute_kubios_frequency_powers,
     _hrv_frequency_kwargs,
 )
 
@@ -99,12 +101,32 @@ def _hrv_freq(peaks, artifact_rate: float | None = None):
     frequency metrics come back as NaN with the same columns.
     """
     nk = get_neurokit()
-    result = nk.hrv_frequency(
-        peaks,
-        sampling_rate=1000,
-        show=False,
-        **_hrv_frequency_kwargs(_current_freq_method()),
-    )
+    if _current_freq_method() == FREQ_METHOD_KUBIOS:
+        # Same validated Kubios-aligned pipeline as group/sequence analysis
+        # (smoothness-priors detrending, 4 Hz, 180 s Welch), returned in
+        # NK2's column format so all callers keep working.
+        import numpy as np
+        import pandas as pd
+
+        powers = _compute_kubios_frequency_powers(np.diff(np.asarray(peaks)).tolist())
+        result = pd.DataFrame(
+            {
+                "HRV_VLF": [powers["VLF"]],
+                "HRV_LF": [powers["LF"]],
+                "HRV_HF": [powers["HF"]],
+                "HRV_LFHF": [powers["LF_HF"]],
+                "HRV_LFn": [powers["LFn"]],
+                "HRV_HFn": [powers["HFn"]],
+                "HRV_TP": [powers["TP"]],
+            }
+        )
+    else:
+        result = nk.hrv_frequency(
+            peaks,
+            sampling_rate=1000,
+            show=False,
+            **_hrv_frequency_kwargs(_current_freq_method()),
+        )
     if artifact_rate is not None and artifact_rate > FREQ_GATE_ARTIFACT_RATE:
         result = result.copy()
         result.loc[:, :] = float("nan")
