@@ -118,3 +118,9 @@ tests/workflow_verification.py
 tests/.runtime_log.json
 tests/.runtime_log.*.json
 tests/runtime_baseline.json
+
+# pytest-cov output
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

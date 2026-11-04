@@ -63,6 +63,34 @@ def fresh_argv(monkeypatch):
 
 
 @pytest.fixture
+def sandboxed_home(tmp_path, monkeypatch):
+    """Isolate the app from the developer's real ``~/.rrational``.
+
+    ``rrational.gui.persistence`` resolves ``CONFIG_DIR = Path.home() /
+    ".rrational"`` and a dozen derived file constants (``SETTINGS_FILE``
+    etc.) *at import time*, and AppTest runs the script in-process, so
+    redirecting ``HOME`` alone is not enough once any earlier test on the
+    same worker has imported the GUI package. We therefore point
+    ``HOME``/``USERPROFILE`` at a temp dir AND evict ``rrational.gui*``
+    from ``sys.modules`` so every constant is recomputed against the
+    sandbox. ``monkeypatch`` restores the original module objects (and the
+    ``rrational.gui`` package attribute) at teardown, so other tests keep
+    the identities they imported.
+    """
+    import rrational
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() on Windows
+    for name in [m for m in sys.modules if m == "rrational.gui" or m.startswith("rrational.gui.")]:
+        monkeypatch.delitem(sys.modules, name)
+    monkeypatch.delattr(rrational, "gui", raising=False)
+    assert Path.home() == home
+    return home
+
+
+@pytest.fixture
 def at_test_mode(test_mode_argv):
     """A fresh AppTest instance running the app in --test-mode."""
     at = AppTest.from_file(str(APP_PATH), default_timeout=RUN_TIMEOUT)
@@ -84,19 +112,7 @@ def test_app_imports_and_first_run_does_not_crash(test_mode_argv):
     )
 
 
-@pytest.mark.skipif(
-    True,
-    reason=(
-        "AppTest inherits the user's local ~/.rrational/settings.yml — if "
-        "a project is persisted there the app boots straight into the "
-        "dataset workspace instead of the welcome screen, so this test "
-        "is environment-dependent. The welcome flow itself is covered by "
-        "the inspector's WelcomeWidget tests; this assertion stays in "
-        "the suite as a documented future TODO (skip until we sandbox "
-        "QSettings / ~/.rrational for AppTest)."
-    ),
-)
-def test_app_renders_welcome_screen_without_project(fresh_argv):
+def test_app_renders_welcome_screen_without_project(fresh_argv, sandboxed_home):
     """Without a project, the welcome screen renders (no crash, has CTAs)."""
     at = AppTest.from_file(str(APP_PATH), default_timeout=RUN_TIMEOUT)
     at.run(timeout=RUN_TIMEOUT)
@@ -109,6 +125,33 @@ def test_app_renders_welcome_screen_without_project(fresh_argv):
     assert "Open Existing Project" in button_labels
     assert "Try Demo" in button_labels
     assert "Continue Without Project" in button_labels
+
+
+def test_sandbox_is_what_the_app_reads(fresh_argv, sandboxed_home, tmp_path):
+    """Control for ``sandboxed_home``: a last project persisted in the
+    *sandboxed* settings must bypass the welcome screen.
+
+    This proves the welcome test above passes because the app reads the
+    sandbox (empty -> welcome), not by coincidence of the host machine
+    having no ``~/.rrational/settings.yml``.
+    """
+    import yaml
+
+    from rrational.gui.project import ProjectManager
+
+    project = tmp_path / "proj"
+    ProjectManager.create_project(project, name="sandbox-control")
+    cfg = sandboxed_home / ".rrational"
+    cfg.mkdir(exist_ok=True)
+    (cfg / "settings.yml").write_text(
+        yaml.safe_dump({"last_project": str(project)}), encoding="utf-8"
+    )
+
+    at = AppTest.from_file(str(APP_PATH), default_timeout=RUN_TIMEOUT)
+    at.run(timeout=RUN_TIMEOUT)
+    assert not at.exception, "; ".join(e.message for e in at.exception)
+    assert "Create New Project" not in {b.label for b in at.button}
+    assert Path(at.session_state["current_project"]).resolve() == project.resolve()
 
 
 # ---------------------------------------------------------------------------
