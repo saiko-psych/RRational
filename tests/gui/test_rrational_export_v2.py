@@ -42,3 +42,95 @@ def test_software_version_comes_from_package_metadata(project):
     export, _ = build_rrational_v2(PID, ["rest"], project_path=project)
     assert export.metadata.software_versions["rrational"] == version("rrational")
     assert export.metadata.software_versions["rrational"] != "0.7.7"
+
+
+# --- scope offset when slicing a section from a broader NN scope -------------
+
+
+def _save_parent(project, name, n, scope_offset=None, corrections=None):
+    nn = {
+        "correction_method": "kubios",
+        "corrected_at": "2024-01-01T11:00:00",
+        "original_beat_count": n,
+        "final_nn_count": n,
+        "intervals": _intervals(n),
+        "corrections": corrections or [],
+    }
+    if scope_offset is not None:
+        nn["scope_offset"] = scope_offset
+    save_nn_intervals(PID, name, nn, project_path=project)
+
+
+def _save_section(project, start_beat, end_beat):
+    save_section_validations(
+        PID,
+        "g",
+        {
+            "rest": _validation(
+                start_beat, end_beat, "2024-01-01T10:00:00", "2024-01-01T10:05:00"
+            )
+        },
+        project_path=project,
+    )
+
+
+def test_scope_offset_is_persisted_and_loaded(project):
+    from rrational.gui.persistence import load_nn_intervals
+
+    _save_parent(project, "measurement", 50, scope_offset=100)
+    loaded = load_nn_intervals(PID, project_path=project)["sections"]["measurement"]
+    assert loaded["scope_offset"] == 100
+
+
+def test_slice_from_parent_uses_scope_offset(project):
+    # measurement scope starts at global beat 100; section is global beats 110-120
+    _save_parent(
+        project,
+        "measurement",
+        50,
+        scope_offset=100,
+        corrections=[
+            {"nn_idx": 12, "original_rr_ms": 1500, "corrected_nn_ms": 812},
+            {"nn_idx": 40, "original_rr_ms": 1500, "corrected_nn_ms": 840},
+        ],
+    )
+    _save_section(project, 110, 120)
+
+    export, warnings = build_rrational_v2(PID, ["rest"], project_path=project)
+
+    nn = export.sections["rest"].nn_intervals
+    # local beats 10..19 of the parent -> nn_ms 810..819
+    assert [iv[1] for iv in nn.data] == list(range(810, 820))
+    assert nn.data[0][0] == 0  # timestamps re-based to section start
+    # only the correction at local idx 12 falls in the slice, re-indexed to 2
+    assert [c["nn_idx"] for c in nn.corrections] == [2]
+    assert any("sliced from 'measurement'" in w for w in warnings)
+
+
+def test_section_outside_parent_scope_is_not_sliced(project):
+    _save_parent(project, "measurement", 50, scope_offset=100)
+    _save_section(project, 10, 20)  # before the scope starts
+
+    export, _ = build_rrational_v2(PID, ["rest"], project_path=project)
+    assert export.sections["rest"].nn_intervals.data == []
+
+
+def test_legacy_parent_without_offset_is_skipped_not_misaligned(project):
+    # Old files have no scope_offset: the old code would silently slice
+    # beats 10..19 here even though the scope may not start at beat 0.
+    _save_parent(project, "measurement", 50)
+    _save_section(project, 10, 20)
+
+    export, warnings = build_rrational_v2(PID, ["rest"], project_path=project)
+    assert export.sections["rest"].nn_intervals.data == []
+    assert any("no scope offset" in w for w in warnings)
+
+
+def test_full_scope_without_offset_defaults_to_zero(project):
+    _save_parent(project, "_full", 50)
+    _save_section(project, 10, 20)
+
+    export, _ = build_rrational_v2(PID, ["rest"], project_path=project)
+    assert [iv[1] for iv in export.sections["rest"].nn_intervals.data] == list(
+        range(810, 820)
+    )

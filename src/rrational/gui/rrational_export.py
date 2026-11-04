@@ -1492,22 +1492,32 @@ def build_rrational_v2(
                 if not parent_nn or not parent_nn.get("intervals"):
                     continue
 
-                # Check if parent scope contains this section
-                # We need the parent's scope offset to calculate slice positions
-                parent_source_scope = parent_nn.get("source_scope")
                 parent_intervals = parent_nn.get("intervals", [])
 
-                # The parent's intervals are indexed from 0, but we need to know
-                # what beat index the parent starts at. This info should be in metadata.
-                # For now, assume parent starts at beat 0 if it's _full or measurement
-                # TODO: Store and use actual scope offset in NN metadata
+                # Section beat indices are global (full recording), while the
+                # parent's intervals are indexed from the start of its own
+                # detection scope. scope_offset (in the NN metadata) is the
+                # global beat index where that scope starts.
+                parent_offset = parent_nn.get("scope_offset")
+                if parent_offset is None:
+                    if parent_name == "_full":
+                        parent_offset = 0  # _full always starts at beat 0
+                    else:
+                        # Legacy file without offset: slicing would silently
+                        # return the wrong beats, so don't use this parent.
+                        warnings.append(
+                            f"Section '{section_name}': cannot slice from "
+                            f"'{parent_name}' (NN file has no scope offset; "
+                            "re-save NN intervals to fix)"
+                        )
+                        continue
 
-                # Simple heuristic: if parent has enough intervals and section is reasonable
-                if len(parent_intervals) >= section_end_beat:
-                    # Slice the parent's data
-                    sliced_intervals = parent_intervals[
-                        section_start_beat:section_end_beat
-                    ]
+                local_start = section_start_beat - parent_offset
+                local_end = section_end_beat - parent_offset
+
+                # Only slice if the section lies entirely inside the parent scope
+                if 0 <= local_start < local_end <= len(parent_intervals):
+                    sliced_intervals = parent_intervals[local_start:local_end]
 
                     if sliced_intervals:
                         # Adjust timestamps to be relative to section start
@@ -1517,16 +1527,15 @@ def build_rrational_v2(
                         ]
 
                         # Count corrections in the slice
+                        # (correction nn_idx is local to the parent scope)
                         corrections_in_slice = [
                             c
                             for c in parent_nn.get("corrections", [])
-                            if section_start_beat
-                            <= c.get("nn_idx", -1)
-                            < section_end_beat
+                            if local_start <= c.get("nn_idx", -1) < local_end
                         ]
                         # Adjust correction indices to be section-relative
                         adjusted_corrections = [
-                            {**c, "nn_idx": c["nn_idx"] - section_start_beat}
+                            {**c, "nn_idx": c["nn_idx"] - local_start}
                             for c in corrections_in_slice
                         ]
 
