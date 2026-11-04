@@ -5953,7 +5953,11 @@ def render_rr_plot_fragment(participant_id: str):
                         mode="markers",
                         name=f"Artifacts ({method_used})",
                         marker=dict(
-                            size=8, color="orange", symbol="x", line=dict(width=2)
+                            # Respect the user's artifact colour (Settings, #25)
+                            size=8,
+                            color=artifact_color,
+                            symbol="x",
+                            line=dict(width=2),
                         ),
                         hovertemplate="Time: %{x}<br>RR: %{y} ms (ARTIFACT)<extra></extra>",
                     )
