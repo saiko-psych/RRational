@@ -61,6 +61,31 @@ from rrational.analysis.hrv_compute import (  # noqa: E402
 )
 
 
+def _poor_quality_reason(info: dict) -> str | None:
+    """Exclusion reason if a section is Poor quality, else None.
+
+    Poor = artifact rate > 10 % (same boundary as quality_grade_from_rate);
+    falls back to a stored "poor" grade when no rate is available. Raw
+    fallback data without quality information is never excluded here.
+    """
+    from rrational.gui.segmentation import quality_grade_from_rate
+
+    rate = info.get("artifact_rate") if info else None
+    grade = (info or {}).get("quality_grade")
+    if rate is not None:
+        try:
+            rate_f = float(rate)
+        except (TypeError, ValueError):
+            rate_f = None
+        if rate_f is not None and quality_grade_from_rate(rate_f) == "poor":
+            return f"Excluded: Poor quality ({rate_f * 100:.1f}% artifacts)"
+        if rate_f is not None:
+            return None
+    if grade == "poor":
+        return "Excluded: Poor quality"
+    return None
+
+
 def _current_freq_method() -> str:
     """Get the active frequency-domain method from session state (NK2 default)."""
     return st.session_state.get("freq_method", FREQ_METHOD_NEUROKIT)
@@ -4112,8 +4137,9 @@ def _run_group_analysis(
             - selected_groups: List of group names
             - sections_per_group: Dict mapping group -> list of section names
             - use_overlapping_windows: bool
-            - window_beats: int
+            - window_s: float (time-based window length in seconds)
             - overlap_percent: float
+            - exclude_poor: bool (skip sections graded Poor, > 10 % artifacts)
             - completeness_filter: bool
             - selected_metrics: List of metric names to calculate
             - allow_raw_fallback: bool - If True, use raw RR data when NN is unavailable
@@ -4218,6 +4244,19 @@ def _run_group_analysis(
                     missing.setdefault(pid, {})[section] = error_detail
                     update_progress(1, f"[{pid}] {section} failed: {error_detail}")
 
+            # Quality filter: Poor sections (> 10 % artifacts) are excluded,
+            # not corrected (docs/science/guidelines.md). Recorded as missing
+            # with the reason, before the completeness filter.
+            if config.get("exclude_poor", False):
+                kept = []
+                for item in available:
+                    reason = _poor_quality_reason(item[2])
+                    if reason:
+                        missing.setdefault(pid, {})[item[0]] = reason
+                    else:
+                        kept.append(item)
+                available = kept
+
             # Completeness filter
             if config["completeness_filter"] and len(available) < len(sections):
                 excluded[pid] = (
@@ -4233,9 +4272,9 @@ def _run_group_analysis(
 
                 metrics, std, n_win = _calculate_hrv_metrics(
                     rr_data,
-                    config["use_overlapping_windows"],
-                    config["window_beats"],
-                    config["overlap_percent"],
+                    use_windows=config["use_overlapping_windows"],
+                    window_s=config.get("window_s", 300.0),
+                    overlap_pct=config["overlap_percent"],
                     selected_metrics=selected_metrics,
                     freq_method=_current_freq_method(),
                     # Moderate (> 5 % artifacts) = time domain only.
@@ -4707,30 +4746,40 @@ Using overlapping windows improves the reliability of HRV estimates by providing
             "Recommended: OFF — prepare each participant with 'Export for Analysis' first.",
         )
 
+    exclude_poor = st.checkbox(
+        "Exclude Poor-quality sections (> 10% artifacts)",
+        value=True,
+        key="group_analysis_exclude_poor",
+        help="Quigley et al. (2024) / docs: sections graded Poor are excluded, "
+        "not corrected. Excluded sections are listed with the reason.",
+    )
+
     if use_overlapping:
         col1, col2 = st.columns(2)
         with col1:
-            window_beats = st.number_input(
-                "Window size (beats)",
-                min_value=100,
-                max_value=1000,
-                value=300,
-                step=50,
-                key="group_analysis_window_beats",
-                help="Use 300+ beats for frequency domain metrics",
+            window_min = st.number_input(
+                "Window duration (min)",
+                min_value=1.0,
+                max_value=30.0,
+                value=5.0,
+                step=0.5,
+                key="group_analysis_window_min",
+                help="Time-based windows (Task Force 1996: 5 min). Partial "
+                "windows at the end of a section are not averaged.",
             )
         with col2:
             overlap_pct = st.slider(
                 "Overlap (%)",
                 min_value=0,
                 max_value=90,
-                value=75,
+                value=50,
                 step=5,
                 key="group_analysis_overlap",
+                help="Recommended: 0% (independent) or 50% (smoother).",
             )
     else:
-        window_beats = 300
-        overlap_pct = 75
+        window_min = 5.0
+        overlap_pct = 50
 
     # -------------------------------------------------------------------------
     # Run Analysis Button
@@ -4750,8 +4799,9 @@ Using overlapping windows improves the reliability of HRV estimates by providing
             "selected_groups": selected_groups,
             "sections_per_group": sections_per_group,
             "use_overlapping_windows": use_overlapping,
-            "window_beats": window_beats,
+            "window_s": float(window_min) * 60.0,
             "overlap_percent": overlap_pct,
+            "exclude_poor": exclude_poor,
             "completeness_filter": completeness_filter,
             "selected_metrics": selected_metrics,
             "allow_raw_fallback": allow_raw_fallback,
@@ -5635,29 +5685,39 @@ This analysis groups participants by sequence and compares conditions within and
             "Recommended: OFF — prepare each participant with 'Export for Analysis' first.",
         )
 
+    exclude_poor = st.checkbox(
+        "Exclude Poor-quality sections (> 10% artifacts)",
+        value=True,
+        key="seq_comparison_exclude_poor",
+        help="Sections graded Poor are excluded, not corrected (Quigley et al. 2024).",
+    )
+
     if use_overlapping:
         col1, col2 = st.columns(2)
         with col1:
-            window_beats = st.number_input(
-                "Window size (beats)",
-                min_value=100,
-                max_value=1000,
-                value=300,
-                step=50,
-                key="seq_comparison_window_beats",
+            window_min = st.number_input(
+                "Window duration (min)",
+                min_value=1.0,
+                max_value=30.0,
+                value=5.0,
+                step=0.5,
+                key="seq_comparison_window_min",
+                help="Time-based windows (Task Force 1996: 5 min). Partial "
+                "windows at the end of a section are not averaged.",
             )
         with col2:
             overlap_pct = st.slider(
                 "Overlap (%)",
                 min_value=0,
                 max_value=90,
-                value=75,
+                value=50,
                 step=5,
                 key="seq_comparison_overlap",
+                help="Recommended: 0% (independent) or 50% (smoother).",
             )
     else:
-        window_beats = 300
-        overlap_pct = 75
+        window_min = 5.0
+        overlap_pct = 50
 
     # -------------------------------------------------------------------------
     # Run Analysis
@@ -5764,12 +5824,17 @@ This analysis groups participants by sequence and compares conditions within and
                         )
                         continue
 
-                    # Calculate HRV
+                    poor_reason = _poor_quality_reason(info) if exclude_poor else None
+                    if poor_reason:
+                        missing.setdefault(pid, {})[condition] = poor_reason
+                        continue
+
+                    # Calculate HRV (time-based windows)
                     metrics, std, n_win = _calculate_hrv_metrics(
                         nn_data,
-                        use_overlapping,
-                        window_beats,
-                        overlap_pct,
+                        use_windows=use_overlapping,
+                        window_s=float(window_min) * 60.0,
+                        overlap_pct=overlap_pct,
                         selected_metrics=selected_metrics,
                         freq_method=_current_freq_method(),
                         # Moderate (> 5 % artifacts) = time domain only.

@@ -46,6 +46,10 @@ KUBIOS_BAND_HF = (0.15, 0.40)
 # gui.segmentation.quality_grade_from_rate (exactly 5 % is still "good").
 FREQ_GATE_ARTIFACT_RATE = 0.05
 
+# Time-based windows shorter than this fraction of the window length (the
+# trailing remainder of a section) are not averaged with full windows.
+PARTIAL_WINDOW_MIN_FRACTION = 0.9
+
 
 def _warn_frequency_gated(n_gated: int, n_total: int, max_rate: float) -> None:
     import logging
@@ -378,10 +382,29 @@ def calculate_hrv_metrics(
 
         nn_array = np.asarray(nn_ms_list, dtype=np.float64)
         segs = generate_segments(nn_array, window_s=window_s, overlap_pct=overlap_pct)
+        # Only full-length windows are comparable: SDNN (and spectral power)
+        # scale with duration (Task Force 1996; recommended-workflow.md), so
+        # a short trailing window must not be averaged with full ones. If
+        # no full window fits, the whole section is analysed instead (below).
+        min_duration_s = PARTIAL_WINDOW_MIN_FRACTION * float(window_s)
+        n_partial = 0
         for seg in segs:
+            if seg.duration_s < min_duration_s:
+                n_partial += 1
+                continue
             sliced = nn_array[seg.beat_start : seg.beat_end]
             if len(sliced) >= 30:
                 window_slices.append(sliced.tolist())
+        if n_partial:
+            import logging
+
+            logging.getLogger("rrational.analysis.hrv_compute").info(
+                "Skipped %d partial window(s) shorter than %.0f%% of the %.0f s "
+                "window (not comparable with full windows).",
+                n_partial,
+                PARTIAL_WINDOW_MIN_FRACTION * 100,
+                float(window_s),
+            )
 
     else:
         min_beats = min(window_beats, len(nn_ms_list))
