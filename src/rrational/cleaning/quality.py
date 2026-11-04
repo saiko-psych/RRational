@@ -654,3 +654,72 @@ def correct_artifacts_lipponen(
         "n_removed": removed,
         "correction_applied": True,
     }
+
+
+def correct_artifacts_lipponen_segmented(rr_values, timestamps, bounds) -> dict:
+    """Apply :func:`correct_artifacts_lipponen` per segment and stitch.
+
+    ``bounds`` are raw ``(start, end)`` beat ranges (e.g. 5-min detection
+    windows). Each segment is detected and corrected independently; raw
+    beats outside every segment (or in segments < 10 beats) pass through.
+    Returns the same keys as :func:`correct_artifacts_lipponen` with a
+    GLOBAL ``raw_to_corrected`` map and raw-space artifact indices.
+    """
+    rr_list = list(rr_values)
+    n = len(rr_list)
+    ts_list = list(timestamps) if timestamps is not None else None
+    corrected: list = []
+    corrected_ts: list | None = [] if ts_list is not None else None
+    flags: list = []
+    bmap = [0] * (n + 1)
+    by_type = {k: set() for k in FIXPEAKS_ARTIFACT_TYPES}
+    counts = {k: 0 for k in FIXPEAKS_ARTIFACT_TYPES}
+    inserted = removed = 0
+
+    def _passthrough(s, e):
+        for i in range(s, e):
+            bmap[i] = len(corrected)
+            corrected.append(rr_list[i])
+            flags.append(False)
+            if corrected_ts is not None:
+                corrected_ts.append(ts_list[i])
+
+    pos = 0
+    for s, e in sorted((max(0, int(a)), min(n, int(b))) for a, b in bounds):
+        if e <= pos:
+            continue
+        s = max(s, pos)
+        _passthrough(pos, s)
+        seg_ts = ts_list[s:e] if ts_list is not None else None
+        res = correct_artifacts_lipponen(rr_list[s:e], timestamps=seg_ts)
+        offset = len(corrected)
+        for k, v in enumerate(res["raw_to_corrected"][:-1]):
+            bmap[s + k] = offset + v
+        corrected.extend(res["corrected_rr"])
+        flags.extend(res["corrected_flags"])
+        if corrected_ts is not None:
+            seg_cts = res["corrected_timestamps"]
+            corrected_ts.extend(seg_cts if seg_cts is not None else [None] * len(res["corrected_rr"]))
+        for key in FIXPEAKS_ARTIFACT_TYPES:
+            by_type[key].update(s + i for i in res["indices_by_type"][key])
+            counts[key] += res["artifacts"][key]
+        inserted += res["n_inserted"]
+        removed += res["n_removed"]
+        pos = e
+    _passthrough(pos, n)
+    bmap[n] = len(corrected)
+
+    indices_by_type = {k: sorted(v) for k, v in by_type.items()}
+    artifact_indices = sorted({i for v in by_type.values() for i in v})
+    return {
+        "artifact_indices": artifact_indices,
+        "indices_by_type": indices_by_type,
+        "artifacts": counts,
+        "corrected_rr": corrected,
+        "corrected_timestamps": corrected_ts,
+        "raw_to_corrected": bmap,
+        "corrected_flags": flags,
+        "n_inserted": inserted,
+        "n_removed": removed,
+        "correction_applied": bool(artifact_indices),
+    }
