@@ -1213,12 +1213,55 @@ def load_rrational_any_version(
         return load_rrational(filepath)
 
 
+def _as_iso(value) -> str:
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _build_recording_gaps(recording_gaps: list[dict] | None) -> list[RecordingGapV2]:
+    """Convert serialized VNS gaps (see cached_load_vns_recording) to v2 gaps."""
+    gaps = []
+    for i, gap in enumerate(recording_gaps or []):
+        if not gap.get("gap_start") or not gap.get("gap_end"):
+            continue
+        gaps.append(
+            RecordingGapV2(
+                gap_id=f"gap_{i + 1}",
+                after_file=str(gap.get("after_file", "")),
+                before_file=str(gap.get("before_file", "")),
+                gap_start=_as_iso(gap["gap_start"]),
+                gap_end=_as_iso(gap["gap_end"]),
+                gap_duration_s=float(gap.get("gap_duration_s", 0.0)),
+            )
+        )
+    return gaps
+
+
+def _overlap_seconds(a_start: str, a_end: str, b_start: str, b_end: str) -> float:
+    """Seconds of overlap between two ISO-timestamp ranges (0 if none/unparseable).
+
+    Timezone info is dropped when only one side has it, so a naive VNS
+    filename time can still be compared with an aware event timestamp.
+    """
+    from datetime import datetime as dt
+
+    try:
+        points = [dt.fromisoformat(t) for t in (a_start, a_end, b_start, b_end)]
+    except (ValueError, TypeError):
+        return 0.0
+    if len({p.tzinfo is None for p in points}) > 1:
+        points = [p.replace(tzinfo=None) for p in points]
+    start = max(points[0], points[2])
+    end = min(points[1], points[3])
+    return max(0.0, (end - start).total_seconds())
+
+
 def build_rrational_v2(
     participant_id: str,
     sections_to_export: list[str],
     data_dir: str | None = None,
     project_path: Path | None = None,
     raw_rr_fallback: dict[str, list] | None = None,
+    recording_gaps: list[dict] | None = None,
 ) -> tuple[RRationalExportV2, list[str]]:
     """Build a v2.0 export by consolidating data from intermediate files.
 
@@ -1236,11 +1279,17 @@ def build_rrational_v2(
         raw_rr_fallback: Optional dict mapping section names to raw RR intervals
             (list of [timestamp_ms, rr_ms] pairs). Used when no corrected NN
             intervals are available for a section.
+        recording_gaps: Optional gaps between files of a multi-file VNS
+            recording, as produced by ``cached_load_vns_recording``
+            (dicts with after_file, before_file, gap_start, gap_end,
+            gap_duration_s). Gaps are not persisted in any intermediate
+            file, so the caller must pass them from the loaded recording.
 
     Returns:
         Tuple of (RRationalExportV2, list of warnings/errors)
     """
     from datetime import datetime as dt
+    from rrational import __version__ as rrational_version
     from rrational.gui.persistence import (
         load_participant_events,
         load_artifact_corrections,
@@ -1274,8 +1323,10 @@ def build_rrational_v2(
         created_at=now,
         last_modified=now,
         source_app="Unknown",  # Will be updated if we can determine it
-        software_versions={"rrational": "0.7.7"},  # TODO: Get from package
+        software_versions={"rrational": rrational_version},
     )
+
+    all_gaps = _build_recording_gaps(recording_gaps)
 
     # Get exclusion zones from events data
     exclusion_zones_raw = events_data.get("exclusion_zones", []) if events_data else []
@@ -1491,22 +1542,32 @@ def build_rrational_v2(
                 if not parent_nn or not parent_nn.get("intervals"):
                     continue
 
-                # Check if parent scope contains this section
-                # We need the parent's scope offset to calculate slice positions
-                parent_source_scope = parent_nn.get("source_scope")
                 parent_intervals = parent_nn.get("intervals", [])
 
-                # The parent's intervals are indexed from 0, but we need to know
-                # what beat index the parent starts at. This info should be in metadata.
-                # For now, assume parent starts at beat 0 if it's _full or measurement
-                # TODO: Store and use actual scope offset in NN metadata
+                # Section beat indices are global (full recording), while the
+                # parent's intervals are indexed from the start of its own
+                # detection scope. scope_offset (in the NN metadata) is the
+                # global beat index where that scope starts.
+                parent_offset = parent_nn.get("scope_offset")
+                if parent_offset is None:
+                    if parent_name == "_full":
+                        parent_offset = 0  # _full always starts at beat 0
+                    else:
+                        # Legacy file without offset: slicing would silently
+                        # return the wrong beats, so don't use this parent.
+                        warnings.append(
+                            f"Section '{section_name}': cannot slice from "
+                            f"'{parent_name}' (NN file has no scope offset; "
+                            "re-save NN intervals to fix)"
+                        )
+                        continue
 
-                # Simple heuristic: if parent has enough intervals and section is reasonable
-                if len(parent_intervals) >= section_end_beat:
-                    # Slice the parent's data
-                    sliced_intervals = parent_intervals[
-                        section_start_beat:section_end_beat
-                    ]
+                local_start = section_start_beat - parent_offset
+                local_end = section_end_beat - parent_offset
+
+                # Only slice if the section lies entirely inside the parent scope
+                if 0 <= local_start < local_end <= len(parent_intervals):
+                    sliced_intervals = parent_intervals[local_start:local_end]
 
                     if sliced_intervals:
                         # Adjust timestamps to be relative to section start
@@ -1516,16 +1577,15 @@ def build_rrational_v2(
                         ]
 
                         # Count corrections in the slice
+                        # (correction nn_idx is local to the parent scope)
                         corrections_in_slice = [
                             c
                             for c in parent_nn.get("corrections", [])
-                            if section_start_beat
-                            <= c.get("nn_idx", -1)
-                            < section_end_beat
+                            if local_start <= c.get("nn_idx", -1) < local_end
                         ]
                         # Adjust correction indices to be section-relative
                         adjusted_corrections = [
-                            {**c, "nn_idx": c["nn_idx"] - section_start_beat}
+                            {**c, "nn_idx": c["nn_idx"] - local_start}
                             for c in corrections_in_slice
                         ]
 
@@ -1588,6 +1648,17 @@ def build_rrational_v2(
             except (ValueError, TypeError):
                 pass
 
+        # Recording gaps (VNS multi-file) inside this section: no data was
+        # recorded there, so subtract the part that overlaps the section.
+        section_gaps = []
+        for gap in all_gaps:
+            overlap_s = _overlap_seconds(
+                gap.gap_start, gap.gap_end, section_start_ts, section_end_ts
+            )
+            if overlap_s > 0:
+                section_gaps.append(gap)
+                usable_duration -= overlap_s
+
         # Recalculate artifact rate if we have beat count (rate may not be saved in file)
         if usable_beats > 0 and final_artifacts.count > 0:
             calculated_rate = final_artifacts.count / usable_beats
@@ -1615,7 +1686,7 @@ def build_rrational_v2(
                 start_dt = dt.fromisoformat(section_start_ts)
                 end_dt = dt.fromisoformat(section_end_ts)
                 analysis_segments = calculate_analysis_segments(
-                    start_dt, end_dt, section_exclusions, [], section_name
+                    start_dt, end_dt, section_exclusions, section_gaps, section_name
                 )
 
                 # Update nn_count and indices for data segments
@@ -1643,7 +1714,7 @@ def build_rrational_v2(
             definition=definition,
             validation=validation,
             exclusion_zones=section_exclusions,
-            gaps=[],  # TODO: Load from VNS recording info if available
+            gaps=section_gaps,
             artifact_detection=artifact_detection,
             manual_artifacts=manual_artifacts,
             final_artifacts=final_artifacts,
@@ -1672,7 +1743,7 @@ def build_rrational_v2(
         metadata=metadata,
         sections=sections,
         exclusion_zones_summary=exclusion_zones_summary,
-        recording_gaps=[],
+        recording_gaps=all_gaps,
         audit_trail=audit_trail,
     )
 

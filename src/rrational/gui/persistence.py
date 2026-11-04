@@ -1535,6 +1535,8 @@ def save_nn_intervals(
                 "artifacts_removed": 4,
                 "intervals_corrected": 3,  # How many were interpolated
                 "final_nn_count": 348,
+                "source_scope": "measurement",  # optional
+                "scope_offset": 120,  # optional: global beat idx where scope starts
                 "intervals": [
                     # Compact format: [timestamp_ms_from_section_start, nn_ms, was_corrected]
                     [0, 850, False],
@@ -1598,6 +1600,14 @@ def save_nn_intervals(
         "corrections": nn_data.get("corrections", []),
         "csv_file": csv_file.name,
     }
+    # Optional scope provenance: which detection scope the intervals came from
+    # and the global beat index where that scope starts. build_rrational_v2
+    # needs scope_offset to slice a section out of a broader scope
+    # (e.g. "measurement") correctly. Only written when provided so files
+    # saved without it keep their previous shape.
+    for optional_key in ("source_scope", "scope_offset"):
+        if nn_data.get(optional_key) is not None:
+            section_metadata[optional_key] = nn_data[optional_key]
     # Convert numpy types to native Python types for YAML serialization
     section_metadata = _convert_numpy_types(section_metadata)
     metadata["sections"][section_name] = section_metadata

@@ -2829,6 +2829,7 @@ def render_rr_plot_fragment(participant_id: str):
                             "correction_method": "kubios" if algo_method else "manual",
                             "corrected_at": datetime.now().isoformat(),
                             "original_beat_count": len(corrected_rr),
+                            "scope_offset": scope_offset,
                             "artifacts_removed": len(local_artifact_indices),
                             "intervals_corrected": len(corrections_list),
                             "final_nn_count": len(nn_intervals_data),
@@ -3459,6 +3460,7 @@ def render_rr_plot_fragment(participant_id: str):
                                 else "manual",
                                 "corrected_at": datetime.now().isoformat(),
                                 "original_beat_count": len(corrected_rr_export),
+                                "scope_offset": scope_offset_export,
                                 "artifacts_removed": len(local_artifact_idx_export),
                                 "intervals_corrected": len(corrections_list_export),
                                 "final_nn_count": len(nn_intervals_data_export),
@@ -3564,6 +3566,9 @@ def render_rr_plot_fragment(participant_id: str):
                             raw_rr_fallback=raw_rr_fallback
                             if raw_rr_fallback
                             else None,
+                            recording_gaps=st.session_state.get(
+                                f"vns_recording_gaps_{participant_id}"
+                            ),
                         )
 
                     # Show warnings
@@ -5948,7 +5953,11 @@ def render_rr_plot_fragment(participant_id: str):
                         mode="markers",
                         name=f"Artifacts ({method_used})",
                         marker=dict(
-                            size=8, color="orange", symbol="x", line=dict(width=2)
+                            # Respect the user's artifact colour (Settings, #25)
+                            size=8,
+                            color=artifact_color,
+                            symbol="x",
+                            line=dict(width=2),
                         ),
                         hovertemplate="Time: %{x}<br>RR: %{y} ms (ARTIFACT)<extra></extra>",
                     )
@@ -7905,6 +7914,10 @@ def main():
                         st.session_state[
                             f"vns_multiple_files_{selected_participant}"
                         ] = vns_has_multiple_files
+                        # Keep file gaps for the v2 export (not persisted elsewhere)
+                        st.session_state[
+                            f"vns_recording_gaps_{selected_participant}"
+                        ] = gaps or []
 
                         if file_segments and len(file_segments) > 1:
                             with st.expander(
@@ -11546,6 +11559,11 @@ def main():
                             undo_key = f"event_undo_stack_{selected_participant}"
                             if undo_key in st.session_state:
                                 st.session_state[undo_key] = []
+                            # Drop stale event-row widget values so the dropdowns
+                            # re-initialise from the reloaded events (issue #18)
+                            from rrational.gui.shared import clear_event_widget_state
+
+                            clear_event_widget_state(selected_participant)
                             show_toast(
                                 f"Reset {selected_participant} to original events from raw data",
                                 icon="success",
