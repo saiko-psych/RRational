@@ -35,20 +35,24 @@ class PreprocessingResult:
     recommendation: str = ""
 
 
-# Quality grade boundaries — Quigley 2024 + NeuroKit2 conventions.
-_GRADE_THRESHOLDS = [
-    (0.02, "excellent", "All HRV metrics are valid."),
-    (0.05, "good", "Time- and frequency-domain metrics valid."),
-    (0.10, "moderate", "Time-domain only; frequency-domain metrics are unreliable."),
-    (float("inf"), "poor", "Consider excluding this recording from analysis."),
-]
+# Quality grade per artifact rate. The BOUNDARIES come from the shared
+# rrational.gui.segmentation.quality_grade_from_rate (also used by the
+# Streamlit app, should_exclude_segment and the .rrational export), so both
+# GUIs grade a recording identically; this module only adds the messages.
+# A private ``<`` table here once disagreed with it at exactly 2/5/10 %.
+_GRADE_MESSAGES = {
+    "excellent": "All HRV metrics are valid.",
+    "good": "Time- and frequency-domain metrics valid.",
+    "moderate": "Time-domain only; frequency-domain metrics are unreliable.",
+    "poor": "Consider excluding this recording from analysis.",
+}
 
 
 def _grade_for_rate(rate: float) -> tuple[str, str]:
-    for threshold, grade, msg in _GRADE_THRESHOLDS:
-        if rate < threshold:
-            return grade, msg
-    return "poor", "Consider excluding this recording from analysis."
+    from rrational.gui.segmentation import quality_grade_from_rate
+
+    grade = quality_grade_from_rate(rate)
+    return grade, _GRADE_MESSAGES[grade]
 
 
 # A/B/C/D letter grade — same Quigley 2024 thresholds, just renamed for

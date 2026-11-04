@@ -285,3 +285,31 @@ def test_export_clicked_in_test_mode_writes_real_file(
     # The CSV has at least one section (empatica generic_rr parser
     # creates a single-section dataset)
     assert len(loaded.sections) >= 1
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "rate", [0.0, 0.0199, 0.02, 0.0201, 0.049, 0.05, 0.051, 0.0999, 0.10, 0.1001, 0.5]
+)
+def test_inspector_grade_matches_shared_quality_grade(rate):
+    """Regression: the Inspector kept its own threshold table with strict
+    ``<`` while gui/segmentation.quality_grade_from_rate (used by the
+    Streamlit app, should_exclude_segment and the .rrational export) uses
+    ``<=``. At exactly 2/5/10 % the two GUIs graded the same recording
+    differently, e.g. 10 % = "poor" in the Inspector but "moderate" (and
+    not excluded) everywhere else. Documented spec (docs/science/
+    guidelines.md): Poor = > 10 %."""
+    from rrational.gui.segmentation import quality_grade_from_rate
+    from rrational.inspector.preprocessing import _grade_for_rate
+
+    assert _grade_for_rate(rate)[0] == quality_grade_from_rate(rate)
+
+
+def test_inspector_ten_percent_is_moderate_not_poor():
+    from rrational.inspector.preprocessing import _grade_for_rate, _grade_letter_for_rate
+
+    grade, msg = _grade_for_rate(0.10)
+    assert grade == "moderate" and "Time-domain only" in msg
+    assert _grade_letter_for_rate(0.10) == "C"
